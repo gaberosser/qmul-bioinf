@@ -218,31 +218,37 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
     struct_ids = get_structure_ids_by_parent(ontol, PARENT_STRUCT_ID)
 
-    expression = pd.DataFrame()
+    expression_cts = pd.DataFrame()
+    expression_tpm = pd.DataFrame()
     sample_meta = pd.DataFrame()
 
     for dn in DONOR_NUMBERS:
         logger.info("Processing donor %d", dn)
         this_dir = os.path.join(INDIR, "donor%d" % dn)
-        tpm_fn = os.path.join(this_dir, 'RNAseqTPM.csv')
-        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv')
+        tpm_fn = os.path.join(this_dir, 'RNAseqTPM.csv.gz')
+        cts_fn = os.path.join(this_dir, 'RNAseqCounts.csv.gz')
+        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
 
         sampl = pd.read_csv(sampl_fn)
         tpm = pd.read_csv(tpm_fn, header=None, index_col=0)
+        cts = pd.read_csv(cts_fn, header=None, index_col=0)
 
         # set sample IDs
         sampl_idx = pd.Index(['%d_%d' % (dn, i) for i in range(sampl.shape[0])])
         sampl.index = sampl_idx
         tpm.columns = sampl_idx
+        cts.columns = sampl_idx
 
         # filter sample annotation by ontology
         sampl_idx2 = sampl[sampl['ontology_structure_id'].isin(struct_ids)].index
 
         # filter expression by sample
         tpm = tpm[sampl_idx2]
+        cts = cts[sampl_idx2]
 
         # concatenate along axis 1
-        expression = pd.concat([expression, tpm], axis=1)
+        expression_tpm = pd.concat([expression_tpm, tpm], axis=1)
+        expression_cts = pd.concat([expression_cts, cts], axis=1)
 
         # add sample metadata to the list
         this_meta = sampl.loc[sampl_idx2]
@@ -252,16 +258,21 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
         logger.info("Completed donor %d", dn)
 
     # give expresion index a meaningful name
-    expression.index.name = 'gene_symbol'
+    expression_tpm.index.name = 'gene_symbol'
+    expression_cts.index.name = 'gene_symbol'
 
     logger.info("Saving results to %s", outfile)
     with open(outfile, 'wb') as f:
         dill.dump(
-            {'expression': expression, 'meta': sample_meta},
+            {
+                'tpm': expression_tpm,
+                'counts': expression_cts,
+                'meta': sample_meta
+            },
             f)
     logger.info('Complete')
 
-    return expression, sample_meta
+    return expression_cts, expression_tpm, sample_meta
 
 
 def load_cerebellum_rnaseq_reference_data():
@@ -275,7 +286,7 @@ def load_cerebellum_rnaseq_reference_data():
         logger.info("Loading from pre-prepared pickled file %s.", infile)
         with open(infile, 'rb') as f:
             res = dill.load(f)
-        return res['expression'], res['meta']
+        return res['count'], res['tpm'], res['meta']
 
 
 def plot_microarray_gene_markers():

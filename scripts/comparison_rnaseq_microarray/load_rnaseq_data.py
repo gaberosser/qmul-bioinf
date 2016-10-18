@@ -2,8 +2,44 @@ import pandas as pd
 import numpy as np
 import collections
 import os
+import pickle
+import references
 
 RNASEQ_GENE_COUNTS_DIR = 'data/rnaseq_GSE83696/'
+RNA_COUNT_FIELDS = [
+    '_ambiguous',
+    '_no_feature',
+    '_unmapped',
+]
+
+
+def load_rnaseq_htseq_count_data(by_gene=False):
+    """
+    Load in HTSeq counting data from pre-existing ht-seq run.
+    :param by_gene: If True, translate the raw Ensembl codes to gene symbol. Discard any that do not translate, except
+    _ambiguous, _no_feature, _unmapped.
+    :return:
+    """
+    infiles = {
+        'XZ1': 'xz1_exon_counts_gr37_reverse.dill',
+    }
+    res = pd.DataFrame()
+
+    for tag, fn in infiles.items():
+        ff = os.path.join(RNASEQ_GENE_COUNTS_DIR, fn)
+        with open(ff, 'rb') as f:
+            t = pickle.load(f)
+        if by_gene:
+            trans = references.ensembl_to_gene_symbol(t.index)
+            # keep only the non-null entries
+            trans = trans.loc[~trans.isnull()]
+            t = t.loc[trans.index.union(RNA_COUNT_FIELDS)]
+            # reindex
+            t.index = list(trans.values) + RNA_COUNT_FIELDS
+
+        res[tag] = t
+
+    return res
 
 
 def load_rnaseq_cufflinks_gene_count_data(unit='fpkm', return_ci=False):

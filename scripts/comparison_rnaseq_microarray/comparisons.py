@@ -128,8 +128,8 @@ def plot_rna_seq_mb_gene_expression():
     # ignore the confidence intervals, which are wrong
     rna_z = load_rnaseq_data.load_rnaseq_cufflinks_gene_count_data(unit='tpm')
 
-    # load Allen RNA-Seq cerebellum activity counts
-    rna_a, meta = load_references.load_cerebellum_rnaseq_reference_data()
+    # load Allen RNA-Seq cerebellum activity TPM
+    _, rna_a, meta = load_references.load_cerebellum_rnaseq_reference_data()
 
     # annotate both by MB group
     rna_z['mb_group'] = [np.nan] * len(rna_z.index)
@@ -179,6 +179,223 @@ def plot_rna_seq_mb_gene_expression():
 
     axs[0].set_ylabel('Log2 fold change')
     plt.subplots_adjust(left=0.1, right=0.99, bottom=0.2, top=0.95, wspace=0.08, hspace=0.)
+
+
+def comparison_healthy_vs_mb_microarray_northcott_genes():
+    from matplotlib import rc, pyplot as plt, gridspec as gridspec
+    import seaborn as sns
+    plt.interactive(True)
+    sns.set_style('white')
+
+    METHOD = 'median'
+    HEALTHY_SAMPLE_NAMES = [
+        'NT1197',
+        'NCb1',
+        'NCb2',
+        'A911105',
+        'A508112',
+        'A508285',
+    ]
+    SAMPLE_GROUPS = (
+        ('WNT', ('Pt1140', 'ICb1140-II', 'ICb1140-III', 'Pt1192', 'ICb1192-I', 'ICb1192-III', 'ICb1192-V')),
+        ('SSH', ('Pt1338', 'ICb1338-I', 'ICb1338-III', 'ICb984-I', 'ICb984-III', 'ICb984-V')),
+        ('Group C', (
+            'ICb1197-I',
+            'ICb1197-III',
+            'Pt1494',
+            'ICb1494-I',
+            'ICb1494-III',
+            'ICb1494-V',
+            'Pt1572',
+            'ICb1572-I',
+            'ICb1572-III',
+            'ICb1572-V',
+            'Pt1595',
+            'ICb1595-I',
+            'ICb1595-III',
+        )),
+        ('Group D', (
+            'Pt1078',
+            'ICb1078-I',
+            'ICb1078-III',
+            'ICb1078-V',
+            'Pt1299',
+            'ICb1299-I',
+            'ICb1299-III',
+            'ICb1299-IV',
+            'Pt1487',
+            'ICb1487-I',
+            'ICb1487-III',
+        )),
+    )
+
+    all_northcott_patients = []
+    for grp, arr in SAMPLE_GROUPS:
+        all_northcott_patients.extend(arr)
+
+    # load full microarray data
+    marray_data = load_illumina_data.load_normed_microarray_data(pval=0.05)
+
+    probe_set = load_illumina_data.load_illumina_array_library()
+    marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
+    marray_by_gene = load_illumina_data.aggregate_by_probe_set(marray_ann, method=METHOD)
+
+    all_mb_genes = []
+    for _, arr in REF_GROUPS:
+        all_mb_genes.extend(arr)
+
+    # standardised scores by gene
+    marray_by_gene_stand = (
+        marray_by_gene.subtract(marray_by_gene.mean(axis=1), axis=0)
+            .divide(marray_by_gene.std(axis=1), axis=0)
+    )
+
+    # take mean over repeats
+    for sn in load_illumina_data.SAMPLE_NAMES:
+        marray_by_gene.loc[:, sn] = marray_by_gene.loc[:, [sn, sn + '-R']].mean(axis=1)
+        marray_by_gene_stand.loc[:, sn] = marray_by_gene_stand.loc[:, [sn, sn + '-R']].mean(axis=1)
+    marray_by_gene = marray_by_gene.loc[:, load_illumina_data.SAMPLE_NAMES]
+    marray_by_gene_stand = marray_by_gene_stand.loc[:, load_illumina_data.SAMPLE_NAMES]
+
+    VMAX = 15000
+
+    # v1: absolute values
+
+    fig = plt.figure(figsize=[5, 8])
+    gs = gridspec.GridSpec(2, len(REF_GROUPS),
+                           height_ratios=[1, 12],
+                           width_ratios=[len(arr) for _, arr in REF_GROUPS])
+    gs.update(
+        left=0.2,
+        right=0.95,
+        top=0.95,
+        bottom=0.15,
+        wspace=0.,
+        hspace=0.1)
+    cbar_kws = {"orientation": "horizontal"}
+
+    for i, (grp, arr) in enumerate(REF_GROUPS):
+        ax = fig.add_subplot(gs[1:, i])
+        if i == (len(REF_GROUPS) - 1):
+            cbar = True
+            cbar_ax = fig.add_subplot(gs[0, :])
+        else:
+            cbar = False
+            cbar_ax = None
+        sns.heatmap(
+            marray_by_gene.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES].transpose(),
+            ax=ax,
+            vmin=0,
+            vmax=VMAX,
+            square=True,
+            cmap='Reds',
+            cbar=cbar,
+            cbar_ax=cbar_ax,
+            cbar_kws=cbar_kws
+        )
+        ax.set_xticklabels(arr, rotation=90)
+        if i == 0:
+            plt.yticks(rotation=0)
+        else:
+            ax.set_yticklabels([])
+        ax.set_xlabel(grp)
+        ax.xaxis.set_label_coords(.5, -.15)
+    cbar_ax.set_title('$\log_2$(Normalised intensity)')
+
+    fig.savefig("marray_all_samples_mb_gene_activity_heatmap.png", dpi=200)
+    fig.savefig("marray_all_samples_mb_gene_activity_heatmap.pdf", dpi=200)
+
+    # v2: log2(absolute) values
+
+    fig = plt.figure(figsize=[5, 8])
+    gs = gridspec.GridSpec(2, len(REF_GROUPS),
+                           height_ratios=[1, 12],
+                           width_ratios=[len(arr) for _, arr in REF_GROUPS])
+    gs.update(
+        left=0.2,
+        right=0.95,
+        top=0.95,
+        bottom=0.15,
+        wspace=0.,
+        hspace=0.1)
+    cbar_kws = {"orientation": "horizontal"}
+
+    for i, (grp, arr) in enumerate(REF_GROUPS):
+        ax = fig.add_subplot(gs[1:, i])
+        if i == (len(REF_GROUPS) - 1):
+            cbar = True
+            cbar_ax = fig.add_subplot(gs[0, :])
+        else:
+            cbar = False
+            cbar_ax = None
+        sns.heatmap(
+            np.log2(marray_by_gene.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES].transpose()),
+            ax=ax,
+            vmin=0,
+            vmax=np.ceil(np.log2(VMAX)),
+            square=True,
+            cmap='Reds',
+            cbar=cbar,
+            cbar_ax=cbar_ax,
+            cbar_kws=cbar_kws
+        )
+        ax.set_xticklabels(arr, rotation=90)
+        if i == 0:
+            plt.yticks(rotation=0)
+        else:
+            ax.set_yticklabels([])
+        ax.set_xlabel(grp)
+        ax.xaxis.set_label_coords(.5, -.15)
+    cbar_ax.set_title('$\log_2$(Normalised intensity)')
+
+    fig.savefig("marray_all_samples_mb_gene_log_activity_heatmap.png", dpi=200)
+    fig.savefig("marray_all_samples_mb_gene_log_activity_heatmap.pdf", dpi=200)
+
+    # v3: standardised by score values
+
+    fig = plt.figure(figsize=[5, 8])
+    gs = gridspec.GridSpec(2, len(REF_GROUPS),
+                           height_ratios=[1, 12],
+                           width_ratios=[len(arr) for _, arr in REF_GROUPS])
+    gs.update(
+        left=0.2,
+        right=0.95,
+        top=0.95,
+        bottom=0.15,
+        wspace=0.,
+        hspace=0.1)
+    cbar_kws = {"orientation": "horizontal"}
+
+    for i, (grp, arr) in enumerate(REF_GROUPS):
+        ax = fig.add_subplot(gs[1:, i])
+        if i == (len(REF_GROUPS) - 1):
+            cbar = True
+            cbar_ax = fig.add_subplot(gs[0, :])
+        else:
+            cbar = False
+            cbar_ax = None
+        sns.heatmap(
+            marray_by_gene_stand.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES].transpose(),
+            ax=ax,
+            vmin=-1,
+            vmax=1.,
+            square=True,
+            cmap='RdBu_r',
+            cbar=cbar,
+            cbar_ax=cbar_ax,
+            cbar_kws=cbar_kws
+        )
+        ax.set_xticklabels(arr, rotation=90)
+        if i == 0:
+            plt.yticks(rotation=0)
+        else:
+            ax.set_yticklabels([])
+        ax.set_xlabel(grp)
+        ax.xaxis.set_label_coords(.5, -.15)
+    cbar_ax.set_title('Standardised score by gene')
+
+    fig.savefig("marray_all_samples_mb_standardised_by_gene_activity_heatmap.png", dpi=200)
+    fig.savefig("marray_all_samples_mb_standardised_by_gene_activity_heatmap.pdf", dpi=200)
 
 
 if __name__ == '__main__':
