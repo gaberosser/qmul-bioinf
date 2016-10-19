@@ -306,7 +306,9 @@ HEALTHY_SAMPLE_NAMES = [
 ]
 
 # load full microarray data
-marray_data = load_illumina_data.load_normed_microarray_data(pval=0.05)
+# marray_data = load_illumina_data.load_normed_microarray_data(pval=0.05)
+marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, return_pvals=True)
+
 # fill NaN with zeros
 # marray_data.fillna(value=0., inplace=True)
 
@@ -359,19 +361,31 @@ for _, arr in REF_GROUPS:
     all_mb_genes.extend(arr)
 
 # standardised scores by gene
+
+# relative to ALL
+# marray_by_gene_stand = (
+#     marray_by_gene.subtract(marray_by_gene.mean(axis=1), axis=0)
+#         .divide(marray_by_gene.std(axis=1), axis=0)
+# )
+# marray_by_gene_stand_log = (
+#     marray_by_gene_log.subtract(marray_by_gene_log.mean(axis=1), axis=0)
+#         .divide(marray_by_gene_log.std(axis=1), axis=0)
+# )
+
+# relative to HEALTHY
 marray_by_gene_stand = (
-    marray_by_gene.subtract(marray_by_gene.mean(axis=1), axis=0)
-        .divide(marray_by_gene.std(axis=1), axis=0)
+    marray_by_gene.subtract(marray_by_gene.loc[:, HEALTHY_SAMPLE_NAMES].mean(axis=1), axis=0)
+        .divide(marray_by_gene.loc[:, HEALTHY_SAMPLE_NAMES].std(axis=1), axis=0)
 )
 marray_by_gene_stand_log = (
-    marray_by_gene_log.subtract(marray_by_gene_log.mean(axis=1), axis=0)
-        .divide(marray_by_gene_log.std(axis=1), axis=0)
+    marray_by_gene_log.subtract(marray_by_gene_log.loc[:, HEALTHY_SAMPLE_NAMES].mean(axis=1), axis=0)
+        .divide(marray_by_gene_log.loc[:, HEALTHY_SAMPLE_NAMES].std(axis=1), axis=0)
 )
-
-VMAX = 15000
 
 # v1: absolute values
 if False:
+    VMAX = 15000
+
     fig = plt.figure(figsize=[5, 8])
     gs = gridspec.GridSpec(2, len(REF_GROUPS),
                            height_ratios=[1, 12],
@@ -664,19 +678,24 @@ fig.savefig("marray_and_rnaseq_all_samples_mb_log_standardised_by_gene_activity_
 fig.savefig("marray_and_rnaseq_all_samples_mb_log_standardised_by_gene_activity_heatmap.pdf", dpi=200)
 
 
-def box_and_scatter_activity(grp, arr):
-    a = all_tpm.loc[arr, :].transpose()
-    b1 = he_tpm.loc[arr, :].transpose()
+def box_and_scatter(a, b1, b2, ylabel=None):
     fig = plt.figure(figsize=(5, 7))
     ax = fig.add_subplot(111)
     sns.boxplot(data=a, ax=ax, flierprops={'markersize': 0})
     sns.stripplot(data=b1, size=6, jitter=True, edgecolor='k', lw=1, ax=ax)
-    # overfill the MB data
-    b2 = mb_tpm.loc[arr, :].transpose()
-    sns.stripplot(data=b2, size=6, jitter=True, color='k', lw=1, ax=ax)
+    sns.stripplot(data=b2, size=6, jitter=True, color='w', edgecolor='k', lw=1, ax=ax)
     ax.set_xlabel(grp)
-    ax.set_ylabel('# reads')
+    if ylabel:
+        ax.set_ylabel(ylabel)
     plt.tight_layout()
+    return fig, ax
+
+
+def box_and_scatter_activity(grp, arr):
+    a = all_tpm.loc[arr, :].transpose()
+    b1 = he_tpm.loc[arr, :].transpose()
+    b2 = mb_tpm.loc[arr, :].transpose()
+    fig, ax = box_and_scatter(a, b1, b2, '# reads')
 
     fig.savefig("marray_and_rnaseq_box_and_scatter_activity_%s.png" % grp, dpi=200)
     fig.savefig("marray_and_rnaseq_box_and_scatter_activity_%s.pdf" % grp, dpi=200)
@@ -685,20 +704,13 @@ def box_and_scatter_activity(grp, arr):
 def box_and_scatter_log_activity(grp, arr):
     a = np.log10(all_tpm.loc[arr, :] + 1e-12).transpose()
     b1 = np.log10(he_tpm.loc[arr, :] + 1e-12).transpose()
-    fig = plt.figure(figsize=(5, 7))
-    ax = fig.add_subplot(111)
-    sns.boxplot(data=a, ax=ax, flierprops={'markersize': 0})
-    sns.stripplot(data=b1, size=6, jitter=True, edgecolor='k', lw=1, ax=ax)
-    # overfill the MB data
     b2 = np.log10(mb_tpm.loc[arr, :] + 1e-12).transpose()
-    sns.stripplot(data=b2, size=6, jitter=True, color='k', lw=1, ax=ax)
-    ax.set_xlabel(grp)
-    ax.set_ylabel('$\log_{10}($# reads)')
-    plt.tight_layout()
+    fig, ax = box_and_scatter(a, b1, b2, '$\log_{10}($# reads)')
 
     fig.savefig("marray_and_rnaseq_box_and_scatter_log10_activity_%s.png" % grp, dpi=200)
     fig.savefig("marray_and_rnaseq_box_and_scatter_log10_activity_%s.pdf" % grp, dpi=200)
 
+sns.set_style('whitegrid')
 for grp, arr in REF_GROUPS:
     box_and_scatter_activity(grp, arr)
     box_and_scatter_log_activity(grp, arr)

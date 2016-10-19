@@ -56,7 +56,7 @@ if __name__ == '__main__':
             elif re.match(anu_regex, l):
                 ct['_alignment_not_unique'] += 1
 
-    df = pd.DataFrame(ct)
+    df = pd.Series(ct)
 
     with open(args[1], 'wb') as f:
         dill.dump(df, f)
