@@ -171,7 +171,7 @@ eps = 1e-12
 
 # standardised vmin
 
-VMIN_N = -2.
+VMIN_N = -3.
 
 # load RNA-Seq healthy and MB
 he_ct, he_tpm, he_meta = load_references.load_cerebellum_rnaseq_reference_data()
@@ -506,8 +506,8 @@ for i, (grp, arr) in enumerate(REF_GROUPS):
     sns.heatmap(
         marray_by_gene_stand.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES].transpose(),
         ax=ax,
-        vmin=-2,
-        vmax=2.,
+        vmin=VMIN_N,
+        vmax=-VMIN_N,
         square=True,
         cmap='RdBu_r',
         cbar=cbar,
@@ -554,8 +554,8 @@ for i, (grp, arr) in enumerate(REF_GROUPS):
     sns.heatmap(
         marray_by_gene_stand_log.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES].transpose(),
         ax=ax,
-        vmin=-2,
-        vmax=2.,
+        vmin=VMIN_N,
+        vmax=-VMIN_N,
         square=True,
         cmap='RdBu_r',
         cbar=cbar,
@@ -605,8 +605,8 @@ for i, (grp, arr) in enumerate(REF_GROUPS):
     sns.heatmap(
         a.transpose(),
         ax=ax,
-        vmin=-2,
-        vmax=2.,
+        vmin=VMIN_N,
+        vmax=-VMIN_N,
         square=True,
         cmap='RdBu_r',
         cbar=cbar,
@@ -657,8 +657,8 @@ for i, (grp, arr) in enumerate(REF_GROUPS):
     sns.heatmap(
         a.transpose(),
         ax=ax,
-        vmin=-2,
-        vmax=2.,
+        vmin=VMIN_N,
+        vmax=-VMIN_N,
         square=True,
         cmap='RdBu_r',
         cbar=cbar,
