@@ -266,7 +266,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
         dill.dump(
             {
                 'tpm': expression_tpm,
-                'counts': expression_cts,
+                'count': expression_cts,
                 'meta': sample_meta
             },
             f)

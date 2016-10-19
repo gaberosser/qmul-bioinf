@@ -4,8 +4,9 @@ import collections
 import os
 import pickle
 import references
+from settings import DATA_DIR
 
-RNASEQ_GENE_COUNTS_DIR = 'data/rnaseq_GSE83696/'
+RNASEQ_GENE_COUNTS_DIR = os.path.join(DATA_DIR, 'rnaseq_GSE83696/')
 RNA_COUNT_FIELDS = [
     '_ambiguous',
     '_no_feature',

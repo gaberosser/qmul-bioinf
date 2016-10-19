@@ -250,6 +250,9 @@ def comparison_healthy_vs_mb_microarray_northcott_genes():
             .divide(marray_by_gene.std(axis=1), axis=0)
     )
 
+
+
+
     # take mean over repeats
     for sn in load_illumina_data.SAMPLE_NAMES:
         marray_by_gene.loc[:, sn] = marray_by_gene.loc[:, [sn, sn + '-R']].mean(axis=1)
