@@ -1,4 +1,5 @@
 from scripts.comparison_rnaseq_microarray import load_illumina_data
+from microarray.process import aggregate_by_probe_set
 import numpy as np
 
 from scipy.stats import nbinom
@@ -11,7 +12,7 @@ marray_data = marray_data.loc[(pvals < 0.05).all(axis=1), :]
 
 probe_set = load_illumina_data.load_illumina_array_library()
 marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
-marray_by_gene = load_illumina_data.aggregate_by_probe_set(marray_ann, method="median")
+marray_by_gene = aggregate_by_probe_set(marray_ann, method="median")
 
 def ll_nbinom(y, X, beta, alph):
     """

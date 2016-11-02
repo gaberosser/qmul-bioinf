@@ -1,4 +1,5 @@
 from scripts.comparison_rnaseq_microarray import load_illumina_data, load_rnaseq_data, load_references, comparisons
+from microarray.process import aggregate_by_probe_set
 import references
 import pandas as pd
 import numpy as np
@@ -318,7 +319,7 @@ marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, r
 
 probe_set = load_illumina_data.load_illumina_array_library()
 marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
-marray_by_gene = load_illumina_data.aggregate_by_probe_set(marray_ann, method=METHOD)
+marray_by_gene = aggregate_by_probe_set(marray_ann, method=METHOD)
 
 # take mean over repeats
 for sn in load_illumina_data.SAMPLE_NAMES:

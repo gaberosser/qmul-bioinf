@@ -1,8 +1,9 @@
 # source("http://www.bioconductor.org/biocLite.R")
 # biocLite("GEOquery")
-library(Biobase)
-library(GEOquery)
+# library(Biobase)
+# library(GEOquery)
 library("limma")
+library("vsn")
 
 dataDir <- '../data/'
 microarrayDir <- file.path(dataDir, 'microarray_GSE28192')
@@ -11,7 +12,6 @@ microarrayFile <- file.path(microarrayDir, 'microarray.RData')
 loadCsv <- function (x) {
   read.csv(x, sep='\t', header = 1, row.names = 1)
 }
-
 
 load_from_raw <- function() {
   # load the sample CSV table
@@ -39,9 +39,13 @@ load_from_raw <- function() {
   )
 }
 
-
 load(microarrayFile)
 
+# transform using the Variance Stabilised Transform (VST)
+v <- vsn2(data.matrix(expr))
+# return to a data.frame
+vstExpr <- data.frame(v@hx)
+colnames(vstExpr) <- colnames(expr)
 
 healthySampleNames = c(
   'NT1197',
@@ -52,21 +56,43 @@ healthySampleNames = c(
   'A508285'
 )
 
+subsamples <- subset(samples, 
+                     grepl(
+                       paste(c(healthySampleNames, '1299'), collapse = '|'), 
+                       name
+                       )
+                     )
+
+subexpr <- vstExpr[subsamples$name]
+
 # setup design matrix
-es1 <- factor(samples$northcott.classification)
-es2 <- factor(sapply(samples[,2], function(x) substr(x, nchar(x) - 1, nchar(x)) == '-R'))
+es1 <- factor(subsamples$northcott.classification)
+es2 <- factor(sapply(subsamples[,2], function(x) substr(x, nchar(x) - 1, nchar(x)) == '-R'))
 
 X <- model.matrix(~0 + es1 + es2)
 # Does this do what we want??
-lm.fit(expr, X)
+fit <- lmFit(subexpr, X)
+contrasts.matrix <- makeContrasts(tech_rpt = es2TRUE, 
+                                  # C_healthy = es1C - es1, 
+                                  D_healthy = es1D - es1, 
+                                  # WNT_healthy = es1WNT - es1,  
+                                  # SHH_healthy = es1SHH - es1,
+                                  levels=X)
 
-# gse <- getGEO('GSE28192', destdir='./tmp-download')
-gse <- getGEO(filename='tmp-download/GSE28192_series_matrix.txt.gz')
-# get the expression matrix
-mat <- exprs(gse)
-# lookup by name match
-mat[1:10, samples[colnames(mat), "name"] == "Pt1299"]
+cfits <- contrasts.fit(fit, contrasts.matrix)
+ebFit <- eBayes(cfits)
 
-# load the probe set definition library
-anno <- getGEO(filename = 'tmp-download/GPL6102.soft')
+# extract all DE above a certain P value
+deHits <- topTable(ebFit, coef='D_healthy', number=Inf, p.value=1e-12)
 
+# 
+# # gse <- getGEO('GSE28192', destdir='./tmp-download')
+# gse <- getGEO(filename='tmp-download/GSE28192_series_matrix.txt.gz')
+# # get the expression matrix
+# mat <- exprs(gse)
+# # lookup by name match
+# mat[1:10, samples[colnames(mat), "name"] == "Pt1299"]
+# 
+# # load the probe set definition library
+# anno <- getGEO(filename = 'tmp-download/GPL6102.soft')
+# 

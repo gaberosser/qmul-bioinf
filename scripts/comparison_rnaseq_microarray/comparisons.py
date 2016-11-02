@@ -1,5 +1,5 @@
 import load_references, load_illumina_data, load_rnaseq_data
-from microarray import aggregate_by_probe_set
+from microarray.process import aggregate_by_probe_set
 import numpy as np
 from scipy import stats, cluster
 import collections

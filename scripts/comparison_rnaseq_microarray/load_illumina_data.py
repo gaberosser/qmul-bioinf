@@ -5,7 +5,7 @@ import collections
 import re
 import os
 from scipy import stats
-from microarray import aggregate_by_probe_set
+from microarray.process import aggregate_by_probe_set
 from settings import DATA_DIR
 
 RAW_MICROARRAY_TXT = os.path.join(DATA_DIR, 'microarray_GSE28192/raw/GSE28192_series_matrix.txt')
