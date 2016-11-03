@@ -55,10 +55,14 @@ def load_hkg_list():
 
 if __name__ == '__main__':
     from scripts.agdex_mouse_human_mb_microarray import load_sb_mouse_data
+    from scripts.comparison_rnaseq_microarray import load_illumina_data
     from plotting import corr
     import pandas as pd
     from matplotlib import pyplot as plt
     import seaborn as sns
+
+    FIGSIZE = (10.25, 8.)
+    fig_kwargs = {'figsize': FIGSIZE}
 
     healthy = load_annotated_microarray_gse54650()
 
@@ -105,17 +109,42 @@ if __name__ == '__main__':
     yg_all = pd.concat((yg_healthy_log, yg_mb), axis=1)
 
     # plot correlation using ALL matching genes
-    corr.plot_correlation_coefficient_array(yg_all, vmin=0.8)
+    if False:
+        corr.plot_correlation_coefficient_array(yg_all, vmin=0.8, fig_kwargs=fig_kwargs)
+        plt.tight_layout()
 
-    # HKG
-    hkg = load_hkg_list()
+    # HKG - use a few 'standard' ones
+    # from http://www.sabiosciences.com/rt_pcr_product/HTML/PAMM-000A.html
+    # https://www.qiagen.com/us/spotlight-pages/newsletters-and-magazines/articles/endogenous-controls/
+    hkg = [
+        'Rn18s',
+        'Actb',
+        'Gapdh',
+        'Rpl13a',
+        'B2m',
+        'Hmbs',
+        'Pgk1',
+        'Hsp90ab1',
+        # 'Hprt',  # this one is a bit noisy?
+        'Pgk1',
+    ]
 
-    # TODO: some of the names used in the HJG list seem to match on SYNONYMS
+    # use the list of genes published in a Nature paper
+    # hkg = load_hkg_list()
+    # TODO: some of the names used in the HKG list seem to match on SYNONYMS
     # e.g. 0610008A10Rik is a synonym of Aph1b
     # Initially 66 / 121 HKGs are matched, but we can probably do better
+    # NB: These performed very poorly in terms of improving correlation between the two mouse datasets
 
     common_hkg = yg_all.index.intersection(hkg)
 
     yg_hkg_all = yg_all.loc[common_hkg]
 
-    corr.plot_correlation_coefficient_array(yg_hkg_all, vmin=0.8)
+    if False:
+        corr.plot_correlation_coefficient_array(yg_hkg_all, vmin=0.8, fig_kwargs=fig_kwargs)
+        plt.tight_layout()
+
+    # load human samples
+    hu_all = load_illumina_data.load_normed_microarray_data(pval=0.01)
+    ilm_probes = load_illumina_data.load_illumina_array_library()
+    hu_all = load_illumina_data.convert_microarray_to_gene_activity(hu_all, ilm_probes)

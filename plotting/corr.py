@@ -9,6 +9,8 @@ def plot_correlation_coefficient_array(
         vmax=1,
         fmin=None,
         fmax=None,
+        fig_kwargs=None,
+        plot_kwargs=None,
 ):
     """
     Plot a right-angled triangular array of coloured squares showing the pairwise correlation between each column in
@@ -20,6 +22,14 @@ def plot_correlation_coefficient_array(
     import seaborn as sns
     sns.set_style('white')
     # rc('text', usetex=True)
+
+    if fig_kwargs is None:
+        fig_kwargs = {}
+
+    if plot_kwargs is None:
+        plot_kwargs = {}
+
+    origin = plot_kwargs.pop('origin', 'lower')
 
     n = pd_arr.shape[1]
     # generate correlation matrix
@@ -37,9 +47,9 @@ def plot_correlation_coefficient_array(
     c.values[np.triu_indices_from(c, 1)] = np.nan
 
     # plot
-    fig = plt.figure(figsize=(8, 8))
+    fig = plt.figure(**fig_kwargs)
     ax = fig.add_subplot(111)
-    h = ax.matshow(c, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower')
+    h = ax.matshow(c, cmap=cmap, vmin=vmin, vmax=vmax, origin=origin, **plot_kwargs)
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
     ax.set_xticklabels(pd_arr.columns, rotation=30)
