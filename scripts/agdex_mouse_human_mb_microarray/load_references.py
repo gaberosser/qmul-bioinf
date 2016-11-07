@@ -14,7 +14,7 @@ def load_hkg_list():
 
 if __name__ == '__main__':
     from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table
-    from scripts.comparison_rnaseq_microarray import load_illumina_data
+    from scripts.comparison_rnaseq_microarray import load_references
     from plotting import corr
     import pandas as pd
     from matplotlib import pyplot as plt
@@ -93,25 +93,34 @@ if __name__ == '__main__':
         plt.tight_layout()
 
     # load human samples and avg over repeats
-    hu_all_raw = load_illumina_data.load_normed_microarray_data(pval=None)
-    hu_all = pd.DataFrame(columns=load_illumina_data.SAMPLE_NAMES, index=hu_all_raw.index)
-    for s in load_illumina_data.SAMPLE_NAMES:
-        hu_all.loc[:, s] = hu_all_raw.loc[:, [s, s + '-R']].mean(axis=1)
+    hu_mb, hu_mb_meta = load_data.load_annotated_microarray_gse37382()
+
+
+    hu_he, hu_he_meta = load_references.load_cerebellum_microarray_reference_data()
+    hu_he = load_references.microarray_entrez_markers(hu_he, method='median')
+
+    hu_all = pd.concat((hu_he, hu_mb), axis=1)
+
+    # hu_all_raw = load_illumina_data.load_normed_microarray_data(pval=None)
+    # hu_all = pd.DataFrame(columns=load_illumina_data.SAMPLE_NAMES, index=hu_all_raw.index)
+    # for s in load_illumina_data.SAMPLE_NAMES:
+    #     hu_all.loc[:, s] = hu_all_raw.loc[:, [s, s + '-R']].mean(axis=1)
+
     # TODO: implement the log transform in R?
     # hu_all = np.log2(hu_all)
 
-    ilm_probes = load_illumina_data.load_illumina_array_library()
-    hu_all = load_illumina_data.add_entrez_column(hu_all, ilm_probes)
-    hu_all = process.aggregate_by_probe_set(hu_all, groupby='entrez_id').dropna(how='all')
-    hu_all.index = hu_all.index.astype(int)
+    # ilm_probes = load_illumina_data.load_illumina_array_library()
+    # hu_all = load_illumina_data.add_entrez_column(hu_all, ilm_probes)
+    # hu_all = process.aggregate_by_probe_set(hu_all, groupby='entrez_id').dropna(how='all')
+    # hu_all.index = hu_all.index.astype(int)
 
     yg_hu_all = process.yugene_transform(hu_all)
 
     # write to txt for R
-    mo_all.to_csv('mo.txt')
-    yg_mo_all.to_csv('mo_yg.txt')
-    hu_all.to_csv('hu.txt')
-    yg_hu_all.to_csv('hu_yg.txt')
+    mo_all.to_csv('mo.txt.gz', compression='gzip')
+    yg_mo_all.to_csv('mo_yg.txt.gz', compression='gzip')
+    hu_all.to_csv('hu.txt.gz', compression='gzip')
+    yg_hu_all.to_csv('hu_yg.txt.gz', compression='gzip')
 
     mouse_tid = 10090
     human_tid = 9606
@@ -133,11 +142,13 @@ if __name__ == '__main__':
     mo_mb_grp2_names = mo_mb.columns[3:]
 
     # write phenoData to txt
-    hu_meta = load_illumina_data.load_sample_metadata()
+    # hu_meta = load_illumina_data.load_sample_metadata()
     hu_pdata = pd.DataFrame(columns=['type', 'subgroup'], index=hu_all.columns)
-    hu_pdata.loc[hu_he_names, :] = ['hu.control', 'hu.control']
-    hu_pdata.loc[hu_mb_names, 'subgroup'] = hu_meta.loc[hu_meta.loc[:, 'name'].isin(hu_mb_names), 'northcott classification'].values
-    hu_pdata.loc[hu_mb_names, 'type'] = 'hu.mb'
+    hu_pdata.loc[hu_he.columns, :] = ['hu.control', 'hu.control']
+    hu_subgroups = hu_mb_meta.loc[:, 'subgroup'].replace('Group 3', 'C').replace('Group 4', 'D')
+    hu_pdata.loc[hu_mb.columns, 'subgroup'] = hu_subgroups
+
+    hu_pdata.loc[hu_mb.columns, 'type'] = 'hu.mb'
     hu_pdata.to_csv('hu_pdata.txt')
 
     mo_pdata = pd.DataFrame(columns=['type', 'chd7'], index=mo_all.columns)

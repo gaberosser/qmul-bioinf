@@ -52,7 +52,7 @@ def get_structure_ids_by_parent(ontol, parent_id):
     return struct_ids
 
 
-def prepare_cerebellum_microarray_reference_data(outfile=None):
+def prepare_cerebellum_microarray_reference_data(outfile=None, mask_nonsig=False):
 
     INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
     DONOR_NUMBERS = [
@@ -86,27 +86,28 @@ def prepare_cerebellum_microarray_reference_data(outfile=None):
     for dn in DONOR_NUMBERS:
         logger.info("Processing donor %d", dn)
         this_dir = os.path.join(INDIR, "donor%d" % dn)
-        expre_fn = os.path.join(this_dir, 'MicroarrayExpression.csv')
-        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv')
-        pacal_fn = os.path.join(this_dir, 'PACall.csv')
+        expre_fn = os.path.join(this_dir, 'MicroarrayExpression.csv.gz')
+        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
+        pacal_fn = os.path.join(this_dir, 'PACall.csv.gz')
 
         sampl = pd.read_csv(sampl_fn)
-        pacal = pd.read_csv(pacal_fn, header=None, index_col=0).astype(bool)
-        expre = pd.read_csv(expre_fn, header=None, index_col=0)
 
         # set sample IDs
         sampl_idx = pd.Index(['%d_%d' % (dn, i) for i in range(sampl.shape[0])])
         sampl.index = sampl_idx
-        expre.columns = sampl_idx
-        pacal.columns = sampl_idx
 
+        expre = pd.read_csv(expre_fn, header=None, index_col=0)
+        expre.columns = sampl_idx
         # filter sample annotation and expression for recognized probes
-        pacal = pacal.loc[probes.index]
         expre = expre.loc[probes.index]
 
-        # filter expression by PA call
-        # this replaces all non-significant results with NaN
-        expre = expre[pacal]
+        if mask_nonsig:
+            pacal = pd.read_csv(pacal_fn, header=None, index_col=0).astype(bool)
+            pacal.columns = sampl_idx
+            pacal = pacal.loc[probes.index]
+            # filter expression by PA call
+            # this replaces all non-significant results with NaN
+            expre = expre[pacal]
 
         # filter sample annotation by ontology
         sampl_idx2 = sampl[sampl.structure_id.isin(struct_ids)].index
@@ -159,6 +160,8 @@ def _microarray_probe_to_gene(marray_data, lookup=None, method='max', groupby='g
         data = grp_data.mean()
     elif method == 'sum':
         data = grp_data.sum()
+    elif method == 'median':
+        data = grp_data.median()
     else:
         raise ValueError("Method %s not supported", method)
 

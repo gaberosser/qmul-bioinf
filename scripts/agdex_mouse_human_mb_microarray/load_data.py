@@ -65,3 +65,13 @@ def load_annotated_microarray_sb_data(index_field='entrez_id'):
     # CHD7 status
     chd7 = pd.Series(data=[True] * 3 + [False] * 5, index=sample_names)
     return arr_data, chd7
+
+
+def load_annotated_microarray_gse37382(index_field='entrez_id'):
+    infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
+    meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
+    sample_names = list(meta.index)
+
+    arr = load_from_r_processed(infile, sample_names, index_field=index_field)
+    return arr, meta

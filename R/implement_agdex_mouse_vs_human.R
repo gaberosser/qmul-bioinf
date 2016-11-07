@@ -1,23 +1,26 @@
-#source("http://www.bioconductor.org/biocLite.R")
+# source("http://www.bioconductor.org/biocLite.R")
 
 library(AGDEX)
 library(Biobase)
-library(vsn)
+# library(vsn)
 
-hu.expr.raw <- read.csv('hu_yg.txt', row.names = 1, header = 1, check.names = TRUE)
-# hu data is only BG corrected, so apply a var. stabilising transform
+data.dir <- '../data/agdex_mb_comparison_rdata/'
+
+hu.expr.raw <- read.csv(file.path(data.dir, 'hu_yg.txt.gz'), row.names = 1, header = 1, check.names = TRUE)
+
+# Not needed, but here is how to apply a var. stabilising transform:
 # v <- vsn2(data.matrix(hu.expr.raw))
 # hu.expr.vst <- data.frame(v@hx)
 
-mo.expr.raw <- read.csv('mo_yg.txt', row.names = 1, header = 1, check.names = FALSE)
+mo.expr.raw <- read.csv(file.path(data.dir, 'mo_yg.txt.gz'), row.names = 1, header = 1, check.names = FALSE)
 
-hu.pdata.raw <- read.csv('hu_pdata.txt', row.names=1, header = 1)
+hu.pdata.raw <- read.csv(file.path(data.dir, 'hu_pdata.txt'), row.names=1, header = 1)
 
 # manually alter the names
 rownames(hu.pdata.raw) <- colnames(hu.expr.raw)
 
 
-mo.pdata.raw <- read.csv('mo_pdata.txt', row.names=1, header = 1)
+mo.pdata.raw <- read.csv(file.path(data.dir, 'mo_pdata.txt'), row.names=1, header = 1)
 
 hu.pdata.meta <- data.frame(labelDescription=c("Case/control", "MB Northcott classification"), row.names=colnames(hu.pdata.raw))
 mo.pdata.meta <- data.frame(labelDescription=c("Case/control", "CHD7 insertion status"), row.names=colnames(mo.pdata.raw))
@@ -34,11 +37,14 @@ all(rownames(pData(hu.expr.eset))==colnames(exprs(hu.expr.eset)))
 all(rownames(pData(mo.expr.eset))==colnames(exprs(mo.expr.eset)))
 
 # compute dex
-dex.set.hu <- make.dex.set.object(Eset.data = hu.expr.eset, comp.var=2, comp.def = "WNT-hu.control")
-# dex.set.hu <- make.dex.set.object(Eset.data = hu.expr.eset, comp.var=1, comp.def = "hu.mb-hu.control")
+# mouse samples: always MB vs WT
 dex.set.mo <- make.dex.set.object(Eset.data = mo.expr.eset, comp.var=1, comp.def = "mo.mb-mo.control")
+# human samples: MB vs WT
+dex.set.hu <- make.dex.set.object(Eset.data = hu.expr.eset, comp.var=1, comp.def = "hu.mb-hu.control")
 
-probe.map <- read.csv('homolog_mapping.txt', header = 1, row.names = 1)
+# dex.set.hu <- make.dex.set.object(Eset.data = hu.expr.eset, comp.var=2, comp.def = "WNT-hu.control")
+
+probe.map <- read.csv(file.path(data.dir, 'homolog_mapping.txt'), header = 1, row.names = 1)
 map.data <- list(
   probe.map = probe.map,
   map.Aprobe.col = 3,
