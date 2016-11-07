@@ -63,6 +63,11 @@ SAMPLE_NAMES = [
 ]
 
 
+def load_sample_metadata():
+    infile = os.path.join(DATA_DIR, 'microarray_GSE28192', 'sources.csv')
+    return pd.read_csv(infile)
+
+
 def load_illumina_array_library():
     with open(MICROARRAY_LIBRARY, 'rb') as f:
         while True:

@@ -1,6 +1,11 @@
+# R files
+.Rhistory
+
+# temp files
+*~
+
 # local settings and data
 _local.py
-# data/  # now running on LFS
 
 # PyCharm
 .idea/

@@ -47,8 +47,9 @@ def homologs(tid1, tid2, field='gene_symbol'):
     map2.set_index('hid', inplace=True)
 
     # map on the field HID
-    res = pd.DataFrame(columns=[tid1, tid2], index=joint_hid)
-    res.loc[:, tid1] = map1.loc[:, field]
-    res.loc[:, tid2] = map2.loc[:, field]
+    col_names = ["%s_%d" % (field, tid1), "%s_%d" % (field, tid2)]
+    res = pd.DataFrame(columns=col_names, index=joint_hid)
+    res.loc[:, col_names[0]] = map1.loc[:, field]
+    res.loc[:, col_names[1]] = map2.loc[:, field]
 
     return res
