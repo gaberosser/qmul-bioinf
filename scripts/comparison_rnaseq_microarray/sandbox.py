@@ -113,22 +113,29 @@ ALL_NORTHCOTT = [
     'KCNIP4',
     'NEUROD2',
     'ST18',
-    'OTX2',  # not Northcott, requested by SB
+    # 'OTX2',  # not Northcott, requested by SB
 ]
 
-REF_GROUPS = (
+NORTHCOTT_GENES = (
+    ('WNT', ALL_NORTHCOTT[ALL_NORTHCOTT.index('WIF1'):ALL_NORTHCOTT.index('PDLIM3')]),
+    ('SHH', ALL_NORTHCOTT[ALL_NORTHCOTT.index('PDLIM3'):ALL_NORTHCOTT.index('IMPG2')]),
+    ('Group C', ALL_NORTHCOTT[ALL_NORTHCOTT.index('IMPG2'):ALL_NORTHCOTT.index('KCNA1')]),
+    ('Group C', ALL_NORTHCOTT[ALL_NORTHCOTT.index('KCNA1'):]),
+)
+
+NANOSTRING_GENES = (
     ('WNT', ('WIF1', 'TNC', 'GAD1', 'DKK2', 'EMX2'),),
     ('SHH', ('PDLIM3', 'EYA1', 'HHIP', 'ATOH1', 'SFRP1'),),
     ('Group C', ('IMPG2', 'GABRA5', 'EGFL11', 'NRL', 'MAB21L2', 'NPR3'),),  # EYS = EGFL11
     ('Group D', ('KCNA1', 'EOMES', 'KHDRBS2', 'RBM24', 'UNC5D', 'OAS1', 'OTX2')),  # OTX2 added by SB
 )
 
-MB_GROUPS = (
-    ('WNT', ('WIF1', 'TNC', 'GAD1', 'DKK2', 'EMX2'),),
-    ('SHH', ('PDLIM3', 'EYA1', 'HHIP', 'ATOH1', 'SFRP1'),),
-    ('Group C', ('IMPG2', 'GABRA5', 'EYS', 'NRL', 'MAB21L2', 'NPR3'),),  # EYS = EGFL11
-    ('Group D', ('KCNA1', 'EOMES', 'KHDRBS2', 'RBM24', 'UNC5D', 'OAS1', 'OTX2')),  # OTX2 added by SB
-)
+# MB_GROUPS = (
+#     ('WNT', ('WIF1', 'TNC', 'GAD1', 'DKK2', 'EMX2'),),
+#     ('SHH', ('PDLIM3', 'EYA1', 'HHIP', 'ATOH1', 'SFRP1'),),
+#     ('Group C', ('IMPG2', 'GABRA5', 'EYS', 'NRL', 'MAB21L2', 'NPR3'),),  # EYS = EGFL11
+#     ('Group D', ('KCNA1', 'EOMES', 'KHDRBS2', 'RBM24', 'UNC5D', 'OAS1', 'OTX2')),  # OTX2 added by SB
+# )
 
 SAMPLE_GROUPS = (
     ('WNT', ('Pt1140', 'ICb1140-II', 'ICb1140-III', 'Pt1192', 'ICb1192-I', 'ICb1192-III', 'ICb1192-V')),
@@ -165,7 +172,7 @@ SAMPLE_GROUPS = (
 
 from plotting import bar
 
-plt = bar.plt
+# plt = bar.plt
 
 # addition for logging
 eps = 1e-12
@@ -193,8 +200,8 @@ mb_tpm_log = np.log10(mb_tpm + eps)
 he_tpm_log = np.log10(he_tpm + eps)
 
 # standardize using mean from pool of ALL data
-all_tpm = mb_tpm.copy()
-all_tpm = pd.concat((all_tpm, he_tpm), axis=1, join='inner')
+# all_tpm = mb_tpm.copy()
+all_tpm = pd.concat((mb_tpm, he_tpm), axis=1, join='inner')
 all_tpm_log = np.log10(all_tpm + eps)
 
 all_tpm_n = all_tpm.subtract(all_tpm.mean(axis=1), axis=0).divide(all_tpm.std(axis=1), axis=0)
@@ -206,9 +213,9 @@ mb_tpm_nlog = mb_tpm_log.subtract(all_tpm_log.mean(axis=1), axis=0).divide(all_t
 # plot standardized gene scores for Northcott groups
 
 fig = plt.figure(figsize=[5, 4])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 16],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -219,9 +226,9 @@ gs.update(
 cbar_kws = {"orientation": "horizontal"}
 
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -253,9 +260,9 @@ fig.savefig("rnaseq_mb_standardised_by_gene_activity_heatmap.pdf", dpi=200)
 # plot standardized LOG gene scores for Northcott groups
 
 fig = plt.figure(figsize=[5, 4])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 16],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -265,9 +272,9 @@ gs.update(
     hspace=0.)
 cbar_kws = {"orientation": "horizontal"}
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -358,7 +365,7 @@ if False:
 ## WEEK 5
 
 all_mb_genes = []
-for _, arr in REF_GROUPS:
+for _, arr in NANOSTRING_GENES:
     all_mb_genes.extend(arr)
 
 # standardised scores by gene
@@ -388,9 +395,9 @@ if False:
     VMAX = 15000
 
     fig = plt.figure(figsize=[5, 8])
-    gs = gridspec.GridSpec(2, len(REF_GROUPS),
+    gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                            height_ratios=[1, 12],
-                           width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                           width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
     gs.update(
         left=0.2,
         right=0.95,
@@ -401,9 +408,9 @@ if False:
     cbar_kws = {"orientation": "horizontal"}
 
 
-    for i, (grp, arr) in enumerate(REF_GROUPS):
+    for i, (grp, arr) in enumerate(NANOSTRING_GENES):
         ax = fig.add_subplot(gs[1:, i])
-        if i == (len(REF_GROUPS) - 1):
+        if i == (len(NANOSTRING_GENES) - 1):
             cbar = True
             cbar_ax = fig.add_subplot(gs[0, :])
         else:
@@ -436,9 +443,9 @@ if False:
 
 if False:
     fig = plt.figure(figsize=[5, 8])
-    gs = gridspec.GridSpec(2, len(REF_GROUPS),
+    gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                            height_ratios=[1, 12],
-                           width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                           width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
     gs.update(
         left=0.2,
         right=0.95,
@@ -449,9 +456,9 @@ if False:
     cbar_kws = {"orientation": "horizontal"}
 
 
-    for i, (grp, arr) in enumerate(REF_GROUPS):
+    for i, (grp, arr) in enumerate(NANOSTRING_GENES):
         ax = fig.add_subplot(gs[1:, i])
-        if i == (len(REF_GROUPS) - 1):
+        if i == (len(NANOSTRING_GENES) - 1):
             cbar = True
             cbar_ax = fig.add_subplot(gs[0, :])
         else:
@@ -483,9 +490,9 @@ if False:
 # v3: standardised by score values
 
 fig = plt.figure(figsize=[5, 8])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 12],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -496,9 +503,9 @@ gs.update(
 cbar_kws = {"orientation": "horizontal"}
 
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -531,9 +538,9 @@ fig.savefig("marray_all_samples_mb_standardised_by_gene_activity_heatmap.pdf", d
 # v3b: as v3 but logged data
 
 fig = plt.figure(figsize=[5, 8])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 12],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -544,9 +551,9 @@ gs.update(
 cbar_kws = {"orientation": "horizontal"}
 
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -578,9 +585,9 @@ fig.savefig("marray_all_samples_mb_log_standardised_by_gene_activity_heatmap.pdf
 # v4: combine with RNA-Seq
 
 fig = plt.figure(figsize=[5, 8])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 12],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -591,13 +598,13 @@ gs.update(
 cbar_kws = {"orientation": "horizontal"}
 
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     m = marray_by_gene_stand.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES]
     r = mb_tpm_n.loc[arr, :]
     a = pd.concat((m, r), axis=1)
 
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -630,9 +637,9 @@ fig.savefig("marray_and_rnaseq_all_samples_mb_standardised_by_gene_activity_heat
 # v4b: as v4 but log
 
 fig = plt.figure(figsize=[5, 8])
-gs = gridspec.GridSpec(2, len(REF_GROUPS),
+gs = gridspec.GridSpec(2, len(NANOSTRING_GENES),
                        height_ratios=[1, 12],
-                       width_ratios=[len(arr) for _, arr in REF_GROUPS])
+                       width_ratios=[len(arr) for _, arr in NANOSTRING_GENES])
 gs.update(
     left=0.2,
     right=0.95,
@@ -643,13 +650,13 @@ gs.update(
 cbar_kws = {"orientation": "horizontal"}
 
 
-for i, (grp, arr) in enumerate(REF_GROUPS):
+for i, (grp, arr) in enumerate(NANOSTRING_GENES):
     m = marray_by_gene_stand_log.loc[arr, all_northcott_patients + HEALTHY_SAMPLE_NAMES]
     r = mb_tpm_n.loc[arr, :]
     a = pd.concat((m, r), axis=1)
 
     ax = fig.add_subplot(gs[1:, i])
-    if i == (len(REF_GROUPS) - 1):
+    if i == (len(NANOSTRING_GENES) - 1):
         cbar = True
         cbar_ax = fig.add_subplot(gs[0, :])
     else:
@@ -712,7 +719,7 @@ def box_and_scatter_log_activity(grp, arr):
     fig.savefig("marray_and_rnaseq_box_and_scatter_log10_activity_%s.pdf" % grp, dpi=200)
 
 sns.set_style('whitegrid')
-for grp, arr in REF_GROUPS:
+for grp, arr in NANOSTRING_GENES:
     box_and_scatter_activity(grp, arr)
     box_and_scatter_log_activity(grp, arr)
 

@@ -260,7 +260,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
         logger.info("Completed donor %d", dn)
 
-    # give expresion index a meaningful name
+    # give expression index a meaningful name
     expression_tpm.index.name = 'gene_symbol'
     expression_cts.index.name = 'gene_symbol'
 

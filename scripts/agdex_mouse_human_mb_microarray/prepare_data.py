@@ -99,21 +99,7 @@ if __name__ == '__main__':
     hu_he, hu_he_meta = load_references.load_cerebellum_microarray_reference_data()
     hu_he = load_references.microarray_entrez_markers(hu_he, method='median')
 
-    hu_all = pd.concat((hu_he, hu_mb), axis=1)
-
-    # hu_all_raw = load_illumina_data.load_normed_microarray_data(pval=None)
-    # hu_all = pd.DataFrame(columns=load_illumina_data.SAMPLE_NAMES, index=hu_all_raw.index)
-    # for s in load_illumina_data.SAMPLE_NAMES:
-    #     hu_all.loc[:, s] = hu_all_raw.loc[:, [s, s + '-R']].mean(axis=1)
-
-    # TODO: implement the log transform in R?
-    # hu_all = np.log2(hu_all)
-
-    # ilm_probes = load_illumina_data.load_illumina_array_library()
-    # hu_all = load_illumina_data.add_entrez_column(hu_all, ilm_probes)
-    # hu_all = process.aggregate_by_probe_set(hu_all, groupby='entrez_id').dropna(how='all')
-    # hu_all.index = hu_all.index.astype(int)
-
+    hu_all = pd.concat((hu_he, hu_mb), axis=1).dropna(axis=0, how='any')
     yg_hu_all = process.yugene_transform(hu_all)
 
     # write to txt for R
