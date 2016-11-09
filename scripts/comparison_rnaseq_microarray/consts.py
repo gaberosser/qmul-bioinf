@@ -99,14 +99,14 @@ ALL_NORTHCOTT = [
     'KCNIP4',
     'NEUROD2',
     'ST18',
-    # 'OTX2',  # not Northcott, requested by SB
+    'OTX2',  # not Northcott, requested by SB
 ]
 
 NORTHCOTT_GENES = (
     ('WNT', ALL_NORTHCOTT[ALL_NORTHCOTT.index('WIF1'):ALL_NORTHCOTT.index('PDLIM3')]),
     ('SHH', ALL_NORTHCOTT[ALL_NORTHCOTT.index('PDLIM3'):ALL_NORTHCOTT.index('IMPG2')]),
     ('Group C', ALL_NORTHCOTT[ALL_NORTHCOTT.index('IMPG2'):ALL_NORTHCOTT.index('KCNA1')]),
-    ('Group C', ALL_NORTHCOTT[ALL_NORTHCOTT.index('KCNA1'):]),
+    ('Group D', ALL_NORTHCOTT[ALL_NORTHCOTT.index('KCNA1'):]),
 )
 
 NANOSTRING_GENES = (
@@ -147,4 +147,12 @@ SAMPLE_GROUPS_ZHANG = (
         'ICb1487-I',
         'ICb1487-III',
     )),
+    ('Healthy cerebellum', (
+        'NT1197',
+        'NCb1',
+        'NCb2',
+        'A911105',
+        'A508112',
+        'A508285',
+    ))
 )

@@ -34,6 +34,7 @@ def grouped_expression_heatmap(
         groups,
         data,
         vmax=None,
+        cbar=True,
         fig_kwargs=None,
         gs_kwargs=None,
         heatmap_kwargs=None,
@@ -58,17 +59,27 @@ def grouped_expression_heatmap(
     heatmap_kwargs.setdefault('vmin', vmin)
     heatmap_kwargs.setdefault('vmax', vmax)
     heatmap_kwargs.setdefault('square', True)
-    heatmap_kwargs.setdefault('cmap', 'RdBu_r')
-    heatmap_kwargs.setdefault('cbar_kws', {'orientation': orientation})
+    if cbar:
+        heatmap_kwargs.setdefault('cmap', 'RdBu_r')
+        heatmap_kwargs.setdefault('cbar_kws', {'orientation': orientation})
 
     if horiz:
-        gs_kwargs.setdefault('width_ratios', [len(arr) for _, arr in groups])
-        gs_kwargs.setdefault('height_ratios', [1, 16])
-        gs = gridspec.GridSpec(2, len(groups), **gs_kwargs)
+        if cbar:
+            gs_kwargs.setdefault('width_ratios', [len(arr) for _, arr in groups])
+            gs_kwargs.setdefault('height_ratios', [1, 16])
+            gs = gridspec.GridSpec(2, len(groups), **gs_kwargs)
+        else:
+            gs_kwargs.setdefault('width_ratios', [len(arr) for _, arr in groups])
+            gs = gridspec.GridSpec(1, len(groups), **gs_kwargs)
+
     else:
-        gs_kwargs.setdefault('height_ratios', [len(arr) for _, arr in groups])
-        gs_kwargs.setdefault('width_ratios', [16, 1])
-        gs = gridspec.GridSpec(len(groups), 2, **gs_kwargs)
+        if cbar:
+            gs_kwargs.setdefault('height_ratios', [len(arr) for _, arr in groups])
+            gs_kwargs.setdefault('width_ratios', [16, 1])
+            gs = gridspec.GridSpec(len(groups), 2, **gs_kwargs)
+        else:
+            gs_kwargs.setdefault('height_ratios', [len(arr) for _, arr in groups])
+            gs = gridspec.GridSpec(len(groups), 1, **gs_kwargs)
 
     fig = plt.figure(**fig_kwargs)
 
@@ -97,22 +108,24 @@ def grouped_expression_heatmap(
         else:
             ax = fig.add_subplot(gs[i, 0:])
         axs.append(ax)
+        cbar_ax = None
         if i == (len(groups) - 1):
-            cbar = True
-            if horiz:
-                cbar_ax = fig.add_subplot(gs[0, :])
-            else:
-                cbar_ax = fig.add_subplot(gs[:, 1])
+            this_cbar = True if cbar else False
+            if this_cbar:
+                if horiz:
+                    cbar_ax = fig.add_subplot(gs[0, :])
+                else:
+                    cbar_ax = fig.add_subplot(gs[:, 1])
         else:
-            cbar = False
-            cbar_ax = None
+            this_cbar = False
+
         this_data = data.loc[arr, :]
         if horiz:
             this_data = this_data.transpose()
         sns.heatmap(
             this_data,
             ax=ax,
-            cbar=cbar,
+            cbar=this_cbar,
             cbar_ax=cbar_ax,
             **heatmap_kwargs
         )
@@ -124,7 +137,7 @@ def grouped_expression_heatmap(
                 ax.set_yticklabels([])
 
         else:
-            ax.set_yticklabels(arr, rotation=0)
+            ax.set_yticklabels(arr[::-1], rotation=0)  # NB: reverse array ordering due to reversed y axis
             ax.set_ylabel(grp)
             if i != len(groups) - 1:
                 # only bottom-most axis needs xticklabels
@@ -146,7 +159,3 @@ def grouped_expression_heatmap(
         align_labels(axs, 'y')
 
     return fig, axs, cbar_ax
-# cbar_ax.set_title('Standardised score by gene')
-
-# fig.savefig("rnaseq_mb_standardised_by_gene_activity_heatmap.png", dpi=200)
-# fig.savefig("rnaseq_mb_standardised_by_gene_activity_heatmap.pdf", dpi=200)
