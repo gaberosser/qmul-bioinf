@@ -6,7 +6,7 @@ import pickle
 import references
 from settings import DATA_DIR
 
-RNASEQ_GENE_COUNTS_DIR = os.path.join(DATA_DIR, 'rnaseq_GSE83696/')
+RNASEQ_GENE_COUNTS_DIR = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'cufflinks')
 RNA_COUNT_FIELDS = [
     '_ambiguous',
     '_no_feature',
@@ -43,53 +43,44 @@ def load_rnaseq_htseq_count_data(by_gene=False):
     return res
 
 
-def load_rnaseq_cufflinks_gene_count_data(unit='fpkm', return_ci=False):
+def load_rnaseq_cufflinks_gene_count_data(unit='fpkm'):
     """
     Load in FPKM data from pre-existing Cufflinks run.
     Optionally convert units to TPM (values sum to 1). This is useful for comparison.
     NB: the confidence intervals are BROKEN, so don't use them.
     :param unit: Either 'fpkm' (do nothing) or 'tpm' (convert to TPM units)
-    :param return_ci: If True return the confidence intervals. Not worth it: they are broken and meaningless.
     :return:
     """
     if unit not in ('fpkm', 'tpm'):
         raise ValueError("Unsupported unit %s. Supported options are tpm, fpkm.", unit)
 
-    infiles = {
-        'XZ1': 'XZ-1.genes.fpkm_tracking',
-        'XZ2': 'XZ-2.genes.fpkm_tracking',
-    }
+    sample_names = [
+        ('XZ-1', 'Scramble.1'),
+        ('XZ-2', 'Scramble.2'),
+        ('XZ-3', 'shBMI1.1'),
+        ('XZ-4', 'shBMI1.2'),
+        ('XZ-5', 'shCHD7.1'),
+        ('XZ-6', 'shCHD7.2'),
+        ('XZ-7', 'shBMI1_CHD7.1'),
+        ('XZ-8', 'shBMI1_CHD7.2'),
+    ]
 
     res = pd.DataFrame()
-    res_ci_lo = pd.DataFrame()
-    res_ci_hi = pd.DataFrame()
 
-    for tag, fn in infiles.items():
+    for i, sn in sample_names:
+        fn = "%s.genes.fpkm_tracking" % i
         ff = os.path.join(RNASEQ_GENE_COUNTS_DIR, fn)
         t = pd.read_csv(ff, header=0, index_col=0, sep='\t')
 
         r = t.loc[t.FPKM_status == 'OK', 'FPKM']
         r = r.groupby(r.index).sum()
-        res[tag] = r
-
-        r_lo = t.loc[t.FPKM_status == 'OK', 'FPKM_conf_lo']
-        r_lo = r_lo.groupby(r_lo.index).sum()
-        res_ci_lo[tag] = r_lo
-
-        r_hi = t.loc[t.FPKM_status == 'OK', 'FPKM_conf_hi']
-        r_hi = r_hi.groupby(r_hi.index).sum()
-        res_ci_hi[tag] = r_hi
+        res[sn] = r
 
         if unit == 'tpm':
-            k = res[tag].sum()
-            res[tag] /= k
-            res_ci_lo[tag] /= k
-            res_ci_hi[tag] /= k
+            k = res[sn].sum()
+            res[sn] /= k
 
-    if return_ci:
-        return res, res_ci_lo, res_ci_hi
-    else:
-        return res
+    return res
 
 
 def rnaseq_activity_in_groups(df):

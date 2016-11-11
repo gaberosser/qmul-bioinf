@@ -9,7 +9,7 @@ import seaborn as sns
 plt.interactive(True)
 sns.set_style('white')
 
-SAVE_PLOTS = False
+SAVE_PLOTS = True
 
 if SAVE_PLOTS:
     OUTDIR = 'temp_results.0'
@@ -59,13 +59,13 @@ all_tpm_log = np.log2(all_tpm + eps)
 all_tpm_n = all_tpm.subtract(he_tpm.mean(axis=1), axis=0).divide(he_tpm.std(axis=1), axis=0)
 all_tpm_nlog = all_tpm_log.subtract(he_tpm_log.mean(axis=1), axis=0).divide(he_tpm_log.std(axis=1), axis=0)
 
-all_northcott = []
-[all_northcott.extend(v) for _, v in consts.NORTHCOTT_GENES]
+# all_northcott = []
+# [all_northcott.extend(v) for _, v in consts.NORTHCOTT_GENES]
 
-g = sns.clustermap(all_tpm_nlog.loc[all_northcott, :].dropna(), vmin=-3, vmax=3, row_cluster=False, col_cluster=True)
-g.cax.set_visible(False)
-plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
-plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+# g = sns.clustermap(all_tpm_nlog.loc[all_northcott, :].dropna(), vmin=-3, vmax=3, row_cluster=False, col_cluster=True)
+# g.cax.set_visible(False)
+# plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
+# plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
 
 if SAVE_PLOTS:
     # Plot: RNA-Seq scramble vs Allen HBA, nanostring
@@ -74,6 +74,61 @@ if SAVE_PLOTS:
         all_tpm_nlog,
         vmax=ZMAX,
         orientation='vertical',
+        gs_kwargs={'bottom': 0.16},
+        fig_kwargs={'figsize': [5.5, 8.5]}
+    )
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, full Northcott
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        consts.NORTHCOTT_GENES,
+        all_tpm_nlog,
+        vmax=ZMAX,
+        cbar=True,
+        orientation='vertical',
+        fig_kwargs={'figsize': [5.5, 12]},
+        heatmap_kwargs={'square': False},
+        gs_kwargs={'left': 0.25}
+    )
+    # reduce y label font size
+    for ax in axs:
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncott.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, Northcott C and D only
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        NORTHCOTT_C_D,
+        all_tpm_nlog,
+        vmax=ZMAX,
+        cbar=True,
+        orientation='vertical',
+        fig_kwargs={'figsize': [5.5, 8.5]},
+        heatmap_kwargs={'square': False},
+        gs_kwargs={'left': 0.25, 'bottom': 0.16}
+    )
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.pdf"))
+
+
+# repeat with the 2 scramble samples only
+scr_tpm_nlog = all_tpm_nlog.loc[:, [
+    u'Scramble.1', u'Scramble.2',
+    u'9861_111', u'9861_112', u'9861_113', u'9861_114',
+    u'10021_116', u'10021_117', u'10021_118', u'10021_119', u'10021_120'
+]]
+
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, nanostring
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        consts.NANOSTRING_GENES,
+        scr_tpm_nlog,
+        vmax=ZMAX,
+        orientation='vertical',
+        gs_kwargs={'bottom': 0.16},
         fig_kwargs={'figsize': [5.5, 8.5]}
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.png"), dpi=200)
@@ -83,7 +138,7 @@ if SAVE_PLOTS:
     # Plot: RNA-Seq scramble vs Allen HBA, full Northcott
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NORTHCOTT_GENES,
-        all_tpm_nlog,
+        scr_tpm_nlog,
         vmax=ZMAX,
         cbar=True,
         orientation='vertical',
@@ -101,13 +156,13 @@ if SAVE_PLOTS:
     # Plot: RNA-Seq scramble vs Allen HBA, Northcott C and D only
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         NORTHCOTT_C_D,
-        all_tpm_nlog,
+        scr_tpm_nlog,
         vmax=ZMAX,
         cbar=True,
         orientation='vertical',
         fig_kwargs={'figsize': [5.5, 8.5]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25}
+        gs_kwargs={'left': 0.25, 'bottom': 0.16}
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.pdf"))
