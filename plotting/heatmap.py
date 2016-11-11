@@ -1,33 +1,7 @@
 from matplotlib import pyplot as plt, gridspec
 import seaborn as sns
 import numpy as np
-
-
-def align_labels(axs, axis='x'):
-    """
-    :param axs:
-    :param axis: 'x' or 'y'
-    :return:
-    """
-    if axis not in ('x', 'y'):
-        raise ValueError("Axis must be 'x' or 'y'.")
-    if axis == 'x':
-        pos = np.array([ax.xaxis.label.get_position() for ax in axs])
-        m = pos[:, 1].min()
-    else:
-        pos = np.array([ax.yaxis.label.get_position() for ax in axs])
-        m = pos[:, 0].min()
-    # transform into axis units
-    inv = axs[0].transAxes.inverted()
-
-    if axis == 'x':
-        mt = inv.transform([0, m])[1]
-        for ax in axs:
-            ax.xaxis.set_label_coords(.5, mt)
-    else:
-        mt = inv.transform([m, 0])[0]
-        for ax in axs:
-            ax.yaxis.set_label_coords(mt, .5)
+from plotting import utils
 
 
 def grouped_expression_heatmap(
@@ -49,6 +23,20 @@ def grouped_expression_heatmap(
     else:
         vmin = -vmax
 
+    # set GridSpec dims inputs based on options
+    if horiz:
+        ncol = len(groups)
+        if cbar:
+            nrow = 2
+        else:
+            nrow = 1
+    else:
+        nrow = len(groups)
+        if cbar:
+            ncol = 2
+        else:
+            ncol = 1
+
     if fig_kwargs is None:
         fig_kwargs = {}
     if gs_kwargs is None:
@@ -60,62 +48,73 @@ def grouped_expression_heatmap(
     heatmap_kwargs.setdefault('vmax', vmax)
     heatmap_kwargs.setdefault('square', True)
     if cbar:
+        default_cbar_kws = {'orientation': orientation}
+        if vmax is not None:
+            default_cbar_kws['ticks'] = [-vmax, vmax]
+
         heatmap_kwargs.setdefault('cmap', 'RdBu_r')
-        heatmap_kwargs.setdefault('cbar_kws', {'orientation': orientation})
+        heatmap_kwargs.setdefault('cbar_kws', default_cbar_kws)
 
     if horiz:
-        if cbar:
-            gs_kwargs.setdefault('width_ratios', [len(arr) for _, arr in groups])
-            gs_kwargs.setdefault('height_ratios', [1, 16])
-            gs = gridspec.GridSpec(2, len(groups), **gs_kwargs)
-        else:
-            gs_kwargs.setdefault('width_ratios', [len(arr) for _, arr in groups])
-            gs = gridspec.GridSpec(1, len(groups), **gs_kwargs)
-
-    else:
-        if cbar:
-            gs_kwargs.setdefault('height_ratios', [len(arr) for _, arr in groups])
-            gs_kwargs.setdefault('width_ratios', [16, 1])
-            gs = gridspec.GridSpec(len(groups), 2, **gs_kwargs)
-        else:
-            gs_kwargs.setdefault('height_ratios', [len(arr) for _, arr in groups])
-            gs = gridspec.GridSpec(len(groups), 1, **gs_kwargs)
-
-    fig = plt.figure(**fig_kwargs)
-
-    if horiz:
-        gs.update(
+        gs_kw = dict(
             left=0.2,
             right=0.95,
             top=0.9,
             bottom=0.1,
             wspace=0.1,
-            hspace=0.)
+            hspace=0.05
+        )
+        gs_kw.update(gs_kwargs)
+
+        if cbar:
+            gs_kw.setdefault('width_ratios', [len(arr) for _, arr in groups])
+            gs_kw.setdefault('height_ratios', [1, 16])
+
+        else:
+            gs_kw.setdefault('width_ratios', [len(arr) for _, arr in groups])
+
     else:
-        gs.update(
+        gs_kw = dict(
             left=0.2,
             right=0.9,
             top=0.98,
             bottom=0.1,
-            wspace=0.,
-            hspace=0.1)
+            wspace=0.05,
+            hspace=0.05
+        )
+        gs_kw.update(gs_kwargs)
+        if cbar:
+            gs_kw.setdefault('height_ratios', [len(arr) for _, arr in groups])
+            gs_kw.setdefault('width_ratios', [16, 1])
+        else:
+            gs_kw.setdefault('height_ratios', [len(arr) for _, arr in groups])
+
+    gs = gridspec.GridSpec(nrows=nrow, ncols=ncol, **gs_kw)
+    fig = plt.figure(**fig_kwargs)
 
     axs = []
 
     for i, (grp, arr) in enumerate(groups):
         if horiz:
-            ax = fig.add_subplot(gs[1:, i])
+            if cbar:
+                ax = fig.add_subplot(gs[1:, i])
+            else:
+                ax = fig.add_subplot(gs[0, i])
         else:
-            ax = fig.add_subplot(gs[i, 0:])
+            if cbar:
+                ax = fig.add_subplot(gs[i, :-1])
+            else:
+                ax = fig.add_subplot(gs[i, 0])
+
         axs.append(ax)
         cbar_ax = None
         if i == (len(groups) - 1):
-            this_cbar = True if cbar else False
+            this_cbar = bool(cbar)
             if this_cbar:
                 if horiz:
-                    cbar_ax = fig.add_subplot(gs[0, :])
+                    cbar_ax = fig.add_subplot(gs[0, 0])
                 else:
-                    cbar_ax = fig.add_subplot(gs[:, 1])
+                    cbar_ax = fig.add_subplot(gs[0, 1])
         else:
             this_cbar = False
 
@@ -147,15 +146,19 @@ def grouped_expression_heatmap(
             tick.set_rotation(90)
         for tick in ax.get_yticklabels():
             tick.set_rotation(0)
-        # plt.yticks(rotation=0)
-        # plt.xticks(rotation=90)
 
     # align all xlabels
     fig.canvas.draw()
     if horiz:
-        align_labels(axs, 'x')
+        utils.align_labels(axs, 'x')
     else:
         # pass
-        align_labels(axs, 'y')
+        utils.align_labels(axs, 'y')
 
-    return fig, axs, cbar_ax
+    # add axis borders
+    for ax in axs:
+        utils.axis_border(ax, c='0.3')
+    if cbar:
+        utils.axis_border(cbar_ax, c='0.3')
+
+    return fig, axs, cbar_ax, gs

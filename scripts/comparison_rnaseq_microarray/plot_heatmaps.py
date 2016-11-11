@@ -1,19 +1,29 @@
 from scripts.comparison_rnaseq_microarray import load_illumina_data, load_rnaseq_data, load_references, comparisons, consts
 from plotting import heatmap
 from microarray.process import aggregate_by_probe_set
-import references
+import os
 import pandas as pd
 import numpy as np
-from scipy import stats
-import collections
 from matplotlib import rc, pyplot as plt, gridspec as gridspec
 import seaborn as sns
 plt.interactive(True)
 sns.set_style('white')
 
+SAVE_PLOTS = False
+
+if SAVE_PLOTS:
+    OUTDIR = 'temp_results.0'
+    i = 1
+    while os.path.exists(OUTDIR):
+        OUTDIR = 'temp_results.%d' % i
+        i += 1
+    print "Creating temp output dir %s" % OUTDIR
+    os.makedirs(OUTDIR)
+
+NORTHCOTT_C_D = consts.NORTHCOTT_GENES[2:]
 
 # standardised vmin
-ZMAX = 3.
+ZMAX = 5.
 # addition for logging
 eps = 1e-12
 # aggregation method for microarray
@@ -34,12 +44,12 @@ new_ix[new_ix == 'EYS'] = 'EGFL11'
 mb_tpm.index = new_ix
 
 # also try log version
-mb_tpm_log = np.log10(mb_tpm + eps)
-he_tpm_log = np.log10(he_tpm + eps)
+mb_tpm_log = np.log2(mb_tpm + eps)
+he_tpm_log = np.log2(he_tpm + eps)
 
 # concatenate
 all_tpm = pd.concat((mb_tpm, he_tpm), axis=1, join='inner')
-all_tpm_log = np.log10(all_tpm + eps)
+all_tpm_log = np.log2(all_tpm + eps)
 
 # standardize using mean from pool of ALL data
 # all_tpm_n = all_tpm.subtract(all_tpm.mean(axis=1), axis=0).divide(all_tpm.std(axis=1), axis=0)
@@ -57,27 +67,54 @@ g.cax.set_visible(False)
 plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
 plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
 
-if True:
-    fig, axs, cax = heatmap.grouped_expression_heatmap(
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, nanostring
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
         all_tpm_nlog,
         vmax=ZMAX,
         orientation='vertical',
-        fig_kwargs={'figsize': [5, 8.5]}
+        fig_kwargs={'figsize': [5.5, 8.5]}
     )
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.pdf"))
 
-    fig, axs, cax = heatmap.grouped_expression_heatmap(
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, full Northcott
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NORTHCOTT_GENES,
         all_tpm_nlog,
         vmax=ZMAX,
-        cbar=False,
+        cbar=True,
         orientation='vertical',
-        fig_kwargs={'figsize': [5, 8.5]},
-        heatmap_kwargs={'square': False}
+        fig_kwargs={'figsize': [5.5, 12]},
+        heatmap_kwargs={'square': False},
+        gs_kwargs={'left': 0.25}
     )
+    # reduce y label font size
+    for ax in axs:
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncott.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: RNA-Seq scramble vs Allen HBA, Northcott C and D only
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        NORTHCOTT_C_D,
+        all_tpm_nlog,
+        vmax=ZMAX,
+        cbar=True,
+        orientation='vertical',
+        fig_kwargs={'figsize': [5.5, 8.5]},
+        heatmap_kwargs={'square': False},
+        gs_kwargs={'left': 0.25}
+    )
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.pdf"))
 
 
 marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, return_pvals=True)
+# add constant to each array to force non-negative values
 marray_data = marray_data.subtract(marray_data.min(axis=0))
 
 HEALTHY_SAMPLES = dict(consts.SAMPLE_GROUPS_ZHANG)['Healthy cerebellum']
@@ -90,38 +127,155 @@ marray_all = aggregate_by_probe_set(marray_ann, method=AGGR_METHOD)
 for sn in load_illumina_data.SAMPLE_NAMES:
     marray_all.loc[:, sn] = marray_all.loc[:, [sn, sn + '-R']].mean(axis=1)
 
-keep_cols = list(HEALTHY_SAMPLES) + ['Pt1299', 'ICb1299-I', 'ICb1299-III', 'ICb1299-IV']
 
-# marray_all = marray_all.loc[:, load_illumina_data.SAMPLE_NAMES]
-marray_all = marray_all.loc[:, keep_cols]
-marray_all = marray_all.dropna(axis=0, how='all')
+# 1299 + HEALTHY
 
-marray_all_log = np.log10(marray_all + eps)
+MB_SAMPLES = [
+    'Pt1299',
+    'ICb1299-I',
+    'ICb1299-III',
+    'ICb1299-IV',
+]
+# order here affects the order of the columns
+# healthy, MB:
+# keep_cols = list(HEALTHY_SAMPLES) + MB_SAMPLES
+# MB, healthy:
+keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
+
+# define new variable from here so we can return to the original data if necessary
+marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
+marr_log = np.log2(marr + eps)
 
 # standardise using pool of HEALTHY data
-marray_he = marray_all.loc[:, HEALTHY_SAMPLES]
-marray_he_log = marray_all_log.loc[:, HEALTHY_SAMPLES]
+marray_he = marr.loc[:, HEALTHY_SAMPLES]
+marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
 
-marray_all_n = marray_all.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
-marray_all_nlog = marray_all_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
+# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
+marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
 
-if False:
-
-    fig, axs, cax = heatmap.grouped_expression_heatmap(
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, nanostring
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
-        marray_all_nlog,
+        marr_nlog,
         vmax=ZMAX,
-        cbar=False,
+        cbar=True,
         orientation='vertical',
         fig_kwargs={'figsize': [5, 8.5]}
     )
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.pdf"))
 
-    fig, axs, cax = heatmap.grouped_expression_heatmap(
-        consts.NORTHCOTT_GENES,
-        marray_all_nlog,
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, Northcott full
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+            consts.NORTHCOTT_GENES,
+            marr_nlog,
+            vmax=ZMAX,
+            cbar=True,
+            orientation='vertical',
+            fig_kwargs={'figsize': [5, 11]},
+            heatmap_kwargs={'square': False},
+            gs_kwargs={'left': 0.25}
+        )
+    # reduce y label font size
+    for ax in axs:
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncott.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, Northcott C and D only
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        NORTHCOTT_C_D,
+        marr_nlog,
         vmax=ZMAX,
-        cbar=False,
+        cbar=True,
         orientation='vertical',
         fig_kwargs={'figsize': [5, 8.5]},
-        heatmap_kwargs={'square': False}
+        heatmap_kwargs={'square': False},
+        gs_kwargs={'left': 0.25}
     )
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.pdf"))
+
+
+# various + HEALTHY
+
+MB_SAMPLES = [
+    'Pt1078',
+    'ICb1078-I',
+    'ICb1078-III',
+    'ICb1078-V',
+    'Pt1299',
+    'ICb1299-I',
+    'ICb1299-III',
+    'ICb1299-IV',
+    'Pt1338',
+    'ICb1338-I',
+    'ICb1338-III',
+    'Pt1487',
+    'ICb1487-I',
+    'ICb1487-III',
+    'Pt1595',
+    'ICb1595-I',
+    'ICb1595-III',
+]
+# order here affects the order of the columns
+# healthy, MB:
+# keep_cols = list(HEALTHY_SAMPLES) + MB_SAMPLES
+# MB, healthy:
+keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
+
+# define new variable from here so we can return to the original data if necessary
+marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
+marr_log = np.log2(marr + eps)
+
+# standardise using pool of HEALTHY data
+marray_he = marr.loc[:, HEALTHY_SAMPLES]
+marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
+
+# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
+marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
+
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, nanostring
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        consts.NANOSTRING_GENES,
+        marr_nlog,
+        vmax=ZMAX,
+        cbar=True,
+        orientation='vertical',
+        fig_kwargs={'figsize': [5, 8.5]},
+        heatmap_kwargs = {'square': False},
+    )
+    #  add dividing lines
+    xbreaks = [4, 8, 11, 14, 17]
+    for ax in axs:
+        for t in xbreaks:
+            ax.axvline(t, color='w', linewidth=2.5)
+            ax.axvline(t, color='0.4', linewidth=1.)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_nanostring.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, Northcott full
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+            consts.NORTHCOTT_GENES,
+            marr_nlog,
+            vmax=ZMAX,
+            cbar=True,
+            orientation='vertical',
+            fig_kwargs={'figsize': [5, 12]},
+            heatmap_kwargs={'square': False},
+            gs_kwargs={'left': 0.25}
+        )
+    # reduce y label font size and add dividing lines
+    xbreaks = [4, 8, 11, 14, 17]
+    for ax in axs:
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+        for t in xbreaks:
+            ax.axvline(t, color='w', linewidth=2.5)
+            ax.axvline(t, color='0.4', linewidth=1.)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.pdf"))
