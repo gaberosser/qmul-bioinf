@@ -174,41 +174,43 @@ SAMPLE_GROUPS = (
 from references import known_genes
 
 df = known_genes()
-all_by_symbol = df.set_index('Approved Symbol').loc[:, ['Entrez Gene ID']].dropna().astype(int)
+all_by_symbol = df.set_index('Symbol').loc[:, ['GeneID']].dropna().astype(int)
 ncott_id = all_by_symbol.loc[ALL_NORTHCOTT]
 
-matches = df.loc[df.loc[:, 'Approved Symbol'].isin(ALL_NORTHCOTT), 'Approved Symbol'].values
+matches = df.loc[df.loc[:, 'Symbol'].isin(ALL_NORTHCOTT), 'Symbol'].values
 unmatched = ncott_id.index.difference(matches)
 
 # there's a nicer way to do this, but doesn't really matter for this purpose.
 ncott_unmatched = {}
 
-for t in unmatched:
-    s = df.loc[:, 'Previous Symbols'].dropna().str.contains(t)
-    if s.sum() == 1:
-        ncott_unmatched[t] = df.loc[s.values, 'Entrez Gene ID'].values[0]
-    elif s.sum() == 0:
-        ncott_unmatched[t] = np.nan
-    else:
-        print df.loc[s.values]
-
-unmatches = ncott_id.isnull()
-
-ncott_unmatched = pd.Series(ncott_unmatched)
-ncott_id.loc[ncott_unmatched.index, 'Entrez Gene ID'] = ncott_unmatched
-
-unmatched = ncott_id.loc[ncott_id.loc[:, 'Entrez Gene ID'].isnull()].index
+# for t in unmatched:
+#     s = df.loc[:, 'Previous Symbols'].dropna().str.contains(t)
+#     if s.sum() == 1:
+#         ncott_unmatched[t] = df.loc[s.values, 'Entrez Gene ID'].values[0]
+#     elif s.sum() == 0:
+#         ncott_unmatched[t] = np.nan
+#     else:
+#         print df.loc[s.values]
+#
+# unmatches = ncott_id.isnull()
+#
+# ncott_unmatched = pd.Series(ncott_unmatched)
+# ncott_id.loc[ncott_unmatched.index, 'Entrez Gene ID'] = ncott_unmatched
+#
+# unmatched = ncott_id.loc[ncott_id.loc[:, 'Entrez Gene ID'].isnull()].index
 
 ncott_unmatched = {}
 
 for t in unmatched:
     s = df.loc[:, 'Synonyms'].dropna().str.contains(t)
     if s.sum() == 1:
-        ncott_unmatched[t] = df.loc[s.values, 'Entrez Gene ID'].values[0]
+        ncott_unmatched[t] = df.loc[s.values, 'GeneID'].values[0]
     elif s.sum() == 0:
         ncott_unmatched[t] = np.nan
     else:
         print df.loc[s.values]
 
 ncott_unmatched = pd.Series(ncott_unmatched)
-ncott_id.loc[ncott_unmatched.index, 'Entrez Gene ID'] = ncott_unmatched
+ncott_id.loc[ncott_unmatched.index, 'GeneID'] = ncott_unmatched
+
+ncott_id = ncott_id.dropna().astype(int)

@@ -8,6 +8,7 @@ def grouped_expression_heatmap(
         groups,
         data,
         vmax=None,
+        vmin=None,
         cbar=True,
         fig_kwargs=None,
         gs_kwargs=None,
@@ -17,11 +18,6 @@ def grouped_expression_heatmap(
     if orientation not in ('horizontal', 'vertical'):
         raise ValueError("Unsupported orientation %s. Options are horizontal and vertical", orientation)
     horiz =  (orientation == 'horizontal')
-
-    if vmax is None:
-        vmin = None
-    else:
-        vmin = -vmax
 
     # set GridSpec dims inputs based on options
     if horiz:
@@ -49,8 +45,8 @@ def grouped_expression_heatmap(
     heatmap_kwargs.setdefault('square', True)
     if cbar:
         default_cbar_kws = {'orientation': orientation}
-        if vmax is not None:
-            default_cbar_kws['ticks'] = [-vmax, vmax]
+        if vmax is not None and vmin is not None:
+            default_cbar_kws['ticks'] = [vmin, vmax]
 
         heatmap_kwargs.setdefault('cmap', 'RdBu_r')
         heatmap_kwargs.setdefault('cbar_kws', default_cbar_kws)
