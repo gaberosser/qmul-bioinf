@@ -158,3 +158,50 @@ def grouped_expression_heatmap(
         utils.axis_border(cbar_ax, c='0.3')
 
     return fig, axs, cbar_ax, gs
+
+
+def single_heatmap(
+        data,
+        orientation='horizontal',
+        ax=None,
+        cbar=True,
+        vmin=None,
+        vmax=None,
+        fig_kwargs=None,
+        **heatmap_kwargs
+):
+    if fig_kwargs is None:
+        fig_kwargs = {}
+    if ax is None:
+        fig = plt.figure(**fig_kwargs)
+        ax = fig.add_subplot(111)
+    else:
+        fig = ax.figure
+    horiz = (orientation == 'horizontal')
+
+    if horiz:
+        data = data.transpose()
+
+    sns.heatmap(
+        data,
+        ax=ax,
+        cbar=False,
+        vmin=vmin,
+        vmax=vmax,
+        **heatmap_kwargs
+    )
+
+    if cbar:
+        quadmesh = ax.collections[-1]  # should only be one item in the array
+        cax = fig.colorbar(quadmesh)
+        utils.axis_border(cax.ax, c='0.3')
+    else:
+        cax = None
+
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(90)
+    for tick in ax.get_yticklabels():
+        tick.set_rotation(0)
+
+    utils.axis_border(ax, c='0.3')
+    return ax, cax

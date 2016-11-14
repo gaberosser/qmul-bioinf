@@ -1,12 +1,15 @@
 # source("http://bioconductor.org/biocLite.R")
 # biocLite("mogene10sttranscriptcluster.db")
 # biocLite("hugene11sttranscriptcluster.db")
+# biocLite("illuminaHumanv2.db")
 # biocLite("annotationTools")
 # biocLite("oligo")
 
 library(mogene10sttranscriptcluster.db)
-library(hugene11sttranscriptcluster.db)
+library(illuminaHumanv2.db)
+# library(hugene11sttranscriptcluster.db)
 library(oligo)
+library(annotationTools)
 library(Biobase)
 
 dataDir <- '../data/'

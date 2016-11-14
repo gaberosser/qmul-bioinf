@@ -4,7 +4,7 @@ import numpy as np
 from settings import DATA_DIR
 
 
-homolog_file = os.path.join(DATA_DIR, 'homologene', 'homologene.data')
+homolog_file = os.path.join(DATA_DIR, 'homologene', 'homologeneb68.data')
 homolog_header = [
     'hid',
     'taxonomy_id',

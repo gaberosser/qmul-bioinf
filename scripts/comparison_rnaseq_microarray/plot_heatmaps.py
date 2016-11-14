@@ -24,10 +24,19 @@ NORTHCOTT_C_D = consts.NORTHCOTT_GENES[2:]
 
 # standardised vmin
 ZMAX = 5.
+
 # addition for logging
 eps = 1e-12
 # aggregation method for microarray
 AGGR_METHOD = 'median'
+
+# create some standard heatmap kwargs for reuse
+heatmap_kwargs = {
+    'vmin': -ZMAX,
+    'vmax': ZMAX,
+    'cbar': True,
+    'orientation': 'vertical',
+}
 
 # load RNA-Seq healthy and MB
 he_ct, he_tpm, he_meta = load_references.load_cerebellum_rnaseq_reference_data()
@@ -72,10 +81,9 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
         all_tpm_nlog,
-        vmax=ZMAX,
-        orientation='vertical',
         gs_kwargs={'bottom': 0.16},
-        fig_kwargs={'figsize': [5.5, 8.5]}
+        fig_kwargs={'figsize': [5.5, 8.5]},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.pdf"))
@@ -85,12 +93,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NORTHCOTT_GENES,
         all_tpm_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5.5, 12]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25}
+        gs_kwargs={'left': 0.25},
+        **heatmap_kwargs
     )
     # reduce y label font size
     for ax in axs:
@@ -103,12 +109,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         NORTHCOTT_C_D,
         all_tpm_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5.5, 8.5]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25, 'bottom': 0.16}
+        gs_kwargs={'left': 0.25, 'bottom': 0.16},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.pdf"))
@@ -126,10 +130,9 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
         scr_tpm_nlog,
-        vmax=ZMAX,
-        orientation='vertical',
         gs_kwargs={'bottom': 0.16},
-        fig_kwargs={'figsize': [5.5, 8.5]}
+        fig_kwargs={'figsize': [5.5, 8.5]},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.pdf"))
@@ -139,12 +142,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NORTHCOTT_GENES,
         scr_tpm_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5.5, 12]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25}
+        gs_kwargs={'left': 0.25},
+        **heatmap_kwargs
     )
     # reduce y label font size
     for ax in axs:
@@ -157,12 +158,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         NORTHCOTT_C_D,
         scr_tpm_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5.5, 8.5]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25, 'bottom': 0.16}
+        gs_kwargs={'left': 0.25, 'bottom': 0.16},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.pdf"))
@@ -213,10 +212,8 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
         marr_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
-        fig_kwargs={'figsize': [5, 8.5]}
+        fig_kwargs={'figsize': [5, 8.5]},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.pdf"))
@@ -226,12 +223,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
             consts.NORTHCOTT_GENES,
             marr_nlog,
-            vmax=ZMAX,
-            cbar=True,
-            orientation='vertical',
             fig_kwargs={'figsize': [5, 11]},
             heatmap_kwargs={'square': False},
-            gs_kwargs={'left': 0.25}
+            gs_kwargs={'left': 0.25},
+            **heatmap_kwargs
         )
     # reduce y label font size
     for ax in axs:
@@ -244,12 +239,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         NORTHCOTT_C_D,
         marr_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5, 8.5]},
         heatmap_kwargs={'square': False},
-        gs_kwargs={'left': 0.25}
+        gs_kwargs={'left': 0.25},
+        **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.pdf"))
@@ -266,15 +259,15 @@ MB_SAMPLES = [
     'ICb1299-I',
     'ICb1299-III',
     'ICb1299-IV',
-    'Pt1338',
-    'ICb1338-I',
-    'ICb1338-III',
     'Pt1487',
     'ICb1487-I',
     'ICb1487-III',
     'Pt1595',
     'ICb1595-I',
     'ICb1595-III',
+    'Pt1338',
+    'ICb1338-I',
+    'ICb1338-III',
 ]
 # order here affects the order of the columns
 # healthy, MB:
@@ -298,11 +291,9 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
         consts.NANOSTRING_GENES,
         marr_nlog,
-        vmax=ZMAX,
-        cbar=True,
-        orientation='vertical',
         fig_kwargs={'figsize': [5, 8.5]},
         heatmap_kwargs = {'square': False},
+        **heatmap_kwargs
     )
     #  add dividing lines
     xbreaks = [4, 8, 11, 14, 17]
@@ -318,12 +309,10 @@ if SAVE_PLOTS:
     fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
             consts.NORTHCOTT_GENES,
             marr_nlog,
-            vmax=ZMAX,
-            cbar=True,
-            orientation='vertical',
             fig_kwargs={'figsize': [5, 12]},
             heatmap_kwargs={'square': False},
-            gs_kwargs={'left': 0.25}
+            gs_kwargs={'left': 0.25},
+            **heatmap_kwargs
         )
     # reduce y label font size and add dividing lines
     xbreaks = [4, 8, 11, 14, 17]
