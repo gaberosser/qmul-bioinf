@@ -4,7 +4,7 @@ from microarray.process import aggregate_by_probe_set
 import os
 import pandas as pd
 import numpy as np
-from matplotlib import rc, pyplot as plt, gridspec as gridspec
+from matplotlib import rc, pyplot as plt
 import seaborn as sns
 plt.interactive(True)
 sns.set_style('white')

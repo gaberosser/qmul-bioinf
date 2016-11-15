@@ -194,7 +194,7 @@ def single_heatmap(
     if cbar:
         quadmesh = ax.collections[-1]  # should only be one item in the array
         cax = fig.colorbar(quadmesh)
-        utils.axis_border(cax.ax, c='0.3')
+        utils.axis_border(cax.ax, c='0.3', lw=1.)
     else:
         cax = None
 
@@ -203,5 +203,5 @@ def single_heatmap(
     for tick in ax.get_yticklabels():
         tick.set_rotation(0)
 
-    utils.axis_border(ax, c='0.3')
+    utils.axis_border(ax, c='0.3', lw=1.)
     return ax, cax
