@@ -1,13 +1,63 @@
 # source("http://www.bioconductor.org/biocLite.R")
+# biocLite("mogene10sttranscriptcluster.db")
+# biocLite("hugene11sttranscriptcluster.db")
 
 library(AGDEX)
 library(Biobase)
 library(parallel)
+library(mogene10sttranscriptcluster.db)
+library(hugene11sttranscriptcluster.db)
+source("io/microarray.R")
 
-data.dir <- '../data/agdex_mb_comparison_rdata/'
+data.dir <- '../data/'
 out.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/'
 
-hu.expr.raw <- read.csv(file.path(data.dir, 'hu_yg.txt.gz'), row.names = 1, header = 1, check.names = TRUE)
+hu_he <- allen_cerebellum(by.gene = T)
+hu.he.expr <- hu_he$expr
+hu.he.meta <- hu_he$meta
+
+mo.mb.expr <- dubuc_sb_screen(by.gene = T)
+mo.he.expr <- gse54650()
+hu_mb <- gse37382()
+hu.mb.expr <- hu_mb$expr
+hu.mb.meta <- hu_mb$meta
+
+# combine samples
+hu.expr <- merge(hu.he.expr, hu.mb.expr, by=0)
+rownames(hu.expr) <- hu.expr$Row.names
+hu.expr$Row.names <- NULL
+
+mo.expr <- merge(mo.he.expr, mo.mb.expr, by=0)
+rownames(mo.expr) <- mo.expr$Row.names
+mo.expr$Row.names <- NULL
+
+# define phenodata
+hu.he.pdata <- data.frame(
+  row.names=colnames(hu.he.expr)
+)
+hu.he.pdata[,'case'] = 'control'
+hu.he.pdata[,'subgroup'] = NA
+
+hu.mb.pdata <- data.frame(
+  row.names=colnames(hu.mb.expr)
+)
+hu.mb.pdata[rownames(hu.mb.meta), 'case'] = 'mb'
+hu.mb.pdata[rownames(hu.mb.meta), 'subgroup'] = hu.mb.meta$subgroup
+
+mo.he.pdata <- data.frame(
+  row.names=colnames(mo.he.expr)
+)
+mo.he.pdata[,'case'] = 'control'
+mo.he.pdata[,'chd7'] = F
+
+mo.mb.pdata <- data.frame(
+  row.names=colnames(mo.mb.expr)
+)
+mo.mb.pdata[,'case'] = 'mb'
+mo.mb.pdata[1:3,'chd7'] = T
+mo.mb.pdata[4:8,'chd7'] = F
+
+##### FROM HERE ######
 
 # Not needed, but here is how to apply a var. stabilising transform:
 # library(vsn)

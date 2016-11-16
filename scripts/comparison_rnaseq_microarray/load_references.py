@@ -52,7 +52,7 @@ def get_structure_ids_by_parent(ontol, parent_id):
     return struct_ids
 
 
-def prepare_cerebellum_microarray_reference_data(outfile=None, mask_nonsig=False):
+def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
 
     INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
     DONOR_NUMBERS = [
@@ -65,8 +65,8 @@ def prepare_cerebellum_microarray_reference_data(outfile=None, mask_nonsig=False
     ]
     PARENT_STRUCT_ID = 4696
 
-    if outfile is None:
-        outfile = os.path.join(INDIR, 'cerebellum_expression_dataframes.pkl')
+    outfile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
+    outfile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
 
     # load probe library
     probe_fn = os.path.join(INDIR, 'Probes.csv')
@@ -128,11 +128,12 @@ def prepare_cerebellum_microarray_reference_data(outfile=None, mask_nonsig=False
     # prepend gene symbol and entrez ID to the total expression dataframe
     expression = pd.concat([probes.loc[expression.index, ['gene_symbol', 'entrez_id']], expression], axis=1)
 
-    logger.info("Saving results to %s", outfile)
-    with open(outfile, 'wb') as f:
-        dill.dump(
-            {'expression': expression, 'meta': sample_meta},
-            f)
+    logger.info("Saving expression results to %s", outfile_expr)
+    expression.to_csv(outfile_expr, compression='gzip')
+
+    logger.info("Saving meta info to %s", outfile_meta)
+    sample_meta.to_csv(outfile_meta)
+
     logger.info('Complete')
 
     return expression, sample_meta
@@ -141,15 +142,36 @@ def prepare_cerebellum_microarray_reference_data(outfile=None, mask_nonsig=False
 def load_cerebellum_microarray_reference_data():
 
     INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
-    infile = os.path.join(INDIR, 'cerebellum_expression_dataframes.pkl')
-    if not os.path.exists(infile):
-        logger.info("Unable to find pre-prepared pickled file %s. Recomputing.", infile)
-        return prepare_cerebellum_microarray_reference_data()
+    infile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
+    infile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
+
+    bload = True
+    if not os.path.exists(infile_expr):
+        logger.info("Unable to find pre-prepared CSV file %s. Recomputing.", infile_expr)
+        bload = False
+    if not os.path.exists(infile_meta):
+        logger.info("Unable to find pre-prepared CSV file %s. Recomputing.", infile_meta)
+        bload = False
+
+    if bload:
+        expr = pd.read_csv(infile_expr, index_col=0, header=0)
+        meta = pd.read_csv(infile_meta, index_col=0, header=0)
+
     else:
-        logger.info("Loading from pre-prepared pickled file %s.", infile)
-        with open(infile, 'rb') as f:
-            res = dill.load(f)
-        return res['expression'], res['meta']
+        expr, meta = prepare_cerebellum_microarray_reference_data()
+
+    return expr, meta
+
+
+def save_cerebellum_microarray_data_by_entrez_id(method='median'):
+    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
+    expr, meta = load_cerebellum_microarray_reference_data()
+    expr_eid = microarray_entrez_markers(expr, method=method)
+    outfile = os.path.join(INDIR, 'cerebellum_expression.by_entrezid.csv.gz')
+    expr_eid.to_csv(outfile, compression='gzip')
+    # no need to re-save meta because it's unaltered
+
+    return expr_eid, meta
 
 
 def _microarray_probe_to_gene(marray_data, lookup=None, method='max', groupby='gene_symbol'):
