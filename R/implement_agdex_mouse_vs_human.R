@@ -11,8 +11,8 @@ library(mogene10sttranscriptcluster.db)
 library(hugene11sttranscriptcluster.db)
 source("io/microarray.R")
 
-NCOTT_ONLY = F
-APPLY_YUGENE = TRUE
+NCOTT_ONLY = T
+APPLY_YUGENE = F
 
 data.dir <- '../data/'
 out.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/'
@@ -74,14 +74,23 @@ mo.he.pdata <- data.frame(
   row.names=colnames(mo.he.expr)
 )
 mo.he.pdata[,'case'] = 'mo.control'
-mo.he.pdata[,'chd7'] = 'mo.control'
+mo.he.pdata[,'sb.chd7'] = 'mo.control'
+mo.he.pdata[,'sb.nochd7'] = 'mo.control'
 
 mo.mb.pdata <- data.frame(
   row.names=colnames(mo.mb.expr)
 )
 mo.mb.pdata[,'case'] = 'mo.mb'
-mo.mb.pdata[1:3,'chd7'] = 'chd7.ins'
-mo.mb.pdata[4:8,'chd7'] = 'chd7.no_ins'
+mo.mb.pdata[1:3,'sb.chd7'] = 'sb.chd7'
+mo.mb.pdata[4:8,'sb.nochd7'] = 'sb.nochd7'
+
+# For a comparison of CHD7 insertion vs everything else (SB and healthy):
+# mo.mb.pdata[4:8,'sb.chd7'] = 'mo.control'
+# mo.mb.pdata[1:3,'sb.nochd7'] = 'mo.control'
+
+# For a comparison of CHD7 insertion vs healthy only:
+mo.mb.pdata[4:8,'sb.chd7'] = 'sb.nochd7'
+mo.mb.pdata[1:3,'sb.nochd7'] = 'sb.chd7'
 
 # merge phenodata
 hu.pdata <- rbind(hu.he.pdata, hu.mb.pdata)
@@ -156,17 +165,19 @@ cl <- makeCluster(4, type = "FORK")
 
 subruns = list(
   list(comp.def.hu = "hu.mb-hu.control", comp.def.mo = "mo.mb-mo.control", comp.var.hu=1, comp.var.mo = 1),
+  list(comp.def.hu = "hu.mb-hu.control", comp.def.mo = "sb.chd7-mo.control", comp.var.hu=1, comp.var.mo = 2),
+  list(comp.def.hu = "hu.mb-hu.control", comp.def.mo = "sb.nochd7-mo.control", comp.var.hu=1, comp.var.mo = 3),
   
   list(comp.def.hu = "SHH-hu.control", comp.def.mo = "mo.mb-mo.control", comp.var.hu=2, comp.var.mo = 1),
   list(comp.def.hu = "C-hu.control", comp.def.mo = "mo.mb-mo.control", comp.var.hu=2, comp.var.mo = 1),
   list(comp.def.hu = "D-hu.control", comp.def.mo = "mo.mb-mo.control", comp.var.hu=2, comp.var.mo = 1),
   
-  list(comp.def.hu = "SHH-hu.control", comp.def.mo = "chd7.ins-mo.control", comp.var.hu=2, comp.var.mo = 2),
-  list(comp.def.hu = "C-hu.control", comp.def.mo = "chd7.ins-mo.control", comp.var.hu=2, comp.var.mo = 2),
-  list(comp.def.hu = "D-hu.control", comp.def.mo = "chd7.ins-mo.control", comp.var.hu=2, comp.var.mo = 2),
-  list(comp.def.hu = "SHH-hu.control", comp.def.mo = "chd7.no_ins-mo.control", comp.var.hu=2, comp.var.mo = 2),
-  list(comp.def.hu = "C-hu.control", comp.def.mo = "chd7.no_ins-mo.control", comp.var.hu=2, comp.var.mo = 2),
-  list(comp.def.hu = "D-hu.control", comp.def.mo = "chd7.no_ins-mo.control", comp.var.hu=2, comp.var.mo = 2)
+  list(comp.def.hu = "SHH-hu.control", comp.def.mo = "sb.chd7-mo.control", comp.var.hu=2, comp.var.mo = 2),
+  list(comp.def.hu = "C-hu.control", comp.def.mo = "sb.chd7-mo.control", comp.var.hu=2, comp.var.mo = 2),
+  list(comp.def.hu = "D-hu.control", comp.def.mo = "sb.chd7-mo.control", comp.var.hu=2, comp.var.mo = 2),
+  list(comp.def.hu = "SHH-hu.control", comp.def.mo = "sb.nochd7-mo.control", comp.var.hu=2, comp.var.mo = 3),
+  list(comp.def.hu = "C-hu.control", comp.def.mo = "sb.nochd7-mo.control", comp.var.hu=2, comp.var.mo = 3),
+  list(comp.def.hu = "D-hu.control", comp.def.mo = "sb.nochd7-mo.control", comp.var.hu=2, comp.var.mo = 3)
 )
 
 parLapply(
@@ -178,3 +189,4 @@ parLapply(
 )
 
 stopCluster(cl)
+
