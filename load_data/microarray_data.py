@@ -1,11 +1,18 @@
 import os
 import pandas as pd
-import numpy as np
-from microarray import illumina, process
+from microarray import process
 from settings import DATA_DIR
 
 
 def load_from_r_processed(infile, sample_names, index_field):
+    """
+    Load microarray data that has been created in R.
+    This is (unfortunately) necessary when we want to apply certain pre-processing steps like RMA.
+    :param infile: The input file name.
+    :param sample_names: T
+    :param index_field:
+    :return:
+    """
     meta_cols = ['probeset_id', 'accession_id', 'gene_symbol', 'description', 'ensembl_id', 'entrez_id']
     cols = meta_cols + sample_names
 
@@ -17,7 +24,12 @@ def load_from_r_processed(infile, sample_names, index_field):
 
 
 def load_annotated_microarray_gse54650(index_field='entrez_id'):
-    infile = os.path.join(DATA_DIR, 'microarray_GSE54650', 'data.ann.txt')
+    """
+    Circadian study (24 timepoints) in mouse cerebellum tissue.
+    :param index_field:
+    :return:
+    """
+    infile = os.path.join(DATA_DIR, 'microarray_GSE54650', 'data.ann.txt.gz')
 
     sample_names = [
         'Cer_CT18',
@@ -49,8 +61,12 @@ def load_annotated_microarray_gse54650(index_field='entrez_id'):
 
 
 def load_annotated_microarray_sb_data(index_field='entrez_id'):
-
-    infile = os.path.join(DATA_DIR, 'sleeping_beauty_mouse_screen', 'data.ann.txt')
+    """
+    Data from Dubuc for 8 MB samples in mouse. 3 have an inactivating CHD7 insertion.
+    :param index_field:
+    :return:
+    """
+    infile = os.path.join(DATA_DIR, 'sleeping_beauty_mouse_screen', 'data.ann.txt.gz')
     sample_names = [
         "Wu050",
         "Wu053",
@@ -68,6 +84,11 @@ def load_annotated_microarray_sb_data(index_field='entrez_id'):
 
 
 def load_annotated_microarray_gse37382(index_field='entrez_id'):
+    """
+    Northcott human MB study comprising the subgroups C, D and SHH.
+    :param index_field:
+    :return:
+    """
     infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
     meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')

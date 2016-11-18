@@ -2,7 +2,8 @@ from matplotlib import pyplot as plt
 from plotting import heatmap
 import pandas as pd
 from references import known_genes
-from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table, load_data
+from load_data import microarray_data
+from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table
 from scripts.comparison_rnaseq_microarray.consts import NORTHCOTT_GENEID, NORTHCOTT_GENEID_MAP
 from microarray import process
 import os
@@ -34,10 +35,10 @@ if __name__ == '__main__':
     id_to_sym = df.loc[:, ['GeneID', 'Symbol']].set_index('GeneID').dropna()
 
     # load healthy mouse cerebellum data
-    mo_he = load_data.load_annotated_microarray_gse54650()  # indexed by Entrez gene ID
+    mo_he = microarray_data.load_annotated_microarray_gse54650()  # indexed by Entrez gene ID
 
     # load mouse MB data
-    mo_mb, chd7 = load_data.load_annotated_microarray_sb_data()  # indexed by Entrez gene ID
+    mo_mb, chd7 = microarray_data.load_annotated_microarray_sb_data()  # indexed by Entrez gene ID
 
     # reduce to common genes
     common_genes = mo_he.index.intersection(mo_mb.index)

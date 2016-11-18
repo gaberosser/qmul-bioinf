@@ -95,12 +95,12 @@ annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = FALSE, strip
 
 allen_cerebellum <- function(by.gene = T) {
   if (by.gene) {
-    in.file.expr <- file.path(data.dir, 'allen_human_brain_atlas/microarray', 'cerebellum_expression.by_entrezid.csv.gz')
-    missing_msg <- "Unable to find input file {FIN}. Run Python code scripts.comparison_rnaseq_microarray.load_references.save_cerebellum_microarray_data_by_entrez_id()."
+    in.file.expr <- file.path(data.dir, 'allen_human_brain_atlas/microarray', 'cerebellum_expression.by_entrez_id.agg_median.csv.gz')
+    missing_msg <- "Unable to find input file {FIN}. Run Python code load_data.allen_human_brain_atlas.save_cerebellum_microarray_data_by_entrez_id()."
   }
   else {
     in.file.expr <- file.path(data.dir, 'allen_human_brain_atlas/microarray', 'cerebellum_expression.csv.gz')
-    missing_msg <- "Unable to find input file {FIN}. Run Python code scripts.comparison_rnaseq_microarray.load_references.load_cerebellum_microarray_data()."
+    missing_msg <- "Unable to find input file {FIN}. Run Python code load_data.allen_human_brain_atlas.cerebellum_microarray_reference_data()."
   }
   
   in.file.meta <- file.path(data.dir, 'allen_human_brain_atlas/microarray', 'cerebellum_meta.csv')
@@ -108,7 +108,7 @@ allen_cerebellum <- function(by.gene = T) {
     stop(sub('{FIN}', in.file.expr, missing_msg, fixed = T))
   }
   if (!file.exists(in.file.meta)) {
-    msg <- "Unable to find input file {FIN}. Run Python code scripts.comparison_rnaseq_microarray.load_references.load_cerebellum_microarray_data()."
+    msg <- "Unable to find input file {FIN}. Run Python code load_data.allen_human_brain_atlas.cerebellum_microarray_reference_data()."
     stop(sub('{FIN}', in.file.meta, msg, fixed = T))
   }
   

@@ -2,7 +2,8 @@ from settings import DATA_DIR
 import os
 import pandas as pd
 from log import get_console_logger
-from microarray.process import aggregate_by_probe_set
+from microarray_data.process import aggregate_by_probe_set
+import multiprocessing as mp
 
 logger = get_console_logger(__name__)
 BASE_DIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas')
@@ -34,6 +35,50 @@ def get_structure_ids_by_parent(parent_id):
             struct_ids.update(filt.index)
             this_set = set(filt.index)
     return struct_ids
+
+
+
+def load_one_microarray_donor(
+        donor_num,
+        probes,
+        struct_ids=None,
+        mask_nonsig=False
+):
+    INDIR = os.path.join(BASE_DIR, 'microarray')
+    indir = os.path.join(INDIR, "donor%d" % donor_num)
+    expre_fn = os.path.join(indir, 'MicroarrayExpression.csv.gz')
+    sampl_fn = os.path.join(indir, 'SampleAnnot.csv.gz')
+    pacal_fn = os.path.join(indir, 'PACall.csv.gz')
+
+    sampl = pd.read_csv(sampl_fn)
+
+    # set sample IDs
+    sampl_idx = pd.Index(['%d_%d' % (donor_num, i) for i in range(sampl.shape[0])])
+    sampl.index = sampl_idx
+
+    expre = pd.read_csv(expre_fn, header=None, index_col=0)
+    expre.columns = sampl_idx
+    # filter sample annotation and expression for recognized probes
+    expre = expre.loc[probes.index]
+
+    if mask_nonsig:
+        pacal = pd.read_csv(pacal_fn, header=None, index_col=0).astype(bool)
+        pacal.columns = sampl_idx
+        pacal = pacal.loc[probes.index]
+        # filter expression by PA call
+        # this replaces all non-significant results with NaN
+        expre = expre[pacal]
+
+    if struct_ids is not None:
+        # filter sample annotation by ontology
+        sampl_idx = sampl[sampl.structure_id.isin(struct_ids)].index
+        expre = expre[sampl_idx]
+        sampl = sampl.loc[sampl_idx]
+
+    sampl['donor_id'] = donor_num
+
+    return expre, sampl
+
 
 
 def load_microarray_reference_data(
@@ -81,46 +126,21 @@ def load_microarray_reference_data(
     expression = pd.DataFrame()
     sample_meta = pd.DataFrame()
 
+    p = mp.Pool()
+    p_kwds = {'struct_ids': struct_ids if parent_struct_id else None, 'mask_nonsig': mask_nonsig}
+    jobs = {}
+
     for dn in DONOR_NUMBERS:
+        jobs[dn] = p.apply_async(load_one_microarray_donor, args=(dn, probes), kwds=p_kwds)
+    p.close()
+
+    for dn, j in jobs.items():
         logger.info("Processing donor %d", dn)
-        this_dir = os.path.join(INDIR, "donor%d" % dn)
-        expre_fn = os.path.join(this_dir, 'MicroarrayExpression.csv.gz')
-        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
-        pacal_fn = os.path.join(this_dir, 'PACall.csv.gz')
-
-        sampl = pd.read_csv(sampl_fn)
-
-        # set sample IDs
-        sampl_idx = pd.Index(['%d_%d' % (dn, i) for i in range(sampl.shape[0])])
-        sampl.index = sampl_idx
-
-        expre = pd.read_csv(expre_fn, header=None, index_col=0)
-        expre.columns = sampl_idx
-        # filter sample annotation and expression for recognized probes
-        expre = expre.loc[probes.index]
-
-        if mask_nonsig:
-            pacal = pd.read_csv(pacal_fn, header=None, index_col=0).astype(bool)
-            pacal.columns = sampl_idx
-            pacal = pacal.loc[probes.index]
-            # filter expression by PA call
-            # this replaces all non-significant results with NaN
-            expre = expre[pacal]
-
-        if parent_struct_id is not None:
-            # filter sample annotation by ontology
-            sampl_idx = sampl[sampl.structure_id.isin(struct_ids)].index
-            expre = expre[sampl_idx]
-            sampl = sampl.loc[sampl_idx]
-
-        # concatenate along axis 1
+        expre, sampl = j.get(1e12)
         expression = pd.concat([expression, expre], axis=1)
-
-        # add sample metadata to the list
-        sampl['donor_id'] = dn
         sample_meta = sample_meta.append(sampl)
-
         logger.info("Completed donor %d", dn)
+
 
     if ann_field is not None:
         # prepend gene symbol and entrez ID to the total expression dataframe
@@ -128,7 +148,7 @@ def load_microarray_reference_data(
 
     if agg_method is not None:
         # aggregate by the annotation field
-        aggregate_by_probe_set(expression, method=agg_method, groupby=ann_field)
+        expression = aggregate_by_probe_set(expression, method=agg_method, groupby=ann_field)
 
     return expression, sample_meta
 
@@ -178,12 +198,10 @@ def cerebellum_microarray_reference_data(agg_field=None, agg_method=None):
     return expr, meta
 
 
-# def save_cerebellum_microarray_data_by_entrez_id(method='median'):
-#     INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
-#     expr, meta = load_cerebellum_microarray_reference_data()
-#     expr_eid = microarray_entrez_markers(expr, method=method)
-#     outfile = os.path.join(INDIR, 'cerebellum_expression.by_entrezid.csv.gz')
-#     expr_eid.to_csv(outfile, compression='gzip')
-#     # no need to re-save meta because it's unaltered
-#
-#     return expr_eid, meta
+def save_cerebellum_microarray_data_by_entrez_id(method='median'):
+    """
+    Convenience function since this dataset is required in R.
+    :param method:
+    :return:
+    """
+    expr, meta = cerebellum_microarray_reference_data(agg_field='entrez_id', agg_method=method)

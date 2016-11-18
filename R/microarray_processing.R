@@ -51,7 +51,8 @@ all <- merge(Annot, my_frame, by.x=0, by.y=0, all=T)
 all = all[(all$ENTREZ != 'NA'),]
 
 # Write out to a file:
-write.table(all, file="data.ann.txt", sep="\t")
+gz1 <- gzfile("data.ann.txt.gz", "w")
+write.table(all, file=gz1, sep="\t")
 
 # Optionally generate a histogram
 hist(as.matrix(my_frame), 100)

@@ -3,10 +3,11 @@ source("http://www.bioconductor.org/biocLite.R")
 # biocLite("GenomicFeatures")
 
 library("Rsamtools")
+indir <- "/media/gabriel/raid1_4tb/data/Xinyu_Zhang_NEB_mRNASeq_GC-XZ-2499_270115-19825815/"
 
 filenames <- c(
-  "/home/gabriel/data/Xinyu_Zhang_NEB_mRNASeq_GC-XZ-2499_270115-19825815/XZ-1-21077637/alignments/XZ-1.alignments.bam",
-  "/home/gabriel/data/Xinyu_Zhang_NEB_mRNASeq_GC-XZ-2499_270115-19825815/XZ-2-21099482/alignments/XZ-2.alignments.bam"
+  file.path(indir, "XZ-1-21077637/alignments/XZ-1.alignments.bam"),
+  file.path(indir, "XZ-2-21099482/alignments/XZ-2.alignments.bam")
 )
 file.exists(filenames)
 

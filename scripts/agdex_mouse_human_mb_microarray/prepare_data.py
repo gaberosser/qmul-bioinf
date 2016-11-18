@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from microarray import illumina, process, annotation
-from scripts.agdex_mouse_human_mb_microarray import load_data
+from load_data import microarray_data, allen_human_brain_atlas
 from settings import DATA_DIR
 
 
@@ -14,7 +14,6 @@ def load_hkg_list():
 
 if __name__ == '__main__':
     from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table
-    from scripts.comparison_rnaseq_microarray import load_references
     from plotting import corr
     import pandas as pd
     from matplotlib import pyplot as plt
@@ -24,10 +23,10 @@ if __name__ == '__main__':
     fig_kwargs = {'figsize': FIGSIZE}
 
     # load healthy mouse cerebellum data
-    mo_he = load_data.load_annotated_microarray_gse54650()  # indexed by Entrez gene ID
+    mo_he = microarray_data.load_annotated_microarray_gse54650()  # indexed by Entrez gene ID
 
     # load mouse MB data
-    mo_mb, chd7 = load_data.load_annotated_microarray_sb_data() # indexed by Entrez gene ID
+    mo_mb, chd7 = microarray_data.load_annotated_microarray_sb_data() # indexed by Entrez gene ID
 
     # reduce to common genes
     common_genes = mo_he.index.intersection(mo_mb.index)
@@ -93,11 +92,10 @@ if __name__ == '__main__':
         plt.tight_layout()
 
     # load human samples and avg over repeats
-    hu_mb, hu_mb_meta = load_data.load_annotated_microarray_gse37382()
+    hu_mb, hu_mb_meta = microarray_data.load_annotated_microarray_gse37382()
 
 
-    hu_he, hu_he_meta = load_references.load_cerebellum_microarray_reference_data()
-    hu_he = load_references.microarray_entrez_markers(hu_he, method='median')
+    hu_he, hu_he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='entrez_id', agg_method='median')
 
     hu_all = pd.concat((hu_he, hu_mb), axis=1).dropna(axis=0, how='any')
     yg_hu_all = process.yugene_transform(hu_all)
