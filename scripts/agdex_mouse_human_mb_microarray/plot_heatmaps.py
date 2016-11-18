@@ -18,7 +18,7 @@ def mo_entrez_to_symbol(data, kg):
 
 if __name__ == '__main__':
 
-    SAVE_PLOTS = True
+    SAVE_PLOTS = False
 
     if SAVE_PLOTS:
         OUTDIR = 'mouse_ncott_ge.0'

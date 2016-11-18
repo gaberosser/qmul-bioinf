@@ -10,7 +10,7 @@ def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol', 
     :param lookup: Optionally supply a lookup list that is used to
     :param method: Either a string specifying a common method (max, mean, sum, median) or a vectorised function
     :param groupby:
-    :param axis: Axis to use when grouping
+    :param axis: Axis to use when grouping. 0 denotes grouping by the values in a column.
     :return:
     """
     grp_data = marray_data.groupby(groupby, axis=axis)

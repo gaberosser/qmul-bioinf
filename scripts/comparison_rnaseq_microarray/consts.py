@@ -21,7 +21,7 @@ NORTHCOTT_GENEID_MAP = dict([
     ('TPH1', 7166),
     ('TNFRSF19', 55504),
     ('TMEM51', 55092),
-    ('C9orf94', 92949),
+    # ('C9orf94', 92949),  # this is a synonym of ADAMTSL1
     ('GABRE', 2564),
     ('TNFRSF11B', 4982),
     ('FREM2', 341640),
@@ -62,7 +62,7 @@ NORTHCOTT_GENEID_MAP = dict([
     ('TBR1', 10716),
     ('FSTL5', 56884),
     ('TMEM16B', 57101),
-    ('C5orf23', 4883),
+    # ('C5orf23', 4883),  # this is a synonym of NPR3
     ('GNB3', 2784),
     ('DMD', 1756),
     ('PCDH21', 92211),
