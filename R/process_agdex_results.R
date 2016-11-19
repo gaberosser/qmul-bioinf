@@ -1,7 +1,7 @@
 library(AGDEX)
 library("RColorBrewer")
 
-res.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/by_gene_ncott100_yugene'
+res.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/by_gene_ncott100'
 
 grp.a <- c("hu.mb", "C", "D", "SHH")
 names(grp.a) <- c("All MB", "Group C", "Group D", "SHH")
@@ -34,28 +34,75 @@ loadResults <- function(fn) {
 res <- lapply(filenames, loadResults)
 
 extractMetric <- function(func) {
-  m <- lapply(res, func)
-  m <- matrix(m, nrow=length(grp.b), ncol=length(grp.a))
-  rownames(m) <- grp.b
-  colnames(m) <- grp.a
+  m <- as.numeric(lapply(res, func))
+  m <- matrix(m, nrow=length(grp.b), ncol=length(grp.a), byrow=T)
+  rownames(m) <- names(grp.b)
+  colnames(m) <- names(grp.a)
   return(m)
 }
 
+cos.vals <- extractMetric(function(x) x$stat.value[x$stat.name == 'cos'])
+cos.pvals.a <- extractMetric(function(x) x$A.pval[x$stat.name == 'cos'])
+cos.pvals.b <- extractMetric(function(x) x$B.pval[x$stat.name == 'cos'])
+cos.pvals.worst <- extractMetric(function(x)  max(x[x$stat.name == 'cos', c("A.pval", "B.pval")]))
 
-cos.vals <- lapply(res, function(x) x$stat.value[x$stat.name == 'cos'])
-cos.vals <- matrix(cos.vals, nrow=length(grp.b), ncol=length(grp.a), byrow = T)
-rownames(cos.vals) <- grp.b
-colnames(cos.vals) <- grp.a
+dop.vals <- extractMetric(function(x) x$stat.value[x$stat.name == 'dop'])
+dop.pvals.a <- extractMetric(function(x) x$A.pval[x$stat.name == 'dop'])
+dop.pvals.b <- extractMetric(function(x) x$B.pval[x$stat.name == 'dop'])
+dop.pvals.worst <- extractMetric(function(x)  max(x[x$stat.name == 'dop', c("A.pval", "B.pval")]))
 
-heatmap(cos.vals, Rowv = NA, Colv = NA, col = rev(brewer.pal(11, "RdBu")))
+plotLabelledHeatmap <- function(
+  data, 
+  xlab="Mouse (relative to healthy)", 
+  ylab="Human (relative to healthy)", 
+  clim=NULL,
+  cdirection = 1,
+  title=NULL,
+  subtitle=NULL,
+  save.filestem=NULL) {
+  dat <- melt(data)
+  colnames(dat) <- c(xlab, ylab, "value")
+  
+  g = ggplot(dat, aes_q(x = as.name(xlab), y = as.name(ylab))) +
+    geom_tile(aes(fill = value)) + 
+    geom_text(aes(label = round(dat$value, 3))) +
+    scale_fill_distiller(limits=clim, palette = "Reds", direction = cdirection)
+  if (!is.null(title)) {
+    g = g + ggtitle(title, subtitle = subtitle) + theme(plot.title = element_text(lineheight=.8, hjust=0.5))
+    
+  }
+  if (!is.null(save.filestem)) {
+    ggsave(paste0(out.filestem, '.pdf'), plot=g, width=8, height=6, units="in", dpi=200)
+    ggsave(paste0(out.filestem, '.png'), plot=g, width=8, height=6, units="in", dpi=200)
+  } else {
+    print(g)
+  }
+  
+}
 
-cos.pvals.a <- lapply(res, function(x) max(x[x$stat.name == 'cos', "A.pval"]))
+# COS
+out.filestem = file.path(res.dir, "cos_values")
+plotLabelledHeatmap(cos.vals, title = "AGDEX cos value", save.filestem = out.filestem)
 
+out.filestem = file.path(res.dir, "cos_pvalues_human")
+plotLabelledHeatmap(cos.pvals.a, title = "AGDEX cos pvalues", subtitle = "Permuting human group labels", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
 
-cos.pvals.worst <- lapply(res, function(x) max(x[x$stat.name == 'cos', c("A.pval", "B.pval")]))
-cos.pvals.worst <- matrix(cos.pvals.worst, nrow=length(grp.b), ncol=length(grp.a))
-rownames(cos.pvals.worst) <- grp.b
-colnames(cos.pvals.worst) <- grp.a
+out.filestem = file.path(res.dir, "cos_pvalues_mouse")
+plotLabelledHeatmap(cos.pvals.b, title = "AGDEX cos pvalues", subtitle = "Permuting mouse group labels", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
 
-heatmap(cos.pvals.worst, Rowv = NA, Colv = NA, col = rev(brewer.pal(11, "RdBu")))
+out.filestem = file.path(res.dir, "cos_pvalues_worst")
+plotLabelledHeatmap(cos.pvals.worst, title = "AGDEX cos pvalues", subtitle = "Worst result from permuting group labels on both species", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
 
+# DOP
+
+out.filestem = file.path(res.dir, "dop_values")
+plotLabelledHeatmap(dop.vals, title = "AGDEX dop value", save.filestem = out.filestem)
+
+out.filestem = file.path(res.dir, "dop_pvalues_human")
+plotLabelledHeatmap(dop.pvals.a, title = "AGDEX dop pvalues", subtitle = "Permuting human group labels", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
+
+out.filestem = file.path(res.dir, "dop_pvalues_mouse")
+plotLabelledHeatmap(dop.pvals.b, title = "AGDEX dop pvalues", subtitle = "Permuting mouse group labels", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
+
+out.filestem = file.path(res.dir, "dop_pvalues_worst")
+plotLabelledHeatmap(dop.pvals.worst, title = "AGDEX dop pvalues", subtitle = "Worst result from permuting group labels on both species", cdirection = -1, clim=c(0, 1), save.filestem = out.filestem)
