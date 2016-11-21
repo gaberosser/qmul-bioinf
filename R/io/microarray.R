@@ -8,6 +8,7 @@ library(AnnotationDbi)
 library(data.table)
 library(reshape2)
 data.dir <- '../data/'
+data.dir.raid <- '/media/gabriel/raid1_4tb/data/microarray/'
 
 
 #' Function source: http://slowkow.com/notes/data-table-aggregate/
@@ -61,6 +62,7 @@ annotate_by_entrez <- function(expr_df, annotlib) {
   annot_df = annot_df[!is.na(annot_df[['ENTREZID']]),]
   
   # median aggregation
+  # ohmygodohmygodohmygod this is SO SLOW
   # aggr_df <- aggregate(annot_df[,1:(length(annot_df) - 2)], by=list(ENTREZID=annot_df[['ENTREZID']]), FUN=median)
   aggr_df <- median_by(annot_df[,1:(length(annot_df) - 2)], annot_df[['ENTREZID']])
     
@@ -180,3 +182,76 @@ gse37382 <- function() {
   
   return(list(expr=expr, meta=meta))
 }
+
+
+gse10327 <- function() {
+  in.dir <- file.path(data.dir.raid, 'GSE10327')
+  in.dir.raw <- file.path(in.dir, 'raw')
+  pre_saved.file = file.path(in.dir, 'expr.rma.median_entrez_id.rds')
+  if (file.exists(pre_saved.file)) {
+    expr <- readRDS(pre_saved.file)
+  } else {
+    library(hgu133plus2.db)
+    expr <- annotated_expr_from_celdir(
+      in.dir.raw, 
+      annotlib = hgu133plus2.db,
+      gzipped = T, 
+      strip_title = '.CEL.gz')
+    saveRDS(expr, pre_saved.file)
+  }
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 1)
+  rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+  
+  return(list(expr=expr, meta=meta))
+}
+
+
+gse12992 <- function() {
+  in.dir <- file.path(data.dir.raid, 'GSE12992')
+  in.dir.raw <- file.path(in.dir, 'raw')
+  pre_saved.file = file.path(in.dir, 'expr.rma.median_entrez_id.rds')
+  if (file.exists(pre_saved.file)) {
+    expr <- readRDS(pre_saved.file)
+  } else {
+    library(hgu133plus2.db)
+    expr <- annotated_expr_from_celdir(
+      in.dir.raw, 
+      annotlib = hgu133plus2.db,
+      gzipped = T, 
+      strip_title = '.CEL.gz')
+    saveRDS(expr, pre_saved.file)
+  }
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 1)
+  rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+  
+  return(list(expr=expr, meta=meta))
+}
+
+
+thompson2006 <- function() {
+  in.dir <- file.path(data.dir.raid, 'thompson2006')
+  in.dir.raw <- file.path(in.dir, 'raw')
+  pre_saved.file = file.path(in.dir, 'expr.rma.median_entrez_id.rds')
+  if (file.exists(pre_saved.file)) {
+    expr <- readRDS(pre_saved.file)
+  } else {
+    library(hgu133plus2.db)
+    expr <- annotated_expr_from_celdir(
+      in.dir.raw, 
+      annotlib = hgu133plus2.db,
+      gzipped = T, 
+      strip_title = '.CEL.gz')
+    saveRDS(expr, pre_saved.file)
+  }
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 1)
+  rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+  
+  return(list(expr=expr, meta=meta))
+}
+

@@ -3,15 +3,21 @@
 # biocLite("limma")
 # biocLite("mogene10sttranscriptcluster.db")
 # biocLite("hugene11sttranscriptcluster.db")
+# biocLite('hgu133plus2.db')
 
 library(oligo)
 library(limma)
 library(mogene10sttranscriptcluster.db)
 library(hugene11sttranscriptcluster.db)
+library(hgu133plus2.db)
 
-dataDir <- '../data/'
+dataDir <- '/media/gabriel/raid1_4tb/data/microarray/'
+celDir <- file.path(dataDir, 'GSE10327', 'raw')
+
+# dataDir <- '../data/'
 # celDir <- file.path(dataDir, 'microarray_GSE54650', 'raw')
-celDir <- file.path(dataDir, 'microarray_GSE37382', 'raw')
+# celDir <- file.path(dataDir, 'microarray_GSE37382', 'raw')
+
 celFiles <- list.celfiles(celDir, listGzipped = TRUE, full.names = TRUE)
 affyRaw <- read.celfiles(celFiles)
 
