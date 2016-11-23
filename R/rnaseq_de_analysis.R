@@ -58,7 +58,7 @@ meta <- data.frame(condition = c(
 dds <- DESeqDataSetFromMatrix(countData = as.matrix(res), colData = meta, design=~condition)
 dds <- DESeq(dds)
 
-
+# don't need to specify contrasts here (same result without) but it helps to ensure the correct ordering
 des = results(dds, contrast=c("condition", "mb", "control"))
 des = des[order(des$pvalue),]
 
@@ -78,3 +78,18 @@ genes.group <- as.factor(c(
 
 des.ncott <- as.data.frame(des[genes.all,])
 des.ncott$subgroup <- genes.group
+
+# repeat with only xz1 and xz2
+res.red <- res[,1:11]
+meta.red <- data.frame(condition = c(
+  as.vector(matrix("control", 9)), as.vector(matrix("mb", 2))
+), row.names = colnames(res.red))
+
+dds.red <- DESeqDataSetFromMatrix(countData = as.matrix(res.red), colData = meta.red, design=~condition)
+dds.red <- DESeq(dds.red)
+
+des.red = results(dds.red, contrast=c("condition", "mb", "control"))
+des.red = des.red[order(des.red$pvalue),]
+
+des.red.ncott <- as.data.frame(des.red[genes.all,])
+des.red.ncott$subgroup <- genes.group

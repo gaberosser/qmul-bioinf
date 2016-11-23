@@ -115,12 +115,12 @@ X <- model.matrix(~Group + TechRpt)
 X0 <- model.matrix(~0 + Group + TechRpt)
 
 # fit data to design matrix
-fit <- lmFit(subexpr, X)
+# fit <- lmFit(subexpr, X)
 fit.v <- lmFit(subexpr.v, X)
 # fit.entrez <- lmFit(subexpr.entrez, X)
 # fit.entrez.v <- lmFit(subexpr.entrez.v, X)
 
-ebfit <- eBayes(fit)
+# ebfit <- eBayes(fit)
 ebfit.v <- eBayes(fit.v)
 # ebfit.entrez <- eBayes(fit.entrez)
 # ebfit.entrez.v <- eBayes(fit.entrez.v)
@@ -128,7 +128,7 @@ ebfit.v <- eBayes(fit.v)
 # extract top N DE genes / probes above a certain P value
 number <- Inf
 pval_max = 1.
-dehits <- topTable(ebfit, coef='GroupD', number=number, p.value=pval_max)
+# dehits <- topTable(ebfit, coef='GroupD', number=number, p.value=pval_max)
 dehits.v <- topTable(ebfit.v, coef='GroupD', number=number, p.value=pval_max)
 # dehits.entrez <- topTable(ebfit.entrez, coef='GroupD', number=number, p.value=pval_max)
 # dehits.entrez.v <- topTable(ebfit.entrez.v, coef='GroupD', number=number, p.value=pval_max)
@@ -143,11 +143,11 @@ dehits.v <- topTable(ebfit.v, coef='GroupD', number=number, p.value=pval_max)
 pids <- keys(x = illuminaHumanv2.db, keytype='PROBEID')
 map.pid <- mapIds(x = illuminaHumanv2.db, keys=pids, column='SYMBOL', keytype = 'PROBEID')
 
-dehits$symbol <- map.pid[rownames(dehits)]
+# dehits$symbol <- map.pid[rownames(dehits)]
 dehits.v$symbol <- map.pid[rownames(dehits.v)]
 
 # remove non-genes
-dehits <- na.omit(dehits)
+# dehits <- na.omit(dehits)
 dehits.v <- na.omit(dehits.v)
 
 # find MB-specific genes
@@ -180,6 +180,13 @@ genes.group <- as.factor(c(
   as.vector(matrix('D', length(genes.d)))
 ))
 
+res.all <- data.frame(dehits.v[0,])
+for (s in unique(dehits.v$symbol)) {
+  a <- dehits.v[dehits.v$symbol == s,]
+  idx <- which.min(a$adj.P.Val)
+  res.all[s, ] <- a[idx, ]
+}
+
 dehits.ncott.v <- dehits.v[melt(lapply(genes.all, function(x) which(dehits.v$symbol == x)))$value,]
 res <- data.frame(dehits.ncott.v[0,])
 
@@ -188,6 +195,7 @@ for (s in dehits.ncott.v$symbol) {
   idx <- which.min(a$adj.P.Val)
   res[s, ] <- a[idx, ]
 }
+res$subgroup <- genes.group
 
 
 # g = ggplot(dat, aes_q(x = as.name(xlab), y = as.name(ylab))) +
