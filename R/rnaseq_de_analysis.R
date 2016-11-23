@@ -1,40 +1,80 @@
 source("http://www.bioconductor.org/biocLite.R")
-# biocLite("Rsamtools")
-# biocLite("GenomicFeatures")
+# biocLite("DESeq2")
 
-library("Rsamtools")
-indir <- "/media/gabriel/raid1_4tb/data/Xinyu_Zhang_NEB_mRNASeq_GC-XZ-2499_270115-19825815/"
+library(dplyr)
+library(DESeq2)
 
-filenames <- c(
-  file.path(indir, "XZ-1-21077637/alignments/XZ-1.alignments.bam"),
-  file.path(indir, "XZ-2-21099482/alignments/XZ-2.alignments.bam")
-)
-file.exists(filenames)
+# load data
 
-bamfiles <- BamFileList(filenames, yieldSize=2000000)
+# XZ counts
 
-library("GenomicFeatures")
-gtffile <- "/home/gabriel/data/Human_Genome/gtf/Homo_sapiens.GRCh38.85.gtf.gz"
-(txdb <- makeTxDbFromGFF(gtffile, format="gtf", circ_seqs=character()))
+in.dir <- '../data/rnaseq_GSE83696/htseq-count'
+filenames <- paste0('XZ-', 1:8, '.count')
+in.files <- sapply(filenames, function (x) file.path(in.dir, x))
 
-# need to rename the chromosomes in the txdb
-# also drop the unplaced contigs, since these are not represented in the RNA-Seq data
-library("GenomeInfoDb")
-keepSeqlevels(txdb, c(paste0("",1:22), c("X", "Y", "MT")))
-newnames <- c(paste0("chr", 1:22), c("chrX", "chrY", "chrM"))
-names(newnames) <- seqlevels(txdb)
-renameSeqlevels(txdb, newnames)
+tbl <- lapply(in.files, function(x) read.csv(x, sep='\t', header = F, row.names = 1))
+res.xz <- do.call(cbind, tbl)
+colnames(res.xz) <- paste0('XZ', 1:8)
 
-# perform counting
-library("GenomicAlignments")
-# library("BiocParallel")
-# 2 cores in parallel
-# register(Serial(workers = 2))
+# annotate by symbol
+annot <- read.csv(file.path(in.dir, 'annotation.csv.gz'), header=1, row.names = NULL)
+annot <- annot[!duplicated(annot[,'query']),]
+rownames(annot) <- annot[,'query']
+annot$query <- NULL
 
-(ebg <- exonsBy(txdb, by="gene"))
-se <- summarizeOverlaps(features=ebg, reads=bamfiles,
-                        mode='Union',
-                        singleEnd = FALSE,
-                        ignore.strand = FALSE,
-                        fragments = TRUE)
+sym <- as.character(annot[rownames(res.xz), 'symbol'])
+# discard entries with no symbol
+res.xz <- res.xz[!is.na(sym),]
+sym <- na.omit(sym)
 
+# aggregate
+res.xz.agg <- aggregate(res.xz, by=list(symbol=sym), FUN=sum)
+rownames(res.xz.agg) <- res.xz.agg$symbol
+res.xz.agg$symbol <- NULL
+
+# allen counts
+
+in.dir <- '../data/allen_human_brain_atlas/rnaseq/'
+in.file <- file.path(in.dir, 'cerebellum.counts.csv.gz')
+
+res.he <- read.csv(in.file, row.names = 1)
+
+# combine, keeping only matching rows
+match = intersect(rownames(res.he), rownames(res.xz.agg))
+res <- cbind(res.he[match,], res.xz.agg[match,])
+
+# filter rows where the read count <2
+res <- res[rowSums(res) > 1,]
+res <- as.matrix(res)
+storage.mode(res) <- "integer"
+
+# metadata
+meta <- data.frame(condition = c(
+  as.vector(matrix("control", 9)), as.vector(matrix("mb", 8))
+), row.names = colnames(res))
+
+
+# DESeq2
+dds <- DESeqDataSetFromMatrix(countData = as.matrix(res), colData = meta, design=~condition)
+dds <- DESeq(dds)
+
+
+des = results(dds, contrast=c("condition", "mb", "control"))
+des = des[order(des$pvalue),]
+
+# find MB-specific genes
+genes.wnt <- c("WIF1", "TNC", "GAD1", "DKK2", "EMX2")
+genes.shh <- c("PDLIM3", "EYA1", "HHIP", "ATOH1", "SFRP1")
+genes.c <- c("IMPG2", "GABRA5", "EYS", "NRL", "MAB21L2", "NPR3")
+genes.d <- c("KCNA1", "EOMES", "KHDRBS2", "RBM24", "UNC5D", "OAS1", "OTX2")
+
+genes.all <- c(genes.wnt, genes.shh, genes.c, genes.d)
+genes.group <- as.factor(c(
+  as.vector(matrix('WNT', length(genes.wnt))),
+  as.vector(matrix('SHH', length(genes.shh))),
+  as.vector(matrix('C', length(genes.c))),
+  as.vector(matrix('D', length(genes.d)))
+))
+
+des.ncott <- as.data.frame(des[genes.all,])
+des.ncott$subgroup <- genes.group
