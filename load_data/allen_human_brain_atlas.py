@@ -2,7 +2,7 @@ from settings import DATA_DIR
 import os
 import pandas as pd
 from log import get_console_logger
-from microarray_data.process import aggregate_by_probe_set
+from microarray.process import aggregate_by_probe_set
 import multiprocessing as mp
 
 logger = get_console_logger(__name__)
@@ -205,3 +205,68 @@ def save_cerebellum_microarray_data_by_entrez_id(method='median'):
     :return:
     """
     expr, meta = cerebellum_microarray_reference_data(agg_field='entrez_id', agg_method=method)
+
+
+
+def load_rnaseq_reference_data(
+        parent_struct_id=None,
+        units='counts',
+):
+    if units not in ('counts', 'tpm'):
+        raise ValueError("Supported units are 'counts' and 'tpm'.")
+
+    DONOR_NUMBERS = [
+        9861,
+        10021
+    ]
+    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/rnaseq')
+
+    if parent_struct_id is None:
+        struct_ids = None
+    else:
+        struct_ids = get_structure_ids_by_parent(parent_struct_id)
+
+    # load gene library
+    # unnecessary unless we want Entrez IDs
+    # genes_fn = os.path.join(INDIR, 'Genes.csv')
+    # genes = pd.read_csv(genes_fn, header=0, index_col=0)
+
+    reads = pd.DataFrame()
+    sample_meta = pd.DataFrame()
+
+    for dn in DONOR_NUMBERS:
+        logger.info("Processing donor %d", dn)
+        this_dir = os.path.join(INDIR, "donor%d" % dn)
+        if units == 'counts':
+            dat_fn = os.path.join(this_dir, 'RNAseqCounts.csv.gz')
+        else:
+            dat_fn = os.path.join(this_dir, 'RNAseqTPM.csv.gz')
+
+        sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
+
+
+        sampl = pd.read_csv(sampl_fn)
+        dat = pd.read_csv(dat_fn, header=None, index_col=0)
+
+        # set sample IDs
+        sampl_idx = pd.Index(['%d_%d' % (dn, i) for i in range(sampl.shape[0])])
+        sampl.index = sampl_idx
+
+        dat.columns = sampl_idx
+
+        if struct_ids is not None:
+            # filter sample annotation by ontology
+            sampl_idx = sampl[sampl.ontology_structure_id.isin(struct_ids)].index
+            dat = dat[sampl_idx]
+            sampl = sampl.loc[sampl_idx]
+
+        # concatenate along axis 1
+        reads = pd.concat([reads, dat], axis=1)
+
+        # add sample metadata to the list
+        sampl['donor_id'] = dn
+        sample_meta = sample_meta.append(sampl)
+
+        logger.info("Completed donor %d", dn)
+
+    return reads, sample_meta
