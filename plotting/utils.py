@@ -1,11 +1,11 @@
 import numpy as np
 
 
-def axis_border(ax, c=None, lw=None):
+def axis_border(ax, c=None, lw=1):
     """
     Add a border around the supplied axis.
     :param c: The line colour. If not supplied, the default is used.
-    :param lw: The line width. If not supplied, the default is used.
+    :param lw: The line width.
     """
     ax.set_frame_on(True)
     for s in ax.spines.values():

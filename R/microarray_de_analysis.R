@@ -7,12 +7,12 @@
 library("limma")
 library("vsn")
 library('illuminaHumanv2.db')
+library("RColorBrewer")
+library(ggplot2)
 source('io/microarray.R')
 
 dataDir <- '../data/'
 data.dir.raid <- '/media/gabriel/raid1_4tb/data/microarray/'
-
-
 
 microarrayDir <- file.path(dataDir, 'microarray_GSE28192')
 microarrayFile <- file.path(microarrayDir, 'microarray.RData')
@@ -56,12 +56,12 @@ load_from_raw <- function(avg.tech_rpts = T) {
 
 # load_from_raw(F)
 load(microarrayFile)
-expr.entrez <- annotate_by_entrez(expr, illuminaHumanv2.db)
-colnames(expr.entrez) <- colnames(expr)
+# expr.entrez <- annotate_by_entrez(expr, illuminaHumanv2.db)
+# colnames(expr.entrez) <- colnames(expr)
 
 # transform using the Variance Stabilised Transform (VST)
 v <- vsn2(data.matrix(expr))
-v.entrez <- vsn2(data.matrix(expr.entrez))
+# v.entrez <- vsn2(data.matrix(expr.entrez))
 
 # These plots show the effect of the VST
 if (F) {
@@ -72,8 +72,8 @@ if (F) {
 # return to a data.frame and reset sample names
 expr.vst <- data.frame(v@hx)
 colnames(expr.vst) <- colnames(expr)
-expr.entrez.vst <- data.frame(v.entrez@hx)
-colnames(expr.entrez.vst) <- colnames(expr)
+# expr.entrez.vst <- data.frame(v.entrez@hx)
+# colnames(expr.entrez.vst) <- colnames(expr)
 
 healthy.samples = c(
   'NT1197',
@@ -101,9 +101,9 @@ subsamples <- subset(
 
 
 subexpr <- expr[,subsamples$name]
-subexpr.entrez <- expr.entrez[,subsamples$name]
+# subexpr.entrez <- expr.entrez[,subsamples$name]
 subexpr.v <- expr.vst[,subsamples$name]
-subexpr.entrez.v <- expr.entrez.vst[,subsamples$name]
+# subexpr.entrez.v <- expr.entrez.vst[,subsamples$name]
 
 # setup design matrix
 Group <- factor(subsamples$northcott.classification)
@@ -112,44 +112,32 @@ TechRpt <- factor(sapply(subsamples[,2], function(x) if (substr(x, nchar(x) - 1,
 
 # the design matrix
 X <- model.matrix(~Group + TechRpt)
+X0 <- model.matrix(~0 + Group + TechRpt)
 
 # fit data to design matrix
 fit <- lmFit(subexpr, X)
 fit.v <- lmFit(subexpr.v, X)
-fit.entrez <- lmFit(subexpr.entrez, X)
-fit.entrez.v <- lmFit(subexpr.entrez.v, X)
-
-# if we need contrasts, make them like this:
-# contrasts.matrix <- makeContrasts(
-#   tech_rpt = es2B, 
-#   D_healthy = es1D - es1, 
-#   levels=X
-# )
-# 
-# ebfit <- eBayes(contrasts.fit(fit, contrasts.matrix))
-# ebfit.v <- eBayes(contrasts.fit(fit.v, contrasts.matrix))
-# ebfit.entrez <- eBayes(contrasts.fit(fit.entrez, contrasts.matrix))
-# ebfit.entrez.v <- eBayes(contrasts.fit(fit.entrez.v, contrasts.matrix))
+# fit.entrez <- lmFit(subexpr.entrez, X)
+# fit.entrez.v <- lmFit(subexpr.entrez.v, X)
 
 ebfit <- eBayes(fit)
 ebfit.v <- eBayes(fit.v)
-ebfit.entrez <- eBayes(fit.entrez)
-ebfit.entrez.v <- eBayes(fit.entrez.v)
+# ebfit.entrez <- eBayes(fit.entrez)
+# ebfit.entrez.v <- eBayes(fit.entrez.v)
 
 # extract top N DE genes / probes above a certain P value
 number <- Inf
 pval_max = 1.
 dehits <- topTable(ebfit, coef='GroupD', number=number, p.value=pval_max)
 dehits.v <- topTable(ebfit.v, coef='GroupD', number=number, p.value=pval_max)
-dehits.entrez <- topTable(ebfit.entrez, coef='GroupD', number=number, p.value=pval_max)
-dehits.entrez.v <- topTable(ebfit.entrez.v, coef='GroupD', number=number, p.value=pval_max)
+# dehits.entrez <- topTable(ebfit.entrez, coef='GroupD', number=number, p.value=pval_max)
+# dehits.entrez.v <- topTable(ebfit.entrez.v, coef='GroupD', number=number, p.value=pval_max)
 
 # change Entrez ID to gene symbol for clarity
-eids <- keys(x = illuminaHumanv2.db, keytype = "ENTREZID")
-map <- mapIds(x = illuminaHumanv2.db, keys=eids, column='SYMBOL', keytype = 'ENTREZID')
-
-dehits.entrez$symbol <- map[rownames(dehits.entrez)]
-dehits.entrez.v$symbol <- map[rownames(dehits.entrez.v)]
+# eids <- keys(x = illuminaHumanv2.db, keytype = "ENTREZID")
+# map <- mapIds(x = illuminaHumanv2.db, keys=eids, column='SYMBOL', keytype = 'ENTREZID')
+# dehits.entrez$symbol <- map[rownames(dehits.entrez)]
+# dehits.entrez.v$symbol <- map[rownames(dehits.entrez.v)]
 
 # switch probe set ID to gene symbol
 pids <- keys(x = illuminaHumanv2.db, keytype='PROBEID')
@@ -169,7 +157,7 @@ genes.c <- c("IMPG2", "GABRA5", "EYS", "NRL", "MAB21L2", "NPR3")
 genes.d <- c("KCNA1", "EOMES", "KHDRBS2", "RBM24", "UNC5D", "OAS1", "OTX2")
 
 # check they are all in the mapper
-all(sapply(c(genes.wnt, genes.shh, genes.c, genes.d), function (x) as.logical(length(grep(x, map)))))
+# all(sapply(c(genes.wnt, genes.shh, genes.c, genes.d), function (x) as.logical(length(grep(x, map)))))
 all(sapply(c(genes.wnt, genes.shh, genes.c, genes.d), function (x) as.logical(length(grep(x, map.pid)))))
 
 # look for them in the top hits symbol column
@@ -178,7 +166,50 @@ dehits.v[melt(lapply(genes.shh, function(x) which(dehits.v$symbol == x)))$value,
 dehits.v[melt(lapply(genes.c, function(x) which(dehits.v$symbol == x)))$value,]
 dehits.v[melt(lapply(genes.d, function(x) which(dehits.v$symbol == x)))$value,]
 
-dehits.entrez.v[melt(lapply(genes.wnt, function(x) which(dehits.entrez.v$symbol == x)))$value,]
-dehits.entrez.v[melt(lapply(genes.shh, function(x) which(dehits.entrez.v$symbol == x)))$value,]
-dehits.entrez.v[melt(lapply(genes.c, function(x) which(dehits.entrez.v$symbol == x)))$value,]
-dehits.entrez.v[melt(lapply(genes.d, function(x) which(dehits.entrez.v$symbol == x)))$value,]
+# dehits.entrez.v[melt(lapply(genes.wnt, function(x) which(dehits.entrez.v$symbol == x)))$value,]
+# dehits.entrez.v[melt(lapply(genes.shh, function(x) which(dehits.entrez.v$symbol == x)))$value,]
+# dehits.entrez.v[melt(lapply(genes.c, function(x) which(dehits.entrez.v$symbol == x)))$value,]
+# dehits.entrez.v[melt(lapply(genes.d, function(x) which(dehits.entrez.v$symbol == x)))$value,]
+
+# plot heatmap
+genes.all <- c(genes.wnt, genes.shh, genes.c, genes.d)
+genes.group <- as.factor(c(
+  as.vector(matrix('WNT', length(genes.wnt))),
+  as.vector(matrix('SHH', length(genes.shh))),
+  as.vector(matrix('C', length(genes.c))),
+  as.vector(matrix('D', length(genes.d)))
+))
+
+dehits.ncott.v <- dehits.v[melt(lapply(genes.all, function(x) which(dehits.v$symbol == x)))$value,]
+res <- data.frame(dehits.ncott.v[0,])
+
+for (s in dehits.ncott.v$symbol) {
+  a <- dehits.ncott.v[dehits.ncott.v$symbol == s,]
+  idx <- which.min(a$adj.P.Val)
+  res[s, ] <- a[idx, ]
+}
+
+
+# g = ggplot(dat, aes_q(x = as.name(xlab), y = as.name(ylab))) +
+#   geom_tile(aes(fill = value)) + 
+#   geom_text(aes(label = round(dat$value, 3))) +
+#   scale_fill_distiller(limits=clim, palette = "Reds", direction = cdirection)
+
+
+# ASIDE: this is how to run the same process but with user-defined contrasts.
+# It generates identical output in this case
+if (F) {
+  contrasts.matrix <- makeContrasts(
+    technical_rpt = TechRptB,
+    mb = GroupD - Group,
+    levels=X0
+  )
+  fit0.v <- lmFit(subexpr.v, X0)
+  ebfit0.v <- eBayes(contrasts.fit(fit0.v, contrasts.matrix))
+  dehits0.v$symbol <- map.pid[rownames(dehits0.v)]
+  dehits0.v <- na.omit(dehits0.v)
+  dehits0.v[melt(lapply(genes.wnt, function(x) which(dehits.v$symbol == x)))$value,]
+  dehits0.v[melt(lapply(genes.shh, function(x) which(dehits.v$symbol == x)))$value,]
+  dehits0.v[melt(lapply(genes.c, function(x) which(dehits.v$symbol == x)))$value,]
+  dehits0.v[melt(lapply(genes.d, function(x) which(dehits.v$symbol == x)))$value,]
+}
