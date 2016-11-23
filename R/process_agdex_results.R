@@ -1,5 +1,6 @@
 library(AGDEX)
 library("RColorBrewer")
+library(ggplot2)
 
 res.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/by_gene_ncott100'
 
@@ -60,6 +61,7 @@ plotLabelledHeatmap <- function(
   title=NULL,
   subtitle=NULL,
   save.filestem=NULL) {
+  
   dat <- melt(data)
   colnames(dat) <- c(xlab, ylab, "value")
   

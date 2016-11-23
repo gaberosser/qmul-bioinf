@@ -1,10 +1,9 @@
 import sys, optparse, itertools, warnings, traceback, os.path
-
+import pickle
 import HTSeq
 
 """
-Copied verbatim from the htseq-count script supplied with the HTSeq package.
-TODO: find out why my more basic version has significantly different results.
+Copied from the htseq-count script supplied with the HTSeq package and modified.
 """
 
 
@@ -23,29 +22,9 @@ def invert_strand(iv):
     return iv2
 
 
-def count_reads_in_features(sam_filename, gff_filename, samtype, order, stranded,
-                            overlap_mode, feature_type, id_attribute, quiet, minaqual, samout):
-    def write_to_samout(r, assignment):
-        if samoutfile is None:
-            return
-        if not pe_mode:
-            r = (r,)
-        for read in r:
-            if read is not None:
-                samoutfile.write(read.original_sam_line.rstrip() +
-                                 "\tXF:Z:" + assignment + "\n")
-
-    if samout != "":
-        samoutfile = open(samout, "w")
-    else:
-        samoutfile = None
-
+def prepare_gff(gff_filename, stranded, feature_type, id_attribute, quiet=False):
     features = HTSeq.GenomicArrayOfSets("auto", stranded != "no")
     counts = {}
-
-    # Try to open samfile to fail early in case it is not there
-    if sam_filename != "-":
-        open(sam_filename).close()
 
     gff = HTSeq.GFF_Reader(gff_filename)
     i = 0
@@ -75,6 +54,32 @@ def count_reads_in_features(sam_filename, gff_filename, samtype, order, stranded
 
     if len(counts) == 0:
         sys.stderr.write("Warning: No features of type '%s' found.\n" % feature_type)
+
+    return features, counts
+
+
+def count_reads_in_features(sam_filename, gff_filename, samtype, order, stranded,
+                            overlap_mode, feature_type, id_attribute, quiet, minaqual, samout):
+
+    features, counts = prepare_gff(gff_filename, stranded, feature_type, id_attribute, quiet=quiet)
+    count_reads(sam_filename, features, counts, samtype, order, stranded, overlap_mode, quiet, minaqual, samout)
+
+
+def count_reads(sam_filename, features, counts, samtype, order, stranded, overlap_mode, quiet, minaqual, samout):
+    def write_to_samout(r, assignment):
+        if samoutfile is None:
+            return
+        if not pe_mode:
+            r = (r,)
+        for read in r:
+            if read is not None:
+                samoutfile.write(read.original_sam_line.rstrip() +
+                                 "\tXF:Z:" + assignment + "\n")
+
+    if samout != "":
+        samoutfile = open(samout, "w")
+    else:
+        samoutfile = None
 
     if samtype == "sam":
         SAM_or_BAM_Reader = HTSeq.SAM_Reader
@@ -224,10 +229,11 @@ def count_reads_in_features(sam_filename, gff_filename, samtype, order, stranded
     print "__alignment_not_unique\t%d" % nonunique
 
 
+
 def main():
     optParser = optparse.OptionParser(
 
-        usage="%prog [options] alignment_file gff_file",
+        usage="%prog [options] alignment_file feature_file",
 
         description=
         "This script takes an alignment file in SAM/BAM format and a " +
@@ -280,6 +286,10 @@ def main():
                                           "SAM file called SAMOUT, annotating each line with its feature assignment " +
                                           "(as an optional field with tag 'XF')")
 
+    optParser.add_option("-d", "--dillfeatures", action="store_true", dest="dillfeatures",
+                         help="the supplied feature file contains serialized Python dill, created with prepare_gff. " +
+                              "If this is specified, the algorithm starts more quickly.")
+
     optParser.add_option("-q", "--quiet", action="store_true", dest="quiet",
                          help="suppress progress report")  # and warnings" )
 
@@ -295,10 +305,41 @@ def main():
         sys.exit(1)
 
     warnings.showwarning = my_showwarning
+
+    # Try to open samfile to fail early in case it is not there
+    if args[0] != "-":
+        open(args[0]).close()
+
+    if opts.dillfeatures:
+        try:
+            with open(args[1], 'rb') as f:
+                res = pickle.load(f)
+                features = res['features']
+                counts = res['counts']
+        except Exception:
+            sys.stderr.write(
+                "Failed to load pickled file %s. This should be a dict with keys 'features' and 'counts'" %
+                args[1]
+            )
+            sys.exit(1)
+
+        func = count_reads
+        func_args = (
+            args[0], features, counts, opts.samtype, opts.order, opts.stranded, opts.mode,
+            opts.quiet, opts.minaqual, opts.samout
+        )
+
+    else:
+
+        func = count_reads_in_features
+        func_args = (
+            args[0], args[1], opts.samtype, opts.order, opts.stranded,
+            opts.mode, opts.featuretype, opts.idattr, opts.quiet, opts.minaqual,
+            opts.samout
+        )
+
     try:
-        count_reads_in_features(args[0], args[1], opts.samtype, opts.order, opts.stranded,
-                                opts.mode, opts.featuretype, opts.idattr, opts.quiet, opts.minaqual,
-                                opts.samout)
+        func(*func_args)
     except:
         sys.stderr.write("  %s\n" % str(sys.exc_info()[1]))
         sys.stderr.write("  [Exception type: %s, raised in %s:%d]\n" %
@@ -314,4 +355,3 @@ def my_showwarning(message, category, filename, lineno=None, line=None):
 
 if __name__ == "__main__":
     main()
-

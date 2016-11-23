@@ -6,7 +6,6 @@
 library(oligo)
 library(AnnotationDbi)
 library(data.table)
-library(reshape2)
 data.dir <- '../data/'
 data.dir.raid <- '/media/gabriel/raid1_4tb/data/microarray/'
 
@@ -33,9 +32,7 @@ median_by <- function(dat, xs) {
     fun.aggregate = median, na.rm = TRUE
   )
   rownames(dat) <- dat$agg_var
-  # Delete the extra column.
-  dat[ , agg_var := NULL]
-  dat
+  return(dat)
 }
 
 
