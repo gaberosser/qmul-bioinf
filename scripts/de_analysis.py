@@ -20,34 +20,19 @@ pc = (
 # fn = 'limma_de_1299all-healthy.csv'
 # res = pd.read_csv(fn, index_col=0)
 
-fn = 'deseq2_de_1299all-healthy.csv'
-res = pd.read_csv(fn, index_col=0).dropna()
+fn_deseq = 'deseq2_de_1299all-healthy.csv'
+res_deseq = pd.read_csv(fn_deseq, index_col=0).dropna()
 
-hkg = ['GAPDH', 'ACTB', 'H1FX', 'ATP2C1', 'LAMP1', 'CTNNA1', 'C14orf2']
+fn_limma = 'limma_de_1299all-healthy.csv'
+res_limma = pd.read_csv(fn_limma, index_col=0)
 
-# lfc = res.loc[hkg, 'log2FoldChange']
-# pval =  res.loc[hkg, 'padj']
-#
-# fig = plt.figure()
-# ax = fig.add_subplot(111)
-#
-# for p0, p1, c in pc:
-#     idx = np.where((p1 < pval) & (pval <= p0))[0]
-#     if len(idx):
-#         rect = ax.bar(idx, lfc[idx], 1, color=c, label='%.4f < p < %.4f' % (p1, p0))
-#
-# ax.legend()
-# ax.set_xticks(np.arange(len(hkg)) + 0.5)
-# ax.set_xticklabels(hkg, rotation=45)
-# plt.xlabel('HKG')
-# plt.ylabel('Log2 FC')
-# plt.show()
-#
-# fig.savefig('rnaseq_hkg.png', dpi=200)
-# fig.savefig('rnaseq_hkg.pdf', dpi=200)
+hkg = ['GAPDH', 'ACTB', 'TUBB', 'B2M', 'H1FX', 'ATP2C1', 'LAMP1', 'CTNNA1', 'C14orf2']
 
-lfc = res.loc[all_nano, 'log2FoldChange']
-pval =  res.loc[all_nano, 'padj']
+
+
+
+lfc = res_deseq.loc[hkg, 'log2FoldChange']
+pval =  res_deseq.loc[hkg, 'padj']
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
@@ -58,18 +43,17 @@ for p0, p1, c in pc:
         rect = ax.bar(idx, lfc[idx], 1, color=c, label='%.4f < p < %.4f' % (p1, p0))
 
 ax.legend()
-ax.set_xticks(np.arange(len(all_nano)) + 0.5)
-ax.set_xticklabels(all_nano, rotation=45)
-plt.xlabel('nanostring gene')
+ax.set_xticks(np.arange(len(hkg)) + 0.5)
+ax.set_xticklabels(hkg, rotation=45)
+plt.xlabel('HKG')
 plt.ylabel('Log2 FC')
 plt.show()
+#
+# fig.savefig('rnaseq_hkg.png', dpi=200)
+# fig.savefig('rnaseq_hkg.pdf', dpi=200)
 
-fig.savefig('rnaseq_nano.png', dpi=200)
-fig.savefig('rnaseq_nano.pdf', dpi=200)
-
-
-# lfc = res.loc[hkg, 'logFC']
-# pval =  res.loc[hkg, 'adj.P.Val']
+# lfc = res_deseq.loc[all_nano, 'log2FoldChange']
+# pval =  res_deseq.loc[all_nano, 'padj']
 #
 # fig = plt.figure()
 # ax = fig.add_subplot(111)
@@ -80,17 +64,38 @@ fig.savefig('rnaseq_nano.pdf', dpi=200)
 #         rect = ax.bar(idx, lfc[idx], 1, color=c, label='%.4f < p < %.4f' % (p1, p0))
 #
 # ax.legend()
-# ax.set_xticks(np.arange(len(hkg)) + 0.5)
-# ax.set_xticklabels(hkg, rotation=45)
-# plt.xlabel('HKG')
+# ax.set_xticks(np.arange(len(all_nano)) + 0.5)
+# ax.set_xticklabels(all_nano, rotation=45)
+# plt.xlabel('nanostring gene')
 # plt.ylabel('Log2 FC')
 # plt.show()
+#
+# fig.savefig('rnaseq_nano.png', dpi=200)
+# fig.savefig('rnaseq_nano.pdf', dpi=200)
+
+lfc = res_limma.loc[hkg, 'logFC']
+pval =  res_limma.loc[hkg, 'adj.P.Val']
+
+fig = plt.figure()
+ax = fig.add_subplot(111)
+
+for p0, p1, c in pc:
+    idx = np.where((p1 < pval) & (pval <= p0))[0]
+    if len(idx):
+        rect = ax.bar(idx, lfc[idx], 1, color=c, label='%.4f < p < %.4f' % (p1, p0))
+
+ax.legend()
+ax.set_xticks(np.arange(len(hkg)) + 0.5)
+ax.set_xticklabels(hkg, rotation=45)
+plt.xlabel('HKG')
+plt.ylabel('Log2 FC')
+plt.show()
 #
 # fig.savefig('marr_hkg.png', dpi=200)
 # fig.savefig('marr_hkg.pdf', dpi=200)
 
-# lfc = res.loc[all_nano, 'logFC']
-# pval = res.loc[all_nano, 'adj.P.Val']
+# lfc = res_limma.loc[all_nano, 'logFC']
+# pval = res_limma.loc[all_nano, 'adj.P.Val']
 #
 #
 # fig = plt.figure()
