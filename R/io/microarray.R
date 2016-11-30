@@ -41,34 +41,43 @@ eset_from_celdir <- function(cel.dir, gzipped = FALSE) {
   affyRaw <- read.celfiles(celFiles)
 }
 
+add_annotation_column <- function(expr_df, annotlib, col.name, multiVals = 'asNA') {
+  pids <- row.names(expr_df)
+  col.data <- mapIds(annotlib, keys = pids, column = col.name, keytype = 'PROBEID', multiVals = multiVals)
+  expr_df[names(col.data), col.name] <- col.data
+  return(expr_df)
+}
 
-annotate_by_entrez <- function(expr_df, annotlib) {
+annotate_by_entrez <- function(expr_df, annotlib, aggr.method='median') {
 
   # annotate
-  pids <- row.names(expr_df)
-  entrez <- mapIds(annotlib, keys = pids, column = 'ENTREZID', keytype = 'PROBEID', multiVals = 'asNA')
-  entrez <- entrez[!is.na(entrez)]  # only keep probes that match a single gene
-  symbol <- mapIds(annotlib, keys = pids, column = 'SYMBOL', keytype = 'PROBEID', multiVals = 'asNA')
-  symbol <- symbol[!is.na(symbol)]  # only keep probes that match a single gene
-  
   annot_df <- data.frame(expr_df)
-  annot_df[names(entrez), 'ENTREZID'] = entrez
-  annot_df[names(symbol), 'SYMBOL'] = symbol
+  add_annotation_column(annot_df, annotlib, col.name = 'ENTREZID')
+  
+  # pids <- row.names(expr_df)
+  # entrez <- mapIds(annotlib, keys = pids, column = 'ENTREZID', keytype = 'PROBEID', multiVals = 'asNA')
+  # entrez <- entrez[!is.na(entrez)]  # only keep probes that match a single gene
+  # symbol <- mapIds(annotlib, keys = pids, column = 'SYMBOL', keytype = 'PROBEID', multiVals = 'asNA')
+  # symbol <- symbol[!is.na(symbol)]  # only keep probes that match a single gene
+  # 
+  # annot_df <- data.frame(expr_df)
+  # annot_df[names(entrez), 'ENTREZID'] = entrez
+  # annot_df[names(symbol), 'SYMBOL'] = symbol
   
   # only keep items with an Entrez ID
   annot_df = annot_df[!is.na(annot_df[['ENTREZID']]),]
   
-  # median aggregation
-  # ohmygodohmygodohmygod this is SO SLOW
-  # aggr_df <- aggregate(annot_df[,1:(length(annot_df) - 2)], by=list(ENTREZID=annot_df[['ENTREZID']]), FUN=median)
-  aggr_df <- median_by(annot_df[,1:(length(annot_df) - 2)], annot_df[['ENTREZID']])
+  if (is.null(aggr.method)) {
+    return(annot_df)
+  }
+  if (aggr.method == 'median') {
+    # median aggregation
+    aggr_df <- median_by(annot_df[,1:(length(annot_df) - 2)], annot_df[['ENTREZID']])
     
-  # reset index - only needed when aggregate is used.
-  # rownames(aggr_df) <- aggr_df$ENTREZID
-  # aggr_df$ENTREZID <- NULL
-  
-  # to matrix
-  aggr_df <- data.matrix(aggr_df)
+    # to matrix
+    aggr_df <- data.matrix(aggr_df)
+    return(aggr_df)
+  }
   
 }
 

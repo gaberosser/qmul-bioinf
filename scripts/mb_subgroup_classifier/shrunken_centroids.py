@@ -49,14 +49,16 @@ class NearestCentroidClassifier(object):
         """
         self.data = pd.DataFrame(data)
         self.p, self.n = self.data.shape
-        self.labels = labels
+        self.labels = pd.Series(labels, index=self.data.columns)
         self.label_idx, self.labels_ = pd.Series(labels, index=self.data.columns).factorize()
         self.k = len(self.labels_)
 
         # compute global and group-specific centroids and standard errors
         self.global_centroid = self.data.mean(axis=1)
-        self.class_centroids = X.groupby(self.labels, axis=1).mean().loc[:, self.labels_]
-        self.n_class = X.groupby(self.labels, axis=1).size().loc[self.labels_]
+        # use .loc to ensure column order is maintained
+        # not necessary, but tidy
+        self.class_centroids = data.groupby(self.labels, axis=1).mean().loc[:, self.labels_]
+        self.n_class = data.groupby(self.labels, axis=1).size().loc[self.labels_]
         self.m_k = np.sqrt(1 / self.n_class + 1 / float(self.n))
 
         if flat_prior:
@@ -69,16 +71,16 @@ class NearestCentroidClassifier(object):
         for i, l in enumerate(self.labels_):
             y.loc[:, self.labels == l] = y.loc[:, self.labels == l].subtract(self.class_centroids.loc[:, l], axis=0).values
         s_i_sq = (y ** 2).sum(axis=1) / (self.n - self.k)
-        self.global_stdev = s_i_sq ** 0.5
+        self.s_i = s_i_sq ** 0.5
 
         # s_0: median value of s over all genes
-        self.s0 = self.global_stdev.median()
+        self.s0 = self.s_i.median()
 
         # linear discriminant
         d_num = self.class_centroids.subtract(self.global_centroid, axis=0)
 
         # tiled dataframe (P x K) for convenience
-        a = tile_series(self.global_stdev, self.k, columns=self.labels_, index=self.data.index)
+        a = tile_series(self.s_i, self.k, columns=self.labels_, index=self.data.index)
 
         self.s_eff = a + self.s0
         self.d_den = self.s_eff.multiply(self.m_k)
@@ -109,6 +111,24 @@ class NearestCentroidClassifier(object):
         Features that are all zeros do not have any influence over the inferred classification.
         """
         return (self.d_ik_shrink != 0.).any(axis=1).sum()
+
+    @property
+    def remaining_d_ik(self):
+        """
+        :return: The entries of d_ik_shrink that have at least one non-zero component
+        """
+        return self.d_ik_shrink.loc[self.d_ik_shrink.any(axis=1)]
+
+    @property
+    def remaining_class_centroid_diff(self):
+        """
+        :return: The entries of class_centroid_shrink - global_centroid that have at least one non-zero component
+        Sort by descending magnitude
+        """
+        rel = self.class_centroids_shrink.subtract(obj.global_centroid, axis=0)
+        rel = rel.loc[rel.any(axis=1)]
+        sort_idx = (rel ** 2).sum(axis=1).sort_values(ascending=False).index
+        return rel.loc[sort_idx]
 
     def discriminant_score(self, vec):
         """
@@ -144,7 +164,10 @@ class NearestCentroidClassifier(object):
             dk.index = range(self.k)
         return dk.argmin()
 
-    def classify_and_assess(self, mat, true_labels):
+    def assess_training_data(self):
+        return self.assess_test_data(self.data, self.labels)
+
+    def assess_test_data(self, mat, true_labels):
         """
         Run the classification on the samples in the input matrix
         :param mat: P x M DataFrame, where M is the number of test samples
@@ -158,14 +181,70 @@ class NearestCentroidClassifier(object):
         return res, n_correct, n_incorrect
 
 
+def run_validation(deltas, train_data, train_labels, test_data, test_labels, **kwargs):
+    n_err_test = pd.Series(index=deltas)
+    n_err_train = pd.Series(index=deltas)
+    clas = pd.Series(index=deltas)
+    obj = NearestCentroidClassifier(data=train_data, labels=train_labels, **kwargs)
+    for d in deltas:
+        obj.shrink_centroids(d)
+        try:
+            c, nc, ni = obj.assess_test_data(test_data, true_labels=test_labels)
+            n_err_test.loc[d] = ni
+            clas.loc[d] = c.values
+            _, nc, ni = obj.assess_training_data()
+            n_err_train.loc[d] = ni
+        except ValueError:
+            # no more features
+            continue
+    return n_err_train, n_err_test, clas
+
 
 if __name__ == '__main__':
-    res, meta = microarray_data.load_annotated_microarray_gse37382(index_field='gene_symbol')
-    idx, labels = meta.subgroup.factorize()
-    X = res  # genes on rows, samples on cols
+    # res, meta = microarray_data.load_annotated_microarray_gse37382(index_field='gene_symbol')
+    from settings import DATA_DIR
+    import os
+    import multiprocessing as mp
+    from scripts.comparison_rnaseq_microarray import consts
+
+    # it's useful to maintain a list of known upregulated genes
+    nano_genes = []
+    for _, arr in consts.NANOSTRING_GENES:
+        nano_genes.extend(arr)
+    nano_genes.remove('EGFL11')
+    nano_genes.append('EYS')
+
+    meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
+    infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
+    res = pd.read_csv(infile, sep='\t', header=0, index_col=0)
+    # fix sample names
+    res.columns = res.columns.str.replace('.', '_')
+    # aggregate by gene symbol
+    res = res.drop(['ENTREZID', 'GENENAME', 'ACCNUM', 'ENSEMBL'], axis=1)
+    res = res.loc[~res.SYMBOL.isnull()]
+    res = res.groupby('SYMBOL', axis=0).median()
+
+    # for statistical purposes, split the data into training/validation and test sets in the ratio 3:1
+
+    # shuffle columns first
+    n = res.columns.size
+    cols = res.columns[np.random.permutation(n)]
+    res = res.loc[:, cols]
+    meta = meta.loc[cols]
+
+    # now remove the top 25% for testing
+    cut_idx = int(n * 0.25)
+    X_test = res.iloc[:, :cut_idx]
+    meta_test = meta.iloc[:cut_idx]
+    X_train = res.iloc[:, cut_idx:]
+    meta_train = meta.iloc[cut_idx:]
+
+    idx, labels = meta_train.subgroup.factorize()
 
     # define shrinkage delta values
-    deltas = np.linspace(0., 2., 50)
+    deltas = np.linspace(0., 12., 60)
+    FLAT_PRIOR = False
 
     # split test-training, maintaining proportion of classes
     k = 10
@@ -190,22 +269,49 @@ if __name__ == '__main__':
     # Xv
     train_idx = []
     test_idx = []
-    n_corr = pd.DataFrame(index=range(k), columns=deltas)
+    n_err_test = pd.DataFrame(index=range(k), columns=deltas)
+    n_err_train = pd.DataFrame(index=range(k), columns=deltas)
     clas = pd.DataFrame(index=range(k), columns=deltas)
+
+    p = mp.Pool()
+    jobs = []
+
+
     for j in range(k):
         te = chunks[j]
+        te_ind = X_train.columns[te]
         tr = reduce(operator.add, [chunks[z] for z in set(range(k)).difference([j])])
-        test_idx.append(te)
-        train_idx.append(tr)
-        obj = NearestCentroidClassifier(data=X.iloc[:, tr], labels=meta.subgroup.iloc[tr])
-        for d in deltas:
-            obj.shrink_centroids(d)
-            c, nc, ni = obj.classify_and_assess(X.iloc[:, te], true_labels=meta.subgroup.iloc[te])
-            n_corr.loc[j, d] = nc
-            clas.loc[j, d] = c.values
+        tr_ind = X_train.columns[tr]
+        test_idx.append(te_ind)
+        train_idx.append(tr_ind)
 
+        test_data = X_train.loc[:, te_ind]
+        train_data = X_train.loc[:, tr_ind]
+        test_labels = meta_train.subgroup.loc[te_ind]
+        train_labels = meta_train.subgroup.loc[tr_ind]
 
-    obj = NearestCentroidClassifier(data=X, labels=meta.subgroup)
+        pargs = (deltas, train_data, train_labels, test_data, test_labels)
+        pkwargs = dict(flat_prior=FLAT_PRIOR)
+        jobs.append(
+            p.apply_async(run_validation, args=pargs, kwds=pkwargs)
+        )
+
+    p.close()
+    for j in range(k):
+        etrain, etest, cl = jobs[j].get(1e6)
+        n_err_test.loc[j] = etest
+        n_err_train.loc[j] = etrain
+        clas.loc[j] = cl
+        logger.info("Complete xv run %d", j)
+
+    # final run with all training data for assessment on test
+    etrain, etest, _ = run_validation(deltas, X_train, meta_train.subgroup, X_test, meta_test.subgroup, flat_prior=FLAT_PRIOR)
+    obj = NearestCentroidClassifier(data=X_train, labels=meta_train.subgroup, flat_prior=FLAT_PRIOR)
+
+    xv_error_rate = n_err_test.sum(axis=0) / float(X_train.columns.size)
+    train_error_rate_mean = n_err_train.sum(axis=0) / float(sum([t.size for t in train_idx]))
+    train_error_rate = etrain / float(X_train.columns.size)
+    test_error_rate = etest / float(X_test.columns.size)
 
     n_remain = pd.Series(index=deltas)
     for d in deltas:

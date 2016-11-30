@@ -11,12 +11,12 @@ library(mogene10sttranscriptcluster.db)
 library(hugene11sttranscriptcluster.db)
 library(hgu133plus2.db)
 
-dataDir <- '/media/gabriel/raid1_4tb/data/microarray/'
-celDir <- file.path(dataDir, 'GSE10327', 'raw')
+# dataDir <- '/media/gabriel/raid1_4tb/data/microarray/'
+# celDir <- file.path(dataDir, 'GSE10327', 'raw')
 
-# dataDir <- '../data/'
+dataDir <- '../data/'
 # celDir <- file.path(dataDir, 'microarray_GSE54650', 'raw')
-# celDir <- file.path(dataDir, 'microarray_GSE37382', 'raw')
+celDir <- file.path(dataDir, 'microarray_GSE37382', 'raw')
 
 celFiles <- list.celfiles(celDir, listGzipped = TRUE, full.names = TRUE)
 affyRaw <- read.celfiles(celFiles)
@@ -59,6 +59,7 @@ all = all[(all$ENTREZ != 'NA'),]
 # Write out to a file:
 gz1 <- gzfile("data.ann.txt.gz", "w")
 write.table(all, file=gz1, sep="\t")
+close(gz1)
 
 # Optionally generate a histogram
 hist(as.matrix(my_frame), 100)
