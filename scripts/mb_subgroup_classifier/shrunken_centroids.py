@@ -19,6 +19,7 @@ def soft_threshold(x, delta):
     """
     u = np.abs(x) - delta
     u[u < 0] = 0.
+    # reinstate original sign
     u *= np.sign(x)
     return u
 
@@ -69,6 +70,7 @@ class NearestCentroidClassifier(object):
         # pooled within-class stdev
         y = self.data.copy()
         for i, l in enumerate(self.labels_):
+            # subtract mean class centroid from all samples in that class
             y.loc[:, self.labels == l] = y.loc[:, self.labels == l].subtract(self.class_centroids.loc[:, l], axis=0).values
         s_i_sq = (y ** 2).sum(axis=1) / (self.n - self.k)
         self.s_i = s_i_sq ** 0.5
@@ -79,11 +81,14 @@ class NearestCentroidClassifier(object):
         # linear discriminant
         d_num = self.class_centroids.subtract(self.global_centroid, axis=0)
 
-        # tiled dataframe (P x K) for convenience
+        # tiled dataframe (P x K) containing pooled w/c stdev
         a = tile_series(self.s_i, self.k, columns=self.labels_, index=self.data.index)
 
-        self.s_eff = a + self.s0
-        self.d_den = self.s_eff.multiply(self.m_k)
+        self.s_eff = a + self.s0  # shape (P x K) but all K columns are identical
+        # normalise so that each column gives the standard deviation of the matching column in d_num
+        self.d_den = self.s_eff.multiply(self.m_k, axis=1)
+        # this is the linear discriminant for each class
+        # it's like a t-statistic in the sense that it is (sample mean - global mean) / sample std err
         self.d_ik = d_num / self.d_den
 
         # placeholders for shrinkage operations
@@ -100,6 +105,7 @@ class NearestCentroidClassifier(object):
         """
         self.delta = delta
         self.d_ik_shrink = soft_threshold(self.d_ik, delta=delta)
+        # compute the new shrunken class centroids
         self.class_centroids_shrink = (self.d_den * self.d_ik_shrink).add(self.global_centroid, axis=0)
         if self.num_nonzero_features == 0:
             logger.warning("No features remain after shrinking. Attempting to classify will result in an error.")
@@ -209,8 +215,9 @@ if __name__ == '__main__':
 
     # it's useful to maintain a list of known upregulated genes
     nano_genes = []
-    for _, arr in consts.NANOSTRING_GENES:
-        nano_genes.extend(arr)
+    for grp, arr in consts.NANOSTRING_GENES:
+        if grp != 'WNT':
+            nano_genes.extend(arr)
     nano_genes.remove('EGFL11')
     nano_genes.append('EYS')
 
@@ -220,25 +227,39 @@ if __name__ == '__main__':
     res = pd.read_csv(infile, sep='\t', header=0, index_col=0)
     # fix sample names
     res.columns = res.columns.str.replace('.', '_')
-    # aggregate by gene symbol
+    # aggregate by gene symbol, using median to resolve redundancy
     res = res.drop(['ENTREZID', 'GENENAME', 'ACCNUM', 'ENSEMBL'], axis=1)
     res = res.loc[~res.SYMBOL.isnull()]
-    res = res.groupby('SYMBOL', axis=0).median()
+    # res = res.groupby('SYMBOL', axis=0).median()
+    res = res.groupby('SYMBOL', axis=0).max()
+
+    X = res.copy()
+    m = meta.copy()
+
+    # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
+    # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
+    # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 3', 'Group C/D')
+
+    # X = X.loc[nano_genes]
+
+    # s = X.std(axis=1).sort_values(ascending=False)
+    # top_std_idx = s.iloc[:1000].index
+    # X = X.loc[top_std_idx]
 
     # for statistical purposes, split the data into training/validation and test sets in the ratio 3:1
 
     # shuffle columns first
-    n = res.columns.size
-    cols = res.columns[np.random.permutation(n)]
-    res = res.loc[:, cols]
-    meta = meta.loc[cols]
+    n = X.columns.size
+    cols = X.columns[np.random.permutation(n)]
+    X = X.loc[:, cols]
+    m = m.loc[cols]
 
     # now remove the top 25% for testing
     cut_idx = int(n * 0.25)
-    X_test = res.iloc[:, :cut_idx]
-    meta_test = meta.iloc[:cut_idx]
-    X_train = res.iloc[:, cut_idx:]
-    meta_train = meta.iloc[cut_idx:]
+    X_test = X.iloc[:, :cut_idx]
+    meta_test = m.iloc[:cut_idx]
+    X_train = X.iloc[:, cut_idx:]
+    meta_train = m.iloc[cut_idx:]
 
     idx, labels = meta_train.subgroup.factorize()
 

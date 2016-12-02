@@ -68,27 +68,20 @@ annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = T, strip.tit
   # optionally rename samples
   if (is.character(strip.title)) {
     # remove portion from sample title
-    colnames(expr_df) <- sapply(colnames(expr_df), function(x) {gsub(strip_title, '', x)})    
+    colnames(expr_df) <- sapply(colnames(expr_df), function(x) {gsub(strip.title, '', x)})    
   }
   
   if (!is.null(aggr.by)) {
     expr_df <- add_annotation_column(expr_df, annotlib, col.name = aggr.by)
-    
+    x <- expr_df[, colnames(expr_df) != aggr.by]
+    labels <- expr_df[, aggr.by]
     if (aggr.method == 'median') {
-      x <- expr_df[, colnames(expr_df) != aggr.by]
-      labels <- expr_df[, aggr.by]
       expr_df <- median_by(x, labels)
     } else if (aggr.method == 'mean') {
-      x <- expr_df[, colnames(expr_df) != aggr.by]
-      labels <- expr_df[, aggr.by]
       expr_df <- mean_by(x, labels)
     } else if (aggr.method == 'min') {
-      x <- expr_df[, colnames(expr_df) != aggr.by]
-      labels <- expr_df[, aggr.by]
       expr_df <- min_by(x, labels)
     } else if (aggr.method == 'max') {
-      x <- expr_df[, colnames(expr_df) != aggr.by]
-      labels <- expr_df[, aggr.by]
       expr_df <- max_by(x, labels)
     } else {
       stop("aggr.by is specified but aggr.method is not a recognised option")
@@ -98,7 +91,6 @@ annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = T, strip.tit
     # add all annotation columns
     expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'ENTREZID')
     expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'SYMBOL')
-    expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'GENENAME')
     expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'ENSEMBL')
   }
   
@@ -164,7 +156,7 @@ gse54650 <- function() {
       in.dir, 
       annotlib = mogene10sttranscriptcluster.db, 
       gzipped = T, 
-      strip_title = '_MoGene1.0ST.CEL.gz')
+      strip.title = '_MoGene1.0ST.CEL.gz')
     saveRDS(expr, pre_saved.file)
   }
   
@@ -172,22 +164,38 @@ gse54650 <- function() {
 }
 
 
-gse37382 <- function() {
-  pre_saved.file = file.path(data.dir, 'microarray_GSE37382', 'expr.rma.median_entrez_id.rds')
+gse37382 <- function(aggr.by = NULL, aggr.method = 'median') {
+  
+  if (!is.null(aggr.by)) {
+    if (is.null(aggr.method)) {
+      stop("aggr.by is specified but aggr.method is NULL.")
+    }
+    fn = 'expr.rma.{aggr.method}_{aggr.by}.csv.gz'
+    fn = sub('{aggr.by}', aggr.by, fn, fixed = T)
+    fn = sub('{aggr.method}', aggr.method, fn, fixed = T)
+  } else {
+    fn = "expr.rma.csv.gz"
+  }
+  
+  pre_saved.file = file.path(data.dir.raid, 'GSE37382', fn)
   if (file.exists(pre_saved.file)) {
-    expr <- readRDS(pre_saved.file)
+    expr <- read.csv(pre_saved.file, sep='\t', header=1, row.names = 1)
   } else {
     library(hugene11sttranscriptcluster.db)
-    in.dir = file.path(data.dir, 'microarray_GSE37382', 'raw')
+    in.dir = file.path(data.dir.raid, 'GSE37382', 'raw')
     expr <- annotated_expr_from_celdir(
       in.dir, 
       annotlib = hugene11sttranscriptcluster.db, 
       gzipped = T, 
-      strip_title = '.CEL.gz')
-    saveRDS(expr, pre_saved.file)
+      strip.title = '.CEL.gz',
+      aggr.by = aggr.by,
+      aggr.method = aggr.method)
+    gz1 <- gzfile(pre_saved.file, "w")
+    write.table(expr, file=gz1, sep="\t", col.names = NA, row.names = TRUE)
+    close(gz1)
   }
   # load meta
-  meta.file = file.path(data.dir, 'microarray_GSE37382', 'sources.csv')
+  meta.file = file.path(data.dir.raid, 'GSE37382', 'sources.csv')
   meta <- read.csv(meta.file, header=1, row.names = 1)
   rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
   
@@ -207,7 +215,7 @@ gse10327 <- function() {
       in.dir.raw, 
       annotlib = hgu133plus2.db,
       gzipped = T, 
-      strip_title = '.CEL.gz')
+      strip.title = '.CEL.gz')
     saveRDS(expr, pre_saved.file)
   }
   # load meta
@@ -231,7 +239,7 @@ gse12992 <- function() {
       in.dir.raw, 
       annotlib = hgu133plus2.db,
       gzipped = T, 
-      strip_title = '.CEL.gz')
+      strip.title = '.CEL.gz')
     saveRDS(expr, pre_saved.file)
   }
   # load meta
@@ -255,7 +263,7 @@ thompson2006 <- function() {
       in.dir.raw, 
       annotlib = hgu133plus2.db,
       gzipped = T, 
-      strip_title = '.CEL.gz')
+      strip.title = '.CEL.gz')
     saveRDS(expr, pre_saved.file)
   }
   # load meta
