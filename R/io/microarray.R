@@ -2,38 +2,12 @@
 # biocLite("oligo")
 # biocLite("AnnotationDbi")
 
-
 library(oligo)
 library(AnnotationDbi)
 library(data.table)
+source("utils.R")  # contains median_by and other aggregation routines
 data.dir <- '../data/'
 data.dir.raid <- '/media/gabriel/raid1_4tb/data/microarray/'
-
-
-#' Function source: http://slowkow.com/notes/data-table-aggregate/
-#' Author: Kamil Slowikowski
-#' Take the mean of all columns of a matrix or dataframe, where rows are
-#' aggregated by a vector of values. 100 times faster than stats::aggregate.
-#'
-#' @param dat A numeric matrix or data.frame.
-#' @param xs A vector of groups (e.g. gene names).
-#' @return A data.table with the aggregated mean for each group.
-#' @seealso stats::aggregate
-median_by <- function(dat, xs) {
-  # Convert to data.table.
-  dat <- data.table(dat)
-  # Append the vector of group names as an extra column.
-  dat$agg_var <- xs
-  # Melt the data.table so all values are in one column called "value".
-  dat <- melt(dat, id.vars = "agg_var")
-  # Cast the data.table back into the original shape, and take the mean.
-  dat <- dcast.data.table(
-    dat, agg_var ~ variable, value.var = "value",
-    fun.aggregate = median, na.rm = TRUE
-  )
-  rownames(dat) <- dat$agg_var
-  return(dat)
-}
 
 
 eset_from_celdir <- function(cel.dir, gzipped = FALSE) {
@@ -82,7 +56,9 @@ annotate_by_entrez <- function(expr_df, annotlib, aggr.method='median') {
 }
 
 
-annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = FALSE, strip_title = NULL) {
+annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = T, strip.title = '.CEL.gz', aggr.by = NULL, aggr.method = 'median') {
+  # aggr.method is ignored if aggr.by is not supplied
+  
   # TODO: permit different pre-processing steps?
   eset <- rma(eset_from_celdir(cel.dir, gzipped = gzipped))
   
@@ -90,14 +66,43 @@ annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = FALSE, strip
   expr_df <- data.frame(exprs(eset))
   
   # optionally rename samples
-  if (!is.null(strip_title)) { 
+  if (is.character(strip.title)) {
     # remove portion from sample title
-    colnames(expr_df) <- sapply(colnames(expr_df), function(x) {gsub(strip_title, '', x)})
+    colnames(expr_df) <- sapply(colnames(expr_df), function(x) {gsub(strip_title, '', x)})    
   }
   
-  # aggregate by median probeset value
-  aggr_df <- annotate_by_entrez(expr_df, annotlib)
+  if (!is.null(aggr.by)) {
+    expr_df <- add_annotation_column(expr_df, annotlib, col.name = aggr.by)
+    
+    if (aggr.method == 'median') {
+      x <- expr_df[, colnames(expr_df) != aggr.by]
+      labels <- expr_df[, aggr.by]
+      expr_df <- median_by(x, labels)
+    } else if (aggr.method == 'mean') {
+      x <- expr_df[, colnames(expr_df) != aggr.by]
+      labels <- expr_df[, aggr.by]
+      expr_df <- mean_by(x, labels)
+    } else if (aggr.method == 'min') {
+      x <- expr_df[, colnames(expr_df) != aggr.by]
+      labels <- expr_df[, aggr.by]
+      expr_df <- min_by(x, labels)
+    } else if (aggr.method == 'max') {
+      x <- expr_df[, colnames(expr_df) != aggr.by]
+      labels <- expr_df[, aggr.by]
+      expr_df <- max_by(x, labels)
+    } else {
+      stop("aggr.by is specified but aggr.method is not a recognised option")
+    }
+    
+  } else {
+    # add all annotation columns
+    expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'ENTREZID')
+    expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'SYMBOL')
+    expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'GENENAME')
+    expr_df <- add_annotation_column(expr_df, annotlib, col.name = 'ENSEMBL')
+  }
   
+  return(expr_df)
 }
 
 

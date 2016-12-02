@@ -317,3 +317,17 @@ if __name__ == '__main__':
     for d in deltas:
         obj.shrink_centroids(d)
         n_remain.loc[d] = obj.num_nonzero_features
+
+    if True:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        xv_error_rate.plot(ax=ax, label="Xv")
+        train_error_rate.plot(ax=ax, label="Training")
+        test_error_rate.plot(ax=ax, label="Test")
+        ax.legend(loc='upper left')
+        ax.set_xlabel("Shrinkage parameter, $\Delta$")
+        ax.set_ylabel("Error rate")
+
+    # find the minimum testing error, using the simplest model to resolve ties
+    min_delta = test_error_rate[test_error_rate == test_error_rate.min()].sort_index(ascending=False).index[0]
+
