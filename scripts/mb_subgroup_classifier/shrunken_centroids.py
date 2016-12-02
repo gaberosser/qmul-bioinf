@@ -317,3 +317,14 @@ if __name__ == '__main__':
     for d in deltas:
         obj.shrink_centroids(d)
         n_remain.loc[d] = obj.num_nonzero_features
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    xv_error_rate.plot(ax=ax, label='XV error')
+    train_error_rate_mean.plot(ax=ax, label='XV mean training error')
+    train_error_rate.plot(ax=ax, label='Training error overall')
+    test_error_rate.plot(ax=ax, label='Test error')
+    ax.legend(loc='upper left')
+    ax.set_xlabel('Shrinkage parameter')
+    ax.set_ylabel('Error rate')
+
