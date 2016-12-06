@@ -207,11 +207,15 @@ def run_validation(deltas, train_data, train_labels, test_data, test_labels, **k
 
 
 if __name__ == '__main__':
-    # res, meta = microarray_data.load_annotated_microarray_gse37382(index_field='gene_symbol')
     from settings import DATA_DIR
     import os
     import multiprocessing as mp
     from scripts.comparison_rnaseq_microarray import consts
+
+    # define shrinkage delta values
+    deltas = np.linspace(0., 12., 60)
+    FLAT_PRIOR = False
+    k = 10  # XV
 
     # it's useful to maintain a list of known upregulated genes
     nano_genes = []
@@ -221,17 +225,39 @@ if __name__ == '__main__':
     nano_genes.remove('EGFL11')
     nano_genes.append('EYS')
 
-    meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
-    meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
-    infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
-    res = pd.read_csv(infile, sep='\t', header=0, index_col=0)
-    # fix sample names
-    res.columns = res.columns.str.replace('.', '_')
-    # aggregate by gene symbol, using median to resolve redundancy
-    res = res.drop(['ENTREZID', 'GENENAME', 'ACCNUM', 'ENSEMBL'], axis=1)
-    res = res.loc[~res.SYMBOL.isnull()]
-    # res = res.groupby('SYMBOL', axis=0).median()
-    res = res.groupby('SYMBOL', axis=0).max()
+    # load Ncott data (285 non-WNT MB samples)
+
+    # mb, mb_meta = microarray_data.load_annotated_microarray_gse37382(
+    #     aggr_field='SYMBOL',
+    #     aggr_method='max'
+    # )
+    # sort_idx = mb_meta.subgroup.sort_values().index
+    # meta = mb_meta.loc[sort_idx]
+    # mb = mb.loc[:, sort_idx]
+
+    # load Allen (healthy cerebellum)
+
+    # he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
+
+    # combine
+
+    # common_genes = mb.index.intersection(he.index)
+    # res = pd.DataFrame(index=common_genes, columns=mb.columns.union(he.columns))
+    # res.loc[common_genes, he.columns] = he.loc[common_genes].values
+    # res.loc[common_genes, mb.columns] = mb.loc[common_genes].values
+    # res = res.astype(float)
+    #
+    # he_meta = pd.DataFrame(data=[[None, None, 'control']] * he.columns.size, index=he.columns, columns=mb_meta.columns)
+    # meta = pd.concat((mb_meta, he_meta), axis=0)
+
+    # load Kool dataset
+    res, meta = microarray_data.load_annotated_microarray_gse10327(
+        aggr_field='SYMBOL',
+        aggr_method='max',
+    )
+    sort_idx = meta.subgroup.sort_values().index
+    meta = meta.loc[sort_idx]
+    res = res.loc[:, sort_idx]
 
     X = res.copy()
     m = meta.copy()
@@ -263,12 +289,7 @@ if __name__ == '__main__':
 
     idx, labels = meta_train.subgroup.factorize()
 
-    # define shrinkage delta values
-    deltas = np.linspace(0., 12., 60)
-    FLAT_PRIOR = False
-
     # split test-training, maintaining proportion of classes
-    k = 10
     training = collections.defaultdict(list)
     test = collections.defaultdict(list)
 
@@ -350,5 +371,5 @@ if __name__ == '__main__':
         ax.set_ylabel("Error rate")
 
     # find the minimum testing error, using the simplest model to resolve ties
-    min_delta = test_error_rate[test_error_rate == test_error_rate.min()].sort_index(ascending=False).index[0]
+    min_delta = xv_error_rate[xv_error_rate == xv_error_rate.min()].sort_index(ascending=False).index[0]
 

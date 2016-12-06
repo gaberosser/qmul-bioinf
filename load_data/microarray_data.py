@@ -4,22 +4,32 @@ from microarray import process
 from settings import DATA_DIR, DATA_DIR_NON_GIT
 
 
-def load_from_r_processed(infile, sample_names, index_field):
+AGGREGATION_FIELD_CHOICES = (
+    'ENTREZID', 'SYMBOL', 'ENSEMBL'
+)
+
+
+
+def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=None):
     """
     Load microarray data that has been created in R.
     This is (unfortunately) necessary when we want to apply certain pre-processing steps like RMA.
     :param infile: The input file name.
     :param sample_names: T
-    :param index_field:
+    :param aggr_field:
     :return:
     """
-    meta_cols = ['probeset_id', 'accession_id', 'gene_symbol', 'description', 'ensembl_id', 'entrez_id']
-    cols = meta_cols + sample_names
+    if (aggr_method is not None and aggr_field is None) or (aggr_method is None and aggr_field is not None):
+        raise ValueError("Must either supploy BOTH aggr_field and aggr_method or NEITHER.")
+    if aggr_field is not None and aggr_field not in AGGREGATION_FIELD_CHOICES:
+        raise ValueError("Unrecognised aggregation field. Supported options are %s." % ', '.join(AGGREGATION_FIELD_CHOICES))
 
-    arr_data = pd.read_csv(infile, sep='\t', header=None, names=cols, skiprows=1)
+    arr_data = pd.read_csv(infile, sep='\t', header=0, index_col=0)
+    if aggr_field is None:
+        return arr_data
     # drop other meta fields
-    arr_data = arr_data.loc[:, [index_field] + sample_names]
-    arr_data = process.aggregate_by_probe_set(arr_data, groupby=index_field)
+    arr_data = arr_data.loc[:, [aggr_field] + sample_names]
+    arr_data = process.aggregate_by_probe_set(arr_data, groupby=aggr_field, method=aggr_method)
     return arr_data
 
 
@@ -57,7 +67,7 @@ def load_annotated_microarray_gse54650(index_field='entrez_id'):
         'Cer_CT62',
         'Cer_CT64',
     ]
-    return load_from_r_processed(infile, sample_names, index_field=index_field)
+    return load_from_r_processed(infile, sample_names, aggr_field=index_field)
 
 
 def load_annotated_microarray_sb_data(index_field='entrez_id'):
@@ -77,43 +87,40 @@ def load_annotated_microarray_sb_data(index_field='entrez_id'):
         "Wu056",
         "Wu057"
     ]
-    arr_data = load_from_r_processed(infile, sample_names, index_field=index_field)
+    arr_data = load_from_r_processed(infile, sample_names, aggr_field=index_field)
     # CHD7 status
     chd7 = pd.Series(data=[True] * 3 + [False] * 5, index=sample_names)
     return arr_data, chd7
 
 
-def load_annotated_microarray_gse37382(index_field='entrez_id', aggr_method=None):
+def load_annotated_microarray_gse37382(aggr_field=None, aggr_method=None):
     """
     Northcott human MB study comprising the subgroups C, D and SHH.
-    :param index_field:
+    :param aggr_field: If None, don't perform aggregation. Otherwise, use this field as the index. Options ae
     :param aggr_method: The method to use when aggregating over probe sets. If None, do not aggregate over probe sets.
     :return:
     """
-    if aggr_method == 'median':
-        infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.median_by_entrez_id.txt.gz')
-    elif aggr_method is None:
-        infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
-    else:
-        raise ValueError("Unrecognized aggr_method %s" % aggr_method)
-    meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE37382')
+    infile = os.path.join(indir, 'expr.rma.csv.gz')
+    meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
+    meta.index = meta.index.str.replace('_', '.')  # R changes column names
     sample_names = list(meta.index)
-
-    arr = load_from_r_processed(infile, sample_names, index_field=index_field)
+    arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     return arr, meta
 
 
-def load_annotated_microarray_gse10327(index_field='entrez_id'):
+def load_annotated_microarray_gse10327(aggr_field=None, aggr_method=None):
     """
     Kool human MB dataset comprising 62 samples
     :param index_field:
     :return:
     """
-    infile = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE10237', 'data.ann.txt.gz')
-    meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE10327')
+    infile = os.path.join(indir, 'expr.rma.csv.gz')
+    meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
     sample_names = list(meta.index)
-
-    arr = load_from_r_processed(infile, sample_names, index_field=index_field)
+    arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     return arr, meta
+

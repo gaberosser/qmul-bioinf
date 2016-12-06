@@ -22,29 +22,19 @@ add_annotation_column <- function(expr_df, annotlib, col.name, multiVals = 'asNA
   return(expr_df)
 }
 
+
 annotate_by_entrez <- function(expr_df, annotlib, aggr.method='median') {
 
   # annotate
   annot_df <- data.frame(expr_df)
   add_annotation_column(annot_df, annotlib, col.name = 'ENTREZID')
   
-  # pids <- row.names(expr_df)
-  # entrez <- mapIds(annotlib, keys = pids, column = 'ENTREZID', keytype = 'PROBEID', multiVals = 'asNA')
-  # entrez <- entrez[!is.na(entrez)]  # only keep probes that match a single gene
-  # symbol <- mapIds(annotlib, keys = pids, column = 'SYMBOL', keytype = 'PROBEID', multiVals = 'asNA')
-  # symbol <- symbol[!is.na(symbol)]  # only keep probes that match a single gene
-  # 
-  # annot_df <- data.frame(expr_df)
-  # annot_df[names(entrez), 'ENTREZID'] = entrez
-  # annot_df[names(symbol), 'SYMBOL'] = symbol
-  
   # only keep items with an Entrez ID
   annot_df = annot_df[!is.na(annot_df[['ENTREZID']]),]
   
   if (is.null(aggr.method)) {
     return(annot_df)
-  }
-  if (aggr.method == 'median') {
+  } else if (aggr.method == 'median') {
     # median aggregation
     aggr_df <- median_by(annot_df[,1:(length(annot_df) - 2)], annot_df[['ENTREZID']])
     
@@ -95,6 +85,21 @@ annotated_expr_from_celdir <- function(cel.dir, annotlib, gzipped = T, strip.tit
   }
   
   return(expr_df)
+}
+
+
+preprocessed_filename <- function(aggr.by = NULL, aggr.method = 'median') {
+  if (!is.null(aggr.by)) {
+    if (is.null(aggr.method)) {
+      stop("aggr.by is specified but aggr.method is NULL.")
+    }
+    fn = 'expr.rma.{aggr.method}_{aggr.by}.csv.gz'
+    fn = sub('{aggr.by}', aggr.by, fn, fixed = T)
+    fn = sub('{aggr.method}', aggr.method, fn, fixed = T)
+  } else {
+    fn = "expr.rma.csv.gz"
+  }
+  return(fn)
 }
 
 
@@ -164,60 +169,69 @@ gse54650 <- function() {
 }
 
 
-gse37382 <- function(aggr.by = NULL, aggr.method = 'median') {
+load_microarray_data_from_raw <- function(in.dir, annotlib, aggr.by = NULL, aggr.method = 'median', strip.title = '.CEL.gz', gzipped = T) {
+  fn <- preprocessed_filename(aggr.by = aggr.by, aggr.method = aggr.method)
+  pre_saved.file = file.path(in.dir, fn)
   
-  if (!is.null(aggr.by)) {
-    if (is.null(aggr.method)) {
-      stop("aggr.by is specified but aggr.method is NULL.")
-    }
-    fn = 'expr.rma.{aggr.method}_{aggr.by}.csv.gz'
-    fn = sub('{aggr.by}', aggr.by, fn, fixed = T)
-    fn = sub('{aggr.method}', aggr.method, fn, fixed = T)
-  } else {
-    fn = "expr.rma.csv.gz"
-  }
-  
-  pre_saved.file = file.path(data.dir.raid, 'GSE37382', fn)
   if (file.exists(pre_saved.file)) {
+    print(paste0("Loading from existing file ", pre_saved.file))
     expr <- read.csv(pre_saved.file, sep='\t', header=1, row.names = 1)
   } else {
-    library(hugene11sttranscriptcluster.db)
-    in.dir = file.path(data.dir.raid, 'GSE37382', 'raw')
+    raw.dir = file.path(in.dir, 'raw')
+    print(paste0("Loading from raw files in ", raw.dir))
     expr <- annotated_expr_from_celdir(
-      in.dir, 
-      annotlib = hugene11sttranscriptcluster.db, 
-      gzipped = T, 
-      strip.title = '.CEL.gz',
+      raw.dir,
+      annotlib = annotlib, 
+      gzipped = gzipped, 
+      strip.title = strip.title,
       aggr.by = aggr.by,
       aggr.method = aggr.method)
+    print(paste0("Saving to file ", pre_saved.file))
     gz1 <- gzfile(pre_saved.file, "w")
     write.table(expr, file=gz1, sep="\t", col.names = NA, row.names = TRUE)
     close(gz1)
   }
+  return(expr)
+}
+
+
+gse37382 <- function(aggr.by = NULL, aggr.method = 'median') {
+  library(hugene11sttranscriptcluster.db)
+  in.dir <- file.path(data.dir.raid, 'GSE37382')
+  
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = hugene11sttranscriptcluster.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
+  
   # load meta
   meta.file = file.path(data.dir.raid, 'GSE37382', 'sources.csv')
   meta <- read.csv(meta.file, header=1, row.names = 1)
   rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
   
+  # arrange so they are sorted in the same order
+  if (!is.null(aggr.by)) {
+    expr <- expr[, rownames(meta)]
+  } else {
+    expr <- expr[, c(rownames(meta), 'SYMBOL', 'ENTREZID', 'ENSEMBL')]
+  }
+
   return(list(expr=expr, meta=meta))
 }
 
 
-gse10327 <- function() {
+gse10327 <- function(aggr.by = NULL, aggr.method = 'median') {
   in.dir <- file.path(data.dir.raid, 'GSE10327')
-  in.dir.raw <- file.path(in.dir, 'raw')
-  pre_saved.file = file.path(in.dir, 'expr.rma.median_entrez_id.rds')
-  if (file.exists(pre_saved.file)) {
-    expr <- readRDS(pre_saved.file)
-  } else {
-    library(hgu133plus2.db)
-    expr <- annotated_expr_from_celdir(
-      in.dir.raw, 
-      annotlib = hgu133plus2.db,
-      gzipped = T, 
-      strip.title = '.CEL.gz')
-    saveRDS(expr, pre_saved.file)
-  }
+  library(hgu133plus2.db)
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = hgu133plus2.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
+
   # load meta
   meta.file = file.path(in.dir, 'sources.csv')
   meta <- read.csv(meta.file, header=1, row.names = 1)

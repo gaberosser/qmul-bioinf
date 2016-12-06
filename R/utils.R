@@ -71,6 +71,6 @@ max_by <- function(dat, xs) {
   )
   # set rownames by agg_var and remove the unneeded column
   rownames(dat) <- dat$agg_var
-  dat <- subset(dat, select = -c(agg_var))
+  dat[,agg_var:=NULL]
   return(dat)
 }
