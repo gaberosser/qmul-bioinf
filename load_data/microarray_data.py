@@ -124,3 +124,18 @@ def load_annotated_microarray_gse10327(aggr_field=None, aggr_method=None):
     arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     return arr, meta
 
+
+def load_annotated_microarray_gse37418(aggr_field=None, aggr_method=None):
+    """
+    Kool human MB dataset comprising 62 samples
+    :param index_field:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE37418')
+    infile = os.path.join(indir, 'expr.rma.csv.gz')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')  # NB index by accession here
+    sample_names = list(meta.index)
+    arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
+    return arr, meta
+

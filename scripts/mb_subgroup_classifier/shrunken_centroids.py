@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from load_data import microarray_data, allen_human_brain_atlas
+from microarray import process
 import collections
 import operator
 import log
@@ -186,6 +187,45 @@ class NearestCentroidClassifier(object):
         n_incorrect = m - n_correct
         return res, n_correct, n_incorrect
 
+    def confusion_matrix(self, mat, true_labels):
+        """
+        Generate the confusion matrix for the supplied data
+        :param mat: P x M DataFrame, where M is the number of test samples
+        :param true_labels: The true labels (length M).
+        :return: pd.DataFrame
+        """
+        m = mat.columns.size
+        nl = len(self.labels_)
+
+        label_idx, label_str = true_labels.factorize()
+
+        n_grp = np.array([(label_idx == i).sum() for i in range(nl)])
+        # true_labels = self.labels
+        pred_labels = pd.Series([self.classify(mat.iloc[:, i]) for i in range(m)], index=mat.columns)
+
+        cm = np.zeros((nl + 2, nl + 1))
+        for i, l in enumerate(self.labels_):
+            # rows: inferred
+            inf_idx = pred_labels[pred_labels == l].index
+            truth = true_labels[inf_idx]
+            for j, l2 in enumerate(self.labels_):
+                # cols: truth
+                cm[i, j] = (truth == l2).sum()
+        # row sum
+        cm[:nl, nl] = cm[:nl].sum(axis=1)
+        # col sum
+        cm[nl, :nl + 1] = cm[:nl, :nl + 1].sum(axis=0)
+        # true positive rate
+        cm[nl + 1, :nl] = cm.diagonal()[:nl] / n_grp.astype(float)
+
+        cols = pd.MultiIndex.from_product([('True',), list(self.labels_) + ['Total',]])
+        rows = pd.MultiIndex.from_product([('Inferred',), list(self.labels_) + ['Total', 'TPR']])
+        cm = pd.DataFrame(data=cm, index=rows, columns=cols)
+        return cm
+
+    def confusion_matrix_training(self):
+        return self.confusion_matrix(self.data, self.labels)
+
 
 def run_validation(deltas, train_data, train_labels, test_data, test_labels, **kwargs):
     n_err_test = pd.Series(index=deltas)
@@ -213,6 +253,7 @@ if __name__ == '__main__':
     from scripts.comparison_rnaseq_microarray import consts
 
     # define shrinkage delta values
+    n_core = 10
     deltas = np.linspace(0., 12., 60)
     FLAT_PRIOR = False
     k = 10  # XV
@@ -227,40 +268,51 @@ if __name__ == '__main__':
 
     # load Ncott data (285 non-WNT MB samples)
 
-    # mb, mb_meta = microarray_data.load_annotated_microarray_gse37382(
-    #     aggr_field='SYMBOL',
-    #     aggr_method='max'
-    # )
-    # sort_idx = mb_meta.subgroup.sort_values().index
-    # meta = mb_meta.loc[sort_idx]
-    # mb = mb.loc[:, sort_idx]
+    ncott, ncott_meta = microarray_data.load_annotated_microarray_gse37382(
+        aggr_field='SYMBOL',
+        aggr_method='max'
+    )
+    sort_idx = ncott_meta.subgroup.sort_values().index
+    ncott_meta = ncott_meta.loc[sort_idx]
+    ncott = ncott.loc[:, sort_idx]
 
     # load Allen (healthy cerebellum)
 
-    # he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
+    he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
 
     # combine
 
-    # common_genes = mb.index.intersection(he.index)
-    # res = pd.DataFrame(index=common_genes, columns=mb.columns.union(he.columns))
+    # common_genes = ncott.index.intersection(he.index)
+    # res = pd.DataFrame(index=common_genes, columns=ncott.columns.union(he.columns))
     # res.loc[common_genes, he.columns] = he.loc[common_genes].values
-    # res.loc[common_genes, mb.columns] = mb.loc[common_genes].values
+    # res.loc[common_genes, ncott.columns] = ncott.loc[common_genes].values
     # res = res.astype(float)
     #
-    # he_meta = pd.DataFrame(data=[[None, None, 'control']] * he.columns.size, index=he.columns, columns=mb_meta.columns)
-    # meta = pd.concat((mb_meta, he_meta), axis=0)
+    # he_meta = pd.DataFrame(data=[[None, None, 'control']] * he.columns.size, index=he.columns, columns=ncott_meta.columns)
+    # meta = pd.concat((ncott_meta, he_meta), axis=0).loc[res.columns]
+    # X = res.copy()
+    # m = meta.copy()
+    # X = process.yugene_transform(X)
+
+
+    X = ncott.copy()
+    m = ncott_meta.copy()
 
     # load Kool dataset
-    res, meta = microarray_data.load_annotated_microarray_gse10327(
+    kool, kool_meta = microarray_data.load_annotated_microarray_gse10327(
         aggr_field='SYMBOL',
         aggr_method='max',
     )
-    sort_idx = meta.subgroup.sort_values().index
-    meta = meta.loc[sort_idx]
-    res = res.loc[:, sort_idx]
+    sort_idx = kool_meta.subgroup.sort_values().index
+    kool_meta = kool_meta.loc[sort_idx]
+    kool = kool.loc[:, sort_idx]
 
-    X = res.copy()
-    m = meta.copy()
+    # load Robinson dataset
+    robi, robi_meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
+    sort_idx = robi_meta.subgroup.sort_values().index
+    robi_meta = robi_meta.loc[sort_idx]
+    robi = robi.loc[:, sort_idx]
+    robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
 
     # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
@@ -315,7 +367,7 @@ if __name__ == '__main__':
     n_err_train = pd.DataFrame(index=range(k), columns=deltas)
     clas = pd.DataFrame(index=range(k), columns=deltas)
 
-    p = mp.Pool()
+    p = mp.Pool(n_core)
     jobs = []
 
 
@@ -372,4 +424,8 @@ if __name__ == '__main__':
 
     # find the minimum testing error, using the simplest model to resolve ties
     min_delta = xv_error_rate[xv_error_rate == xv_error_rate.min()].sort_index(ascending=False).index[0]
+    obj = NearestCentroidClassifier(data=X, labels=m.subgroup, flat_prior=FLAT_PRIOR)
+    obj.shrink_centroids(min_delta)
+    cm_ncott = obj.confusion_matrix_training()
 
+    cm_robi = obj.confusion_matrix(robi, robi_meta.subgroup)

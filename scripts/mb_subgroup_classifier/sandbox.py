@@ -2,15 +2,16 @@ import pandas as pd
 import re
 import os
 
-infile = '/home/gabriel/Downloads/GSE37418_meta.txt'
+infile = '/home/gabriel/Downloads/GSE50765_series_matrix.txt'
 
 meta_map = {
     'Sample_title': 'title',
     'Sample_geo_accession': 'accession',
     'Sample_characteristics_subgroup': 'subgroup',
-    'Sample_characteristics_age': 'age_months',
-    'Sample_characteristics_sex': 'sex',
-    'Sample_characteristics_stage': 'stage',
+    'Sample_characteristics_age': 'age_years',
+    'Sample_characteristics_histology': 'histology',
+    'Sample_characteristics_followup': 'followup',
+    'Sample_characteristics_death': 'death',
 }
 # meta = collections.defaultdict(list)
 meta = pd.DataFrame()
@@ -30,9 +31,12 @@ with open(infile, 'rb') as f:
 
 # set the index of meta
 meta.set_index('title', inplace=True)
-age_str = meta.loc[:, 'age_months']
-intage = age_str.apply(lambda x: 12 * int(re.sub(r'(?P<y>[0-9]*)yrs.*', r'\g<y>', x)) + int(re.sub(r'[0-9]*yrs (?P<m>[0-9]*)mos', r'\g<m>', x)))
-meta.loc[:, 'age_months'] = intage
+meta.loc[:, 'age_years'] = meta.loc[:, 'age_years'].astype(float)
+meta.loc[meta.death == 'N/A', 'death'] = None
+
+# age_str = meta.loc[:, 'age_months']
+# intage = age_str.apply(lambda x: 12 * int(re.sub(r'(?P<y>[0-9]*)yrs.*', r'\g<y>', x)) + int(re.sub(r'[0-9]*yrs (?P<m>[0-9]*)mos', r'\g<m>', x)))
+# meta.loc[:, 'age_months'] = intage
 
 meta.to_csv("sources.csv", sep=',')
 # standardise title formats

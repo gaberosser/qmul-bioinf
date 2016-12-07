@@ -265,6 +265,31 @@ gse12992 <- function() {
 }
 
 
+gse37418 <- function(aggr.by = NULL, aggr.method = 'median') {
+  in.dir <- file.path(data.dir.raid, 'GSE37418')
+  library(hgu133plus2.db)
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = hgu133plus2.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
+  
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 2)
+
+  # arrange so they are sorted in the same order
+  if (!is.null(aggr.by)) {
+    expr <- expr[, rownames(meta)]
+  } else {
+    expr <- expr[, c(rownames(meta), 'SYMBOL', 'ENTREZID', 'ENSEMBL')]
+  }  
+  
+  return(list(expr=expr, meta=meta))
+}
+
+
 thompson2006 <- function() {
   in.dir <- file.path(data.dir.raid, 'thompson2006')
   in.dir.raw <- file.path(in.dir, 'raw')
