@@ -276,9 +276,12 @@ if __name__ == '__main__':
     ncott_meta = ncott_meta.loc[sort_idx]
     ncott = ncott.loc[:, sort_idx]
 
+    # X = ncott.copy()
+    # m = ncott_meta.copy()
+
     # load Allen (healthy cerebellum)
 
-    he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
+    # he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
 
     # combine
 
@@ -294,10 +297,6 @@ if __name__ == '__main__':
     # m = meta.copy()
     # X = process.yugene_transform(X)
 
-
-    X = ncott.copy()
-    m = ncott_meta.copy()
-
     # load Kool dataset
     kool, kool_meta = microarray_data.load_annotated_microarray_gse10327(
         aggr_field='SYMBOL',
@@ -307,12 +306,19 @@ if __name__ == '__main__':
     kool_meta = kool_meta.loc[sort_idx]
     kool = kool.loc[:, sort_idx]
 
+    # X = kool.copy()
+    # m = kool_meta.copy()
+
     # load Robinson dataset
     robi, robi_meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
+    robi_meta = robi_meta.loc[~robi_meta.subgroup.isin(['U', 'SHH OUTLIER'])]
     sort_idx = robi_meta.subgroup.sort_values().index
     robi_meta = robi_meta.loc[sort_idx]
     robi = robi.loc[:, sort_idx]
     robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
+
+    X = robi.copy()
+    m = robi_meta.copy()
 
     # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
@@ -426,6 +432,7 @@ if __name__ == '__main__':
     min_delta = xv_error_rate[xv_error_rate == xv_error_rate.min()].sort_index(ascending=False).index[0]
     obj = NearestCentroidClassifier(data=X, labels=m.subgroup, flat_prior=FLAT_PRIOR)
     obj.shrink_centroids(min_delta)
-    cm_ncott = obj.confusion_matrix_training()
 
+    cm_train = obj.confusion_matrix_training()
     cm_robi = obj.confusion_matrix(robi, robi_meta.subgroup)
+    cm_ncott = obj.confusion_matrix(ncott, ncott_meta.subgroup)
