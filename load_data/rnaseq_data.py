@@ -1,9 +1,23 @@
 import pandas as pd
 import os
+import references
 from settings import DATA_DIR
 
+INDEX_FIELDS = (
+    'Approved Symbol',
+    'Entrez Gene ID',
+    'RefSeq IDs',
+    'Ensembl Gene ID'
+)
 
-def gse83696(index_by=None):
+
+def gse83696(index_by='Ensembl Gene ID'):
+    """
+    Data are initially indexed by Ensembl ID. Coversion is carried out using HGNC data, if required.
+    Index field options are: Approved Symbol, Entrez Gene ID, RefSeq IDs
+    :param index_by:
+    :return:
+    """
     # TODO: convert this into a generic loader for htseq-count outputs
     indir = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'htseq-count')
     samples = [
@@ -21,7 +35,9 @@ def gse83696(index_by=None):
         t = pd.read_csv(os.path.join(indir, fn), sep='\t', index_col=0, header=None).iloc[:, 0]
         df.loc[:, sn] = t
 
-    if index_by is None:
-        return df
-    else:
-        pass
+    if index_by is not None and index_by != 'Ensembl Gene ID':
+        new_idx = references.translate(df.index, to_field=index_by, from_field='Ensembl Gene ID')
+        new_idx.dropna(inplace=True)
+        df = df.loc[new_idx.index]
+        df.index = new_idx.values
+    return df

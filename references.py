@@ -22,13 +22,21 @@ def known_genes(tax_id=9606, index_field=None):
     return df
 
 
-def conversion_table():
-    in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
+def conversion_table(type='protein_coding'):
+    if type == 'protein_coding':
+        in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2016.12.tsv')
+    else:
+        raise ValueError("Unsupported type option '%s'" % type)
+    # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
     df = pd.read_csv(in_file, delimiter='\t')
     return df
 
 
 def _translate(cat, x, to_field, from_field):
+    return cat.set_index(from_field).loc[x, to_field]
+
+def translate(x, to_field, from_field):
+    cat = conversion_table()
     return cat.set_index(from_field).loc[x, to_field]
 
 
