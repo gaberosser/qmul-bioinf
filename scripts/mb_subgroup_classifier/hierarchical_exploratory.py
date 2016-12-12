@@ -2,7 +2,8 @@
 from scipy.cluster.hierarchy import dendrogram, linkage, cophenet
 from scipy.spatial.distance import pdist
 import pandas as pd
-from load_data import microarray_data, allen_human_brain_atlas
+from load_data import microarray_data, allen_human_brain_atlas, rnaseq_data
+from microarray import process
 from matplotlib import pyplot as plt, gridspec
 from matplotlib.colors import ListedColormap
 import seaborn as sns
@@ -66,35 +67,55 @@ if __name__ == '__main__':
     ncott_meta = ncott_meta.loc[sort_idx]
     ncott = ncott.loc[:, sort_idx]
 
-    # res, meta = microarray_data.load_annotated_microarray_gse37382(index_field='gene_symbol')
+    # X = ncott.copy()
+    # m = ncott_meta.copy()
 
-    # meta_fn = os.path.join(DATA_DIR, 'microarray_GSE37382', 'sources.csv')
-    # meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
-    # infile = os.path.join(DATA_DIR, 'microarray_GSE37382', 'data.ann.txt.gz')
-    # res = pd.read_csv(infile, sep='\t', header=0, index_col=0)
-    # # fix sample names
-    # res.columns = res.columns.str.replace('.', '_')
-    # # aggregate by gene symbol
-    # res = res.drop(['ENTREZID', 'GENENAME', 'ACCNUM', 'ENSEMBL'], axis=1)
-    # res = res.loc[~res.SYMBOL.isnull()]
-    # res = res.groupby('SYMBOL', axis=0).median()
 
-    # for neatness, put samples in the same order
-    # sort_idx = meta.subgroup.sort_values().index
-    # meta = meta.loc[sort_idx]
-    # labels = meta.loc[sort_idx, 'subgroup']  # if not sorting, still need to align here
-    # res = res.loc[:, sort_idx]
+    # load Kool dataset
+    kool, kool_meta = microarray_data.load_annotated_microarray_gse10327(
+        aggr_field='SYMBOL',
+        aggr_method='max',
+    )
+    sort_idx = kool_meta.subgroup.sort_values().index
+    kool_meta = kool_meta.loc[sort_idx]
+    kool = kool.loc[:, sort_idx]
+    kool_meta.loc[:, 'subgroup'] = (
+        kool_meta.loc[:, 'subgroup'].str
+            .replace('A', 'WNT')
+            .replace('B', 'SHH')
+            .replace('E', 'Group 3')
+            .replace('C', 'Group 4')
+            .replace('D', 'Group 4')
+    )
 
-    # clustering requires sample to be represented in the ROWS
-    X = ncott.transpose()
-    m = ncott_meta.copy()
+    # X = kool.copy()
+    # m = kool_meta.copy()
+
+    # load Robinson dataset
+    robi, robi_meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
+    robi_meta = robi_meta.loc[~robi_meta.subgroup.isin(['U', 'SHH OUTLIER'])]
+    sort_idx = robi_meta.subgroup.sort_values().index
+    robi_meta = robi_meta.loc[sort_idx]
+    robi = robi.loc[:, sort_idx]
+    robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
+
+    X = robi.copy()
+    m = robi_meta.copy()
+
+
+
+    # YuGene
+    X = process.yugene_transform(X)
+
+    # the samples must be represented in ROWS
+    X = X.transpose()
 
     Z = linkage(X, method='average', metric='correlation')
-    fig, ax, subax, gs = dendro_heatmap(Z, m.subgroup)
+    # fig, ax, subax, gs = dendro_heatmap(Z, m.subgroup)
     # check the cophenetic distance: the sorrelation between ACTUAL pairwise distances between samples and the
     # distances according to the hierarchical clustering
-    c, coph_dists = cophenet(Z, pdist(X))
-    print "Correlation coeff between actual pdist and hierarchical pdist is %.2f" % c
+    # c, coph_dists = cophenet(Z, pdist(X))
+    # print "Correlation coeff between actual pdist and hierarchical pdist is %.2f" % c
 
     # pick top high stdev genes
     s = X.std(axis=0).sort_values(ascending=False)
@@ -102,7 +123,8 @@ if __name__ == '__main__':
 
     Xs = X.loc[:, idx]
     Zs = linkage(Xs, method='average', metric='correlation')
-    fig, ax, subax, gs = dendro_heatmap(Zs, m.subgroup)
+    fig, ax, subax, gs = dendro_heatmap(Zs, m.subgroup, show_xlabels=False)
+    ax.set_ylabel("Correlation distance")
 
     c_s, coph_dists_s = cophenet(Zs, pdist(Xs))
     print "Correlation coeff between actual pdist and hierarchical pdist is %.2f" % c_s
@@ -116,16 +138,10 @@ if __name__ == '__main__':
     nano_genes.remove('EGFL11')
     nano_genes.append('EYS')
 
-    Xn = X.loc[:, nano_genes]
-    Zn = linkage(Xn, method='average', metric='correlation')
+    # Xn = X.loc[:, nano_genes]
+    # Zn = linkage(Xn, method='average', metric='correlation')
 
-    fig, ax, subax, gs = dendro_heatmap(Zn, m.subgroup, show_xlabels=False)
+    # fig, ax, subax, gs = dendro_heatmap(Zn, m.subgroup, show_xlabels=False)
 
-    c_s, coph_dists_s = cophenet(Zn, pdist(Xn))
-    print "Correlation coeff between actual pdist and hierarchical pdist is %.2f" % c_s
-
-    Xn2 = X.loc[:, nano_genes]
-    Xn2 = Xn2.subtract(Xn2.mean(axis=0), axis=1)
-    Zn2 = linkage(Xn2, method='average', metric='correlation')
-
-    # fig, ax, subax, gs = dendro_heatmap(Zn2, m.subgroup)
+    # c_s, coph_dists_s = cophenet(Zn, pdist(Xn))
+    # print "Correlation coeff between actual pdist and hierarchical pdist is %.2f" % c_s

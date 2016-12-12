@@ -276,8 +276,8 @@ if __name__ == '__main__':
     ncott_meta = ncott_meta.loc[sort_idx]
     ncott = ncott.loc[:, sort_idx]
 
-    X = ncott.copy()
-    m = ncott_meta.copy()
+    # X = ncott.copy()
+    # m = ncott_meta.copy()
 
     # load Allen (healthy cerebellum)
 
@@ -305,6 +305,14 @@ if __name__ == '__main__':
     sort_idx = kool_meta.subgroup.sort_values().index
     kool_meta = kool_meta.loc[sort_idx]
     kool = kool.loc[:, sort_idx]
+    kool_meta.loc[:, 'subgroup'] = (
+        kool_meta.loc[:, 'subgroup'].str
+            .replace('A', 'WNT')
+            .replace('B', 'SHH')
+            .replace('E', 'Group 3')
+            .replace('C', 'Group 4')
+            .replace('D', 'Group 4')
+    )
 
     # X = kool.copy()
     # m = kool_meta.copy()
@@ -317,8 +325,8 @@ if __name__ == '__main__':
     robi = robi.loc[:, sort_idx]
     robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
 
-    # X = robi.copy()
-    # m = robi_meta.copy()
+    X = robi.copy()
+    m = robi_meta.copy()
 
     # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
@@ -330,6 +338,15 @@ if __name__ == '__main__':
 
     xz_data = np.log2(rnaseq_data.gse83696(index_by='Approved Symbol') + 1e-8)
     xz_data[xz_data < 0] = 0.
+
+    # from scripts.comparison_rnaseq_microarray import load_rnaseq_data
+    # xz_data = load_rnaseq_data.load_rnaseq_cufflinks_gene_count_data()
+    # xz_data.fillna(0, inplace=True)
+    # xz_sorted = np.sort(xz_data.values.flatten())
+    # y0 = xz_sorted[int(xz_sorted.size * 0.25)] # normalise by 25% lowest
+    # xz_log = np.log2(xz_data)
+    # xz_log[xz_data < y0] = np.log2(y0)
+    # xz_data = xz_log
 
     X_rna = pd.DataFrame(data=xz_data, columns=xz_data.columns, index=X.index)
     X_rna.fillna(0, inplace=True)
@@ -442,4 +459,5 @@ if __name__ == '__main__':
     cm_robi = obj.confusion_matrix(robi, robi_meta.subgroup)
     cm_ncott = obj.confusion_matrix(ncott, ncott_meta.subgroup)
 
-    # load RNA-Seq
+    # classify RNA-Seq
+    rna_class = [(c, obj.classify(X_rna.loc[:, c])) for c in X_rna.columns]

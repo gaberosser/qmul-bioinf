@@ -114,14 +114,30 @@ if __name__ == '__main__':
     y = pca.transform(X)
 
     # load RNA-Seq data
-    xz_data = np.log2(rnaseq_data.gse83696(index_by='Approved Symbol') + 1e-8)
-    xz_data[xz_data < 0] = 0.
+    # counts
+    xz_htseq = np.log2(rnaseq_data.gse83696(index_by='Approved Symbol') + 1e-8)
+    xz_htseq[xz_htseq < 0] = 0.
 
-    X_rna = pd.DataFrame(data=xz_data, columns=xz_data.columns, index=X.columns)
-    X_rna.fillna(0, inplace=True)
-    X_rna = process.yugene_transform(X_rna).transpose()
+    X_htseq = pd.DataFrame(data=xz_htseq, columns=xz_htseq.columns, index=X.columns)
+    X_htseq.fillna(0, inplace=True)
+    X_htseq = process.yugene_transform(X_htseq).transpose()
+    y_htseq = pca.transform(X_htseq)
 
-    y_rna = pca.transform(X_rna)
+    # cufflinks TPM / FPKM
+    from scripts.comparison_rnaseq_microarray import load_rnaseq_data
+    xz_cuff = load_rnaseq_data.load_rnaseq_cufflinks_gene_count_data(unit='tpm')
+    xz_cuff.fillna(0, inplace=True)
+    xz_cuff_sorted = np.sort(xz_cuff.values.flatten())
+    y0 = xz_cuff_sorted[int(xz_cuff_sorted.size * 0.25)] # normalise by 25% lowest
+    xz_log = np.log2(xz_cuff)
+    xz_log[xz_cuff < y0] = np.log2(y0)
+    xz_cuff = xz_log
+
+    X_cuff = pd.DataFrame(data=xz_cuff, columns=xz_cuff.columns, index=X.columns)
+    X_cuff.fillna(0, inplace=True)
+    X_cuff = process.yugene_transform(X_cuff).transpose()
+
+    y_cuff = pca.transform(X_cuff)
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -158,7 +174,8 @@ if __name__ == '__main__':
         c = colour_map[l]
         j = idx == i
         ax.scatter(y[j, 0], y[j, 1], c=c, label=l)
-    ax.scatter(y_rna[:, 0], y_rna[:, 1], c='g', label='XZ')
+    ax.scatter(y_cuff[:, 0], y_cuff[:, 1], c='g', label='XZ Cufflinks')
+    ax.scatter(y_htseq[:, 0], y_htseq[:, 1], c='m', label='XZ HTSeq')
     plt.legend(frameon=False, loc='upper right')
     plt.xlabel("PCA component 1")
     plt.ylabel("PCA component 2")
@@ -188,7 +205,8 @@ if __name__ == '__main__':
         c = colour_map[l]
         j = idx == i
         ax.scatter(y[j, 0], y[j, 2], c=c, label=l)
-    ax.scatter(y_rna[:, 0], y_rna[:, 2], c='g', label='XZ')
+    ax.scatter(y_cuff[:, 0], y_cuff[:, 2], c='g', label='XZ Cufflinks')
+    ax.scatter(y_htseq[:, 0], y_htseq[:, 2], c='m', label='XZ HTSeq')
     plt.legend(frameon=False, loc='upper right')
     plt.xlabel("PCA component 1")
     plt.ylabel("PCA component 3")
@@ -210,7 +228,8 @@ if __name__ == '__main__':
         c = colour_map[l]
         j = idx == i
         ax_3d.scatter(y[j, 0], y[j, 1], y[j, 2], c=c, label=l)
-    ax_3d.scatter(y_rna[:, 0], y_rna[:, 1], y_rna[:, 2], c='g', label='XZ')
+    ax_3d.scatter(y_cuff[:, 0], y_cuff[:, 1], y_cuff[:, 2], c='g', label='XZ Cufflinks')
+    ax_3d.scatter(y_htseq[:, 0], y_htseq[:, 1], y_htseq[:, 2], c='m', label='XZ HTSeq')
     plt.legend(frameon=False, loc='upper right')
 
     ax_3d.set_xlabel("PCA component 1")
