@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from load_data import microarray_data, allen_human_brain_atlas
+from load_data import microarray_data, rnaseq_data, allen_human_brain_atlas
 from microarray import process
 import collections
 import operator
@@ -276,8 +276,8 @@ if __name__ == '__main__':
     ncott_meta = ncott_meta.loc[sort_idx]
     ncott = ncott.loc[:, sort_idx]
 
-    # X = ncott.copy()
-    # m = ncott_meta.copy()
+    X = ncott.copy()
+    m = ncott_meta.copy()
 
     # load Allen (healthy cerebellum)
 
@@ -317,8 +317,8 @@ if __name__ == '__main__':
     robi = robi.loc[:, sort_idx]
     robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
 
-    X = robi.copy()
-    m = robi_meta.copy()
+    # X = robi.copy()
+    # m = robi_meta.copy()
 
     # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
@@ -326,9 +326,14 @@ if __name__ == '__main__':
 
     # X = X.loc[nano_genes]
 
-    # s = X.std(axis=1).sort_values(ascending=False)
-    # top_std_idx = s.iloc[:1000].index
-    # X = X.loc[top_std_idx]
+    X = process.yugene_transform(X)
+
+    xz_data = np.log2(rnaseq_data.gse83696(index_by='Approved Symbol') + 1e-8)
+    xz_data[xz_data < 0] = 0.
+
+    X_rna = pd.DataFrame(data=xz_data, columns=xz_data.columns, index=X.index)
+    X_rna.fillna(0, inplace=True)
+    X_rna = process.yugene_transform(X_rna)
 
     # for statistical purposes, split the data into training/validation and test sets in the ratio 3:1
 
@@ -421,9 +426,9 @@ if __name__ == '__main__':
     if True:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        xv_error_rate.plot(ax=ax, label="Xv")
         train_error_rate.plot(ax=ax, label="Training")
         test_error_rate.plot(ax=ax, label="Test")
+        xv_error_rate.plot(ax=ax, label="Xv", lw=3)
         ax.legend(loc='upper left')
         ax.set_xlabel("Shrinkage parameter, $\Delta$")
         ax.set_ylabel("Error rate")
@@ -436,3 +441,5 @@ if __name__ == '__main__':
     cm_train = obj.confusion_matrix_training()
     cm_robi = obj.confusion_matrix(robi, robi_meta.subgroup)
     cm_ncott = obj.confusion_matrix(ncott, ncott_meta.subgroup)
+
+    # load RNA-Seq
