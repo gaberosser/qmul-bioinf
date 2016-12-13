@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+from log import get_console_logger
 
 
 def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol', axis=0):
@@ -36,10 +38,28 @@ def yugene_transform(marray_data):
     "YuGene: A Simple Approach to Scale Gene Expression Data Derived from Different Platforms for Integrated Analyses."
     Genomics 103, no. 4 (April 2014): 239-51. doi:10.1016/j.ygeno.2014.03.001.
     Assume the data are supplied with samples in columns and genes in rows
+    Assume data are all positive
     """
     res = marray_data.copy()
+    # add columnwise offset to ensure all positive values
+    colmin = res.min(axis=0)
+    neg_warn = False
+    for i in np.where(colmin < 0)[0]:
+        res.iloc[:, i] -= colmin[i]
+        neg_warn = True
+    if neg_warn:
+        logger = get_console_logger(__name__)
+        logger.warning("Data contained negative values. Columnwise shift applied to correct this.")
+
     for t in marray_data.columns:
         col = res.loc[:, t].sort_values(ascending=False)
         a = 1 - col.cumsum() / col.sum()
         res.loc[a.index, t] = a
+
+    # a numerical error in cumsum() may result in some small negative values. Zero these.
+    res[res < 0] = 0.
+    # colmin = res.min(axis=0)
+    # colmin[colmin >= 0] = 0.
+    # res = res.subtract(colmin, axis=1)
+
     return res

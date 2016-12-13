@@ -195,20 +195,30 @@ class NearestCentroidClassifier(object):
         :return: pd.DataFrame
         """
         m = mat.columns.size
-        nl = len(self.labels_)
-
         label_idx, label_str = true_labels.factorize()
+        # include all labels, even if some are absent from the supplied dataset
+        label_str = label_str.union(self.labels_)
 
-        n_grp = np.array([(label_idx == i).sum() for i in range(nl)])
-        # true_labels = self.labels
+        # nl = len(self.labels_)
+        nl = len(label_str)
+
+        n_grp = pd.Series(0, index=label_str)
+        cts = true_labels.groupby(true_labels).size()
+        n_grp.loc[cts.index] = cts
+
         pred_labels = pd.Series([self.classify(mat.iloc[:, i]) for i in range(m)], index=mat.columns)
 
         cm = np.zeros((nl + 2, nl + 1))
-        for i, l in enumerate(self.labels_):
+        # for i, l in enumerate(self.labels_):
+        for i, l in enumerate(label_str):
             # rows: inferred
             inf_idx = pred_labels[pred_labels == l].index
+            if len(inf_idx) == 0:
+                # skip this row - no inferred observations
+                continue
             truth = true_labels[inf_idx]
-            for j, l2 in enumerate(self.labels_):
+            # for j, l2 in enumerate(self.labels_):
+            for j, l2 in enumerate(label_str):
                 # cols: truth
                 cm[i, j] = (truth == l2).sum()
         # row sum
@@ -216,10 +226,15 @@ class NearestCentroidClassifier(object):
         # col sum
         cm[nl, :nl + 1] = cm[:nl, :nl + 1].sum(axis=0)
         # true positive rate
-        cm[nl + 1, :nl] = cm.diagonal()[:nl] / n_grp.astype(float)
+        a = cm.diagonal()[:nl]
+        b = n_grp.astype(float).values
+        c = np.zeros_like(a)
+        c[b > 0] = a[b > 0] / b[b > 0]
 
-        cols = pd.MultiIndex.from_product([('True',), list(self.labels_) + ['Total',]])
-        rows = pd.MultiIndex.from_product([('Inferred',), list(self.labels_) + ['Total', 'TPR']])
+        cm[nl + 1, :nl] = c
+
+        cols = pd.MultiIndex.from_product([('True',), list(label_str) + ['Total',]])
+        rows = pd.MultiIndex.from_product([('Inferred',), list(label_str) + ['Total', 'TPR']])
         cm = pd.DataFrame(data=cm, index=rows, columns=cols)
         return cm
 
@@ -255,14 +270,14 @@ if __name__ == '__main__':
     # define shrinkage delta values
     n_core = 10
     deltas = np.linspace(0., 12., 60)
-    FLAT_PRIOR = False
+    # FLAT_PRIOR = False
+    FLAT_PRIOR = True
     k = 10  # XV
 
     # it's useful to maintain a list of known upregulated genes
     nano_genes = []
     for grp, arr in consts.NANOSTRING_GENES:
-        if grp != 'WNT':
-            nano_genes.extend(arr)
+        nano_genes.extend(arr)
     nano_genes.remove('EGFL11')
     nano_genes.append('EYS')
 
@@ -274,7 +289,7 @@ if __name__ == '__main__':
     )
     sort_idx = ncott_meta.subgroup.sort_values().index
     ncott_meta = ncott_meta.loc[sort_idx]
-    ncott = ncott.loc[:, sort_idx]
+    ncott = process.yugene_transform(ncott.loc[:, sort_idx])
 
     # X = ncott.copy()
     # m = ncott_meta.copy()
@@ -304,7 +319,7 @@ if __name__ == '__main__':
     )
     sort_idx = kool_meta.subgroup.sort_values().index
     kool_meta = kool_meta.loc[sort_idx]
-    kool = kool.loc[:, sort_idx]
+    kool = process.yugene_transform(kool.loc[:, sort_idx])
     kool_meta.loc[:, 'subgroup'] = (
         kool_meta.loc[:, 'subgroup'].str
             .replace('A', 'WNT')
@@ -322,7 +337,7 @@ if __name__ == '__main__':
     robi_meta = robi_meta.loc[~robi_meta.subgroup.isin(['U', 'SHH OUTLIER'])]
     sort_idx = robi_meta.subgroup.sort_values().index
     robi_meta = robi_meta.loc[sort_idx]
-    robi = robi.loc[:, sort_idx]
+    robi = process.yugene_transform(robi.loc[:, sort_idx])
     robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
 
     X = robi.copy()
@@ -331,26 +346,6 @@ if __name__ == '__main__':
     # if we lump groups C and D together, the classification becomes almost perfect (as you might expect):
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 4', 'Group C/D')
     # m.loc[:, 'subgroup'] = m.subgroup.replace('Group 3', 'Group C/D')
-
-    # X = X.loc[nano_genes]
-
-    X = process.yugene_transform(X)
-
-    xz_data = np.log2(rnaseq_data.gse83696(index_by='Approved Symbol') + 1e-8)
-    xz_data[xz_data < 0] = 0.
-
-    # from scripts.comparison_rnaseq_microarray import load_rnaseq_data
-    # xz_data = load_rnaseq_data.load_rnaseq_cufflinks_gene_count_data()
-    # xz_data.fillna(0, inplace=True)
-    # xz_sorted = np.sort(xz_data.values.flatten())
-    # y0 = xz_sorted[int(xz_sorted.size * 0.25)] # normalise by 25% lowest
-    # xz_log = np.log2(xz_data)
-    # xz_log[xz_data < y0] = np.log2(y0)
-    # xz_data = xz_log
-
-    X_rna = pd.DataFrame(data=xz_data, columns=xz_data.columns, index=X.index)
-    X_rna.fillna(0, inplace=True)
-    X_rna = process.yugene_transform(X_rna)
 
     # for statistical purposes, split the data into training/validation and test sets in the ratio 3:1
 
@@ -457,7 +452,17 @@ if __name__ == '__main__':
 
     cm_train = obj.confusion_matrix_training()
     cm_robi = obj.confusion_matrix(robi, robi_meta.subgroup)
+    cm_kool = obj.confusion_matrix(kool, kool_meta.subgroup)
     cm_ncott = obj.confusion_matrix(ncott, ncott_meta.subgroup)
 
     # classify RNA-Seq
-    rna_class = [(c, obj.classify(X_rna.loc[:, c])) for c in X_rna.columns]
+    from load import load_xz_rnaseq
+    X_htseq = load_xz_rnaseq(kind='htseq', yugene=True, gene_symbols=X.index)
+    X_cuff = load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=X.index)
+
+    rna_cuff_class = [(c, obj.classify(X_cuff.loc[:, c])) for c in X_cuff.columns]
+    rna_cuff_class_probs = [(c, obj.class_probabilities(X_cuff.loc[:, c])) for c in X_cuff.columns]
+    rna_htseq_class = [(c, obj.classify(X_htseq.loc[:, c])) for c in X_htseq.columns]
+    rna_htseq_class_probs = [(c, obj.class_probabilities(X_htseq.loc[:, c])) for c in X_htseq.columns]
+
+    # TODO: load Xiao-Nan data and try to classify
