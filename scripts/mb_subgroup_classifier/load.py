@@ -1,4 +1,4 @@
-from load_data import rnaseq_data
+from load_data import rnaseq_data, microarray_data
 import pandas as pd
 from microarray import process
 from scripts.comparison_rnaseq_microarray import load_rnaseq_data
@@ -30,3 +30,25 @@ def load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=None):
     else:
         raise ValueError("Unrecognised kind '%s'" % kind)
     return X
+
+
+def load_xiaonan_microarray(yugene=True, gene_symbols=None, sample_names=None):
+    """
+    Load the Xiao-Nan microarray data
+    :param yugene: If True, apply YuGene normalisation
+    :param gene_symbols: If supplied, this is a list containing the gene symbols. Any that are not present are filled
+    with zeros
+    :return:
+    """
+    X, meta = microarray_data.load_annotated_gse28192(
+        aggr_field='SYMBOL',
+        aggr_method='max',
+        log2=True,
+        sample_names=sample_names
+    )
+    if yugene:
+        X = process.yugene_transform(X)
+    if gene_symbols is not None:
+        X = pd.DataFrame(data=X, columns=X.columns, index=gene_symbols)
+        X.fillna(0, inplace=True)
+    return X, meta

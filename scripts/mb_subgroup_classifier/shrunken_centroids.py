@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from load_data import microarray_data, rnaseq_data, allen_human_brain_atlas
+from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
 from microarray import process
 import collections
 import operator
@@ -456,7 +457,6 @@ if __name__ == '__main__':
     cm_ncott = obj.confusion_matrix(ncott, ncott_meta.subgroup)
 
     # classify RNA-Seq
-    from load import load_xz_rnaseq
     X_htseq = load_xz_rnaseq(kind='htseq', yugene=True, gene_symbols=X.index)
     X_cuff = load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=X.index)
 
@@ -466,3 +466,8 @@ if __name__ == '__main__':
     rna_htseq_class_probs = [(c, obj.class_probabilities(X_htseq.loc[:, c])) for c in X_htseq.columns]
 
     # TODO: load Xiao-Nan data and try to classify
+    xnan_sample_names = ('Pt1299', 'ICb1299-I', 'ICb1299-III', 'ICb1299-IV')
+    X_xnan, xnan_meta = load_xiaonan_microarray(yugene=True, gene_symbols=X.index, sample_names=xnan_sample_names)
+
+    xnan_class = [(c, obj.classify(X_xnan.loc[:, c])) for c in X_xnan.columns]
+    xnan_class_probs = [(c, obj.class_probabilities(X_xnan.loc[:, c])) for c in X_xnan.columns]
