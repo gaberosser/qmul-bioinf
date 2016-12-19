@@ -378,15 +378,21 @@ if __name__ == '__main__':
         subgrp_ind = np.where(idx == i)[0]
         nl = (idx == i).sum()
         # random order
-        pix = np.random.permutation(nl)
-        perm_ind = subgrp_ind[pix]
-        ch = np.array_split(perm_ind, indices_or_sections=k)
+        np.random.shuffle(subgrp_ind)
+        # pix = np.random.permutation(nl)
+        # perm_ind = subgrp_ind[pix]
+        ch = np.array_split(subgrp_ind, indices_or_sections=k)
+        # shuffle, otherwise the last testing slots get no samples from smaller groups
+        np.random.shuffle(ch)
         for j in range(k):
             chunks[j].extend(ch[j])
 
     # Xv
     train_idx = []
     test_idx = []
+    train_labels = []
+    test_labels = []
+
     n_err_test = pd.DataFrame(index=range(k), columns=deltas)
     n_err_train = pd.DataFrame(index=range(k), columns=deltas)
     clas = pd.DataFrame(index=range(k), columns=deltas)
@@ -395,38 +401,82 @@ if __name__ == '__main__':
     jobs = []
 
 
-    for j in range(k):
-        te = chunks[j]
-        te_ind = X_train.columns[te]
-        tr = reduce(operator.add, [chunks[z] for z in set(range(k)).difference([j])])
-        tr_ind = X_train.columns[tr]
-        test_idx.append(te_ind)
-        train_idx.append(tr_ind)
+    # for j in range(k):
+    #     te = chunks[j]
+    #     te_ind = X_train.columns[te]
+    #     tr = reduce(operator.add, [chunks[z] for z in set(range(k)).difference([j])])
+    #     tr_ind = X_train.columns[tr]
+    #     test_idx.append(te_ind)
+    #     train_idx.append(tr_ind)
+    #
+    #     test_data = X_train.loc[:, te_ind]
+    #     train_data = X_train.loc[:, tr_ind]
+    #     test_labels = meta_train.subgroup.loc[te_ind]
+    #     train_labels = meta_train.subgroup.loc[tr_ind]
+    #
+    #     pargs = (deltas, train_data, train_labels, test_data, test_labels)
+    #     pkwargs = dict(flat_prior=FLAT_PRIOR)
+    #     jobs.append(
+    #         p.apply_async(run_validation, args=pargs, kwds=pkwargs)
+    #     )
+    #
+    # p.close()
+    # for j in range(k):
+    #     etrain, etest, cl = jobs[j].get(1e6)
+    #     n_err_test.loc[j] = etest
+    #     n_err_train.loc[j] = etrain
+    #     clas.loc[j] = cl
+    #     logger.info("Complete xv run %d", j)
 
-        test_data = X_train.loc[:, te_ind]
-        train_data = X_train.loc[:, tr_ind]
-        test_labels = meta_train.subgroup.loc[te_ind]
-        train_labels = meta_train.subgroup.loc[tr_ind]
+    n_bootstrap = 100
+    sample_names = np.array(X_train.columns.values, copy=True)
+    te_cutoff = int(np.round(X_train.columns.size / float(k)))
+    for j in range(n_bootstrap):
+        ## TODO: why are the labels all the same, even when the sample names change??
+        np.random.shuffle(sample_names)
 
-        pargs = (deltas, train_data, train_labels, test_data, test_labels)
+        te_ind = sample_names[:te_cutoff]
+        tr_ind = sample_names[te_cutoff:]
+
+        print "Run %d. Test samples: %s" % (
+            j + 1,
+            ', '.join(te_ind)
+        )
+
+        te = X_train.loc[:, te_ind]
+        tr = X_train.loc[:, tr_ind]
+
+        test_idx.append(te_ind.copy())
+        train_idx.append(tr_ind.copy())
+
+        te_labels = meta_train.loc[te_ind, 'subgroup'].copy()
+        tr_labels = meta_train.loc[tr_ind, 'subgroup'].copy()
+
+        print repr(te_labels)
+
+        train_labels.append(tr_labels.copy())
+        test_labels.append(te_labels.copy())
+
+        pargs = (deltas, tr, tr_labels, te, te_labels)
         pkwargs = dict(flat_prior=FLAT_PRIOR)
         jobs.append(
             p.apply_async(run_validation, args=pargs, kwds=pkwargs)
         )
 
     p.close()
-    for j in range(k):
+    for j in range(n_bootstrap):
         etrain, etest, cl = jobs[j].get(1e6)
         n_err_test.loc[j] = etest
         n_err_train.loc[j] = etrain
         clas.loc[j] = cl
-        logger.info("Complete xv run %d", j)
+        logger.info("Complete xv run %d / %d", j + 1, n_bootstrap)
 
     # final run with all training data for assessment on test
     etrain, etest, _ = run_validation(deltas, X_train, meta_train.subgroup, X_test, meta_test.subgroup, flat_prior=FLAT_PRIOR)
     obj = NearestCentroidClassifier(data=X_train, labels=meta_train.subgroup, flat_prior=FLAT_PRIOR)
 
-    xv_error_rate = n_err_test.sum(axis=0) / float(X_train.columns.size)
+    bootstrap_error_rate = n_err_test.sum(axis=0) * k / float(n_bootstrap)
+    # xv_error_rate = n_err_test.sum(axis=0) / float(X_train.columns.size)
     train_error_rate_mean = n_err_train.sum(axis=0) / float(sum([t.size for t in train_idx]))
     train_error_rate = etrain / float(X_train.columns.size)
     test_error_rate = etest / float(X_test.columns.size)
@@ -441,13 +491,15 @@ if __name__ == '__main__':
         ax = fig.add_subplot(111)
         train_error_rate.plot(ax=ax, label="Training")
         test_error_rate.plot(ax=ax, label="Test")
-        xv_error_rate.plot(ax=ax, label="Xv", lw=3)
+        bootstrap_error_rate.plot(ax=ax, label="Xv", lw=3)
+        # xv_error_rate.plot(ax=ax, label="Xv", lw=3)
         ax.legend(loc='upper left')
         ax.set_xlabel("Shrinkage parameter, $\Delta$")
         ax.set_ylabel("Error rate")
 
     # find the minimum testing error, using the simplest model to resolve ties
-    min_delta = xv_error_rate[xv_error_rate == xv_error_rate.min()].sort_index(ascending=False).index[0]
+    # min_delta = xv_error_rate[xv_error_rate == xv_error_rate.min()].sort_index(ascending=False).index[0]
+    min_delta = bootstrap_error_rate[bootstrap_error_rate == bootstrap_error_rate.min()].sort_index(ascending=False).index[0]
     obj = NearestCentroidClassifier(data=X, labels=m.subgroup, flat_prior=FLAT_PRIOR)
     obj.shrink_centroids(min_delta)
 
