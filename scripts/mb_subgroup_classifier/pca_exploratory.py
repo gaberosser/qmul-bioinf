@@ -1,6 +1,7 @@
 from sklearn.decomposition import PCA
 import pandas as pd
 import numpy as np
+import os
 from load_data import microarray_data, allen_human_brain_atlas, rnaseq_data
 from microarray import process
 from matplotlib import pyplot as plt
@@ -278,6 +279,17 @@ if __name__ == '__main__':
     ELL_P = 0.95
     N_PC = 3
     ANIM = True
+    # ANIM = False
+    SAVEFIG = True
+
+    if SAVEFIG:
+        OUTDIR = 'pca_results.tmp.0'
+        i = 1
+        while os.path.exists(OUTDIR):
+            OUTDIR = 'pca_results.tmp.%d' % i
+            i += 1
+        print "Creating temp output dir %s" % OUTDIR
+        os.makedirs(OUTDIR)
 
     # it's useful to maintain a list of known upregulated genes
     nano_genes = []
@@ -343,13 +355,13 @@ if __name__ == '__main__':
     # extract only the desired samples
     # can switch classifier here.
     ###################################
-    # title = 'robi'
-    # X = all_expr.loc[:, robi_meta.index].transpose()
-    # m = robi_meta.copy()
+    title = 'robi'
+    X = all_expr.loc[:, robi_meta.index].transpose()
+    m = robi_meta.copy()
 
-    title = 'kool'
-    X = all_expr.loc[:, kool_meta.index].transpose()
-    m = kool_meta.copy()
+    # title = 'kool'
+    # X = all_expr.loc[:, kool_meta.index].transpose()
+    # m = kool_meta.copy()
 
     # first fit the pca with lots of components to investigate the explained variance
     pca = PCA(n_components=10)
@@ -363,7 +375,9 @@ if __name__ == '__main__':
     ax.set_xticks(range(1, 11))
     plt.xlabel('Principal component')
     plt.ylabel('Cumulative % variance explained')
-    fig.savefig("pca_variance_explained.png", dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_variance_explained.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "pca_variance_explained.pdf"), dpi=200)
 
 
     # now fit again, this time with only the necessary number of components
@@ -398,9 +412,11 @@ if __name__ == '__main__':
         'SHH': '#4daf4a',
         'control': 'gray',
         'Late passage': 'k',
-        # 'Early passage': '#984ea3'
         'Early passage': 'w'
     }
+    colour_map_anim = dict(colour_map)
+    colour_map_anim['Early passage'] = '#984ea3'
+
 
     # plots: PCA of classifier vs RNA-Seq
     fig, axs = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=True, figsize=(12, 5))
@@ -419,8 +435,9 @@ if __name__ == '__main__':
 
     axs[2].legend(loc='upper left')
     plt.tight_layout(pad=0.2, rect=[.02, .02, 1, 1])
-    fig.savefig("pca_%s-rnaseq_2d.png" % title, dpi=200)
-    fig.savefig("pca_%s-rnaseq_2d.pdf" % title, dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-rnaseq_2d.png" % title), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-rnaseq_2d.pdf" % title), dpi=200)
 
     # plots: PCA of classifier vs Xiao-Nan
     fig, axs = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=True, figsize=(12, 5))
@@ -437,8 +454,9 @@ if __name__ == '__main__':
 
     axs[2].legend(loc='upper left')
     plt.tight_layout(pad=0.2, rect=[.02, .02, 1, 1])
-    fig.savefig("pca_%s-1299_2d.png" % title, dpi=200)
-    fig.savefig("pca_%s-1299_2d.pdf" % title, dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299_2d.png" % title), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299_2d.pdf" % title), dpi=200)
 
     # plots: PCA of classifier vs Xiao-Nan AND RNA-Seq
     fig, axs = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=True, figsize=(12, 5))
@@ -456,8 +474,9 @@ if __name__ == '__main__':
 
     axs[2].legend(loc='upper left')
     plt.tight_layout(pad=0.2, rect=[.02, .02, 1, 1])
-    fig.savefig("pca_%s-1299-rnaseq_2d.png" % title, dpi=200)
-    fig.savefig("pca_%s-1299-rnaseq_2d.pdf" % title, dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299-rnaseq_2d.png" % title), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299-rnaseq_2d.pdf" % title), dpi=200)
 
     # plot: 3D scatterplot of classifier data with ellipsoids and RNA-Seq sample overlaid
     ax_3d = pca_plot_by_group_3d(
@@ -469,15 +488,24 @@ if __name__ == '__main__':
     ax_3d.view_init(35, 55)
     fig = ax_3d.get_figure()
     plt.tight_layout(pad=0., rect=[0.03, 0.03, 1, 1])
-    fig.savefig("pca_%s-rnaseq_3d.png" % title, dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-rnaseq_3d.png" % title), dpi=200)
 
     n_frames = 300
     def animate(i):
         ax_3d.view_init(35, i * (360. / float(n_frames)))
 
     if ANIM:
+        ax_3d = pca_plot_by_group_3d(
+            y, m.subgroup, colour_map=colour_map_anim, ellipse_p=ELL_P,
+            **{
+                'Late passage': y_cuff,
+            }
+        )
+        ax_3d.view_init(35, 55)
+        fig = ax_3d.get_figure()
         anim = animation.FuncAnimation(fig, animate, frames=n_frames, interval=20, repeat=False)
-        anim.save('pca_%s-rnaseq.mp4' % title, fps=30, writer='mencoder',
+        anim.save(os.path.join(OUTDIR, 'pca_%s-rnaseq.mp4' % title), fps=30, writer='mencoder',
                   extra_args=['-ovc', 'lavc', '-lavcopts', 'vcodec=mpeg4:vbitrate=2400'])
         plt.close(fig)
 
@@ -501,11 +529,18 @@ if __name__ == '__main__':
     ax_3d.view_init(35, 55)
     fig = ax_3d.get_figure()
     plt.tight_layout(pad=0., rect=[0.03, 0.03, 1, 1])
-    fig.savefig("pca_%s-ncott_3d.png" % title, dpi=200)
+    if SAVEFIG:
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-ncott_3d.png" % title), dpi=200)
 
     if ANIM:
+        ax_3d = pca_plot_by_group_3d(
+            y, m.subgroup, colour_map=colour_map_anim, plot_pca_data=False, **additional_data
+        )
+        ax_3d.view_init(35, 55)
+        fig = ax_3d.get_figure()
+
         anim = animation.FuncAnimation(fig, animate, frames=n_frames, interval=20, repeat=False)
-        anim.save('pca_%s-ncott.mp4' % title, fps=30, writer='mencoder',
+        anim.save(os.path.join(OUTDIR, 'pca_%s-ncott.mp4' % title), fps=30, writer='mencoder',
                   extra_args=['-ovc', 'lavc', '-lavcopts', 'vcodec=mpeg4:vbitrate=2400'])
         plt.close(fig)
 
@@ -518,12 +553,21 @@ if __name__ == '__main__':
         }
     )
     ax_3d.view_init(35, 55)
-    fig = ax_3d.get_figure()
-    fig.savefig("pca_%s-1299_3d.png" % title, dpi=200)
+    if SAVEFIG:
+        fig = ax_3d.get_figure()
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299_3d.png" % title), dpi=200)
 
     if ANIM:
+        ax_3d = pca_plot_by_group_3d(
+            y, m.subgroup, colour_map=colour_map_anim, ellipse_p=ELL_P,
+            **{
+                'Early passage': y_xnan,
+            }
+        )
+        ax_3d.view_init(35, 55)
+        fig = ax_3d.get_figure()
         anim = animation.FuncAnimation(fig, animate, frames=n_frames, interval=20, repeat=False)
-        anim.save('pca_%s-1299.mp4' % title, fps=30, writer='mencoder',
+        anim.save(os.path.join(OUTDIR, 'pca_%s-1299.mp4' % title), fps=30, writer='mencoder',
                   extra_args=['-ovc', 'lavc', '-lavcopts', 'vcodec=mpeg4:vbitrate=2400'])
         plt.close(fig)
 
@@ -536,11 +580,21 @@ if __name__ == '__main__':
         }
     )
     ax_3d.view_init(35, 55)
-    fig = ax_3d.get_figure()
-    fig.savefig("pca_%s-1299-rnaseq_3d.png" % title, dpi=200)
+    if SAVEFIG:
+        fig = ax_3d.get_figure()
+        fig.savefig(os.path.join(OUTDIR, "pca_%s-1299-rnaseq_3d.png" % title), dpi=200)
 
     if ANIM:
+        ax_3d = pca_plot_by_group_3d(
+            y, m.subgroup, colour_map=colour_map_anim, ellipse_p=ELL_P,
+            **{
+                'Late passage': y_cuff,
+                'Early passage': y_xnan,
+            }
+        )
+        ax_3d.view_init(35, 55)
+        fig = ax_3d.get_figure()
         anim = animation.FuncAnimation(fig, animate, frames=n_frames, interval=20, repeat=False)
-        anim.save('pca_%s-1299-rnaseq.mp4' % title, fps=30, writer='mencoder',
+        anim.save(os.path.join(OUTDIR, 'pca_%s-1299-rnaseq.mp4' % title), fps=30, writer='mencoder',
                   extra_args=['-ovc', 'lavc', '-lavcopts', 'vcodec=mpeg4:vbitrate=2400'])
         plt.close(fig)

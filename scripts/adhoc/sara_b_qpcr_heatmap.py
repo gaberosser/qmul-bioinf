@@ -6,11 +6,11 @@ from matplotlib import pyplot as plt
 
 SAVEFIG = True
 
-def fixed_plot_fun(data, cmap='RdBu'):
+def fixed_plot_fun(data, cmap='RdBu', vmin=0., vmax=20.):
     ax, cax = heatmap.single_heatmap(
         data,
-        vmin=0,
-        vmax=20.,
+        vmin=vmin,
+        vmax=vmax,
         cmap=cmap,
         fig_kwargs={'figsize': [6, 5.5]}
     )
@@ -61,7 +61,9 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(OUTDIR, "qpcr_heatmap_restricted_reverse.pdf"), dpi=200)
 
     # same but plotting 20 - \Delta C_t so that "high is high"
-    ax, cax = fixed_plot_fun(20. - data, cmap='RdBu_r')
+    a = 20. - data
+
+    ax, cax = fixed_plot_fun(a, cmap='RdBu_r')
     cax.ax.set_title('Expression', fontsize=14, position=[1., 1.03])
     cax.set_ticks([0, 20.])
     cax.set_ticklabels(['Low', 'High'])
@@ -70,7 +72,7 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(OUTDIR, "qpcr_expr_heatmap_all.png"), dpi=200)
         fig.savefig(os.path.join(OUTDIR, "qpcr_expr_heatmap_all.pdf"), dpi=200)
 
-    ax, cax = fixed_plot_fun(20. - data.iloc[:, 3:], cmap='RdBu_r')
+    ax, cax = fixed_plot_fun(a.iloc[:, 3:], cmap='RdBu_r')
     cax.ax.set_title('Expression', fontsize=14, position=[1., 1.03])
     cax.set_ticks([0, 20.])
     cax.set_ticklabels(['Low', 'High'])
@@ -79,3 +81,30 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(OUTDIR, "qpcr_expr_heatmap_restricted.png"), dpi=200)
         fig.savefig(os.path.join(OUTDIR, "qpcr_expr_heatmap_restricted.pdf"), dpi=200)
 
+    # standardise per gene
+    m = a.mean(axis=1)
+    s = a.std(axis=1)
+    za = a.subtract(m, axis=0).divide(s, axis=0)
+
+    ax, cax = fixed_plot_fun(za, cmap='RdBu_r', vmin=-1.5, vmax=1.5)
+    cax.ax.set_title('Rel. expression', fontsize=14, position=[1., 1.03])
+    cax.set_ticks([-1.5, 1.5])
+    cax.set_ticklabels(['Low', 'High'])
+    if SAVEFIG:
+        fig = ax.figure
+        fig.savefig(os.path.join(OUTDIR, "qpcr_norm_expr_heatmap_all.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "qpcr_norm_expr_heatmap_all.pdf"), dpi=200)
+
+    b = a.iloc[:, 3:]
+    m = b.mean(axis=1)
+    s = b.std(axis=1)
+    zb = b.subtract(m, axis=0).divide(s, axis=0)
+
+    ax, cax = fixed_plot_fun(zb, cmap='RdBu_r', vmin=-1.5, vmax=1.5)
+    cax.ax.set_title('Rel. expression', fontsize=14, position=[1., 1.03])
+    cax.set_ticks([-1.5, 1.5])
+    cax.set_ticklabels(['Low', 'High'])
+    if SAVEFIG:
+        fig = ax.figure
+        fig.savefig(os.path.join(OUTDIR, "qpcr_norm_expr_heatmap_restricted.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "qpcr_norm_expr_heatmap_restricted.pdf"), dpi=200)

@@ -3,6 +3,7 @@ import pandas as pd
 from load_data import microarray_data, rnaseq_data, allen_human_brain_atlas
 from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
 from microarray import process
+from plotting import heatmap, utils
 import collections
 import operator
 import log
@@ -133,7 +134,7 @@ class NearestCentroidClassifier(object):
         :return: The entries of class_centroid_shrink - global_centroid that have at least one non-zero component
         Sort by descending magnitude
         """
-        rel = self.class_centroids_shrink.subtract(obj.global_centroid, axis=0)
+        rel = self.class_centroids_shrink.subtract(self.global_centroid, axis=0)
         rel = rel.loc[rel.any(axis=1)]
         sort_idx = (rel ** 2).sum(axis=1).sort_values(ascending=False).index
         return rel.loc[sort_idx]
@@ -269,7 +270,7 @@ if __name__ == '__main__':
     from scripts.comparison_rnaseq_microarray import consts
 
     # define shrinkage delta values
-    n_core = 10
+    n_core = 14
     deltas = np.linspace(0., 12., 60)
     # FLAT_PRIOR = False
     FLAT_PRIOR = True
@@ -428,11 +429,10 @@ if __name__ == '__main__':
     #     clas.loc[j] = cl
     #     logger.info("Complete xv run %d", j)
 
-    n_bootstrap = 100
+    n_bootstrap = 500
     sample_names = np.array(X_train.columns.values, copy=True)
     te_cutoff = int(np.round(X_train.columns.size / float(k)))
     for j in range(n_bootstrap):
-        ## TODO: why are the labels all the same, even when the sample names change??
         np.random.shuffle(sample_names)
 
         te_ind = sample_names[:te_cutoff]
@@ -475,7 +475,9 @@ if __name__ == '__main__':
     etrain, etest, _ = run_validation(deltas, X_train, meta_train.subgroup, X_test, meta_test.subgroup, flat_prior=FLAT_PRIOR)
     obj = NearestCentroidClassifier(data=X_train, labels=meta_train.subgroup, flat_prior=FLAT_PRIOR)
 
-    bootstrap_error_rate = n_err_test.sum(axis=0) * k / float(n_bootstrap)
+    n_train = float(X_train.columns.size)
+    bootstrap_error_rate = n_err_test.sum(axis=0) * k / (float(n_bootstrap * n_train))
+    bootstrap_error_rate_std = n_err_test.std(axis=0) * np.sqrt(k / (float(n_bootstrap * n_train)))
     # xv_error_rate = n_err_test.sum(axis=0) / float(X_train.columns.size)
     train_error_rate_mean = n_err_train.sum(axis=0) / float(sum([t.size for t in train_idx]))
     train_error_rate = etrain / float(X_train.columns.size)
@@ -489,9 +491,15 @@ if __name__ == '__main__':
     if True:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        train_error_rate.plot(ax=ax, label="Training")
-        test_error_rate.plot(ax=ax, label="Test")
-        bootstrap_error_rate.plot(ax=ax, label="Xv", lw=3)
+        train_error_rate.plot(ax=ax, label="Training", c='b')
+        test_error_rate.plot(ax=ax, label="Test", c='k')
+        bootstrap_error_rate.plot(ax=ax, label="Xv", lw=3, c='r')
+        ax.fill_between(
+            deltas,
+            bootstrap_error_rate - bootstrap_error_rate_std,
+            bootstrap_error_rate + bootstrap_error_rate_std,
+            color='r',
+            alpha=0.3)
         # xv_error_rate.plot(ax=ax, label="Xv", lw=3)
         ax.legend(loc='upper left')
         ax.set_xlabel("Shrinkage parameter, $\Delta$")
@@ -517,9 +525,59 @@ if __name__ == '__main__':
     rna_htseq_class = [(c, obj.classify(X_htseq.loc[:, c])) for c in X_htseq.columns]
     rna_htseq_class_probs = [(c, obj.class_probabilities(X_htseq.loc[:, c])) for c in X_htseq.columns]
 
-    # TODO: load Xiao-Nan data and try to classify
+    # load Xiao-Nan data and try to classify
     xnan_sample_names = ('Pt1299', 'ICb1299-I', 'ICb1299-III', 'ICb1299-IV')
     X_xnan, xnan_meta = load_xiaonan_microarray(yugene=True, gene_symbols=X.index, sample_names=xnan_sample_names)
 
     xnan_class = [(c, obj.classify(X_xnan.loc[:, c])) for c in X_xnan.columns]
     xnan_class_probs = [(c, obj.class_probabilities(X_xnan.loc[:, c])) for c in X_xnan.columns]
+
+    # visualise classifier
+    s = obj.remaining_class_centroid_diff.sort_values(by=['Group 4', 'Group 3', 'SHH', 'WNT'], axis=0, ascending=False).index
+    a = obj.remaining_class_centroid_diff.loc[s, ['Group 4', 'Group 3', 'SHH', 'WNT']]
+    ax, cax = heatmap.single_heatmap(
+        a,
+        vmin=-.4,
+        vmax=.4,
+        xticklabels=False,
+        fig_kwargs=dict(figsize=(10, 3))
+    )
+    ax.set_xlabel('Gene')
+    plt.tight_layout(rect=[0, 0, 1.1, 1])  # tweaked to fill horizontal space
+    fig = ax.get_figure()
+    fig.savefig('robi_classifier_all_heatmap.png', dpi=200)
+    fig.savefig('robi_classifier_all_heatmap.pdf', dpi=200)
+
+    # compare with RNA-Seq (all genes)
+    b = X_cuff.subtract(obj.global_centroid, axis=0).loc[s]
+    c = pd.concat((a, b), axis=1).loc[:, list(a.columns) + list(b.columns)]
+    ax, cax = heatmap.single_heatmap(
+        c,
+        vmin=-.4,
+        vmax=.4,
+        xticklabels=False,
+        fig_kwargs=dict(figsize=(10, 4))
+    )
+
+    # reduce to SHH, 3, and 4
+    to_keep = (obj.remaining_class_centroid_diff.loc[:, ['Group 4', 'Group 3', 'SHH']].abs() > 0.001).any(axis=1)
+    cl = obj.remaining_class_centroid_diff.loc[to_keep]
+    s = cl.sort_values(by=['Group 4', 'Group 3', 'SHH', 'WNT'], axis=0, ascending=False).index
+
+    ax, cax = heatmap.single_heatmap(
+        cl.loc[s, ['Group 4', 'Group 3', 'SHH']],
+        vmin=-.4,
+        vmax=.4,
+        cbar=False,
+        fig_kwargs=dict(figsize=(13, 3))
+    )
+    fig = ax.get_figure()
+    quadmesh = ax.collections[-1]
+    cax = fig.colorbar(quadmesh, pad=0.02)
+    utils.axis_border(cax.ax, c='0.3', lw=1)
+    ax.xaxis.label.set_visible(False)
+    plt.tight_layout(pad=0.0, rect=[.01, 0, 1.1, .98])
+
+    fig = ax.get_figure()
+    fig.savefig('robi_classifier_shh34_heatmap.png', dpi=200)
+    fig.savefig('robi_classifier_shh34_heatmap.pdf', dpi=200)

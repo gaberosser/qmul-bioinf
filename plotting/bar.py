@@ -1,4 +1,4 @@
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, cm
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -98,3 +98,49 @@ def multi_grouped_bar_chart(dict_of_series_lists, width=0.8, figsize=None, equal
             ax.set_xlim([width - 1, max_series_length])
 
     return fig, axs
+
+
+def stacked_bar_chart(x, y, labels=None, ax=None, colours=None, width=0.9):
+    """
+    Plot a stacked bar chart. Each group is a row in the matrix y. The number of columns in y is equal to the length
+    of x.
+    :param x:
+    :param y:
+    :param labels:
+    :param ax:
+    :param colours:
+    :param width: Relative to the spacing in x (which is assumed constant (TODO?))
+    :return:
+    """
+
+    n_grp = y.shape[0]
+    nx = y.shape[1]
+    if len(x) != nx:
+        raise ValueError("Length of x must match number of columns in y")
+    dx = x[1] - x[0]
+
+    if colours is None:
+        colours = [cm.jet(t) for t in np.linspace(0, 1, n_grp)]
+    elif len(colours) != n_grp:
+        raise ValueError("If supplied, colours must have the same length as the number of rows in y.")
+
+    if labels is not None and len(labels) != n_grp:
+        raise ValueError("If supplied, labels must have the same length as the number of rows in y.")
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+    else:
+        fig = ax.get_figure()
+
+    bottom = np.zeros(nx)
+
+    for i in range(n_grp):
+        lbl = labels[i] if labels is not None else None
+        ax.bar(x - 0.5 * dx, y[i], bottom=bottom, width=width * dx, color=colours[i], label=lbl, edgecolor='none')
+        bottom += y[i]
+
+    if labels is not None:
+        ax.legend()
+
+    return fig, ax
