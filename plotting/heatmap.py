@@ -13,8 +13,16 @@ def grouped_expression_heatmap(
         fig_kwargs=None,
         gs_kwargs=None,
         heatmap_kwargs=None,
-        orientation='horizontal'
+        orientation='horizontal',
+        drop_na=True,
 ):
+    """
+    Plot a heatmap with subaxes for different groups. Typically, a 'group' is a group of genes.
+    :param groups: Iterable of length 2 tuples: (group_name, group_keys). The keys index the ROWS of data.
+    :param data: Pandas dataframe. The index (rows) must correspond to keys in groups.
+    :param drop_na: If True, any rows that are all NaN will be removed before plotting. Set False if comparing multiple
+    plots where some but not all results are NaN (to avoid the number of rows/columns changing).
+    """
     if orientation not in ('horizontal', 'vertical'):
         raise ValueError("Unsupported orientation %s. Options are horizontal and vertical", orientation)
     horiz =  (orientation == 'horizontal')
@@ -115,6 +123,9 @@ def grouped_expression_heatmap(
             this_cbar = False
 
         this_data = data.loc[arr, :]
+        if drop_na:
+            this_data = this_data.dropna(axis=0, how='all')
+            arr = this_data.index
         if horiz:
             this_data = this_data.transpose()
         sns.heatmap(

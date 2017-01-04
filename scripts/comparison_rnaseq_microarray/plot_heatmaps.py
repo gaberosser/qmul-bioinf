@@ -52,7 +52,7 @@ new_ix = np.array(mb_tpm.index)
 new_ix[new_ix == 'EYS'] = 'EGFL11'
 mb_tpm.index = new_ix
 
-# also try log version
+# log
 mb_tpm_log = np.log2(mb_tpm + eps)
 he_tpm_log = np.log2(he_tpm + eps)
 
@@ -65,8 +65,13 @@ all_tpm_log = np.log2(all_tpm + eps)
 # all_tpm_nlog = all_tpm_log.subtract(all_tpm_log.mean(axis=1), axis=0).divide(all_tpm_log.std(axis=1), axis=0)
 
 # standardize using mean from pool of HEALTHY data
-all_tpm_n = all_tpm.subtract(he_tpm.mean(axis=1), axis=0).divide(he_tpm.std(axis=1), axis=0)
-all_tpm_nlog = all_tpm_log.subtract(he_tpm_log.mean(axis=1), axis=0).divide(he_tpm_log.std(axis=1), axis=0)
+m = he_tpm.mean(axis=1)
+s = he_tpm.std(axis=1)
+all_tpm_n = all_tpm.subtract(m, axis=0).divide(s, axis=0)
+
+mlog = he_tpm_log.mean(axis=1)
+slog = he_tpm_log.std(axis=1)
+all_tpm_nlog = all_tpm_log.subtract(mlog, axis=0).divide(slog, axis=0)
 
 # all_northcott = []
 # [all_northcott.extend(v) for _, v in consts.NORTHCOTT_GENES]
@@ -86,6 +91,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_nanostring.pdf"))
 
 if SAVE_PLOTS:
@@ -102,6 +108,7 @@ if SAVE_PLOTS:
     for ax in axs:
         plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncott.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncott.pdf"))
 
 if SAVE_PLOTS:
@@ -115,6 +122,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_all-ahba_ncottcd.pdf"))
 
 
@@ -135,6 +143,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_nanostring.pdf"))
 
 if SAVE_PLOTS:
@@ -151,6 +160,7 @@ if SAVE_PLOTS:
     for ax in axs:
         plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncott.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncott.pdf"))
 
 if SAVE_PLOTS:
@@ -164,6 +174,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.pdf"))
 
 
@@ -216,6 +227,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_nanostring.pdf"))
 
 if SAVE_PLOTS:
@@ -232,6 +244,7 @@ if SAVE_PLOTS:
     for ax in axs:
         plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncott.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncott.pdf"))
 
 if SAVE_PLOTS:
@@ -245,6 +258,7 @@ if SAVE_PLOTS:
         **heatmap_kwargs
     )
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_1299-cer_ncottcd.pdf"))
 
 
@@ -302,6 +316,7 @@ if SAVE_PLOTS:
             ax.axvline(t, color='w', linewidth=2.5)
             ax.axvline(t, color='0.4', linewidth=1.)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_nanostring.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_nanostring.pdf"))
 
 if SAVE_PLOTS:
@@ -322,4 +337,5 @@ if SAVE_PLOTS:
             ax.axvline(t, color='w', linewidth=2.5)
             ax.axvline(t, color='0.4', linewidth=1.)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.pdf"))
