@@ -52,3 +52,20 @@ def load_xiaonan_microarray(yugene=True, gene_symbols=None, sample_names=None):
         X = pd.DataFrame(data=X, columns=X.columns, index=gene_symbols)
         X.fillna(0, inplace=True)
     return X, meta
+
+
+def load_sb_rnaseq(yugene=True, gene_symbols=None):
+    """
+    Load RNA-Seq from SB samples, counted using featureCounts
+    :param yugene: If True, apply YuGene normalisation
+    :param gene_symbols: If supplied, this is a list containing the gene symbols. Any that are not present are filled
+    with zeros
+    :return:
+    """
+    X = rnaseq_data.mb_zhao_cultures(units='fpkm', annotate_by='Approved Symbol')
+    if yugene:
+        X = process.yugene_transform(X)
+    if gene_symbols is not None:
+        X = pd.DataFrame(data=X, columns=X.columns, index=gene_symbols)
+        X.fillna(0, inplace=True)
+    return X

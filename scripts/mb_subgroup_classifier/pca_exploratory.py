@@ -11,7 +11,7 @@ from matplotlib import animation, cm
 import matplotlib.colors as colors
 import seaborn as sns
 from scripts.comparison_rnaseq_microarray import consts
-from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
+from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray, load_sb_rnaseq
 from scipy.stats import chi2
 from scipy.linalg import expm3, norm
 
@@ -348,8 +348,8 @@ if __name__ == '__main__':
 
     ELL_P = 0.95
     N_PC = 3
-    ANIM = True
-    # ANIM = False
+    # ANIM = True
+    ANIM = False
     ANIM_NFRAMES = 300
     SAVEFIG = True
     # SAVEFIG = False
@@ -521,11 +521,19 @@ if __name__ == '__main__':
     pca.fit(X)
     y = pca.transform(X)
 
-    # load RNA-Seq data
-    X_htseq = load_xz_rnaseq(kind='htseq', yugene=True, gene_symbols=X.columns).transpose()
-    X_cuff = load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=X.columns).transpose()
-    y_htseq = pca.transform(X_htseq)
-    y_cuff = pca.transform(X_cuff)
+    # load XZ RNA-Seq count data
+    # X_xz = load_xz_rnaseq(kind='htseq', yugene=True, gene_symbols=X.columns).transpose()
+    X_xz = load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=X.columns).transpose()
+    y_xz = pca.transform(X_xz)
+
+    # load SB RNA-Seq count data
+    X_sb = load_sb_rnaseq(yugene=True, gene_symbols=X.columns).transpose()
+    y_sb = pca.transform(X_sb)
+
+    # extract samples and reshape to make sure they are 2D arrays
+    y_sb_1078 = y_sb[0].reshape((1, N_PC))
+    y_sb_1595 = y_sb[1].reshape((1, N_PC))
+    y_sb_1487 = y_sb[2].reshape((1, N_PC))
 
     # load Xiao-Nan data
     xnan_sample_names = (
@@ -548,10 +556,14 @@ if __name__ == '__main__':
     idx, labels = m.subgroup.factorize()
 
     # define colours and labels
-    late_pass_lbl = 'ICb1299 (this study)'
-    lbl_1299 = 'ICb1299 (Zhao et al.)'
-    lbl_1487 = 'ICb1487 (Zhao et al.)'
-    lbl_1595 = 'ICb1595 (Zhao et al.)'
+    lbl_1078_this = 'ICb1078 (this study)'
+    lbl_1299_this = 'ICb1299 (this study)'
+    lbl_1487_this = 'ICb1487 (this study)'
+    lbl_1595_this = 'ICb1595 (this study)'
+    lbl_1078_zhao = 'ICb1078 (Zhao et al.)'
+    lbl_1299_zhao = 'ICb1299 (Zhao et al.)'
+    lbl_1487_zhao = 'ICb1487 (Zhao et al.)'
+    lbl_1595_zhao = 'ICb1595 (Zhao et al.)'
 
     colour_map = {
         'Group 3': '#F2EA00',
@@ -559,37 +571,44 @@ if __name__ == '__main__':
         'WNT': '#2D438E',
         'SHH': '#E5161C',
         'control': 'gray',
-        'Late passage': 'k',
-        late_pass_lbl: 'k',
-        'Early passage': 'c',
-        lbl_1299: 'c',
-        lbl_1487: 'm',
-        lbl_1595: 'k'
+        lbl_1299_zhao: 'c',
+        lbl_1487_zhao: 'm',
+        lbl_1595_zhao: 'k',
+        lbl_1078_zhao: '#ff6600',
     }
+    colour_map[lbl_1299_this] = colour_map[lbl_1299_zhao]
+    colour_map[lbl_1078_this] = colour_map[lbl_1078_zhao]
+    colour_map[lbl_1487_this] = colour_map[lbl_1487_zhao]
+    colour_map[lbl_1595_this] = colour_map[lbl_1595_zhao]
 
     marker_map = dict([(k, 'o') for k in colour_map])
-    marker_map[lbl_1299] = 's'
-    marker_map[lbl_1487] = 'D'
-    marker_map[lbl_1595] = '^'
+    marker_map[lbl_1299_zhao] = 'D'
+    marker_map[lbl_1487_zhao] = 'D'
+    marker_map[lbl_1595_zhao] = 'D'
+    marker_map[lbl_1078_this] = 's'
+    marker_map[lbl_1299_this] = 's'
+    marker_map[lbl_1487_this] = 's'
+    marker_map[lbl_1595_this] = 's'
+
 
     # plots: PCA of classifier vs RNA-Seq
     ttl = ("pca_%s-rnaseq_2d" % title) if SAVEFIG else None
-    ad = {late_pass_lbl: y_cuff}
+    ad = {lbl_1299_this: y_xz}
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plots: PCA of classifier vs Xiao-Nan
     ttl = ("pca_%s-1299_2d" % title) if SAVEFIG else None
-    ad = {lbl_1299: y_1299}
+    ad = {lbl_1299_zhao: y_1299}
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plots: PCA of classifier vs Xiao-Nan AND RNA-Seq
     ttl = ("pca_%s-1299-rnaseq_2d" % title) if SAVEFIG else None
-    ad = {lbl_1299: y_1299, late_pass_lbl: y_cuff}
+    ad = {lbl_1299_zhao: y_1299, lbl_1299_this: y_xz}
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plot: 3D scatterplot of classifier data with ellipsoids and RNA-Seq sample overlaid
     ttl = ("pca_%s-rnaseq_3d" % title) if SAVEFIG else None
-    ad = {late_pass_lbl: y_cuff}
+    ad = {lbl_1299_this: y_xz}
     fig, ax_3d = plot_3d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plot: 3D scatterplot of DIFFERENT microarray data with classifier ellipsoids (no classifier data)
@@ -610,20 +629,20 @@ if __name__ == '__main__':
     # plot: 3D scatterplot of classifier data with ellipsoids and Xiao-Nan data overlaid
 
     ttl = ("pca_%s-1299_3d" % title) if SAVEFIG else None
-    ad = {lbl_1299: y_1299}
+    ad = {lbl_1299_zhao: y_1299}
     fig, ax_3d = plot_3d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plot: 3D scatterplot of classifier data with ellipsoids and both RNA-Seq AND Xiao-Nan data overlaid
     ttl = ("pca_%s-1299-rnaseq_3d" % title) if SAVEFIG else None
-    ad = {late_pass_lbl: y_cuff, lbl_1299: y_1299}
+    ad = {lbl_1299_this: y_xz, lbl_1299_zhao: y_1299}
     fig, ax_3d = plot_3d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     # plot: 2D centroids + Xiao-Nan 1299, 1487, 1595
     ttl = ("pca_%s-1299-1487-1595_2d" % title) if SAVEFIG else None
     ad = {
-        lbl_1299: y_1299,
-        lbl_1487: y_1487,
-        lbl_1595: y_1595
+        lbl_1299_zhao: y_1299,
+        lbl_1487_zhao: y_1487,
+        lbl_1595_zhao: y_1595
     }
 
     fig, axs = fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
@@ -631,3 +650,19 @@ if __name__ == '__main__':
     # plot: 3D centroids + Xiao-Nan 1299, 1487, 1595
     ttl = ("pca_%s-1299-1487-1595_3d" % title) if SAVEFIG else None
     fig, ax_3d = plot_3d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
+
+    # plot: 3D ellipsoids + paired RNA-Seq and Xiao-Nan data overlaid
+    ttl = ("pca_%s-early_late_all_3d" % title) if SAVEFIG else None
+    ad = {
+        lbl_1299_this: y_xz,
+        lbl_1299_zhao: y_1299,
+        lbl_1487_this: y_sb_1487,
+        lbl_1487_zhao: y_1487,
+        lbl_1595_this: y_sb_1595,
+        lbl_1595_zhao: y_1595,
+        lbl_1078_this: y_sb_1078
+    }
+    fig, ax_3d = plot_3d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
+
+    ttl = ("pca_%s-early_late_all_2d" % title) if SAVEFIG else None
+    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)

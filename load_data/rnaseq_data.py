@@ -43,15 +43,28 @@ def gse83696(index_by='Ensembl Gene ID'):
     return df
 
 
-def paired_samples_gene_counts(units='counts', annotate_by=None, annotation_type='protein_coding'):
+def featurecounts(
+        count_files,
+        metafiles,
+        samples=None,
+        units='counts',
+        annotate_by='all',
+        annotation_type='protein_coding'):
     """
+    Iterate over one or more lanes of gene count data computed using featureCounts, summing data over the lanes.
+
+    :param count_files: Iterable. Each entry is the path to a featureCounts output.
+    :param metafiles: Iterable, same length as count_files. Each entry is the path to a CSV file. Each row details a
+    sample. The column 'sample' gives the identifier. The first (index) column is the file stem in the counts file.
+    :param samples: If supplied, these are the samples to keep. Everything else is dropped.
     :param units: One of 'counts', 'fpkm', 'tpm'
-    :param annotate_by: If supplied, convert the index (initially Ensembl ID) to the requested annotation. Otherwise
-      add all supported annotations
+    :param annotate_by: If supplied, convert the index (initially Ensembl ID) to the requested annotation.
+    If 'all' add all supported annotations.
+    If None, add no extra annotations.
     :param annotation_type: Passed on to the `type` variable of the conversion table loader
     :return:
     """
-    supported_annot = ('Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs')
+    supported_annot = ('Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs', 'all')
     if annotate_by is not None and annotate_by not in supported_annot:
         raise ValueError("Unrecognised annotation requested. Supported options are %s" % ', '.join(supported_annot))
 
@@ -59,39 +72,43 @@ def paired_samples_gene_counts(units='counts', annotate_by=None, annotation_type
     if units not in supported_units:
         raise ValueError("Unrecognised units requested. Supported options are %s" % ', '.join(supported_units))
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
-    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
-    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    infiles = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
-    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
-    samples = (
-        'GBM018',
-        'GBM019',
-        'GBM024',
-        'GBM026',
-        'GBM031',
-        'DURA018N2_NSC',
-        'DURA019N8C_NSC',
-        'DURA024N28_NSC',
-        'DURA026N31D_NSC',
-        'DURA031N44B_NSC',
-    )
+    # indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    # lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    # lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    # infiles = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+    # metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    # samples = (
+    #     'GBM018',
+    #     'GBM019',
+    #     'GBM024',
+    #     'GBM026',
+    #     'GBM031',
+    #     'DURA018N2_NSC',
+    #     'DURA019N8C_NSC',
+    #     'DURA024N28_NSC',
+    #     'DURA026N31D_NSC',
+    #     'DURA031N44B_NSC',
+    # )
 
     first_run = True
     res = None
-    for fn, mfn in zip(infiles, metafiles):
+    for fn, mfn in zip(count_files, metafiles):
         meta = pd.read_csv(mfn, header=0, index_col=0)
         dat = pd.read_csv(fn, comment='#', header=0, index_col=0, sep='\t')
 
         # keep only counts for each requested sample
-        codes_to_keep = meta.loc[meta.loc[:, 'sample'].isin(samples)].index
+        if samples is not None:
+            codes_to_keep = meta.loc[meta.loc[:, 'sample'].isin(samples)].index
+        else:
+            # keep all samples
+            codes_to_keep = meta.index
+
         files_to_keep = ['%s.bam' % t for t in codes_to_keep]
         sample_names = meta.loc[codes_to_keep, 'sample'].values
 
-        if units in ('fpkm', 'tpm'):
-            nreads = meta.loc[codes_to_keep, 'read_count']
-            nreads.index = sample_names
-            lengths = dat.Length
+        nreads = meta.loc[codes_to_keep, 'read_count']
+        nreads.index = sample_names
+        lengths = dat.Length
 
         dat = dat.loc[:, files_to_keep]
         dat.columns = sample_names
@@ -107,21 +124,78 @@ def paired_samples_gene_counts(units='counts', annotate_by=None, annotation_type
         else:
             res += dat
 
-    # load genenames data for annotation
-    df = references.conversion_table(type=annotation_type)
-    df.set_index('Ensembl Gene ID', inplace=True)
-    annot = df.loc[res.index.intersection(df.index), ['Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs']]
+    if annotate_by is None:
+        return res
+    else:
+        # load genenames data for annotation
+        df = references.conversion_table(type=annotation_type)
+        df.set_index('Ensembl Gene ID', inplace=True)
 
-    # add annotations (where available)
-    # take a record of the columns first
-    cols = res.columns
-    res = pd.concat((res, annot), axis=1)
+        if annotate_by == 'all':
+            annot = df.loc[res.index.intersection(df.index), ['Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs']]
+        else:
+            annot = df.loc[res.index.intersection(df.index), annotate_by]
+        # take a record of the columns first
+        # cols = res.columns
 
-    if annotate_by is not None:
-        # drop any rows that do not have an annotation
-        res.dropna(axis=0, subset=[annotate_by], inplace=True)
-        # set index then drop other annotations
-        res.set_index(annotate_by, inplace=True)
-        res = res.loc[:, cols]
+        # add annotation columns
+        res = pd.concat((res, annot), axis=1)
 
-    return res
+        # if one annotation was requested, set that as the index
+        if annotate_by != 'all':
+            # drop any rows that do not have an annotation
+            res.dropna(axis=0, subset=[annotate_by], inplace=True)
+            # set index
+            res.set_index(annotate_by, inplace=True)
+            # res = res.loc[:, cols]
+
+        return res
+
+
+def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    samples = (
+        'GBM018',
+        'GBM019',
+        'GBM024',
+        'GBM026',
+        'GBM031',
+        'DURA018N2_NSC',
+        'DURA019N8C_NSC',
+        'DURA024N28_NSC',
+        'DURA026N31D_NSC',
+        'DURA031N44B_NSC',
+    )
+    return featurecounts(
+        count_files,
+        metafiles,
+        samples=samples,
+        units=units,
+        annotate_by=annotate_by,
+        annotation_type=annotation_type
+    )
+
+
+def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    samples = (
+        '1078',
+        '1595',
+        '1487'
+    )
+    return featurecounts(
+        count_files,
+        metafiles,
+        samples=samples,
+        units=units,
+        annotate_by=annotate_by,
+        annotation_type=annotation_type
+    )
