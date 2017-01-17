@@ -48,7 +48,12 @@ if __name__ == "__main__":
 
     # BAM file discovery
     rr = re.compile(r'\.bam$', flags=re.IGNORECASE)
-    flist = [os.path.join(read_dir, t) for t in os.listdir(read_dir) if re.search(rr, t)]
+    # flist = [os.path.join(read_dir, t) for t in os.listdir(read_dir) if re.search(rr, t)]
+    flist = [t for t in os.listdir(read_dir) if re.search(rr, t)]
+
+    # the column names in the output file are the FULL PATH to the BAMs
+    # this looks much nicer if we chdir now and use the filename only
+    os.chdir(read_dir)
     cmd = [
         FEATURECOUNTS_CMD,
         '-a', ref_fn,

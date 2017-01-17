@@ -15,7 +15,8 @@ NCOTT_ONLY = T
 APPLY_YUGENE = F
 
 data.dir <- '../data/'
-out.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/'
+# out.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/'
+out.dir <- '/home/gabriel/agdex_results'
 
 hu_he <- allen_cerebellum(by.gene = T)
 hu.he.expr <- hu_he$expr
@@ -23,9 +24,22 @@ hu.he.meta <- hu_he$meta
 
 mo.mb.expr <- dubuc_sb_screen(by.gene = T)
 mo.he.expr <- gse54650()
-hu_mb <- gse37382()
+
+# hu_mb <- gse37382(aggr.by = 'ENTREZID', aggr.method = 'median')
+# subgroup_map <- list(
+#   c('Group 3', 'C'),
+#   c('Group 4', 'D')
+# )
+
+# Robinson
+hu_mb <- gse37418(aggr.by = 'ENTREZID', aggr.method = 'median')
+subgroup_map <- list(
+  c('G3', 'C'),
+  c('G4', 'D')
+)
 hu.mb.expr <- hu_mb$expr
 hu.mb.meta <- hu_mb$meta
+
 
 # combine samples
 hu.expr <- merge(hu.he.expr, hu.mb.expr, by=0)
@@ -64,10 +78,14 @@ hu.mb.pdata <- data.frame(
 )
 hu.mb.pdata[rownames(hu.mb.meta), 'case'] = 'hu.mb'
 hu.mb.pdata[rownames(hu.mb.meta), 'subgroup'] = hu.mb.meta$subgroup
-# rename for brevity: Group 3 -> C, etc.
+
+# rename for brevity and consistency: Group 3 -> C, etc.
 hu.mb.pdata$subgroup <- as.character(hu.mb.pdata$subgroup)
-hu.mb.pdata$subgroup <- replace(hu.mb.pdata$subgroup, hu.mb.pdata$subgroup == 'Group 3', 'C')
-hu.mb.pdata$subgroup <- replace(hu.mb.pdata$subgroup, hu.mb.pdata$subgroup == 'Group 4', 'D')
+for (t in subgroup_map) {
+  hu.mb.pdata$subgroup <- replace(hu.mb.pdata$subgroup, hu.mb.pdata$subgroup == t[1], t[2])
+}
+# hu.mb.pdata$subgroup <- replace(hu.mb.pdata$subgroup, hu.mb.pdata$subgroup == 'Group 3', 'C')
+# hu.mb.pdata$subgroup <- replace(hu.mb.pdata$subgroup, hu.mb.pdata$subgroup == 'Group 4', 'D')
 hu.mb.pdata$subgroup <- as.factor(hu.mb.pdata$subgroup)
 
 mo.he.pdata <- data.frame(

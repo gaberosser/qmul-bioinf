@@ -4,9 +4,9 @@ import numpy as np
 import os
 from load_data import microarray_data, allen_human_brain_atlas, rnaseq_data
 from microarray import process
+from plotting.threed import plot_ellipsoid
 from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import animation, cm
 import matplotlib.colors as colors
 import seaborn as sns
@@ -78,49 +78,49 @@ def cluster_ellipsoid(data, p=0.99):
     return loc, np.sqrt(eigval * chi2_cutoff), eigvec.transpose()
 
 
-def plot_ellipsoid(loc, radii, rot, ax=None, plotAxes=False, cageColor='b', cageAlpha=0.2, npt=100):
-    """
-    Modified from original at: https://github.com/minillinim/ellipsoid/blob/master/ellipsoid.py
-    Plot an ellipsoid
-    """
-    make_ax = ax == None
-    if make_ax:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-
-    u = np.linspace(0.0, 2.0 * np.pi, npt)
-    v = np.linspace(0.0, np.pi, npt)
-
-    # cartesian coordinates that correspond to the spherical angles:
-    x = radii[0] * np.outer(np.cos(u), np.sin(v))
-    y = radii[1] * np.outer(np.sin(u), np.sin(v))
-    z = radii[2] * np.outer(np.ones_like(u), np.cos(v))
-
-    # rotate accordingly
-    for i in range(len(x)):
-        for j in range(len(x)):
-            [x[i, j], y[i, j], z[i, j]] = np.dot([x[i, j], y[i, j], z[i, j]], rot) + loc
-
-    if plotAxes:
-        # make some purdy axes
-        axes = np.array([[radii[0], 0.0, 0.0],
-                         [0.0, radii[1], 0.0],
-                         [0.0, 0.0, radii[2]]])
-        # rotate accordingly
-        for i in range(len(axes)):
-            axes[i] = np.dot(axes[i], rot)
-
-        # plot axes
-        for p in axes:
-            X3 = np.linspace(-p[0], p[0], 100) + loc[0]
-            Y3 = np.linspace(-p[1], p[1], 100) + loc[1]
-            Z3 = np.linspace(-p[2], p[2], 100) + loc[2]
-            ax.plot(X3, Y3, Z3, color=cageColor)
-
-    # plot ellipsoid
-    ax.plot_wireframe(x, y, z, rstride=4, cstride=4, color=cageColor, alpha=cageAlpha)
-
-    return ax
+# def plot_ellipsoid(loc, radii, rot, ax=None, plotAxes=False, cageColor='b', cageAlpha=0.2, npt=100):
+#     """
+#     Modified from original at: https://github.com/minillinim/ellipsoid/blob/master/ellipsoid.py
+#     Plot an ellipsoid
+#     """
+#     make_ax = ax == None
+#     if make_ax:
+#         fig = plt.figure()
+#         ax = fig.add_subplot(111, projection='3d')
+#
+#     u = np.linspace(0.0, 2.0 * np.pi, npt)
+#     v = np.linspace(0.0, np.pi, npt)
+#
+#     # cartesian coordinates that correspond to the spherical angles:
+#     x = radii[0] * np.outer(np.cos(u), np.sin(v))
+#     y = radii[1] * np.outer(np.sin(u), np.sin(v))
+#     z = radii[2] * np.outer(np.ones_like(u), np.cos(v))
+#
+#     # rotate accordingly
+#     for i in range(len(x)):
+#         for j in range(len(x)):
+#             [x[i, j], y[i, j], z[i, j]] = np.dot([x[i, j], y[i, j], z[i, j]], rot) + loc
+#
+#     if plotAxes:
+#         # make some purdy axes
+#         axes = np.array([[radii[0], 0.0, 0.0],
+#                          [0.0, radii[1], 0.0],
+#                          [0.0, 0.0, radii[2]]])
+#         # rotate accordingly
+#         for i in range(len(axes)):
+#             axes[i] = np.dot(axes[i], rot)
+#
+#         # plot axes
+#         for p in axes:
+#             X3 = np.linspace(-p[0], p[0], 100) + loc[0]
+#             Y3 = np.linspace(-p[1], p[1], 100) + loc[1]
+#             Z3 = np.linspace(-p[2], p[2], 100) + loc[2]
+#             ax.plot(X3, Y3, Z3, color=cageColor)
+#
+#     # plot ellipsoid
+#     ax.plot_wireframe(x, y, z, rstride=4, cstride=4, color=cageColor, alpha=cageAlpha)
+#
+#     return ax
 
 
 def autoscale(data, components, ax, **additional_data):
@@ -666,3 +666,149 @@ if __name__ == '__main__':
 
     ttl = ("pca_%s-early_late_all_2d" % title) if SAVEFIG else None
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
+
+    ###### experimental: plotting with Plotly ######
+
+    import plotly.plotly as py
+    from plotly import graph_objs as go
+
+    scatter = []
+    wireframe = []
+
+    # input args
+    pca_data = y
+    components = (0, 1, 2)
+    ellipse_p = 0.99
+    npt = 80
+    markersize = 5
+
+    # formatting
+    plotly_symbol_map = {
+        'o': 'circle',
+        'D': 'diamond',
+        's': 'square'
+    }
+
+    idx, labels = m.subgroup.factorize()
+
+    for i, l in enumerate(labels):
+        if l not in colour_map:
+            continue
+        c = colour_map[l]
+        mk = plotly_symbol_map[marker_map[l]]
+        j = idx == i
+        marker = {
+            'size': markersize,
+            'color': c,
+            # 'line': {'color': c, 'width': 0.5},
+            'opacity': 0.8,
+            'symbol': mk
+        }
+        trace = go.Scatter3d(
+            x=pca_data[j, components[0]],
+            y=pca_data[j, components[1]],
+            z=pca_data[j, components[2]],
+            mode='markers',
+            marker=marker,
+            name=l,
+            showlegend=True,
+        )
+        scatter.append(trace)
+
+    for k, v in ad.items():
+        c = colour_map[k]
+        mk = plotly_symbol_map[marker_map[k]]
+        marker = {
+            'size': markersize,
+            'color': c,
+            # 'line': {'color': c, 'width': 0.5},
+            'opacity': 0.8,
+            'symbol': mk
+        }
+        trace = go.Scatter3d(
+            x=v[:, components[0]],
+            y=v[:, components[1]],
+            z=v[:, components[2]],
+            mode='markers',
+            marker=marker,
+            name=k,
+            showlegend=True,
+        )
+        scatter.append(trace)
+
+    # plot_ellipsoids
+    for i, l in enumerate(labels):
+        if l not in colour_map:
+            continue
+        c = colour_map[l]
+        j = idx == i
+        loc, radii, rot = cluster_ellipsoid(pca_data[j][:, components], p=ellipse_p)
+        u = np.linspace(0.0, 2.0 * np.pi, npt)
+        v = np.linspace(0.0, np.pi, npt)
+
+        # cartesian coordinates that correspond to the spherical angles:
+        xx = radii[0] * np.outer(np.cos(u), np.sin(v))
+        yy = radii[1] * np.outer(np.sin(u), np.sin(v))
+        zz = radii[2] * np.outer(np.ones_like(u), np.cos(v))
+
+        # rotate accordingly
+        for i in range(len(xx)):
+            for j in range(len(xx)):
+                [xx[i, j], yy[i, j], zz[i, j]] = np.dot([xx[i, j], yy[i, j], zz[i, j]], rot) + loc
+
+        line = {
+            'color': c,
+            'width': 1.0,
+        }
+        # Mesh3d looks nice, but messes up colours inside closed objects
+        # trace = go.Mesh3d(
+        #     x=xx.flatten(),
+        #     y=yy.flatten(),
+        #     z=zz.flatten(),
+        #     alphahull=0,
+        #     opacity=0.4,
+        #     color=c,
+        #     name=l,
+        #     showlegend=True
+        # )
+        # wireframe.append(trace)
+
+        # build the ellipsoids out of lots of 3D lines
+        leg = True
+        for x1, y1, z1 in zip(xx, yy, zz):
+            trace = go.Scatter3d(
+                x=x1, y=y1, z=z1, mode='lines', line=line, showlegend=leg, name=l
+            )
+            # only show legend on the first
+            leg=False
+            wireframe.append(trace)
+
+    # TODO: disable hover projection (can do this manually until then)
+    layout = go.Layout(
+        title='Wireframe Plot',
+        scene=dict(
+            xaxis=dict(
+                gridcolor='rgb(255, 255, 255)',
+                zerolinecolor='rgb(255, 255, 255)',
+                showbackground=True,
+                backgroundcolor='rgb(230, 230,230)'
+            ),
+            yaxis=dict(
+                gridcolor='rgb(255, 255, 255)',
+                zerolinecolor='rgb(255, 255, 255)',
+                showbackground=True,
+                backgroundcolor='rgb(230, 230,230)'
+            ),
+            zaxis=dict(
+                gridcolor='rgb(255, 255, 255)',
+                zerolinecolor='rgb(255, 255, 255)',
+                showbackground=True,
+                backgroundcolor='rgb(230, 230,230)'
+            )
+        ),
+        showlegend=True,
+    )
+
+    fig = go.Figure(data=scatter + wireframe, layout=layout)
+    # publish to the web
+    py.plot(fig, filename='wire_and_scatter')

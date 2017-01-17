@@ -26,18 +26,21 @@ add_annotation_column <- function(expr_df, annotlib, col.name, multiVals = 'asNA
 annotate_by_entrez <- function(expr_df, annotlib, aggr.method='median') {
 
   # annotate
-  annot_df <- data.frame(expr_df)
-  add_annotation_column(annot_df, annotlib, col.name = 'ENTREZID')
+  df <- data.frame(expr_df)
+  annot_df <- add_annotation_column(df, annotlib, col.name = 'ENTREZID')
   
   # only keep items with an Entrez ID
+  df = df[!is.na(annot_df[['ENTREZID']]),]
   annot_df = annot_df[!is.na(annot_df[['ENTREZID']]),]
   
   if (is.null(aggr.method)) {
     return(annot_df)
-  } else if (aggr.method == 'median') {
-    # median aggregation
-    aggr_df <- median_by(annot_df[,1:(length(annot_df) - 2)], annot_df[['ENTREZID']])
-    
+  } else {
+    if (aggr.method == 'median') {
+      aggr_df <- median_by(df, annot_df[['ENTREZID']])
+    } else if (aggr.method == 'max') {
+      aggr_df <- max_by(df, annot_df[['ENTREZID']])
+    }
     # to matrix
     aggr_df <- data.matrix(aggr_df)
     return(aggr_df)
@@ -309,6 +312,31 @@ thompson2006 <- function() {
   meta.file = file.path(in.dir, 'sources.csv')
   meta <- read.csv(meta.file, header=1, row.names = 1)
   rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+  
+  return(list(expr=expr, meta=meta))
+}
+
+
+gse50161 <- function(aggr.by = NULL, aggr.method = 'median') {
+  in.dir <- file.path(data.dir.raid, 'GSE50161')
+  library(hgu133plus2.db)
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = hgu133plus2.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
+  
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 6)
+  
+  # arrange so they are sorted in the same order
+  if (!is.null(aggr.by)) {
+    expr <- expr[, rownames(meta)]
+  } else {
+    expr <- expr[, c(rownames(meta), 'SYMBOL', 'ENTREZID', 'ENSEMBL')]
+  }  
   
   return(list(expr=expr, meta=meta))
 }

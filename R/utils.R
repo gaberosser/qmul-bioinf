@@ -12,6 +12,8 @@ median_by <- function(dat, xs) {
   dat <- data.table(dat)
   # Append the vector of group names as an extra column.
   dat$agg_var <- xs
+  # Remove null entries in the aggregation variable, as these cannnot be used for indexing
+  dat <- dat[!is.na(dat$agg_var),]  
   # Melt the data.table so all values are in one column called "value".
   dat <- melt(dat, id.vars = "agg_var")
   # Cast the data.table back into the original shape, and aggregate.
@@ -19,7 +21,9 @@ median_by <- function(dat, xs) {
     dat, agg_var ~ variable, value.var = "value",
     fun.aggregate = median, na.rm = TRUE
   )
+  # set rownames by agg_var and remove the unneeded column
   rownames(dat) <- dat$agg_var
+  dat[,agg_var:=NULL]
   return(dat)
 }
 
@@ -28,6 +32,8 @@ mean_by <- function(dat, xs) {
   dat <- data.table(dat)
   # Append the vector of group names as an extra column.
   dat$agg_var <- xs
+  # Remove null entries in the aggregation variable, as these cannnot be used for indexing
+  dat <- dat[!is.na(dat$agg_var),]  
   # Melt the data.table so all values are in one column called "value".
   dat <- melt(dat, id.vars = "agg_var")
   # Cast the data.table back into the original shape, and aggregate.
@@ -35,7 +41,9 @@ mean_by <- function(dat, xs) {
     dat, agg_var ~ variable, value.var = "value",
     fun.aggregate = mean, na.rm = TRUE
   )
+  # set rownames by agg_var and remove the unneeded column
   rownames(dat) <- dat$agg_var
+  dat[,agg_var:=NULL]
   return(dat)
 }
 
@@ -44,6 +52,8 @@ min_by <- function(dat, xs) {
   dat <- data.table(dat)
   # Append the vector of group names as an extra column.
   dat$agg_var <- xs
+  # Remove null entries in the aggregation variable, as these cannnot be used for indexing
+  dat <- dat[!is.na(dat$agg_var),]  
   # Melt the data.table so all values are in one column called "value".
   dat <- melt(dat, id.vars = "agg_var")
   # Cast the data.table back into the original shape, and aggregate.
@@ -51,7 +61,9 @@ min_by <- function(dat, xs) {
     dat, agg_var ~ variable, value.var = "value",
     fun.aggregate = min, na.rm = TRUE
   )
+  # set rownames by agg_var and remove the unneeded column
   rownames(dat) <- dat$agg_var
+  dat[,agg_var:=NULL]
   return(dat)
 }
 

@@ -193,7 +193,7 @@ def load_annotated_microarray_gse10327(aggr_field=None, aggr_method=None):
 
 def load_annotated_microarray_gse37418(aggr_field=None, aggr_method=None):
     """
-    Kool human MB dataset comprising 62 samples
+    Robinson human MB dataset comprising ~70 samples
     :param index_field:
     :return:
     """
