@@ -5,6 +5,8 @@ from microarray import process
 from settings import DATA_DIR, DATA_DIR_NON_GIT
 import re
 from gzip import GzipFile
+from log import get_console_logger
+logger = get_console_logger(__name__)
 
 
 AGGREGATION_FIELD_CHOICES = (
@@ -23,9 +25,9 @@ def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=Non
     :return:
     """
     if (aggr_method is not None and aggr_field is None) or (aggr_method is None and aggr_field is not None):
-        raise ValueError("Must either supploy BOTH aggr_field and aggr_method or NEITHER.")
+        raise ValueError("Must either supply BOTH aggr_field and aggr_method or NEITHER.")
     if aggr_field is not None and aggr_field not in AGGREGATION_FIELD_CHOICES:
-        raise ValueError("Unrecognised aggregation field. Supported options are %s." % ', '.join(AGGREGATION_FIELD_CHOICES))
+        logger.warning("Unrecognised aggregation field. Supported options are %s.", ', '.join(AGGREGATION_FIELD_CHOICES))
 
     arr_data = pd.read_csv(infile, sep='\t', header=0, index_col=0)
     if aggr_field is None:
@@ -136,7 +138,7 @@ def load_annotated_microarray_gse54650(index_field='entrez_id'):
     return load_from_r_processed(infile, sample_names, aggr_field=index_field)
 
 
-def load_annotated_microarray_sb_data(index_field='entrez_id'):
+def load_annotated_microarray_sb_data(aggr_field='ENTREZ', aggr_method='max'):
     """
     Data from Dubuc for 8 MB samples in mouse. 3 have an inactivating CHD7 insertion.
     :param index_field:
@@ -153,7 +155,7 @@ def load_annotated_microarray_sb_data(index_field='entrez_id'):
         "Wu056",
         "Wu057"
     ]
-    arr_data = load_from_r_processed(infile, sample_names, aggr_field=index_field)
+    arr_data = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     # CHD7 status
     chd7 = pd.Series(data=[True] * 3 + [False] * 5, index=sample_names)
     return arr_data, chd7

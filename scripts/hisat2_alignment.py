@@ -11,7 +11,6 @@ import numpy as np
 from StringIO import StringIO
 logger = get_console_logger(__name__)
 
-INSERT_SH = 'scripts/bash/insert_size_from_bam.sh'
 HISAT_CMD = 'hisat2'
 
 
