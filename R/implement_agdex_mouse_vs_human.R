@@ -12,7 +12,7 @@ library(hugene11sttranscriptcluster.db)
 source("io/microarray.R")
 
 NCOTT_ONLY = T
-APPLY_YUGENE = F
+APPLY_YUGENE = T
 
 data.dir <- '../data/'
 # out.dir <- '/home/gabriel/Dropbox/research/qmul/results/mb_agdex/'

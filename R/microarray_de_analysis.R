@@ -45,7 +45,7 @@ load_from_raw <- function(avg.tech_rpts = T) {
     # average over technical repeats
     expt.runs <- colnames(expr)[!grepl('-R', colnames(expr))]
     expr <- sapply(expt.runs, function(e) rowMeans(expr[,c(e, paste0(e, '-R'))]))
-    samples <- samples[!grepl('-R', samples$name),]    
+    samples <- samples[!grepl('-R', samples$name),]
   }
 
   save(list=c("expr", "pVal", "samples"), file=microarrayFile, compress=TRUE)

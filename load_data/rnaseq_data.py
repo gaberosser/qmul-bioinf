@@ -72,26 +72,10 @@ def featurecounts(
     if units not in supported_units:
         raise ValueError("Unrecognised units requested. Supported options are %s" % ', '.join(supported_units))
 
-    # indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
-    # lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
-    # lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    # infiles = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
-    # metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
-    # samples = (
-    #     'GBM018',
-    #     'GBM019',
-    #     'GBM024',
-    #     'GBM026',
-    #     'GBM031',
-    #     'DURA018N2_NSC',
-    #     'DURA019N8C_NSC',
-    #     'DURA024N28_NSC',
-    #     'DURA026N31D_NSC',
-    #     'DURA031N44B_NSC',
-    # )
-
     first_run = True
     res = None
+    lengths = None
+    nreads = None
     for fn, mfn in zip(count_files, metafiles):
         meta = pd.read_csv(mfn, header=0, index_col=0)
         dat = pd.read_csv(fn, comment='#', header=0, index_col=0, sep='\t')
@@ -105,24 +89,31 @@ def featurecounts(
 
         files_to_keep = ['%s.bam' % t for t in codes_to_keep]
         sample_names = meta.loc[codes_to_keep, 'sample'].values
-
-        nreads = meta.loc[codes_to_keep, 'read_count']
-        nreads.index = sample_names
         lengths = dat.Length
 
         dat = dat.loc[:, files_to_keep]
         dat.columns = sample_names
 
-        if units in ('fpkm', 'tpm'):
-            dat = dat.divide(nreads, axis=1).divide(lengths, axis=0) * 1e9
-            if units == 'tpm':
-                dat = dat.divide(dat.sum(axis=0), axis=1)
-
         if first_run:
             res = dat.copy()
+            # get total reads and length of each transcript
+            nreads = meta.loc[codes_to_keep, 'read_count']
+            nreads.index = sample_names
             first_run = False
         else:
+            # sum counts and total count tally
             res += dat
+            nr = meta.loc[codes_to_keep, 'read_count']
+            nr.index = sample_names
+            nreads += nr
+
+    # normalise (if required) AFTER combining all count files
+    # we are assuming that the transcripts do not vary between files
+    if units == 'fpkm':
+        res = res.divide(nreads, axis=1).divide(lengths, axis=0) * 1e9
+    elif units == 'tpm':
+        rpk = res.divide(lengths, axis=0)
+        res = rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
 
     if annotate_by is None:
         return res
