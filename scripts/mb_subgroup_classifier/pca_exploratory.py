@@ -527,6 +527,7 @@ if __name__ == '__main__':
     y_xz = pca.transform(X_xz)
 
     # load SB RNA-Seq count data
+    # NB: have checked and using TPM rather than FPKM makes no difference, as expected
     X_sb = load_sb_rnaseq(yugene=True, gene_symbols=X.columns).transpose()
     y_sb = pca.transform(X_sb)
 
@@ -668,147 +669,148 @@ if __name__ == '__main__':
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
     ###### experimental: plotting with Plotly ######
+    if False:
 
-    import plotly.plotly as py
-    from plotly import graph_objs as go
+        import plotly.plotly as py
+        from plotly import graph_objs as go
 
-    scatter = []
-    wireframe = []
+        scatter = []
+        wireframe = []
 
-    # input args
-    pca_data = y
-    components = (0, 1, 2)
-    ellipse_p = 0.99
-    npt = 80
-    markersize = 5
+        # input args
+        pca_data = y
+        components = (0, 1, 2)
+        ellipse_p = 0.99
+        npt = 80
+        markersize = 5
 
-    # formatting
-    plotly_symbol_map = {
-        'o': 'circle',
-        'D': 'diamond',
-        's': 'square'
-    }
-
-    idx, labels = m.subgroup.factorize()
-
-    for i, l in enumerate(labels):
-        if l not in colour_map:
-            continue
-        c = colour_map[l]
-        mk = plotly_symbol_map[marker_map[l]]
-        j = idx == i
-        marker = {
-            'size': markersize,
-            'color': c,
-            # 'line': {'color': c, 'width': 0.5},
-            'opacity': 0.8,
-            'symbol': mk
+        # formatting
+        plotly_symbol_map = {
+            'o': 'circle',
+            'D': 'diamond',
+            's': 'square'
         }
-        trace = go.Scatter3d(
-            x=pca_data[j, components[0]],
-            y=pca_data[j, components[1]],
-            z=pca_data[j, components[2]],
-            mode='markers',
-            marker=marker,
-            name=l,
-            showlegend=True,
-        )
-        scatter.append(trace)
 
-    for k, v in ad.items():
-        c = colour_map[k]
-        mk = plotly_symbol_map[marker_map[k]]
-        marker = {
-            'size': markersize,
-            'color': c,
-            # 'line': {'color': c, 'width': 0.5},
-            'opacity': 0.8,
-            'symbol': mk
-        }
-        trace = go.Scatter3d(
-            x=v[:, components[0]],
-            y=v[:, components[1]],
-            z=v[:, components[2]],
-            mode='markers',
-            marker=marker,
-            name=k,
-            showlegend=True,
-        )
-        scatter.append(trace)
+        idx, labels = m.subgroup.factorize()
 
-    # plot_ellipsoids
-    for i, l in enumerate(labels):
-        if l not in colour_map:
-            continue
-        c = colour_map[l]
-        j = idx == i
-        loc, radii, rot = cluster_ellipsoid(pca_data[j][:, components], p=ellipse_p)
-        u = np.linspace(0.0, 2.0 * np.pi, npt)
-        v = np.linspace(0.0, np.pi, npt)
-
-        # cartesian coordinates that correspond to the spherical angles:
-        xx = radii[0] * np.outer(np.cos(u), np.sin(v))
-        yy = radii[1] * np.outer(np.sin(u), np.sin(v))
-        zz = radii[2] * np.outer(np.ones_like(u), np.cos(v))
-
-        # rotate accordingly
-        for i in range(len(xx)):
-            for j in range(len(xx)):
-                [xx[i, j], yy[i, j], zz[i, j]] = np.dot([xx[i, j], yy[i, j], zz[i, j]], rot) + loc
-
-        line = {
-            'color': c,
-            'width': 1.0,
-        }
-        # Mesh3d looks nice, but messes up colours inside closed objects
-        # trace = go.Mesh3d(
-        #     x=xx.flatten(),
-        #     y=yy.flatten(),
-        #     z=zz.flatten(),
-        #     alphahull=0,
-        #     opacity=0.4,
-        #     color=c,
-        #     name=l,
-        #     showlegend=True
-        # )
-        # wireframe.append(trace)
-
-        # build the ellipsoids out of lots of 3D lines
-        leg = True
-        for x1, y1, z1 in zip(xx, yy, zz):
+        for i, l in enumerate(labels):
+            if l not in colour_map:
+                continue
+            c = colour_map[l]
+            mk = plotly_symbol_map[marker_map[l]]
+            j = idx == i
+            marker = {
+                'size': markersize,
+                'color': c,
+                # 'line': {'color': c, 'width': 0.5},
+                'opacity': 0.8,
+                'symbol': mk
+            }
             trace = go.Scatter3d(
-                x=x1, y=y1, z=z1, mode='lines', line=line, showlegend=leg, name=l
+                x=pca_data[j, components[0]],
+                y=pca_data[j, components[1]],
+                z=pca_data[j, components[2]],
+                mode='markers',
+                marker=marker,
+                name=l,
+                showlegend=True,
             )
-            # only show legend on the first
-            leg=False
-            wireframe.append(trace)
+            scatter.append(trace)
 
-    # TODO: disable hover projection (can do this manually until then)
-    layout = go.Layout(
-        title='Wireframe Plot',
-        scene=dict(
-            xaxis=dict(
-                gridcolor='rgb(255, 255, 255)',
-                zerolinecolor='rgb(255, 255, 255)',
-                showbackground=True,
-                backgroundcolor='rgb(230, 230,230)'
-            ),
-            yaxis=dict(
-                gridcolor='rgb(255, 255, 255)',
-                zerolinecolor='rgb(255, 255, 255)',
-                showbackground=True,
-                backgroundcolor='rgb(230, 230,230)'
-            ),
-            zaxis=dict(
-                gridcolor='rgb(255, 255, 255)',
-                zerolinecolor='rgb(255, 255, 255)',
-                showbackground=True,
-                backgroundcolor='rgb(230, 230,230)'
+        for k, v in ad.items():
+            c = colour_map[k]
+            mk = plotly_symbol_map[marker_map[k]]
+            marker = {
+                'size': markersize,
+                'color': c,
+                # 'line': {'color': c, 'width': 0.5},
+                'opacity': 0.8,
+                'symbol': mk
+            }
+            trace = go.Scatter3d(
+                x=v[:, components[0]],
+                y=v[:, components[1]],
+                z=v[:, components[2]],
+                mode='markers',
+                marker=marker,
+                name=k,
+                showlegend=True,
             )
-        ),
-        showlegend=True,
-    )
+            scatter.append(trace)
 
-    fig = go.Figure(data=scatter + wireframe, layout=layout)
-    # publish to the web
-    py.plot(fig, filename='wire_and_scatter')
+        # plot_ellipsoids
+        for i, l in enumerate(labels):
+            if l not in colour_map:
+                continue
+            c = colour_map[l]
+            j = idx == i
+            loc, radii, rot = cluster_ellipsoid(pca_data[j][:, components], p=ellipse_p)
+            u = np.linspace(0.0, 2.0 * np.pi, npt)
+            v = np.linspace(0.0, np.pi, npt)
+
+            # cartesian coordinates that correspond to the spherical angles:
+            xx = radii[0] * np.outer(np.cos(u), np.sin(v))
+            yy = radii[1] * np.outer(np.sin(u), np.sin(v))
+            zz = radii[2] * np.outer(np.ones_like(u), np.cos(v))
+
+            # rotate accordingly
+            for i in range(len(xx)):
+                for j in range(len(xx)):
+                    [xx[i, j], yy[i, j], zz[i, j]] = np.dot([xx[i, j], yy[i, j], zz[i, j]], rot) + loc
+
+            line = {
+                'color': c,
+                'width': 1.0,
+            }
+            # Mesh3d looks nice, but messes up colours inside closed objects
+            # trace = go.Mesh3d(
+            #     x=xx.flatten(),
+            #     y=yy.flatten(),
+            #     z=zz.flatten(),
+            #     alphahull=0,
+            #     opacity=0.4,
+            #     color=c,
+            #     name=l,
+            #     showlegend=True
+            # )
+            # wireframe.append(trace)
+
+            # build the ellipsoids out of lots of 3D lines
+            leg = True
+            for x1, y1, z1 in zip(xx, yy, zz):
+                trace = go.Scatter3d(
+                    x=x1, y=y1, z=z1, mode='lines', line=line, showlegend=leg, name=l
+                )
+                # only show legend on the first
+                leg=False
+                wireframe.append(trace)
+
+        # TODO: disable hover projection (can do this manually until then)
+        layout = go.Layout(
+            title='Wireframe Plot',
+            scene=dict(
+                xaxis=dict(
+                    gridcolor='rgb(255, 255, 255)',
+                    zerolinecolor='rgb(255, 255, 255)',
+                    showbackground=True,
+                    backgroundcolor='rgb(230, 230,230)'
+                ),
+                yaxis=dict(
+                    gridcolor='rgb(255, 255, 255)',
+                    zerolinecolor='rgb(255, 255, 255)',
+                    showbackground=True,
+                    backgroundcolor='rgb(230, 230,230)'
+                ),
+                zaxis=dict(
+                    gridcolor='rgb(255, 255, 255)',
+                    zerolinecolor='rgb(255, 255, 255)',
+                    showbackground=True,
+                    backgroundcolor='rgb(230, 230,230)'
+                )
+            ),
+            showlegend=True,
+        )
+
+        fig = go.Figure(data=scatter + wireframe, layout=layout)
+        # publish to the web
+        py.plot(fig, filename='wire_and_scatter')

@@ -2,9 +2,26 @@ source("http://www.bioconductor.org/biocLite.R")
 
 library(dplyr)
 library(DESeq2)
+library('biomaRt')
 
 source('io/microarray.R')
 source('_settings.R')
+
+rep.col<-function(x,n){
+  matrix(rep(x,each=n), ncol=n, byrow=TRUE)
+}
+
+rep.row<-function(x,n){
+  matrix(rep(x,each=n),nrow=n)
+}
+
+# map from Ensembl to gene symbol
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+ens.map <- getBM(attributes= c("hgnc_symbol", "ensembl_gene_id"), mart=mart)
+ens.map <- ens.map[ens.map$hgnc_symbol != '',]
+ens.map <- ens.map[isUnique(ens.map$ensembl_gene_id),]
+rownames(ens.map) <- ens.map$ensembl_gene_id
+ens.map$ensembl_gene_id <- NULL
 
 in.dirs <- c(
   file.path(
@@ -24,7 +41,7 @@ in.dirs <- c(
 samples <- c(
   'GBM018',
   'GBM019',
-  'GBM024',
+  # 'GBM024',  # remove as it is quite weird
   'GBM026',
   'GBM031',
   'DURA018N2_NSC',
@@ -48,7 +65,7 @@ for (d in in.dirs) {
   codes <- paste0(rownames(meta), '.bam')
   x <- read.csv(fn, sep='\t', skip=1, header=T, row.names=1)
   l <- as.data.frame(x$Length)
-  nr <- as.data.frame(read_count=meta$read_count)
+  nr <- data.frame(read_count=meta$read_count)
   rownames(nr) <- samples
   rownames(l) <- rownames(x)
   
@@ -65,91 +82,57 @@ for (d in in.dirs) {
   
 }
 
-if (units == 'fpkm') {
-  dat <- dat / nreads / l * 1e6
-}
+dat.fpkm <- dat / rep.col(l[[1]], ncol(dat)) * 1e9
+dat.fpkm <- dat.fpkm / rep.row(nreads[[1]], nrow(dat))
 
-filenames <- paste0('XZ-', 1:8, '.count')
-in.files <- sapply(filenames, function (x) file.path(in.dir, x))
-
-tbl <- lapply(in.files, function(x) read.csv(x, sep='\t', header = F, row.names = 1))
-res.xz <- do.call(cbind, tbl)
-colnames(res.xz) <- paste0('XZ', 1:8)
-
-# annotate by symbol
-annot <- read.csv(file.path(in.dir, 'annotation.csv.gz'), header=1, row.names = NULL)
-annot <- annot[!duplicated(annot[,'query']),]
-rownames(annot) <- annot[,'query']
-annot$query <- NULL
-
-sym <- as.character(annot[rownames(res.xz), 'symbol'])
-# discard entries with no symbol
-res.xz <- res.xz[!is.na(sym),]
-sym <- na.omit(sym)
-
-# aggregate
-res.xz.agg <- aggregate(res.xz, by=list(symbol=sym), FUN=sum)
-rownames(res.xz.agg) <- res.xz.agg$symbol
-res.xz.agg$symbol <- NULL
-
-# allen counts
-
-in.dir <- '../data/allen_human_brain_atlas/rnaseq/'
-in.file <- file.path(in.dir, 'cerebellum.counts.csv.gz')
-
-res.he <- read.csv(in.file, row.names = 1)
-
-# combine, keeping only matching rows
-match = intersect(rownames(res.he), rownames(res.xz.agg))
-res <- cbind(res.he[match,], res.xz.agg[match,])
-
-# filter rows where the read count <2
-res <- res[rowSums(res) > 1,]
-res <- as.matrix(res)
-storage.mode(res) <- "integer"
-
-# metadata
-meta <- data.frame(condition = c(
-  as.vector(matrix("control", 9)), as.vector(matrix("mb", 8))
-), row.names = colnames(res))
-
+dat.tpm <- dat / rep.col(l[[1]], ncol(dat))
+dat.tpm <- dat.tpm / rep.row(colSums(dat.tpm), nrow(dat)) * 1e6
 
 # DESeq2
-dds <- DESeqDataSetFromMatrix(countData = as.matrix(res), colData = meta, design=~condition)
+dds <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~type + disease_subgroup)
 dds <- DESeq(dds)
 
-# don't need to specify contrasts here (same result without) but it helps to ensure the correct ordering
-des = results(dds, contrast=c("condition", "mb", "control"))
-des = des[order(des$pvalue),]
+# test 1: GBM vs iNSC 
+des = results(dds, contrast=c("type", "GBM", "iNSC"))
+des = des[order(des$padj),]
+# add gene symbol column
+des$gene_symbol <- ens.map[rownames(des), 1]
 
-# find MB-specific genes
-genes.wnt <- c("WIF1", "TNC", "GAD1", "DKK2", "EMX2")
-genes.shh <- c("PDLIM3", "EYA1", "HHIP", "ATOH1", "SFRP1")
-genes.c <- c("IMPG2", "GABRA5", "EYS", "NRL", "MAB21L2", "NPR3")
-genes.d <- c("KCNA1", "EOMES", "KHDRBS2", "RBM24", "UNC5D", "OAS1", "OTX2")
+# volcano plot
+padj.threshold <- 1e-10
+log2fc.threshold <- 5
 
-genes.all <- c(genes.wnt, genes.shh, genes.c, genes.d)
-genes.group <- as.factor(c(
-  as.vector(matrix('WNT', length(genes.wnt))),
-  as.vector(matrix('SHH', length(genes.shh))),
-  as.vector(matrix('C', length(genes.c))),
-  as.vector(matrix('D', length(genes.d)))
-))
+# Make a basic volcano plot
+with(des, plot(log2FoldChange, -log10(padj), pch=20, main="Volcano plot", xlim=c(-15, 15)))
 
-des.ncott <- as.data.frame(des[genes.all,])
-des.ncott$subgroup <- genes.group
+# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
+with(subset(des, padj < padj.threshold ), points(log2FoldChange, -log10(padj), pch=20, col="red"))
+with(subset(des, abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="orange"))
+with(subset(des, padj < padj.threshold & abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="green"))
 
-# repeat with only xz1 and xz2
-res.red <- res[,1:11]
-meta.red <- data.frame(condition = c(
-  as.vector(matrix("control", 9)), as.vector(matrix("mb", 2))
-), row.names = colnames(res.red))
+# Label points with the textxy function from the calibrate plot
+library(calibrate)
+with(subset(des, padj < padj.threshold & abs(log2FoldChange) > log2fc.threshold), textxy(log2FoldChange, -log10(padj), labs=gene_symbol, cex=.8))
 
-dds.red <- DESeqDataSetFromMatrix(countData = as.matrix(res.red), colData = meta.red, design=~condition)
-dds.red <- DESeq(dds.red)
 
-des.red = results(dds.red, contrast=c("condition", "mb", "control"))
-des.red = des.red[order(des.red$pvalue),]
+# test 2: GBM vs iNSC (TODO)
+des = results(dds, contrast=c("disease_subgroup", "GBM", "iNSC"))
+des = des[order(des$padj),]
+# add gene symbol column
+des$gene_symbol <- ens.map[rownames(des), 1]
 
-des.red.ncott <- as.data.frame(des.red[genes.all,])
-des.red.ncott$subgroup <- genes.group
+# volcano plot
+padj.threshold <- 1e-10
+log2fc.threshold <- 5
+
+# Make a basic volcano plot
+with(des, plot(log2FoldChange, -log10(padj), pch=20, main="Volcano plot", xlim=c(-15, 15)))
+
+# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
+with(subset(des, padj < padj.threshold ), points(log2FoldChange, -log10(padj), pch=20, col="red"))
+with(subset(des, abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="orange"))
+with(subset(des, padj < padj.threshold & abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="green"))
+
+# Label points with the textxy function from the calibrate plot
+library(calibrate)
+with(subset(des, padj < padj.threshold & abs(log2FoldChange) > log2fc.threshold), textxy(log2FoldChange, -log10(padj), labs=gene_symbol, cex=.8))
