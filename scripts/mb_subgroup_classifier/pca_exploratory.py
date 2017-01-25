@@ -668,6 +668,15 @@ if __name__ == '__main__':
     ttl = ("pca_%s-early_late_all_2d" % title) if SAVEFIG else None
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
 
+    # plot: 2D centroids + 1595 old and new
+    ttl = ("pca_%s-1595_2d" % title) if SAVEFIG else None
+    ad = {
+        lbl_1595_zhao: y_1595,
+        lbl_1595_this: y_sb_1595,
+    }
+
+    fig, axs = fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
+
     ###### experimental: plotting with Plotly ######
     if False:
 
