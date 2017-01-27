@@ -6,8 +6,7 @@ library(oligo)
 library(AnnotationDbi)
 library(data.table)
 source("utils.R")  # contains median_by and other aggregation routines
-data.dir <- '../data/'
-data.dir.raid <- '/media/gabriel/raid1_4tb/data/microarray/'
+source("_settings.R")
 
 
 eset_from_celdir <- function(cel.dir, gzipped = FALSE) {
