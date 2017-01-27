@@ -292,32 +292,22 @@ gse37418 <- function(aggr.by = NULL, aggr.method = 'median') {
 }
 
 
-thompson2006 <- function() {
-  in.dir <- file.path(data.dir.raid, 'thompson2006')
-  in.dir.raw <- file.path(in.dir, 'raw')
-  pre_saved.file = file.path(in.dir, 'expr.rma.median_entrez_id.rds')
-  if (file.exists(pre_saved.file)) {
-    expr <- readRDS(pre_saved.file)
-  } else {
-    library(hgu133plus2.db)
-    expr <- annotated_expr_from_celdir(
-      in.dir.raw, 
-      annotlib = hgu133plus2.db,
-      gzipped = T, 
-      strip.title = '.CEL.gz')
-    saveRDS(expr, pre_saved.file)
-  }
-  # load meta
-  meta.file = file.path(in.dir, 'sources.csv')
-  meta <- read.csv(meta.file, header=1, row.names = 1)
-  rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+thompson2006 <- function(aggr.by = NULL, aggr.method = 'median') {
+  in.dir <- file.path(data.dir.raid, 'microarray', 'thompson2006')
+  library(hgu133plus2.db)
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = hgu133plus2.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
   
-  return(list(expr=expr, meta=meta))
+  return(list(expr=expr, meta=NULL))
 }
 
 
 gse50161 <- function(aggr.by = NULL, aggr.method = 'median') {
-  in.dir <- file.path(data.dir.raid, 'GSE50161')
+  in.dir <- file.path(data.dir.raid, 'microarray', 'GSE50161')
   library(hgu133plus2.db)
   expr <- load_microarray_data_from_raw(
     in.dir = in.dir,
@@ -329,6 +319,32 @@ gse50161 <- function(aggr.by = NULL, aggr.method = 'median') {
   # load meta
   meta.file = file.path(in.dir, 'sources.csv')
   meta <- read.csv(meta.file, header=1, row.names = 6)
+  
+  # arrange so they are sorted in the same order
+  if (!is.null(aggr.by)) {
+    expr <- expr[, rownames(meta)]
+  } else {
+    expr <- expr[, c(rownames(meta), 'SYMBOL', 'ENTREZID', 'ENSEMBL')]
+  }  
+  
+  return(list(expr=expr, meta=meta))
+}
+
+
+
+gse33199 <- function(aggr.by = NULL, aggr.method = 'median') {
+  in.dir <- file.path(data.dir.raid, 'microarray', 'GSE33199')
+  library(mouse4302.db)
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = mouse4302.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T)
+  
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 1)
   
   # arrange so they are sorted in the same order
   if (!is.null(aggr.by)) {

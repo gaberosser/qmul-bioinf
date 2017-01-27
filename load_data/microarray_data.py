@@ -20,7 +20,8 @@ def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=Non
     Load microarray data that has been created in R.
     This is (unfortunately) necessary when we want to apply certain pre-processing steps like RMA.
     :param infile: The input file name.
-    :param sample_names: T
+    :param sample_names: List (or iterable) of the sample names to keep. If None, all will be kept.
+    NB: if None and the input file contains columns other than the 'standard' annotations, they will NOT be dropped.
     :param aggr_field:
     :return:
     """
@@ -32,9 +33,22 @@ def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=Non
     arr_data = pd.read_csv(infile, sep='\t', header=0, index_col=0)
     if aggr_field is None:
         return arr_data
+
     # drop other meta fields
-    arr_data = arr_data.loc[:, [aggr_field] + sample_names]
-    arr_data = process.aggregate_by_probe_set(arr_data, groupby=aggr_field, method=aggr_method)
+    if sample_names is None:
+        # we'll have to guess what the other annotation fields are then drop them - this might not work
+        remaining_annot = set(AGGREGATION_FIELD_CHOICES)
+        try:
+            remaining_annot.remove(aggr_field)
+        except KeyError:
+            pass
+        arr_data.drop(remaining_annot, axis=1, errors='ignore', inplace=True)
+    else:
+        # Use sample names to ensure we only keep data columns
+        arr_data = arr_data.loc[:, [aggr_field] + sample_names]
+
+    if aggr_method is not None:
+        arr_data = process.aggregate_by_probe_set(arr_data, groupby=aggr_field, method=aggr_method)
     return arr_data
 
 
@@ -161,6 +175,30 @@ def load_annotated_microarray_sb_data(aggr_field='ENTREZ', aggr_method='max'):
     return arr_data, chd7
 
 
+def _annotated_microarray(indir, aggr_field=None, aggr_method=None):
+    """
+    Base loader for microarray data.
+    :param aggr_field: If None, don't perform aggregation. Otherwise, use this field as the index.
+    :param aggr_method: The method to use when aggregating over probe sets. If None, do not aggregate over probe sets.
+    :param indir:
+    :param aggr_field:
+    :param aggr_method:
+    :return:
+    """
+    infile = os.path.join(indir, 'expr.rma.csv.gz')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    if os.path.isfile(meta_fn):
+        meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
+        sample_names = list(meta.index)
+    else:
+        logger.warning("Unable to find meta file %s", meta_fn)
+        meta = None
+        sample_names = None  # this will cause an error if aggr_field is not None
+
+    arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
+    return arr, meta
+
+
 def load_annotated_microarray_gse37382(aggr_field=None, aggr_method=None):
     """
     Northcott human MB study comprising the subgroups C, D and SHH.
@@ -206,6 +244,35 @@ def load_annotated_microarray_gse37418(aggr_field=None, aggr_method=None):
     sample_names = list(meta.index)
     arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     return arr, meta
+
+
+def load_annotated_microarray_gse33199(aggr_field=None, aggr_method=None):
+    """
+    Roussel mouse MB dataset.  Filtered to include only the essential samples, as this dataset contains
+    a large number of modified samples.
+    :param aggr_field:
+    :param aggr_method:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE33199')
+    return _annotated_microarray(indir, aggr_field=aggr_field, aggr_method=aggr_method)
+    # infile = os.path.join(indir, 'expr.rma.csv.gz')
+    # meta_fn = os.path.join(indir, 'sources.csv')
+    # meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')  # NB index by accession here
+    # sample_names = list(meta.index)
+    # arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
+    # return arr, meta
+
+
+def load_annotated_thompson2006(aggr_field=None, aggr_method=None):
+    """
+    Thompson 46 human MB samples. No metadata available.
+    :param aggr_field:
+    :param aggr_method:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'thompson2006')
+    return _annotated_microarray(indir, aggr_field=aggr_field, aggr_method=aggr_method)
 
 
 def load_metadata_from_series_matrix(infile):

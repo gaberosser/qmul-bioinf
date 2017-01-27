@@ -1,21 +1,45 @@
 import pandas as pd
 import numpy as np
+import uuid
 from log import get_console_logger
 
 
-def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol', axis=0):
+def median_absolute_deviation(data, axis=1):
     """
-    Aggregate the microarray DataFrame using a pre-existing column (or index).
+    Compute the MAD on the supplied data
+    :param data: A pandas DataFrame or an object that can be used to create one.
+    :param axis: The axis along which we will compute the MAD
+    :return: pandas Series with the same index as data containing the MAD
+    """
+    if axis == 0:
+        axi = 0
+        axj = 1
+    elif axis == 1:
+        axi = 1
+        axj = 0
+    else:
+        ValueError("Axis must be 0 or 1")
+    data = pd.DataFrame(data)
+    return data.subtract(data.median(axis=axi), axis=axj).abs().median(axis=axi)
+
+
+def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol'):
+    """
+    Aggregate the microarray DataFrame using a pre-existing column.
     For example, we commonly want to go from probe set -> gene activity.
     The pre-existing column becomes the new index.
     :param marray_data:
     :param lookup: Optionally supply a lookup list that is used to
     :param method: Either a string specifying a common method (max, mean, sum, median) or a vectorised function
     :param groupby:
-    :param axis: Axis to use when grouping. 0 denotes grouping by the values in a column.
     :return:
     """
-    grp_data = marray_data.groupby(groupby, axis=axis)
+    # we need a temporary column name - pick a random one
+    uniq_key = str(uuid.uuid4().get_hex())[:12]
+    while uniq_key in marray_data.columns:
+        uniq_key = str(uuid.uuid4().get_hex())[:12]
+
+    grp_data = marray_data.groupby(groupby, axis=0)
     if method == 'max':
         data = grp_data.max()
     elif method == 'mean':
@@ -24,6 +48,23 @@ def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol', 
         data = grp_data.sum()
     elif method == 'median':
         data = grp_data.median()
+    elif method == 'max_std':
+        # mask the groupby column
+        dat = marray_data.drop(groupby, axis=1)
+        s = dat.std(axis=1)
+        s.name = uniq_key
+        s = pd.concat((s, marray_data.loc[:, groupby]), axis=1)
+        probes = s.groupby(groupby, axis=0).apply(lambda x: x.loc[:, uniq_key].idxmax())
+        data = marray_data.loc[probes].set_index(groupby)
+    elif method == 'max_mad':
+        # maximum by median absolute deviation
+        # mask the groupby column
+        dat = marray_data.drop(groupby, axis=1)
+        mad = median_absolute_deviation(dat, axis=1)
+        mad.name = uniq_key
+        mad = pd.concat((mad, marray_data.loc[:, groupby]), axis=1)
+        probes = mad.groupby(groupby, axis=0).apply(lambda x: x.loc[:, uniq_key].idxmax())
+        data = marray_data.loc[probes].set_index(groupby)
     else:
         # try calling the supplied method directly
         data = grp_data.agg(method)
