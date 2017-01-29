@@ -76,6 +76,7 @@ def featurecounts(
     res = None
     lengths = None
     nreads = None
+    meta = None
     for fn, mfn in zip(count_files, metafiles):
         meta = pd.read_csv(mfn, header=0, index_col=0)
         dat = pd.read_csv(fn, comment='#', header=0, index_col=0, sep='\t')
@@ -116,7 +117,7 @@ def featurecounts(
         res = rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
 
     if annotate_by is None:
-        return res
+        return res, meta
     else:
         # load genenames data for annotation
         df = references.conversion_table(type=annotation_type)
@@ -140,7 +141,7 @@ def featurecounts(
             res.set_index(annotate_by, inplace=True)
             # res = res.loc[:, cols]
 
-        return res
+        return res, meta
 
 
 def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):

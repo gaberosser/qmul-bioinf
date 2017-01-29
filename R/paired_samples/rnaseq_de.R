@@ -17,12 +17,12 @@ rep.row<-function(x,n){
   matrix(rep(x,each=n),nrow=n)
 }
 
-volcano <- function(res, padj.threshold=1e-10, log2fc.threshold=5, xlim=NULL, label.field=NULL) {
+volcano <- function(res, padj.threshold=1e-10, log2fc.threshold=5, xlim=NULL, label.field=NULL, title=NULL) {
   
   # Make a basic volcano plot
   with(
     res, 
-    plot(log2FoldChange, -log10(padj), pch=20, main="Volcano plot", xlim=xlim)
+    plot(log2FoldChange, -log10(padj), pch=20, main=title, xlim=xlim)
   )
   
   # Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
@@ -116,18 +116,18 @@ dat.tpm <- dat.tpm / rep.row(colSums(dat.tpm), nrow(dat)) * 1e6
 
 # test 1: GBM (all) vs iNSC (all)
 
-dds <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~type + disease_subgroup)
-dds <- DESeq(dds)
+dds.1 <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~type + disease_subgroup)
+dds.1 <- DESeq(dds.1)
 
-des = results(dds, contrast=c("type", "GBM", "iNSC"))
-des = des[order(des$padj),]
+des.1 = results(dds.1, contrast=c("type", "GBM", "iNSC"))
+des.1 = des.1[order(des.1$padj),]
 # add gene symbol column
-des$gene_symbol <- ens.map[rownames(des), 1]
+des.1$gene_symbol <- ens.map[rownames(des.1), 1]
 
 # volcano plot
 padj.threshold <- 1e-10
 log2fc.threshold <- 5
-volcano(des, label.field = "gene_symbol", xlim=c(-15, 15))
+volcano(des.1, label.field = "gene_symbol", xlim=c(-15, 15))
 
 # test 2: GBM vs iNSC (RTK I)
 
@@ -135,26 +135,41 @@ volcano(des, label.field = "gene_symbol", xlim=c(-15, 15))
 # This is a simple way to achieve "GMB RTK I vs iNSC RTK I"
 meta$group <- factor(paste(meta$type, meta$disease_subgroup))
 
-dds <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~group)
-dds <- DESeq(dds)
-des = results(dds, contrast = c("group", "GBM RTK I", "iNSC RTK I"))
-des = des[order(des$padj),]
+dds.2 <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~group)
+dds.2 <- DESeq(dds.2)
+des.2 = results(dds.2, contrast = c("group", "GBM RTK I", "iNSC RTK I"))
+des.2 = des.2[order(des.2$padj),]
 # add gene symbol column
-des$gene_symbol <- ens.map[rownames(des), 1]
+des.2$gene_symbol <- ens.map[rownames(des.2), 1]
 
-volcano(des, label.field = "gene_symbol", xlim=c(-15, 15))
+volcano(des.2, label.field = "gene_symbol", xlim=c(-15, 15), title="RTK I cohort GBM vs iNSC")
 
 # MA plot: scatter log2 FC vs mean of normalized counts, coloured based on padj
-plotMA(des, alpha=padj.threshold, ylim=c(-5, 5))
+plotMA(des.2, alpha=padj.threshold, ylim=c(-5, 5))
 if (FALSE) {
   # this is how to find gene names interactively
-  idx <- identify(des$baseMean, des$log2FoldChange)
-  res$gene_symbol[idx]
+  idx <- identify(des.2$baseMean, des.2$log2FoldChange)
+  des.2$gene_symbol[idx]
 }
 
 # heatmap of expression of 30 most DE genes
-mostDE <- rownames(des)[1:30]
+# mostDE <- rownames(des.2)[1:30]
 # get var stab transform using the original dispersion estimates to speed things up
-vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+vsd <- varianceStabilizingTransformation(dds.2, blind=FALSE)
 grouping <- meta[, c("type", "disease_subgroup")]
-pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation_col = grouping, labels_row = des[mostDE, "gene_symbol"])
+pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation_col = grouping, labels_row = des.2[mostDE, "gene_symbol"])
+
+# test 3: GBM MES vs paired iNSC
+des.3 <- results(dds.2, contrast = c("group", "GBM MES", "iNSC MES"))
+des.3 <- des.3[order(des.3$padj),]
+des.3$gene_symbol <- ens.map[rownames(des.3), 1]
+volcano(des.3, label.field = "gene_symbol", xlim=c(-15, 15), title="MES cohort GBM vs iNSC")
+mostDE <- rownames(des.3)[1:30]
+pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation_col = grouping, labels_row = des.3[mostDE, "gene_symbol"])
+
+# test 4: (GBM RTK I vs paired iNSC) vs (GBM MES vs paired iNSC)
+# THIS IS POINTLESS but shows how to run this kind of contrast test
+des.4 <- results(
+  dds.2, 
+  contrast = list(c("groupGBM.RTK.I", "groupiNSC.RTK.I"), c("groupGBM.MES", "groupiNSC.MES"))
+)
