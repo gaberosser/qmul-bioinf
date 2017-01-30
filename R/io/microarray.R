@@ -293,8 +293,10 @@ gse37418 <- function(aggr.by = NULL, aggr.method = 'median') {
 
 
 thompson2006 <- function(aggr.by = NULL, aggr.method = 'median') {
+  # NB: since the HG U133A2 array is quite old, some 'common' genes are missing
+  # notable: UNC5D, RBM24
   in.dir <- file.path(data.dir.raid, 'microarray', 'thompson2006')
-  library(hgu133plus2.db)
+  library(hgu133a2.db)
   expr <- load_microarray_data_from_raw(
     in.dir = in.dir,
     annotlib = hgu133plus2.db,
