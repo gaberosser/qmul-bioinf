@@ -10,6 +10,7 @@ plt.interactive(True)
 sns.set_style('white')
 
 SAVE_PLOTS = True
+# SAVE_PLOTS = False
 
 if SAVE_PLOTS:
     OUTDIR = 'temp_results.0'
@@ -182,7 +183,7 @@ marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, r
 # add constant to each array to force non-negative values
 marray_data = marray_data.subtract(marray_data.min(axis=0))
 
-HEALTHY_SAMPLES = dict(consts.SAMPLE_GROUPS_ZHANG)['Healthy cerebellum']
+HEALTHY_SAMPLES = dict(consts.SAMPLE_GROUPS_ZHAO)['Healthy cerebellum']
 
 probe_set = load_illumina_data.load_illumina_array_library()
 marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
@@ -339,3 +340,84 @@ if SAVE_PLOTS:
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.tiff"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.pdf"))
+
+
+
+# various + HEALTHY
+
+MB_SAMPLES = [
+    # 'Pt984',
+    'ICb984-I',
+    'ICb984-III',
+    'ICb984-V',
+    'Pt1338',
+    'ICb1338-I',
+    'ICb1338-III',
+    'Pt1595',
+    'ICb1595-I',
+    'ICb1595-III',
+    'Pt1299',
+    'ICb1299-I',
+    'ICb1299-III',
+    'ICb1299-IV',
+    'Pt1487',
+    'ICb1487-I',
+    'ICb1487-III',
+]
+# order here affects the order of the columns
+# healthy, MB:
+# keep_cols = list(HEALTHY_SAMPLES) + MB_SAMPLES
+# MB, healthy:
+keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
+
+# define new variable from here so we can return to the original data if necessary
+marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
+marr_log = np.log2(marr + eps)
+
+# standardise using pool of HEALTHY data
+marray_he = marr.loc[:, HEALTHY_SAMPLES]
+marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
+
+# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
+marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
+
+
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, nanostring
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+        consts.NANOSTRING_GENES,
+        marr_nlog,
+        fig_kwargs={'figsize': [5, 8.5]},
+        heatmap_kwargs = {'square': False},
+        **heatmap_kwargs
+    )
+    #  add dividing lines
+    xbreaks = [3, 6, 9, 13, 16]
+    for ax in axs:
+        for t in xbreaks:
+            ax.axvline(t, color='w', linewidth=2.5)
+            ax.axvline(t, color='0.4', linewidth=1.)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_nanostring.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_nanostring.tiff"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_nanostring.pdf"))
+
+if SAVE_PLOTS:
+    # Plot: marr MB vs healthy, Northcott full
+    fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+            consts.NORTHCOTT_GENES,
+            marr_nlog,
+            fig_kwargs={'figsize': [5, 12]},
+            heatmap_kwargs={'square': False},
+            gs_kwargs={'left': 0.25},
+            **heatmap_kwargs
+        )
+    # reduce y label font size and add dividing lines
+    xbreaks = [3, 6, 9, 13, 16]
+    for ax in axs:
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+        for t in xbreaks:
+            ax.axvline(t, color='w', linewidth=2.5)
+            ax.axvline(t, color='0.4', linewidth=1.)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_ncott.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_ncott.tiff"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "marr_mb_various-cer_ncott.pdf"))

@@ -75,6 +75,9 @@ def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None
     meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')
     if sample_names is None:
         sample_names = list(meta.index)
+    else:
+        meta = meta.loc[sample_names, :]
+
     arr = {}
     for sn in sample_names:
         ff = os.path.join(indir, "%s.gz" % sn)
