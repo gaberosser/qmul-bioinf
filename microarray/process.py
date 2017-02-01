@@ -104,3 +104,21 @@ def yugene_transform(marray_data):
     # res = res.subtract(colmin, axis=1)
 
     return res
+
+
+def variance_stabilizing_transform(marray_data):
+    """
+    Requires rpy2 and the `vsn` package.
+    Use the vsn package in R to compute the variance stabilised transform of the supplied raw data.
+    :param marray_data: Must contain only numeric data - no gene symbol columns or similar
+    """
+    from rpy2 import robjects
+    from rpy2.robjects import pandas2ri
+    pandas2ri.activate()
+    robjects.r("library('vsn')")
+    rmat = pandas2ri.py2ri(marray_data)
+    rmat = robjects.r['data.matrix'](rmat)
+    v = robjects.r['vsn2'](rmat)
+    v = robjects.r['predict'](v, newdata=rmat)
+    dat = np.asarray(v)
+    return pd.DataFrame(dat, index=marray_data.index, columns=marray_data.columns)

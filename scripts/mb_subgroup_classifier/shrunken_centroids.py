@@ -336,6 +336,7 @@ if __name__ == '__main__':
 
     # load Robinson dataset
     robi, robi_meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
+    # remove 2 outlier samples
     robi_meta = robi_meta.loc[~robi_meta.subgroup.isin(['U', 'SHH OUTLIER'])]
     sort_idx = robi_meta.subgroup.sort_values().index
     robi_meta = robi_meta.loc[sort_idx]

@@ -9,9 +9,12 @@ import collections
 
 
 if __name__ == '__main__':
-    geneset = consts.NORTHCOTT_GENES
-    show_gene_labels = False
+    # geneset = consts.NORTHCOTT_GENES
+    # show_gene_labels = False
+    geneset = consts.NANOSTRING_GENES
+    show_gene_labels = True
     n_genes = 1500
+    AGGR_METHOD = 'max_std'
 
     all_nstring = []
     [all_nstring.extend(t) for _, t in consts.NANOSTRING_GENES]
@@ -25,26 +28,28 @@ if __name__ == '__main__':
     # data, _ = microarray_data.load_annotated_thompson2006(aggr_field='SYMBOL', aggr_method='max_std')
 
     # Robinson annotated
-    # data, meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max_std')
-    # meta = meta.loc[meta.subgroup.isin(['WNT', 'SHH', 'G3', 'G4'])]
-    # meta.subgroup = meta.subgroup.str.replace('G3', 'Group C')
-    # meta.subgroup = meta.subgroup.str.replace('G4', 'Group D')
-    # meta.loc[:, 'study'] = 'Robinson'
-    # data = data.loc[:, meta.index]
+    STUDY = 'Robinson'
+    data, meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
+    meta = meta.loc[meta.subgroup.isin(['WNT', 'SHH', 'G3', 'G4'])]
+    meta.subgroup = meta.subgroup.str.replace('G3', 'Group C')
+    meta.subgroup = meta.subgroup.str.replace('G4', 'Group D')
+    meta.loc[:, 'study'] = STUDY
+    data = data.loc[:, meta.index]
 
     # Kool
+    # STUDY = 'Kool'
     # data, meta = microarray_data.load_annotated_microarray_gse10327(aggr_field='SYMBOL', aggr_method='max_std')
 
     # Northcott
-    data, meta = microarray_data.load_annotated_microarray_gse37382(aggr_field='SYMBOL', aggr_method='max_std')
+    # STUDY = 'Northcott'
+    # data, meta = microarray_data.load_annotated_microarray_gse37382(aggr_field='SYMBOL', aggr_method='max_std')
 
     # find top genes by MAD - all genes included
     mad = process.median_absolute_deviation(data, axis=1)
     top_genes = mad.sort_values(ascending=False).index[:n_genes]
+    print "Selecting top %d genes by MAD from %s study..." % (n_genes, STUDY)
     print "%d / %d genes (nanostring)" % (len(top_genes.intersection(all_nstring)), len(all_nstring))
     print "%d / %d genes (northcott)" % (len(top_genes.intersection(all_ncott)), len(all_ncott))
-
-    raise ValueError()
 
     # Zhao data
     zhao_sample_names = (
@@ -59,11 +64,13 @@ if __name__ == '__main__':
         'ICb1595-III',
     )
     data_zhao, meta_zhao = microarray_data.load_annotated_gse28192(
-        aggr_field='SYMBOL',
-        aggr_method='max_std',
-        log2=True,
-        sample_names=zhao_sample_names
+        log2=False,
+        # sample_names=zhao_sample_names
     )
+    data_zhao = process.variance_stabilizing_transform(data_zhao)
+    data_zhao = data_zhao.loc[:, zhao_sample_names]
+    meta_zhao = meta_zhao.loc[zhao_sample_names, :]
+    data_zhao = microarray_data.annotate_and_aggregate_gse28192(data_zhao, aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
     # pare down zhao meta
     meta_zhao.loc[:, 'northcott classification'] = meta_zhao.loc[:, 'northcott classification'].str.replace('C', 'Group C')
     meta_zhao.loc[:, 'northcott classification'] = meta_zhao.loc[:, 'northcott classification'].str.replace('D', 'Group D')
@@ -202,8 +209,8 @@ if __name__ == '__main__':
 
     col_colors_int = pd.DataFrame(index=data_int.columns, columns=['study', 'labelled'])
 
-    col_colors_int.loc[col_colors_int.study == 'Robinson'] = '#dbdbdb'
-    col_colors_int.loc[col_colors_int.study == 'Zhao'] = '#000000'
+    col_colors_int.loc[meta_int.study == STUDY] = '#dbdbdb'
+    col_colors_int.loc[meta_int.study == 'Zhao'] = '#000000'
     for cls in colour_cycle:
         col_colors_int.loc[meta_int.subgroup == cls, 'labelled'] = colour_cycle[cls]
 
@@ -220,6 +227,8 @@ if __name__ == '__main__':
     )
     # remove useless row dendrogram
     cg.ax_row_dendrogram.set_visible(False)
+    # reduce whitespace
+    cg.gs.update(bottom=0.02, top=0.98, left=0.02)
     cg.ax_heatmap.yaxis.label.set_visible(False)
     if show_gene_labels:
         plt.setp(

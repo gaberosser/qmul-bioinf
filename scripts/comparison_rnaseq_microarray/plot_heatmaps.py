@@ -179,19 +179,64 @@ if SAVE_PLOTS:
     fig.savefig(os.path.join(OUTDIR, "rnaseq_scr-ahba_ncottcd.pdf"))
 
 
-marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, return_pvals=True)
-# add constant to each array to force non-negative values
-marray_data = marray_data.subtract(marray_data.min(axis=0))
+"""
+There are currently 2 related but slightly different ways to load the Zhao data.
+Here we can switch between them.
+The results are qualitatively similar, but there are a few changes.
+Main differences.
+Method 1:
+- Aggr raw before taking logs.
+- Mean of repeats before taking logs.
+- Add a constant to each sample's raw values to bring minimum up to 0. Log2 (x + eps).
 
+Method 2:
+- Replace any value <1 with 1. Log2(x).
+- Aggregate and take mean over repeats AFTER taking logs.
+"""
+
+# METHOD 1: the old loader
+LOAD_METHOD = 3
+
+if LOAD_METHOD == 1:
+    marray_data, pvals = load_illumina_data.load_normed_microarray_data(pval=None, return_pvals=True)
+    # add constant to each array to force non-negative values
+    marray_data = marray_data.subtract(marray_data.min(axis=0))
+
+    probe_set = load_illumina_data.load_illumina_array_library()
+    marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
+    marray_all = aggregate_by_probe_set(marray_ann, method=AGGR_METHOD)
+
+    # take mean over repeats
+    for sn in load_illumina_data.SAMPLE_NAMES:
+        marray_all.loc[:, sn] = marray_all.loc[:, [sn, sn + '-R']].mean(axis=1)
+
+    # log2
+    marray_all_log = np.log2(marray_all + eps)
+
+elif LOAD_METHOD == 2:
+
+    # METHOD 2: the new loader
+    from load_data import microarray_data
+    marray_all_log, marray_meta = microarray_data.load_annotated_gse28192(aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
+
+    # take mean over repeats
+    for sn in load_illumina_data.SAMPLE_NAMES:
+        marray_all_log.loc[:, sn] = marray_all_log.loc[:, [sn, sn + '-R']].mean(axis=1)
+
+elif LOAD_METHOD == 3:
+    from load_data import microarray_data
+    from microarray import process
+    marray_raw, marray_meta = microarray_data.load_annotated_gse28192(log2=False)
+    marray_all_log = process.variance_stabilizing_transform(marray_raw)
+    # NB: this isn't really logged data, but it's playing the same role
+    marray_all_log = microarray_data.annotate_and_aggregate_gse28192(marray_all_log, aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
+
+
+
+# extract healthy data for standardisation
 HEALTHY_SAMPLES = dict(consts.SAMPLE_GROUPS_ZHAO)['Healthy cerebellum']
-
-probe_set = load_illumina_data.load_illumina_array_library()
-marray_ann = load_illumina_data.add_gene_symbol_column(marray_data, probe_set)
-marray_all = aggregate_by_probe_set(marray_ann, method=AGGR_METHOD)
-
-# take mean over repeats
-for sn in load_illumina_data.SAMPLE_NAMES:
-    marray_all.loc[:, sn] = marray_all.loc[:, [sn, sn + '-R']].mean(axis=1)
+# marray_he = marray_all.loc[:, HEALTHY_SAMPLES]
+marray_he_log = marray_all_log.loc[:, HEALTHY_SAMPLES]
 
 
 # 1299 + HEALTHY
@@ -208,15 +253,9 @@ MB_SAMPLES = [
 # MB, healthy:
 keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
 
-# define new variable from here so we can return to the original data if necessary
-marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
-marr_log = np.log2(marr + eps)
+marr_log = marray_all_log.loc[:, keep_cols].dropna(axis=0, how='all')
 
 # standardise using pool of HEALTHY data
-marray_he = marr.loc[:, HEALTHY_SAMPLES]
-marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
-
-# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
 marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
 
 if SAVE_PLOTS:
@@ -290,15 +329,9 @@ MB_SAMPLES = [
 # MB, healthy:
 keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
 
-# define new variable from here so we can return to the original data if necessary
-marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
-marr_log = np.log2(marr + eps)
+marr_log = marray_all_log.loc[:, keep_cols].dropna(axis=0, how='all')
 
 # standardise using pool of HEALTHY data
-marray_he = marr.loc[:, HEALTHY_SAMPLES]
-marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
-
-# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
 marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
 
 if SAVE_PLOTS:
@@ -370,15 +403,9 @@ MB_SAMPLES = [
 # MB, healthy:
 keep_cols = MB_SAMPLES + list(HEALTHY_SAMPLES)
 
-# define new variable from here so we can return to the original data if necessary
-marr = marray_all.loc[:, keep_cols].dropna(axis=0, how='all')
-marr_log = np.log2(marr + eps)
+marr_log = marray_all_log.loc[:, keep_cols].dropna(axis=0, how='all')
 
 # standardise using pool of HEALTHY data
-marray_he = marr.loc[:, HEALTHY_SAMPLES]
-marray_he_log = marr_log.loc[:, HEALTHY_SAMPLES]
-
-# marr_n = marr.subtract(marray_he.mean(axis=1), axis=0).divide(marray_he.std(axis=1), axis=0)
 marr_nlog = marr_log.subtract(marray_he_log.mean(axis=1), axis=0).divide(marray_he_log.std(axis=1), axis=0)
 
 

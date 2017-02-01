@@ -52,6 +52,44 @@ def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=Non
     return arr_data
 
 
+def load_gse28192_probeset():
+    # load library and annotate
+    indir = os.path.join(DATA_DIR, 'microarray_GSE28192')
+    annot_fn = os.path.join(indir, 'probe_set', 'GPL6102-11574.txt')
+    ann = pd.read_csv(annot_fn, sep='\t', comment='#', header=0, index_col=0)
+    return ann
+
+
+def annotate_and_aggregate_gse28192(data, aggr_field=None, aggr_method=None):
+    ann_cols = {
+        'ENTREZID': 'Entrez_Gene_ID',
+        'SYMBOL': 'Symbol',
+    }
+
+    if aggr_field == 'all' and aggr_method is not None:
+        raise ValueError("Cannot specify an aggregation method when aggr_field=='all'.")
+    if aggr_field is None and aggr_method is not None:
+        raise ValueError("Must specify an aggr_field if aggr_method is not None")
+    if aggr_field is not None and aggr_field != 'all' and aggr_field not in ann_cols:
+        raise ValueError("Unrecognised aggr_field %s." % aggr_field)
+
+    probeset = load_gse28192_probeset()
+    common_probes = probeset.index.intersection(data.index)
+    if aggr_field is None:
+        return data
+    if aggr_field == 'all':
+        # add all relevant fields
+        for a, b in ann_cols.items():
+            data.loc[common_probes, a] = probeset.loc[common_probes, b]
+    else:
+        # include only the aggregation field
+        data.loc[common_probes, aggr_field] = probeset.loc[common_probes, ann_cols[aggr_field]]
+        # aggregate
+        data = process.aggregate_by_probe_set(data, groupby=aggr_field, method=aggr_method)
+
+    return data
+
+
 def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None, max_pval=None, log2=True):
     """
     Xiao-Nan Li data comprising several tumour/xenograft matched MB samples
@@ -61,14 +99,6 @@ def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None
     In practice, this just imposes a minimum value cutoff. However, it does ensure no negative values are returned.
     :return:
     """
-    ann_cols = {
-        'ENTREZID': 'Entrez_Gene_ID',
-        'SYMBOL': 'Symbol',
-    }
-    if (aggr_method is not None and aggr_field is None) or (aggr_method is None and aggr_field is not None):
-        raise ValueError("Must either supploy BOTH aggr_field and aggr_method or NEITHER.")
-    if aggr_field is not None and aggr_field not in ann_cols:
-        raise ValueError("Unrecognised aggregation field. Supported options are %s." % ', '.join(ann_cols.keys()))
 
     indir = os.path.join(DATA_DIR, 'microarray_GSE28192')
     meta_fn = os.path.join(indir, 'sources.csv')
@@ -95,25 +125,12 @@ def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None
         arr[sn] = df.loc[:, 'expr']
     arr = pd.DataFrame.from_dict(arr, dtype=float)
 
-    # load library and annotate
-    annot_fn = os.path.join(indir, 'probe_set', 'GPL6102-11574.txt')
-    ann = pd.read_csv(annot_fn, sep='\t', comment='#', header=0, index_col=0)
-    common_probes = ann.index.intersection(arr.index)
-
     # do log2 transform first if required
     if log2:
         arr[arr < 1.] = 1.
         arr = np.log2(arr)
 
-    if aggr_field is None:
-        # if no aggregation requested, add all relevant fields
-        for a, b in ann_cols.items():
-            arr.loc[common_probes, a] = ann.loc[common_probes, b]
-    else:
-        # include only the aggregation field
-        arr.loc[common_probes, aggr_field] = ann.loc[common_probes, ann_cols[aggr_field]]
-        # aggregate
-        arr = process.aggregate_by_probe_set(arr, groupby=aggr_field, method=aggr_method)
+    arr = annotate_and_aggregate_gse28192(arr, aggr_field=aggr_field, aggr_method=aggr_method)
 
     return arr, meta
 

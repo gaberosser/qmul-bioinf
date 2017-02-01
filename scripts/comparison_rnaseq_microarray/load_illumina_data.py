@@ -106,13 +106,14 @@ def load_normed_microarray_data(sample_names=None, pval=0.01, return_pvals=False
         this_df = pd.read_csv(
             ff,
             sep='\t',
-            header=None,
+            # header=None,
+            header=0,
             index_col=0,
-            skiprows=6,
+            # skiprows=6,
             usecols=[0, 1, 4],
             skip_blank_lines=True,
-            skipfooter=1,
-            engine='python',  # required to allow use of skipfooter
+            # skipfooter=1,
+            # engine='python',  # required to allow use of skipfooter
         )
         this_df.columns = [fn, 'pval']
         # mark non-sig results as null if requested
