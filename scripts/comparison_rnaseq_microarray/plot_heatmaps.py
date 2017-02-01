@@ -375,7 +375,6 @@ if SAVE_PLOTS:
     fig.savefig(os.path.join(OUTDIR, "marr_mbgrp2-cer_ncott.pdf"))
 
 
-
 # various + HEALTHY
 
 MB_SAMPLES = [
