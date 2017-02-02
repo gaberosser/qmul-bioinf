@@ -7,6 +7,7 @@ from scipy.cluster import hierarchy
 from scripts.comparison_rnaseq_microarray import consts
 import collections
 from scripts.output import unique_output_dir
+import os
 
 
 def plot_clustermap(dat, show_gene_labels=False, **kwargs):
@@ -14,10 +15,16 @@ def plot_clustermap(dat, show_gene_labels=False, **kwargs):
         dat,
         **kwargs
     )
-    # reduce whitespace
-    cg.gs.update(bottom=0.02, top=0.98, left=0.02)
     # remove useless row dendrogram
     cg.ax_row_dendrogram.set_visible(False)
+    # and remove the space created for it
+    wr = cg.gs.get_width_ratios()
+    wr[0] = 0.05
+    wr[1] = 0.02
+    cg.gs.set_width_ratios(wr)
+    # reduce whitespace
+    cg.gs.update(bottom=0.02, top=0.98, left=0.02)
+
     cg.ax_heatmap.yaxis.label.set_visible(False)
     cg.ax_heatmap.xaxis.label.set_visible(False)
     if show_gene_labels:
@@ -196,6 +203,10 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_nano_heatmap" % STUDY.lower()
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Northcott heatmap
     cg = plot_clustermap(
@@ -208,6 +219,10 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_ncott_heatmap" % STUDY.lower()
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Global (n_genes) heatmap
     cg = plot_clustermap(
@@ -218,6 +233,10 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_top%d_heatmap" % (STUDY.lower(), n_genes)
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # integrate the Zhao data
     # only keep common genes BUT use the same MAD genes as before
@@ -251,6 +270,10 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_zhao_nano_heatmap" % STUDY.lower()
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     cg = plot_clustermap(
         expr_int_ncot,
@@ -262,6 +285,10 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_zhao_ncott_heatmap" % STUDY.lower()
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     cg = plot_clustermap(
         X_int,
@@ -271,3 +298,7 @@ if __name__ == '__main__':
         z_score=0,
         xticklabels=False,
     )
+    ttl = "%s_zhao_top%d_heatmap" % (STUDY.lower(), n_genes)
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
