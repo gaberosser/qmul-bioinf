@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from load_data import microarray_data, rnaseq_data
@@ -15,15 +16,22 @@ def plot_clustermap(dat, show_gene_labels=False, **kwargs):
         dat,
         **kwargs
     )
+    # check whether x ticks were requested - if so, rotate and raise the bottom of the axes
+    if kwargs.get('xticklabels', False):
+        plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)
+        bottom = 0.1
+
+    else:
+        bottom = 0.02
     # remove useless row dendrogram
     cg.ax_row_dendrogram.set_visible(False)
     # and remove the space created for it
     wr = cg.gs.get_width_ratios()
-    wr[0] = 0.05
+    wr[0] = 0.035
     wr[1] = 0.02
     cg.gs.set_width_ratios(wr)
     # reduce whitespace
-    cg.gs.update(bottom=0.02, top=0.98, left=0.02)
+    cg.gs.update(bottom=bottom, top=0.98, left=0.02)
 
     cg.ax_heatmap.yaxis.label.set_visible(False)
     cg.ax_heatmap.xaxis.label.set_visible(False)
@@ -38,12 +46,57 @@ def plot_clustermap(dat, show_gene_labels=False, **kwargs):
     return cg
 
 
+def show_dendrogram_cut(clustermap, dist, axis=1):
+    """
+    Add a dashed line to the specified dendrogram showing the cutoff point
+    :param clustermap:
+    :param dist:
+    :param axis: 0 (row) or 1 (column)
+    :return:
+    """
+    if axis not in (0, 1):
+        raise ValueError("Valid choices for `axis` are (0, 1).")
+
+    if axis == 0:
+        dend = clustermap.dendrogram_row
+        ax = clustermap.ax_row_dendrogram
+    else:
+        dend = clustermap.dendrogram_col
+        ax = clustermap.ax_col_dendrogram
+
+    xmin = np.array(dend.independent_coord).min()
+    xmax = np.array(dend.independent_coord).max()
+    rng = xmax - xmin
+
+    plot_kwargs = dict(
+        linestyle='--',
+        color='k',
+        alpha=0.3
+    )
+
+    if axis == 0:
+        ax.plot(
+            [dist, dist],
+            [xmin - 0.1 * rng, xmax + 0.1 * rng],
+            **plot_kwargs
+        )
+    else:
+        ax.plot(
+            [xmin - 0.1 * rng, xmax + 0.1 * rng],
+            [dist, dist],
+            **plot_kwargs
+        )
+
+
+
 if __name__ == '__main__':
     SAVE_FIG = True
     geneset = consts.NORTHCOTT_GENES
     show_gene_labels = False
     n_genes = 1500
     AGGR_METHOD = 'max_std'
+    # Z_SCORE = 0  # normalise gene expression levels by rows
+    Z_SCORE = 1  # normalise gene expr levels by patient
 
     all_nstring = []
     [all_nstring.extend(t) for _, t in consts.NANOSTRING_GENES]
@@ -65,7 +118,11 @@ if __name__ == '__main__':
     meta = meta.loc[meta.subgroup.isin(['WNT', 'SHH', 'G3', 'G4'])]
     meta.subgroup = meta.subgroup.str.replace('G3', 'Group C')
     meta.subgroup = meta.subgroup.str.replace('G4', 'Group D')
+    meta.loc[:, 'study'] = STUDY
     data = data.loc[:, meta.index]
+    if 'EYS' in data.index:
+        idx = data.index.str.replace('EYS', 'EGFL11')
+        data.index = idx
 
     # Kool
     # STUDY = 'Kool'
@@ -107,7 +164,6 @@ if __name__ == '__main__':
     # data_zhao = data_zhao.loc[:, zhao_sample_names]
     # meta_zhao = meta_zhao.loc[zhao_sample_names, :]
     # data_zhao = microarray_data.annotate_and_aggregate_gse28192(data_zhao, aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
-
 
     # pare down zhao meta
     meta_zhao.loc[:, 'northcott classification'] = meta_zhao.loc[:, 'northcott classification'].str.replace('C', 'Group C')
@@ -200,7 +256,7 @@ if __name__ == '__main__':
         col_colors=col_colors,
         row_cluster=None,
         col_linkage=z,
-        z_score=0,
+        z_score=Z_SCORE,
         xticklabels=False,
     )
     ttl = "%s_nano_heatmap" % STUDY.lower()
@@ -216,7 +272,7 @@ if __name__ == '__main__':
         col_colors=col_colors,
         row_cluster=None,
         col_linkage=z,
-        z_score=0,
+        z_score=Z_SCORE,
         xticklabels=False,
     )
     ttl = "%s_ncott_heatmap" % STUDY.lower()
@@ -247,8 +303,8 @@ if __name__ == '__main__':
         axis=1
     )
     X_int = data_int.loc[top_genes]
-    expr_int_nano = data_int.loc[g_nano]
-    expr_int_ncot = data_int.loc[g_ncot]
+    expr_int_nano = data_int.loc[g_nano].dropna()
+    expr_int_ncot = data_int.loc[g_ncot].dropna()
 
     z_int = hierarchy.linkage(X_int.transpose(), method='average', metric='correlation')
 
@@ -259,6 +315,56 @@ if __name__ == '__main__':
     for cls in colour_cycle:
         col_colors_int.loc[meta_int.subgroup == cls, 'labelled'] = colour_cycle[cls]
 
+    # these are misleading, because the heatmap doesn't show the data used for clustering
+    # cg = plot_clustermap(
+    #     expr_int_nano,
+    #     show_gene_labels=True,
+    #     cmap='RdBu_r',
+    #     row_colors=row_colors_nano,
+    #     row_cluster=None,
+    #     col_colors=col_colors_int,
+    #     col_linkage=z_int,
+    #     z_score=Z_SCORE,
+    #     xticklabels=False,
+    # )
+    # ttl = "%s_zhao_nano_heatmap" % STUDY.lower()
+    # cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    # cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    #
+    # cg = plot_clustermap(
+    #     expr_int_ncot,
+    #     cmap='RdBu_r',
+    #     row_colors=row_colors_ncot,
+    #     row_cluster=None,
+    #     col_colors=col_colors_int,
+    #     col_linkage=z_int,
+    #     z_score=Z_SCORE,
+    #     xticklabels=False,
+    # )
+    # ttl = "%s_zhao_ncott_heatmap" % STUDY.lower()
+    # cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    # cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+
+    cg = plot_clustermap(
+        X_int,
+        cmap='RdBu_r',
+        col_colors=col_colors_int,
+        col_linkage=z_int,
+        z_score=Z_SCORE,
+        xticklabels=True,
+    )
+    # add dashed line to show cutoff
+    show_dendrogram_cut(cg, 0.55, axis=1)
+    ttl = "%s_zhao_top%d_heatmap" % (STUDY.lower(), n_genes)
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+
+    # try clustering with only Ncott or Nano
+    z_int_nano = hierarchy.linkage(expr_int_nano.transpose(), method='average', metric='correlation')
+
     cg = plot_clustermap(
         expr_int_nano,
         show_gene_labels=True,
@@ -266,39 +372,32 @@ if __name__ == '__main__':
         row_colors=row_colors_nano,
         row_cluster=None,
         col_colors=col_colors_int,
-        col_linkage=z_int,
-        z_score=0,
-        xticklabels=False,
+        col_linkage=z_int_nano,
+        z_score=Z_SCORE,
+        xticklabels=True,
     )
-    ttl = "%s_zhao_nano_heatmap" % STUDY.lower()
+    # add dashed line to show cutoff
+    show_dendrogram_cut(cg, 0.5, axis=1)
+    ttl = "%s_zhao_ncott_heatmap_cluster_by_nano" % STUDY.lower()
     cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
     cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
     cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+
+    z_int_ncot = hierarchy.linkage(expr_int_ncot.transpose(), method='average', metric='correlation')
 
     cg = plot_clustermap(
         expr_int_ncot,
         cmap='RdBu_r',
-        row_colors=row_colors_ncot,
         row_cluster=None,
         col_colors=col_colors_int,
-        col_linkage=z_int,
-        z_score=0,
-        xticklabels=False,
+        col_linkage=z_int_ncot,
+        z_score=Z_SCORE,
+        xticklabels=True,
     )
-    ttl = "%s_zhao_ncott_heatmap" % STUDY.lower()
+    # add dashed line to show cutoff
+    show_dendrogram_cut(cg, 0.5, axis=1)
+    ttl = "%s_zhao_ncott_heatmap_cluster_by_ncot" % STUDY.lower()
     cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
     cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
     cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
-    cg = plot_clustermap(
-        X_int,
-        cmap='RdBu_r',
-        col_colors=col_colors_int,
-        col_linkage=z_int,
-        z_score=0,
-        xticklabels=False,
-    )
-    ttl = "%s_zhao_top%d_heatmap" % (STUDY.lower(), n_genes)
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
