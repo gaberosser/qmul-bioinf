@@ -244,7 +244,20 @@ class NearestCentroidClassifier(object):
         return self.confusion_matrix(self.data, self.labels)
 
 
-def run_validation(deltas, train_data, train_labels, test_data, test_labels, **kwargs):
+def run_validation(deltas, train_data, train_labels, test_data=None, test_labels=None, **kwargs):
+    """
+    :param test_data, test_labels: If provided, these are the data and labels for the validation set. Either both or
+    neither must be provided. If None, only the training data are used for reporting.
+    """
+    b_test = True
+    if test_data is None:
+        if test_labels is not None:
+            raise ValueError("Must provide either both or neither of test_data and test_labels")
+        else:
+            b_test = False
+    elif test_labels is None:
+        raise ValueError("Must provide either both or neither of test_data and test_labels")
+
     n_err_test = pd.Series(index=deltas)
     n_err_train = pd.Series(index=deltas)
     clas = pd.Series(index=deltas)
@@ -252,15 +265,19 @@ def run_validation(deltas, train_data, train_labels, test_data, test_labels, **k
     for d in deltas:
         obj.shrink_centroids(d)
         try:
-            c, nc, ni = obj.assess_test_data(test_data, true_labels=test_labels)
-            n_err_test.loc[d] = ni
-            clas.loc[d] = c.values
+            if b_test:
+                c, nc, ni = obj.assess_test_data(test_data, true_labels=test_labels)
+                n_err_test.loc[d] = ni
+                clas.loc[d] = c.values
             _, nc, ni = obj.assess_training_data()
             n_err_train.loc[d] = ni
         except ValueError:
             # no more features
             continue
-    return n_err_train, n_err_test, clas
+    if b_test:
+        return n_err_train, n_err_test, clas
+    else:
+        return n_err_train
 
 
 if __name__ == '__main__':
