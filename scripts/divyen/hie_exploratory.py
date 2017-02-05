@@ -4,6 +4,9 @@ from settings import DATA_DIR
 from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy as np
+from scripts.output import unique_output_dir
+from sklearn.decomposition import PCA
+
 
 BIOMARKERS = [
     'Hb',
@@ -28,6 +31,8 @@ OUTCOME_COL = 'Outcome'
 
 
 if __name__ == "__main__":
+    outdir = unique_output_dir("hie_results", reuse_empty=True)
+
     fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
     dat = pd.read_csv(fn, header=0, na_values='-', index_col=0)
     biomarkers = dat.loc[:, (
@@ -82,7 +87,8 @@ if __name__ == "__main__":
         ax.set_title(ttls[i])
 
     fig.subplots_adjust(left=0.05, right=0.99)
-    plt.show()
+    fig.savefig(os.path.join(outdir, 'box_whisker_basic.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'box_whisker_basic.pdf'))
 
     jitter = 0.2
     fig, axs = plt.subplots(nrows=1, ncols=len(BIOMARKER_PEAK_COLS) + len(BIOMARKER_TROUGH_COLS), sharex=True,
@@ -121,7 +127,70 @@ if __name__ == "__main__":
             ylim[0] = 0.
             ax.set_ylim(ylim)
     fig.subplots_adjust(left=0.02, right=0.99, wspace=0.4)
+    fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.pdf'))
 
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
+        ttl = c.lower().replace(' ', '_')
+        ax.cla()
+
+        fav = dat.loc[dat.Outcome == 'favourable', c].values
+        unfav = dat.loc[dat.Outcome == 'unfavourable', c].values
+
+        fav_age = dat.loc[dat.Outcome == 'favourable', "%s age" % c].values
+        unfav_age = dat.loc[dat.Outcome == 'unfavourable', "%s age" % c].values
+
+        ax.scatter(fav_age, fav, c='b', label='Fav')
+        ax.scatter(unfav_age, unfav, c='g', label='Unfav')
+        ax.set_title(c)
+
+        ax.set_xlabel("Age (hours)")
+        ax.set_ylabel(c)
+
+        fig.savefig(os.path.join(outdir, "scatter_marker_%s_vs_age.png" % ttl), dpi=200)
+        fig.savefig(os.path.join(outdir, "scatter_marker_%s_vs_age.pdf" % ttl))
 
     # TODO: scatterplots of peak/trough vs age for each variable, coloured by outcome
     # TODO: add statistical significance of difference between groups in boxplot
+
+    # PCA
+
+    X = peaks_dat.copy()
+    from sklearn.preprocessing import Imputer
+    imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
+    imp.fit(X)
+    X = imp.transform(X)
+
+    pca = PCA(n_components=10)
+    pca.fit(X)
+    y = pca.transform(X)
+
+    fav_idx = np.where(dat.Outcome=='favourable')[0]
+    unfav_idx = np.where(dat.Outcome=='unfavourable')[0]
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    ax.scatter(y[fav_idx, 0], y[fav_idx, 1], c='b')
+    ax.scatter(y[unfav_idx, 0], y[unfav_idx, 1], c='g')
+
+    from sklearn.linear_model import LogisticRegression
+    logistic = LogisticRegression(C=1e5)  # what is C?
+    inferred = []
+
+    for i in range(1000):
+
+        idx_shuffle = np.random.permutation(X.shape[0])
+        cutoff = int(X.shape[0] * 0.9)
+        idx_train = idx_shuffle[:cutoff]
+        idx_test = idx_shuffle[cutoff:]
+        X_train = X[idx_train, :]
+        y_train = dat.Outcome.values[idx_train]
+        X_test = X[idx_test, :]
+        y_test = dat.Outcome.values[idx_test]
+
+        logistic.fit(X_train, y_train)
+        y_test_inf = logistic.predict(X_test)
+
+        inferred.append(y_test_inf)
