@@ -37,20 +37,22 @@ if __name__ == "__main__":
         + BIOMARKER_TROUGH_AGE_COLS
         + [OUTCOME_COL]
     )]
-    # the dropna functionality in seaborn is not implemented correctly, so we cannot pass the raw data in
-    # standardize
+
+    # standardize - necessary when using array plots to keep the range the same
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
     bm_peaks = peaks_dat.subtract(peaks_dat.mean(axis=0), axis=1).divide(peaks_dat.std(axis=0), axis=1)
     bm_peaks = pd.concat((bm_peaks, dat.loc[:, OUTCOME_COL]), axis=1)
     bm_peaks.columns = bm_peaks.columns.str.replace(' peak', '')
 
-    hist_kws = {'range': (-2, 6)}
-    g = sns.pairplot(bm_peaks, hue='Outcome', diag_kws=hist_kws)
-    for ax in g.fig.get_axes():
-        ax.set_xticks([])
-        ax.set_yticks([])
-    g.fig.subplots_adjust(left=0.04, bottom=0.04)
-    g.fig.legends[0].set_visible(False)
+    if False:
+        # we need to set the range so that the hist function doesn't complain about NaNs
+        hist_kws = {'range': (-2, 6)}
+        g = sns.pairplot(bm_peaks, hue='Outcome', diag_kws=hist_kws)
+        for ax in g.fig.get_axes():
+            ax.set_xticks([])
+            ax.set_yticks([])
+        g.fig.subplots_adjust(left=0.04, bottom=0.04)
+        g.fig.legends[0].set_visible(False)
 
 
     from scripts.mb_subgroup_classifier.shrunken_centroids import run_validation, NearestCentroidClassifier
@@ -81,3 +83,45 @@ if __name__ == "__main__":
 
     fig.subplots_adjust(left=0.05, right=0.99)
     plt.show()
+
+    jitter = 0.2
+    fig, axs = plt.subplots(nrows=1, ncols=len(BIOMARKER_PEAK_COLS) + len(BIOMARKER_TROUGH_COLS), sharex=True,
+                            figsize=(15, 5))
+    for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
+        ax = axs[i]
+
+        # # extract data for scatterplot
+        # fav = dat.loc[dat.Outcome == 'favourable', c].values
+        # unfav = dat.loc[dat.Outcome == 'unfavourable', c].values
+        # scat = np.zeros((len(fav) + len(unfav), 3))
+        #
+        # # add peak age
+        # fav_age = dat.loc[dat.Outcome == 'favourable', "%s age" % c].values
+        # unfav_age = dat.loc[dat.Outcome == 'unfavourable', "%s age" % c].values
+        #
+        #
+        # scat[:len(fav), 0] = np.random.normal(scale=jitter, size=len(fav))
+        # scat[:len(fav), 1] = fav
+        # scat[:len(fav), 2] = fav_age
+        # scat[len(fav):, 0] = np.random.normal(loc=1, scale=jitter, size=len(unfav))
+        # scat[len(fav):, 1] = unfav
+        # scat[len(fav):, 2] = unfav_age
+
+        sns.boxplot(data=dat.loc[:, [c, 'Outcome']], x='Outcome', y=c, ax=ax)
+        sns.swarmplot(data=dat.loc[:, [c, 'Outcome']], x='Outcome', y=c, ax=ax)
+
+        # ax.scatter(scat[:, 0], scat[:, 1], c=scat[:, 2], cmap='RdBu')
+
+        ax.xaxis.label.set_visible(False)
+        ax.yaxis.label.set_visible(False)
+        ax.set_title(c)
+        ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
+        ylim = list(ax.get_ylim())
+        if ylim[0] < 0:
+            ylim[0] = 0.
+            ax.set_ylim(ylim)
+    fig.subplots_adjust(left=0.02, right=0.99, wspace=0.4)
+
+
+    # TODO: scatterplots of peak/trough vs age for each variable, coloured by outcome
+    # TODO: add statistical significance of difference between groups in boxplot
