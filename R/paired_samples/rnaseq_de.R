@@ -17,23 +17,39 @@ rep.row<-function(x,n){
   matrix(rep(x,each=n),nrow=n)
 }
 
-volcano <- function(res, padj.threshold=1e-10, log2fc.threshold=5, xlim=NULL, label.field=NULL, title=NULL) {
+get_de_genes <- function(res, p.col="padj", p.threshold=1e-10, log2fc.threshold=5) {
+  # we'll always need to avoid NAs
+  na_idx = !is.na(res[[p.col]])
+  subres <- res[res[[p.col]] < p.threshold & abs(res$log2FoldChange) > log2fc.threshold & na_idx,]
+  return(subres)
+}
+
+volcano <- function(res, p.col="padj", p.threshold=1e-10, log2fc.threshold=5, xlim=NULL, label.field=NULL, title=NULL) {
   
   # Make a basic volcano plot
-  with(
-    res, 
-    plot(log2FoldChange, -log10(padj), pch=20, main=title, xlim=xlim)
-  )
+  plot(res$log2FoldChange, -log10(res[[p.col]]), pch=20, main=title, xlim=xlim)
   
+  # we'll always need to avoid NAs
+  na_idx = !is.na(res[[p.col]])
+
   # Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
-  with(subset(res, padj < padj.threshold ), points(log2FoldChange, -log10(padj), pch=20, col="red"))
-  with(subset(res, abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="orange"))
-  with(subset(res, padj < padj.threshold & abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="green"))
+  subres <- res[res[[p.col]] < p.threshold & na_idx,]
+  points(subres$log2FoldChange, -log10(subres[[p.col]]), pch=20, col="red")
+  
+  subres <- res[abs(res$log2FoldChange) > log2fc.threshold & na_idx,]
+  points(subres$log2FoldChange, -log10(subres[[p.col]]), pch=20, col="orange")
+  
+  subres <- res[res[[p.col]] < p.threshold & abs(res$log2FoldChange) > log2fc.threshold & na_idx,]
+  points(subres$log2FoldChange, -log10(subres[[p.col]]), pch=20, col="green", cex=1.1)
+  
+  # with(subset(res, padj < p.threshold ), points(log2FoldChange, -log10(padj), pch=20, col="red"))
+  # with(subset(res, abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="orange"))
+  # with(subset(res, padj < p.threshold & abs(log2FoldChange) > log2fc.threshold), points(log2FoldChange, -log10(padj), pch=20, col="green"))
   
   if (!is.null(label.field)) {
     # Label points with the textxy function from the calibrate plot
-    c <- res[ (!is.na(res$padj) & res$padj < padj.threshold & abs(res$log2FoldChange) > log2fc.threshold), ]
-    textxy(c$log2FoldChange, -log10(c$padj), labs=c[[label.field]], cex=.8)
+    c <- res[na_idx & res[[p.col]] < p.threshold & abs(res$log2FoldChange) > log2fc.threshold,]
+    textxy(c$log2FoldChange, -log10(c[[p.col]]), labs=c[[label.field]], cex=.8)
   }
   
 }
@@ -153,7 +169,7 @@ if (FALSE) {
 }
 
 # heatmap of expression of 30 most DE genes
-# mostDE <- rownames(des.2)[1:30]
+mostDE <- rownames(des.2)[1:30]
 # get var stab transform using the original dispersion estimates to speed things up
 vsd <- varianceStabilizingTransformation(dds.2, blind=FALSE)
 grouping <- meta[, c("type", "disease_subgroup")]
@@ -167,9 +183,47 @@ volcano(des.3, label.field = "gene_symbol", xlim=c(-15, 15), title="MES cohort G
 mostDE <- rownames(des.3)[1:30]
 pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation_col = grouping, labels_row = des.3[mostDE, "gene_symbol"])
 
+# test 4: individual GBM vs iNSC for RTK I
+# add parent ID to meta
+parent.id <- sub('.*(0[1-9]+).*', '\\1', rownames(meta))
+meta$parent <- parent.id
+meta$groupb <- factor(paste(meta$type, meta$parent))
+
+dds.3 <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~groupb)
+dds.3 <- DESeq(dds.3)
+
+patient_comparison <- function(patient.id="018") {
+  des = results(dds.3, contrast = c("groupb", paste0("GBM ", patient.id), paste0("iNSC ", patient.id)))
+  des = des[order(abs(des$log2FoldChange), decreasing = T),]
+  des <- des[!is.na(des$log2FoldChange),]
+  des$gene_symbol <- ens.map[rownames(des), 1]
+  des <- des[!is.na(des$gene_symbol),]
+}
+
+des.018 <- patient_comparison(patient.id="018")
+
+
+des.018 = results(dds.3, contrast = c("groupb", "GBM 018", "iNSC 018"))
+des.018 = des.018[order(abs(des.018$log2FoldChange), decreasing = T),]
+des.018 <- des.018[!is.na(des.018$log2FoldChange),]
+des.018$gene_symbol <- ens.map[rownames(des.018), 1]
+des.018 <- des.018[!is.na(des.018$gene_symbol),]
+
+des.019 = results(dds.3, contrast = c("groupb", "GBM 019", "iNSC 019"))
+des.019 = des.4[order(des.019$padj),]
+des.019$gene_symbol <- ens.map[rownames(des.019), 1]
+
+des.026 = results(dds.3, contrast = c("groupb", "GBM 026", "iNSC 026"))
+des.026 = des.4[order(des.026$padj),]
+des.026$gene_symbol <- ens.map[rownames(des.026), 1]
+
+des.031 = results(dds.3, contrast = c("groupb", "GBM 031", "iNSC 031"))
+des.031 = des.4[order(des.031$padj),]
+des.031$gene_symbol <- ens.map[rownames(des.031), 1]
+
 # test 4: (GBM RTK I vs paired iNSC) vs (GBM MES vs paired iNSC)
 # THIS IS POINTLESS but shows how to run this kind of contrast test
-des.4 <- results(
-  dds.2, 
-  contrast = list(c("groupGBM.RTK.I", "groupiNSC.RTK.I"), c("groupGBM.MES", "groupiNSC.MES"))
-)
+# des.4 <- results(
+  # dds.2, 
+  # contrast = list(c("groupGBM.RTK.I", "groupiNSC.RTK.I"), c("groupGBM.MES", "groupiNSC.MES"))
+# )

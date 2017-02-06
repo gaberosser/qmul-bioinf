@@ -28,9 +28,9 @@ if __name__ == "__main__":
         fc_args = [
             '-p',  # paired end
             '-B',  # only count read pairs that are both successfully aligned
-            '-P',  # Check validity of paired-end distance
-            '-d', '50',  # Minimum template length
-            '-D', '600',  # Maximum template length
+            # '-P',  # Check validity of paired-end distance
+            # '-d', '50',  # Minimum template length
+            # '-D', '600',  # Maximum template length
             '-s', '2',  # Reverse-stranded
             '-T', '12',  # Parallel threads
         ]
