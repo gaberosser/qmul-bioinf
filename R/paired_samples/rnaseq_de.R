@@ -201,6 +201,7 @@ patient_comparison <- function(patient.id="018") {
 }
 
 des.018 <- patient_comparison(patient.id="018")
+de.res <- get_de_genes(des.018, p.threshold = 0.01, log2fc.threshold = 3, p.col='pvalue')
 
 
 des.018 = results(dds.3, contrast = c("groupb", "GBM 018", "iNSC 018"))

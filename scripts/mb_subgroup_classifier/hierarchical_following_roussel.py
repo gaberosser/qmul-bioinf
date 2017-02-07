@@ -151,19 +151,20 @@ if __name__ == '__main__':
         'ICb1595-I',
         'ICb1595-III',
     )
-    data_zhao, meta_zhao = microarray_data.load_annotated_gse28192(
-        sample_names=zhao_sample_names,
-        log2=True,
-        aggr_field='SYMBOL',
-        aggr_method=AGGR_METHOD
-    )
     # data_zhao, meta_zhao = microarray_data.load_annotated_gse28192(
     #     sample_names=zhao_sample_names,
+    #     log2=True,
+    #     aggr_field='SYMBOL',
+    #     aggr_method=AGGR_METHOD
     # )
-    # data_zhao = process.variance_stabilizing_transform(data_zhao)
-    # data_zhao = data_zhao.loc[:, zhao_sample_names]
-    # meta_zhao = meta_zhao.loc[zhao_sample_names, :]
-    # data_zhao = microarray_data.annotate_and_aggregate_gse28192(data_zhao, aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
+    data_zhao, meta_zhao = microarray_data.load_annotated_gse28192(
+        sample_names=zhao_sample_names,
+        log2=False
+    )
+    data_zhao = process.variance_stabilizing_transform(data_zhao)
+    data_zhao = data_zhao.loc[:, zhao_sample_names]
+    meta_zhao = meta_zhao.loc[zhao_sample_names, :]
+    data_zhao = microarray_data.annotate_and_aggregate_gse28192(data_zhao, aggr_field='SYMBOL', aggr_method=AGGR_METHOD)
 
     # pare down zhao meta
     meta_zhao.loc[:, 'northcott classification'] = meta_zhao.loc[:, 'northcott classification'].str.replace('C', 'Group C')
@@ -260,9 +261,10 @@ if __name__ == '__main__':
         xticklabels=False,
     )
     ttl = "%s_nano_heatmap" % STUDY.lower()
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Northcott heatmap
     cg = plot_clustermap(
@@ -276,9 +278,10 @@ if __name__ == '__main__':
         xticklabels=False,
     )
     ttl = "%s_ncott_heatmap" % STUDY.lower()
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Global (n_genes) heatmap
     cg = plot_clustermap(
@@ -290,9 +293,10 @@ if __name__ == '__main__':
         xticklabels=False,
     )
     ttl = "%s_top%d_heatmap" % (STUDY.lower(), n_genes)
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # integrate the Zhao data
     # only keep common genes BUT use the same MAD genes as before
@@ -315,37 +319,6 @@ if __name__ == '__main__':
     for cls in colour_cycle:
         col_colors_int.loc[meta_int.subgroup == cls, 'labelled'] = colour_cycle[cls]
 
-    # these are misleading, because the heatmap doesn't show the data used for clustering
-    # cg = plot_clustermap(
-    #     expr_int_nano,
-    #     show_gene_labels=True,
-    #     cmap='RdBu_r',
-    #     row_colors=row_colors_nano,
-    #     row_cluster=None,
-    #     col_colors=col_colors_int,
-    #     col_linkage=z_int,
-    #     z_score=Z_SCORE,
-    #     xticklabels=False,
-    # )
-    # ttl = "%s_zhao_nano_heatmap" % STUDY.lower()
-    # cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    # cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
-    #
-    # cg = plot_clustermap(
-    #     expr_int_ncot,
-    #     cmap='RdBu_r',
-    #     row_colors=row_colors_ncot,
-    #     row_cluster=None,
-    #     col_colors=col_colors_int,
-    #     col_linkage=z_int,
-    #     z_score=Z_SCORE,
-    #     xticklabels=False,
-    # )
-    # ttl = "%s_zhao_ncott_heatmap" % STUDY.lower()
-    # cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    # cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     cg = plot_clustermap(
         X_int,
@@ -358,9 +331,10 @@ if __name__ == '__main__':
     # add dashed line to show cutoff
     show_dendrogram_cut(cg, 0.55, axis=1)
     ttl = "%s_zhao_top%d_heatmap" % (STUDY.lower(), n_genes)
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # try clustering with only Ncott or Nano
     z_int_nano = hierarchy.linkage(expr_int_nano.transpose(), method='average', metric='correlation')
@@ -379,9 +353,10 @@ if __name__ == '__main__':
     # add dashed line to show cutoff
     show_dendrogram_cut(cg, 0.5, axis=1)
     ttl = "%s_zhao_ncott_heatmap_cluster_by_nano" % STUDY.lower()
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     z_int_ncot = hierarchy.linkage(expr_int_ncot.transpose(), method='average', metric='correlation')
 
@@ -397,7 +372,12 @@ if __name__ == '__main__':
     # add dashed line to show cutoff
     show_dendrogram_cut(cg, 0.5, axis=1)
     ttl = "%s_zhao_ncott_heatmap_cluster_by_ncot" % STUDY.lower()
-    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
+
+    # load RNA-Seq count data
+    from scripts.mb_subgroup_classifier.load import load_xz_rnaseq
+    xz_expr = load_xz_rnaseq(kind='cuff', yugene=False, gene_symbols=common_genes)
