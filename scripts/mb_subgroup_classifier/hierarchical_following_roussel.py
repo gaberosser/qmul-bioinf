@@ -11,7 +11,12 @@ from scripts.output import unique_output_dir
 import os
 
 
-def plot_clustermap(dat, show_gene_labels=False, **kwargs):
+def plot_clustermap(
+        dat,
+        show_gene_labels=False,
+        **kwargs
+):
+
     cg = sns.clustermap(
         dat,
         **kwargs
@@ -43,16 +48,18 @@ def plot_clustermap(dat, show_gene_labels=False, **kwargs):
         )
     else:
         cg.ax_heatmap.yaxis.set_ticklabels([])
+
     return cg
 
 
-def show_dendrogram_cut(clustermap, dist, axis=1):
+def show_dendrogram_cut_by_distance(clustermap, dist, axis=1):
     """
-    Add a dashed line to the specified dendrogram showing the cutoff point
+    Add a dashed line to the specified dendrogram showing the cutoff point.
+    The line is specified by distance
     :param clustermap:
     :param dist:
     :param axis: 0 (row) or 1 (column)
-    :return:
+    :return: None
     """
     if axis not in (0, 1):
         raise ValueError("Valid choices for `axis` are (0, 1).")
@@ -87,6 +94,54 @@ def show_dendrogram_cut(clustermap, dist, axis=1):
             **plot_kwargs
         )
 
+
+def show_dendrogram_cut_by_nclust(clustermap, nclust, axis=1, sample_subset_idx=None):
+    """
+    Add a dashed line to the specified dendrogram showing the cutoff point.
+    The line is specified by the desired final number of clusters
+    :param clustermap:
+    :param nclust: The final number of clusters required. The distance is computed using this.
+    :param axis: 0 (row) or 1 (column)
+    :param sample_subset_idx: If supplied, this is a list of indices pointing to the samples that we should use. In this
+    case, the distance is computed at the point where _only those leaf nodes_ have formed nclust clusters.
+    :return: None
+    """
+    if axis == 0:
+        dend = clustermap.dendrogram_row
+    else:
+        dend = clustermap.dendrogram_col
+    z = dend.linkage
+
+    if sample_subset_idx is None:
+        # take the mean distance between the nclust-1 and nclust levels
+        dist = z[-nclust:(2 - nclust), 2].mean()
+    else:
+
+        # call the distance based on a fixed number of clusters DEFINED FOR A SUBSET OF NODES
+        node_ids = set(sample_subset_idx)
+        n = len(z) + 1
+        cutoff_idx = None
+        # loop through linkage rows, keeping track of the specified leaf nodes
+        for i, (l0, l1) in enumerate(z[:, :2]):
+            l0 = int(l0)
+            l1 = int(l1)
+            if l0 in node_ids:
+                node_ids.remove(l0)
+                node_ids.add(n + i)
+            if l1 in node_ids:
+                node_ids.remove(l1)
+                # fine to do this twice since we are working with a set
+                node_ids.add(n + i)
+            if len(node_ids) == (nclust - 1):
+                cutoff_idx = i
+                break
+        if cutoff_idx is None:
+            raise ValueError("Failed to compute the requested cluster distance")
+        dist = z[cutoff_idx - 1:cutoff_idx + 1, 2].mean()
+
+    show_dendrogram_cut_by_distance(clustermap, dist, axis=axis)
+
+    return dist
 
 
 if __name__ == '__main__':
@@ -182,9 +237,6 @@ if __name__ == '__main__':
 
     X = data.loc[top_genes]
 
-    # unsupervised hierarchical clustering
-    z = hierarchy.linkage(X.transpose(), method='average', metric='correlation')
-
     # plot: key gene expression plus clustering
     alternatives = {
         'EGFL11': 'EYS'
@@ -238,17 +290,20 @@ if __name__ == '__main__':
     row_colors_ncot = pd.Series(rc_ncot, index=g_ncot, name='')
 
     # now we assume that 4 clusters have been found and use those for colours
-    lbl = hierarchy.fcluster(z, 4, criterion='maxclust')
-
     col_colors = pd.DataFrame(index=X.columns, columns=['inferred', 'labelled'])
-    col_colors.loc[lbl == 1, 'inferred'] = '#000000'
-    col_colors.loc[lbl == 2, 'inferred'] = '#a5a5a5'
-    col_colors.loc[lbl == 3, 'inferred'] = '#6d6d6d'
-    col_colors.loc[lbl == 4, 'inferred'] = '#dbdbdb'
     for cls in colour_cycle:
         col_colors.loc[meta.subgroup == cls, 'labelled'] = colour_cycle[cls]
 
+    # unsupervised hierarchical clustering
+
     # Nanostring heatmap
+    z_nano = hierarchy.linkage(expr_nano.transpose(), method='average', metric='correlation')
+    lbl_nano = hierarchy.fcluster(z_nano, 4, criterion='maxclust')
+    col_colors.loc[lbl_nano == 1, 'inferred'] = '#000000'
+    col_colors.loc[lbl_nano == 2, 'inferred'] = '#a5a5a5'
+    col_colors.loc[lbl_nano == 3, 'inferred'] = '#6d6d6d'
+    col_colors.loc[lbl_nano == 4, 'inferred'] = '#dbdbdb'
+
     cg = plot_clustermap(
         expr_nano,
         show_gene_labels=True,
@@ -256,10 +311,11 @@ if __name__ == '__main__':
         row_colors=row_colors_nano,
         col_colors=col_colors,
         row_cluster=None,
-        col_linkage=z,
+        col_linkage=z_nano,
         z_score=Z_SCORE,
         xticklabels=False,
     )
+    cut_dist_nano = show_dendrogram_cut_by_nclust(cg, 4)
     ttl = "%s_nano_heatmap" % STUDY.lower()
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
@@ -267,16 +323,24 @@ if __name__ == '__main__':
         cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Northcott heatmap
+    z_ncot = hierarchy.linkage(expr_ncot.transpose(), method='average', metric='correlation')
+    lbl_ncot = hierarchy.fcluster(z_ncot, 4, criterion='maxclust')
+    col_colors.loc[lbl_ncot == 1, 'inferred'] = '#000000'
+    col_colors.loc[lbl_ncot == 2, 'inferred'] = '#a5a5a5'
+    col_colors.loc[lbl_ncot == 3, 'inferred'] = '#6d6d6d'
+    col_colors.loc[lbl_ncot == 4, 'inferred'] = '#dbdbdb'
+
     cg = plot_clustermap(
         expr_ncot,
         cmap='RdBu_r',
         row_colors=row_colors_ncot,
         col_colors=col_colors,
         row_cluster=None,
-        col_linkage=z,
+        col_linkage=z_ncot,
         z_score=Z_SCORE,
         xticklabels=False,
     )
+    cut_dist_ncot = show_dendrogram_cut_by_nclust(cg, 4)
     ttl = "%s_ncott_heatmap" % STUDY.lower()
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
@@ -284,19 +348,26 @@ if __name__ == '__main__':
         cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # Global (n_genes) heatmap
+    z_all = hierarchy.linkage(X.transpose(), method='average', metric='correlation')
+    lbl_all = hierarchy.fcluster(z_all, 4, criterion='maxclust')
+    col_colors.loc[lbl_all == 1, 'inferred'] = '#000000'
+    col_colors.loc[lbl_all == 2, 'inferred'] = '#a5a5a5'
+    col_colors.loc[lbl_all == 3, 'inferred'] = '#6d6d6d'
+    col_colors.loc[lbl_all == 4, 'inferred'] = '#dbdbdb'
     cg = plot_clustermap(
         X,
         cmap='RdBu_r',
         col_colors=col_colors,
-        col_linkage=z,
+        col_linkage=z_all,
         z_score=0,
         xticklabels=False,
     )
+    cut_dist_all = show_dendrogram_cut_by_nclust(cg, 4)
     ttl = "%s_top%d_heatmap" % (STUDY.lower(), n_genes)
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
         cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+        # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))  # slow due to large number of cells
 
     # integrate the Zhao data
     # only keep common genes BUT use the same MAD genes as before
@@ -312,13 +383,15 @@ if __name__ == '__main__':
 
     z_int = hierarchy.linkage(X_int.transpose(), method='average', metric='correlation')
 
+    # maintain a list of original saple IDs for distance computation in clustering
+    sample_idx = np.where(meta_int.index.str.startswith('GSM'))[0]
+
     col_colors_int = pd.DataFrame(index=data_int.columns, columns=['study', 'labelled'])
 
     col_colors_int.loc[meta_int.study == STUDY] = '#dbdbdb'
     col_colors_int.loc[meta_int.study == 'Zhao'] = '#000000'
     for cls in colour_cycle:
         col_colors_int.loc[meta_int.subgroup == cls, 'labelled'] = colour_cycle[cls]
-
 
     cg = plot_clustermap(
         X_int,
@@ -329,12 +402,14 @@ if __name__ == '__main__':
         xticklabels=True,
     )
     # add dashed line to show cutoff
-    show_dendrogram_cut(cg, 0.55, axis=1)
+    show_dendrogram_cut_by_nclust(cg, 4, sample_subset_idx=sample_idx)
+    # show_dendrogram_cut_by_distance(cg, cut_dist_all, axis=1)
+    # show_dendrogram_cut_by_distance(cg, 0.55, axis=1)
     ttl = "%s_zhao_top%d_heatmap" % (STUDY.lower(), n_genes)
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
         cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
-        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+        # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl)) # slow due to large number of cells
 
     # try clustering with only Ncott or Nano
     z_int_nano = hierarchy.linkage(expr_int_nano.transpose(), method='average', metric='correlation')
@@ -351,7 +426,12 @@ if __name__ == '__main__':
         xticklabels=True,
     )
     # add dashed line to show cutoff
-    show_dendrogram_cut(cg, 0.5, axis=1)
+
+    # try a new approach - call the distance based on a fixed number of clusters DEFINED FOR A SUBSET OF NODES
+    show_dendrogram_cut_by_nclust(cg, 4, sample_subset_idx=sample_idx)
+    # show_dendrogram_cut_by_distance(cg, cut_dist_nano, axis=1)
+    # show_dendrogram_cut_by_distance(cg, 0.5, axis=1)
+
     ttl = "%s_zhao_ncott_heatmap_cluster_by_nano" % STUDY.lower()
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
@@ -370,7 +450,9 @@ if __name__ == '__main__':
         xticklabels=True,
     )
     # add dashed line to show cutoff
-    show_dendrogram_cut(cg, 0.5, axis=1)
+    show_dendrogram_cut_by_nclust(cg, 4, sample_subset_idx=sample_idx)
+    # show_dendrogram_cut_by_distance(cg, cut_dist_ncot, axis=1)
+    # show_dendrogram_cut_by_distance(cg, 0.5, axis=1)
     ttl = "%s_zhao_ncott_heatmap_cluster_by_ncot" % STUDY.lower()
     if SAVE_FIG:
         cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
@@ -380,4 +462,92 @@ if __name__ == '__main__':
 
     # load RNA-Seq count data
     from scripts.mb_subgroup_classifier.load import load_xz_rnaseq
-    xz_expr = load_xz_rnaseq(kind='cuff', yugene=False, gene_symbols=common_genes)
+    xz_expr = load_xz_rnaseq(kind='cuff', yugene=False).fillna(0.)
+
+    # variance stabilising transform
+    xz_vst = process.variance_stabilizing_transform(xz_expr)
+
+    # integrate (dropping genes that have missing values)
+    data_int = pd.concat(
+        (data, data_zhao, xz_vst),
+        axis=1
+    ).dropna(axis=0)
+    meta_xz = pd.DataFrame(index=xz_expr.columns, columns=['study', 'subgroup'])
+    meta_xz.loc[:, 'study'] = 'Zhang'
+    meta_xz.loc[:, 'subgroup'] = 'Group D'
+
+    meta_int = pd.concat(
+        (meta, mz, meta_xz),
+        axis=0
+    )
+
+    col_colors_int = pd.DataFrame(index=data_int.columns, columns=['study', 'labelled'])
+
+    col_colors_int.loc[meta_int.study == STUDY] = '#cccccc'
+    col_colors_int.loc[meta_int.study == 'Zhao'] = '#000000'
+    col_colors_int.loc[meta_int.study == 'Zhang'] = '#666666'
+    for cls in colour_cycle:
+        col_colors_int.loc[meta_int.subgroup == cls, 'labelled'] = colour_cycle[cls]
+
+    X_int = data_int.loc[top_genes].dropna()
+    expr_int_nano = data_int.loc[g_nano].dropna()
+    expr_int_ncot = data_int.loc[g_ncot].dropna()
+
+    z_int = hierarchy.linkage(X_int.transpose(), method='average', metric='correlation')
+
+    cg = plot_clustermap(
+        X_int,
+        cmap='RdBu_r',
+        col_colors=col_colors_int,
+        col_linkage=z_int,
+        z_score=Z_SCORE,
+        xticklabels=True,
+    )
+    # add dashed line to show cutoff
+    show_dendrogram_cut_by_distance(cg, cut_dist_all, axis=1)  # 0.55
+    ttl = "%s_zhao_xz_top%d_heatmap" % (STUDY.lower(), n_genes)
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        # cg.savefig(os.path.join(outdir, "%s.pdf" % ttl)) # slow due to large number of cells
+
+    # try clustering with only Ncott or Nano
+    z_int_nano = hierarchy.linkage(expr_int_nano.transpose(), method='average', metric='correlation')
+
+    cg = plot_clustermap(
+        expr_int_nano,
+        show_gene_labels=True,
+        cmap='RdBu_r',
+        row_colors=row_colors_nano,
+        row_cluster=None,
+        col_colors=col_colors_int,
+        col_linkage=z_int_nano,
+        z_score=Z_SCORE,
+        xticklabels=True,
+    )
+    # add dashed line to show cutoff
+    show_dendrogram_cut_by_distance(cg, cut_dist_nano, axis=1)  # 0.5
+    ttl = "%s_zhao_xz_ncott_heatmap_cluster_by_nano" % STUDY.lower()
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
+
+    z_int_ncot = hierarchy.linkage(expr_int_ncot.transpose(), method='average', metric='correlation')
+
+    cg = plot_clustermap(
+        expr_int_ncot,
+        cmap='RdBu_r',
+        row_cluster=None,
+        col_colors=col_colors_int,
+        col_linkage=z_int_ncot,
+        z_score=Z_SCORE,
+        xticklabels=True,
+    )
+    # add dashed line to show cutoff
+    show_dendrogram_cut_by_distance(cg, cut_dist_ncot, axis=1)  # 0.5
+    ttl = "%s_zhao_xz_ncott_heatmap_cluster_by_ncot" % STUDY.lower()
+    if SAVE_FIG:
+        cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+        cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))
