@@ -7,6 +7,7 @@ library(calibrate)
 library("pheatmap")
 
 source('io/microarray.R')
+source('io/output.R')
 source('_settings.R')
 
 rep.col<-function(x,n){
@@ -130,6 +131,9 @@ dat.fpkm <- dat.fpkm / rep.row(nreads[[1]], nrow(dat))
 dat.tpm <- dat / rep.col(l[[1]], ncol(dat))
 dat.tpm <- dat.tpm / rep.row(colSums(dat.tpm), nrow(dat)) * 1e6
 
+# output directory
+out.subdir <- getOutputDir("deseq2")
+
 # test 1: GBM (all) vs iNSC (all)
 
 dds.1 <- DESeqDataSetFromMatrix(countData = as.matrix(dat), colData = meta, design=~type + disease_subgroup)
@@ -139,11 +143,13 @@ des.1 = results(dds.1, contrast=c("type", "GBM", "iNSC"))
 des.1 = des.1[order(des.1$padj),]
 # add gene symbol column
 des.1$gene_symbol <- ens.map[rownames(des.1), 1]
+# save
+write.csv(des.1, file=file.path(out.subdir, "GBM_vs_iNSC_all.csv"))
 
 # volcano plot
 padj.threshold <- 1e-10
 log2fc.threshold <- 5
-volcano(des.1, label.field = "gene_symbol", xlim=c(-15, 15))
+volcano(des.1, label.field = "gene_symbol", xlim=c(-15, 15), title="GBM (all) vs iNSC (all)")
 
 # test 2: GBM vs iNSC (RTK I)
 
@@ -157,6 +163,8 @@ des.2 = results(dds.2, contrast = c("group", "GBM RTK I", "iNSC RTK I"))
 des.2 = des.2[order(des.2$padj),]
 # add gene symbol column
 des.2$gene_symbol <- ens.map[rownames(des.2), 1]
+# save
+write.csv(des.2, file=file.path(out.subdir, "GBM_vs_iNSC_rtki.csv"))
 
 volcano(des.2, label.field = "gene_symbol", xlim=c(-15, 15), title="RTK I cohort GBM vs iNSC")
 
@@ -179,6 +187,9 @@ pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation
 des.3 <- results(dds.2, contrast = c("group", "GBM MES", "iNSC MES"))
 des.3 <- des.3[order(des.3$padj),]
 des.3$gene_symbol <- ens.map[rownames(des.3), 1]
+# save
+write.csv(des.3, file=file.path(out.subdir, "GBM_vs_iNSC_mes.csv"))
+
 volcano(des.3, label.field = "gene_symbol", xlim=c(-15, 15), title="MES cohort GBM vs iNSC")
 mostDE <- rownames(des.3)[1:30]
 pheatmap(assay(vsd)[mostDE,], cluster_rows=FALSE, cluster_cols=FALSE, annotation_col = grouping, labels_row = des.3[mostDE, "gene_symbol"])
@@ -201,7 +212,14 @@ patient_comparison <- function(patient.id="018") {
 }
 
 des.018 <- patient_comparison(patient.id="018")
-de.res <- get_de_genes(des.018, p.threshold = 0.01, log2fc.threshold = 3, p.col='pvalue')
+write.csv(des.018, file=file.path(out.subdir, "GBM_vs_iNSC_018.csv"))
+des.019 <- patient_comparison(patient.id="019")
+write.csv(des.019, file=file.path(out.subdir, "GBM_vs_iNSC_019.csv"))
+des.026 <- patient_comparison(patient.id="026")
+write.csv(des.026, file=file.path(out.subdir, "GBM_vs_iNSC_026.csv"))
+des.031 <- patient_comparison(patient.id="031")
+write.csv(des.031, file=file.path(out.subdir, "GBM_vs_iNSC_031.csv"))
+
 
 
 des.018 = results(dds.3, contrast = c("groupb", "GBM 018", "iNSC 018"))

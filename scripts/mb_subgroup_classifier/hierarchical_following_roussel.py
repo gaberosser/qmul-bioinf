@@ -249,13 +249,15 @@ if __name__ == '__main__':
     # RNA-Seq count data (FPKM): 1299 late passage
     data_xz = load_xz_rnaseq(kind='cuff', yugene=False).fillna(0.)
     if not INCLUDE_ALL_1299:
-        # restrict to control samples
+        # restrict to single control sample
         data_xz = data_xz.loc[:, ['Scramble.1', 'Scramble.2']]
-    idx = data_xz.columns.str.replace(r'BMI1_CHD7', 'BC')
-    idx = idx.str.replace(r'BMI1', 'B')
-    idx = idx.str.replace(r'CHD7', 'C')
-    idx = idx.str.replace(r'Scramble', 'Ctrl')
-    data_xz.columns = idx
+        data_xz.columns = ['Zhang 1299', 'Zhang 1299 (rpt)']
+    else:
+        idx = data_xz.columns.str.replace(r'BMI1_CHD7', 'BC')
+        idx = idx.str.replace(r'BMI1', 'B')
+        idx = idx.str.replace(r'CHD7', 'C')
+        idx = idx.str.replace(r'Scramble', 'Ctrl')
+        data_xz.columns = idx
     data_xz = np.log2(data_xz + 1.)
     meta_xz = pd.DataFrame(index=data_xz.columns, columns=['study', 'subgroup'])
     meta_xz.loc[:, 'study'] = 'Zhang'
