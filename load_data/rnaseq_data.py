@@ -172,6 +172,28 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
     )
 
 
+def gbm_astrocyte_nsc_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    samples = (
+        'DURA018N2_NSC',
+        'DURA019N8C_NSC',
+        'DURA018N2_ASTRO_DAY12',
+        'DURA019N8C_ASTRO_DAY12',
+    )
+    return featurecounts(
+        count_files,
+        metafiles,
+        samples=samples,
+        units=units,
+        annotate_by=annotate_by,
+        annotation_type=annotation_type
+    )
+
+
 def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
@@ -191,3 +213,18 @@ def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein
         annotate_by=annotate_by,
         annotation_type=annotation_type
     )
+
+
+def brainrnaseq_preprocessed():
+    """
+    Load the pre-processed results from www.brainrnaseq.org
+    These are in units of FPKM, annotated by gene. Annoyingly, the gene symbols are for mouse.
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    infile = os.path.join(indir, 'fpkm', 'fpkm.csv')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0)
+    data = pd.read_csv(infile, header=0, index_col=0)
+
+    return data, meta
