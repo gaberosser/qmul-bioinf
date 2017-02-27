@@ -75,7 +75,7 @@ def htseqcounts(
         if len(sample_names) != len(count_files):
             raise ValueError("Length of sample_names does not equal the length of count_files")
     else:
-        sample_names = count_files
+        sample_names = [os.path.basename(t) for t in count_files]
 
     dat = pd.DataFrame()
     for sn, fn in zip(sample_names, count_files):

@@ -87,5 +87,7 @@ def the_main_code_body():
 
     print "Completed all jobs in %.2f seconds" % (time.time() - tic_all)
 
+    return my_results
+
 if __name__ == "__main__":
-    the_main_code_body()
+    my_results = the_main_code_body()
