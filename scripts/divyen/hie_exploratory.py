@@ -1,12 +1,13 @@
-import pandas as pd
 import os
-from settings import DATA_DIR
-from matplotlib import pyplot as plt
-import seaborn as sns
+
 import numpy as np
-from scripts.output import unique_output_dir
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 
+from settings import DATA_DIR
+from utils.output import unique_output_dir
 
 BIOMARKERS = [
     'Hb',
@@ -60,7 +61,8 @@ if __name__ == "__main__":
         g.fig.legends[0].set_visible(False)
 
 
-    from scripts.mb_subgroup_classifier.shrunken_centroids import run_validation, NearestCentroidClassifier
+    from scripts.mb_subgroup_classifier.shrunken_centroids import run_validation
+
     deltas = np.linspace(0., 1.5, 30)
     # use all for training
     training_data = bm_peaks.loc[:, bm_peaks.columns.difference(['Outcome'])].transpose()

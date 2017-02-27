@@ -1,20 +1,16 @@
-from scripts.mb_subgroup_classifier.shrunken_centroids import NearestCentroidClassifier
 import numpy as np
 import pandas as pd
-from load_data import microarray_data, rnaseq_data, allen_human_brain_atlas
-from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
+from matplotlib import pyplot as plt
+
+from load_data import microarray_data
 from microarray import process
 from plotting import bar
-import collections
-import operator
-import log
-from matplotlib import pyplot as plt
-from matplotlib import cm
-import seaborn as sns
+from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
+from scripts.mb_subgroup_classifier.shrunken_centroids import NearestCentroidClassifier
+from utils import log
 
 logger = log.get_console_logger(__name__)
 
-import multiprocessing as mp
 from scripts.comparison_rnaseq_microarray import consts
 
 # define shrinkage delta values

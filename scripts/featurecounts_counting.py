@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-import subprocess
 import os
-import sys
 import re
-import csv
-from gzip import GzipFile
-from log import get_file_logger, get_console_logger
+import subprocess
+import sys
+sys.path.append(os.path.dirname(__file__) + '/..')
+
+
+from utils.log import get_file_logger, get_console_logger
+
 logger = get_console_logger(__name__)
 
 

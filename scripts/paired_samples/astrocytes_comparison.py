@@ -1,14 +1,14 @@
-from load_data import rnaseq_data
-import pandas as pd
-import numpy as np
-from matplotlib import pyplot as plt
-import re
 import os
-from microarray import process
-from scipy.cluster import hierarchy
-from scripts.output import unique_output_dir
-import seaborn as sns
+import re
 
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+from scipy.cluster import hierarchy
+
+from load_data import rnaseq_data
+from microarray import process
+from utils.output import unique_output_dir
 
 if __name__ == "__main__":
     N_GENES = 1500

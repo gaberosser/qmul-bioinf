@@ -1,9 +1,11 @@
-from settings import DATA_DIR
-import os
-import pandas as pd
-from log import get_console_logger
-from microarray.process import aggregate_by_probe_set
 import multiprocessing as mp
+import os
+
+import pandas as pd
+
+from microarray.process import aggregate_by_probe_set
+from settings import DATA_DIR
+from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
 BASE_DIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas')

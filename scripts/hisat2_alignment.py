@@ -1,15 +1,25 @@
 #!/usr/bin/env python
-import subprocess
 import os
-import sys
 import re
-import csv
+import subprocess
+import sys
+
+sys.path.append(os.path.dirname(__file__) + '/..')
+
 from gzip import GzipFile
-from Bio import SeqIO
-from log import get_file_logger, get_console_logger
+
 import numpy as np
-from StringIO import StringIO
+from Bio import SeqIO
+
+from utils.log import get_file_logger, get_console_logger
+
 logger = get_console_logger(__name__)
+
+"""
+If we want to use cufflinks after this, need to use --dta-cufflinks to add splicing tags.
+Not sure how this affects the alignment, though?
+"""
+
 
 HISAT_CMD = 'hisat2'
 
@@ -50,6 +60,8 @@ if __name__ == "__main__":
     """
     Usage: hisat2_alignment.py path_to_reads path_to_bt2 path_to_output passed_to_hisat2
     """
+    # sys.path.append(os.get)
+
     read_dir = sys.argv[1]
     ref_fn = sys.argv[2]
     out_dir = sys.argv[3]
@@ -66,13 +78,13 @@ if __name__ == "__main__":
     logger = get_file_logger(__name__, log_fn)
     
     # fastq.gz file discovery
-    rr = re.compile(r'\.fastq\.gz$', flags=re.IGNORECASE)
+    rr = re.compile(r'\.fastq(\.gz)?$', flags=re.IGNORECASE)
     flist = [t for t in os.listdir(read_dir) if re.search(rr, t)]
     # check for existing output and identify pairs of files
     fl = {}
     for t in flist:
-        base = re.sub(r'_[12]\.fastq\.gz', '', t)
-        read_num = int(re.sub(r'\.fastq\.gz', '', t)[-1])
+        base = re.sub(r'_[12]\.fastq(\.gz)?', '', t)
+        read_num = int(re.sub(r'\.fastq(\.gz)?', '', t)[-1])
         sam_out = os.path.join(out_dir, "%s.sam" % base)
         # if SAM output file exists, log warning and skip
         if os.path.isfile(sam_out):
@@ -115,22 +127,25 @@ if __name__ == "__main__":
 
         # convert to BAM and delete the original SAM
         cmd = ['samtools', 'view', '--threads', '8', '-b', d['sam_out']]
-        bam_out = re.sub(r'\.sam$', '\.bam', d['sam_out'])
+        bam_out = re.sub(r'\.sam$', '.bam', d['sam_out'])
         logger.info("Converting %s -> %s", d['sam_out'], bam_out)
-        with open(bam_out, 'wb') as stdout:
-            logger.info("%s", ' '.join(cmd))
-            try:
+        try:
+            with open(bam_out, 'wb') as stdout:
+                logger.info("%s", ' '.join(cmd))
                 subprocess.call(cmd, stdout=stdout)
-            except Exception as exc:
-                logger.exception("Conversion failed.")
-        logger.info("Conversion complete.")
+            logger.info("Conversion complete.")
+            conversion_pass = True
+        except Exception as exc:
+            logger.exception("Conversion failed.")
+            conversion_pass = False
 
         # delete SAM file
-        cmd = ['rm', d['sam_out']]
-        logger.info("Deleting original SAM file %s", d['sam_out'])
-        try:
-            subprocess.call(cmd)
-        except Exception as exc:
-            logger.exception("Deletion failed.")
+        if conversion_pass:
+            cmd = ['rm', d['sam_out']]
+            logger.info("Deleting original SAM file %s", d['sam_out'])
+            try:
+                subprocess.call(cmd)
+            except Exception as exc:
+                logger.exception("Deletion failed.")
 
         logger.info("All complete")

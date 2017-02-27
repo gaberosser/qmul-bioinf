@@ -1,11 +1,14 @@
 import os
-import pandas as pd
-import numpy as np
-from microarray import process
-from settings import DATA_DIR, DATA_DIR_NON_GIT
 import re
 from gzip import GzipFile
-from log import get_console_logger
+
+import numpy as np
+import pandas as pd
+
+from microarray import process
+from settings import DATA_DIR, DATA_DIR_NON_GIT
+from utils.log import get_console_logger
+
 logger = get_console_logger(__name__)
 
 

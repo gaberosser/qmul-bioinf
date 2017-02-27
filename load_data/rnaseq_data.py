@@ -11,6 +11,87 @@ INDEX_FIELDS = (
 )
 
 
+def annotate(
+    res,
+    annotate_by='all',
+    annotation_type='protein_coding',
+):
+    """
+    Annotate the supplied dataframe
+    :param res: The dataframe to annotate
+    :param annotate_by: If supplied, convert the index (initially Ensembl ID) to the requested annotation.
+    If 'all' add all supported annotations.
+    If None, add no extra annotations.
+    :param annotation_type: Passed on to the `type` variable of the conversion table loader
+    """
+    if annotate_by is not None:
+        # load genenames data for annotation
+        df = references.conversion_table(type=annotation_type)
+        df.set_index('Ensembl Gene ID', inplace=True)
+
+        if annotate_by == 'all':
+            annot = df.loc[res.index.intersection(df.index), ['Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs']]
+        else:
+            annot = df.loc[res.index.intersection(df.index), annotate_by]
+
+        # add annotation columns
+        res = pd.concat((res, annot), axis=1)
+
+        # if one annotation was requested, set that as the index
+        if annotate_by != 'all':
+            # drop any rows that do not have an annotation
+            res.dropna(axis=0, subset=[annotate_by], inplace=True)
+            # set index
+            res.set_index(annotate_by, inplace=True)
+    return res
+
+
+def htseqcounts(
+        count_files,
+        sample_names=None,
+        metafile=None,
+        units='counts',
+        annotate_by='all',
+        annotation_type='protein_coding',
+):
+    """
+    Generic loader for htseq-count data
+    :param count_files: Iterable containing paths to the count files
+    :param sample_names: Iterable of same length as count_files containing the sample names. If missing, the
+    filename is used.
+    :param metafile: Path to the metadata; optional
+    :param units: One of 'counts', 'fpkm', 'tpm'
+    :param annotate_by: If supplied, convert the index (initially Ensembl ID) to the requested annotation.
+    If 'all' add all supported annotations.
+    If None, add no extra annotations.
+    :param annotation_type: Passed on to the `type` variable of the conversion table loader
+    :return:
+    """
+    ## TODO: units other than counts not supported at present
+    if units not in ('counts',):
+        raise ValueError("Unsupported units requested.")
+
+    if sample_names is not None:
+        if len(sample_names) != len(count_files):
+            raise ValueError("Length of sample_names does not equal the length of count_files")
+    else:
+        sample_names = count_files
+
+    dat = pd.DataFrame()
+    for sn, fn in zip(sample_names, count_files):
+        t = pd.read_csv(fn, sep='\t', index_col=0, header=None).iloc[:, 0]
+        dat.loc[:, sn] = t
+
+    dat = annotate(dat, annotate_by=annotate_by, annotation_type=annotation_type)
+
+    if metafile is not None:
+        meta = pd.read_csv(metafile, header=0, index_col=0)
+        return dat, meta
+    else:
+        return dat
+
+
+
 def gse83696(index_by='Ensembl Gene ID'):
     """
     Data are initially indexed by Ensembl ID. Coversion is carried out using HGNC data, if required.
@@ -116,32 +197,8 @@ def featurecounts(
         rpk = res.divide(lengths, axis=0)
         res = rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
 
-    if annotate_by is None:
-        return res, meta
-    else:
-        # load genenames data for annotation
-        df = references.conversion_table(type=annotation_type)
-        df.set_index('Ensembl Gene ID', inplace=True)
-
-        if annotate_by == 'all':
-            annot = df.loc[res.index.intersection(df.index), ['Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs']]
-        else:
-            annot = df.loc[res.index.intersection(df.index), annotate_by]
-        # take a record of the columns first
-        # cols = res.columns
-
-        # add annotation columns
-        res = pd.concat((res, annot), axis=1)
-
-        # if one annotation was requested, set that as the index
-        if annotate_by != 'all':
-            # drop any rows that do not have an annotation
-            res.dropna(axis=0, subset=[annotate_by], inplace=True)
-            # set index
-            res.set_index(annotate_by, inplace=True)
-            # res = res.loc[:, cols]
-
-        return res, meta
+    res = annotate(res, annotate_by=annotate_by, annotation_type=annotation_type)
+    return res, meta
 
 
 def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):

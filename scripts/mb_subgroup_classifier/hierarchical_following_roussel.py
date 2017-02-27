@@ -1,15 +1,17 @@
-import pandas as pd
+import collections
+import os
+
 import numpy as np
-from matplotlib import pyplot as plt
+import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
+from scipy.cluster import hierarchy
+
 from load_data import microarray_data, rnaseq_data
 from microarray import process
-from scipy.cluster import hierarchy
 from scripts.comparison_rnaseq_microarray import consts
 from scripts.mb_subgroup_classifier.load import load_xz_rnaseq
-import collections
-from scripts.output import unique_output_dir
-import os
+from utils.output import unique_output_dir
 
 
 def plot_clustermap(

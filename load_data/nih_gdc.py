@@ -1,10 +1,10 @@
-import requests
-from urlparse import urljoin
-import json
-from log import get_file_logger
-import pandas as pd
 import os
-from scripts.output import unique_output_dir
+from urlparse import urljoin
+
+import requests
+
+from utils.log import get_file_logger
+from utils.output import unique_output_dir
 
 API_ROOT = 'https://gdc-api.nci.nih.gov/'
 FILES_ENDPOINT = urljoin(API_ROOT, 'files/')

@@ -1,7 +1,9 @@
-import pandas as pd
-import numpy as np
 import uuid
-from log import get_console_logger
+
+import numpy as np
+import pandas as pd
+
+from utils.log import get_console_logger
 
 
 def median_absolute_deviation(data, axis=1):

@@ -1,9 +1,11 @@
-import requests
 import os
+
+import requests
 from bs4 import BeautifulSoup
 
 from settings import DATA_DIR_NON_GIT
-from log import get_console_logger
+from utils.log import get_console_logger
+
 logger = get_console_logger(__name__)
 
 

@@ -1,14 +1,14 @@
+import collections
+
 import numpy as np
 import pandas as pd
-from load_data import microarray_data, rnaseq_data, allen_human_brain_atlas
-from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
+from matplotlib import pyplot as plt
+
+from load_data import microarray_data
 from microarray import process
 from plotting import heatmap, utils
-import collections
-import operator
-import log
-from matplotlib import pyplot as plt
-import seaborn as sns
+from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
+from utils import log
 
 logger = log.get_console_logger(__name__)
 
@@ -281,8 +281,6 @@ def run_validation(deltas, train_data, train_labels, test_data=None, test_labels
 
 
 if __name__ == '__main__':
-    from settings import DATA_DIR
-    import os
     import multiprocessing as mp
     from scripts.comparison_rnaseq_microarray import consts
 
