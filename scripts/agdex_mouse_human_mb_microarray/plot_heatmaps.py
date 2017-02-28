@@ -3,11 +3,14 @@ from plotting import heatmap
 import pandas as pd
 from references import known_genes
 from load_data import microarray_data
+from utils.output import unique_output_dir
 from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table
 from scripts.comparison_rnaseq_microarray.consts import NORTHCOTT_GENEID, NORTHCOTT_GENEID_MAP
 from microarray import process
 import os
 import numpy as np
+import seaborn as sns
+from scipy.cluster import hierarchy
 
 
 def mo_entrez_to_symbol(data, kg):
@@ -17,28 +20,63 @@ def mo_entrez_to_symbol(data, kg):
     return data_sym
 
 
+def plot_clustermap(
+        dat,
+        show_gene_labels=False,
+        **kwargs
+):
+
+    cg = sns.clustermap(
+        dat,
+        **kwargs
+    )
+    # check whether x ticks were requested - if so, rotate and raise the bottom of the axes
+    if kwargs.get('xticklabels', False):
+        plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)
+        bottom = 0.1
+
+    else:
+        bottom = 0.02
+    # remove useless row dendrogram
+    cg.ax_row_dendrogram.set_visible(False)
+    # and remove the space created for it
+    wr = cg.gs.get_width_ratios()
+    wr[0] = 0.035
+    wr[1] = 0.02
+    cg.gs.set_width_ratios(wr)
+    # reduce whitespace
+    cg.gs.update(bottom=bottom, top=0.98, left=0.02)
+
+    cg.ax_heatmap.yaxis.label.set_visible(False)
+    cg.ax_heatmap.xaxis.label.set_visible(False)
+    if show_gene_labels:
+        plt.setp(
+            cg.ax_heatmap.yaxis.get_ticklabels(),
+            rotation=0,
+            fontsize=14
+        )
+    else:
+        cg.ax_heatmap.yaxis.set_ticklabels([])
+
+    return cg
+
+
 if __name__ == '__main__':
 
-    SAVE_PLOTS = False
+    SAVE_PLOTS = True
 
     if SAVE_PLOTS:
-        OUTDIR = 'mouse_ncott_ge.0'
-        i = 1
-        while os.path.exists(OUTDIR):
-            OUTDIR = 'mouse_ncott_ge.%d' % i
-            i += 1
-        print "Creating temp output dir %s" % OUTDIR
-        os.makedirs(OUTDIR)
+        OUTDIR = unique_output_dir('mouse_ncott_ge')
 
     # ID <-> symbol translation
     df = known_genes(tax_id=10090)
     id_to_sym = df.loc[:, ['GeneID', 'Symbol']].set_index('GeneID').dropna()
 
     # load healthy mouse cerebellum data
-    mo_he = microarray_data.load_annotated_microarray_gse54650()  # indexed by Entrez gene ID
+    mo_he, meta_he = microarray_data.load_annotated_microarray_gse54650(aggr_field='ENTREZID', aggr_method='max_std')  # indexed by Entrez gene ID
 
     # load mouse MB data
-    mo_mb, chd7 = microarray_data.load_annotated_microarray_sb_data()  # indexed by Entrez gene ID
+    mo_mb, chd7 = microarray_data.load_annotated_microarray_sb_data(aggr_method='max_std')  # indexed by Entrez gene ID
 
     # reduce to common genes
     common_genes = mo_he.index.intersection(mo_mb.index)
@@ -98,6 +136,7 @@ if __name__ == '__main__':
 
     # standardise
     mo_all_sym_n = mo_all_sym.subtract(mo_he_sym.mean(axis=1), axis=0).divide(mo_he_sym.std(axis=1), axis=0)
+    # mo_all_sym_n = mo_all_sym.subtract(mo_all_sym.mean(axis=1), axis=0).divide(mo_all_sym.std(axis=1), axis=0)
     mo_all_sym_yg = process.yugene_transform(mo_all_sym)
 
     # distribution of all intensities
@@ -137,27 +176,76 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_standardised.png"), dpi=200)
         fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_standardised.pdf"))
 
-        if SAVE_PLOTS:
-            # Plot: Mouse SB vs healthy circadian cerebellum, all Ncott genes
-            fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
-                ncott_genesym_mo,
-                mo_all_sym_yg,
-                vmax=1.,
-                vmin=0.,
-                cbar=True,
-                orientation='vertical',
-                fig_kwargs={'figsize': [7, 11]},
-                heatmap_kwargs={'square': False},
-                gs_kwargs={'left': 0.25}
-            )
-            # reduce y label font size
-            for ax in axs:
-                plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
-            # add dividing lines
-            xbreaks = [3, 8]
-            for ax in axs:
-                for t in xbreaks:
-                    ax.axvline(t, color='w', linewidth=2.5)
-                    ax.axvline(t, color='0.4', linewidth=1.)
-            fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_yg.png"), dpi=200)
-            fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_yg.pdf"))
+    if SAVE_PLOTS:
+        # Plot: Mouse SB vs healthy circadian cerebellum, all Ncott genes
+        fig, axs, cax, gs = heatmap.grouped_expression_heatmap(
+            ncott_genesym_mo,
+            mo_all_sym_yg,
+            vmax=1.,
+            vmin=0.,
+            cbar=True,
+            orientation='vertical',
+            fig_kwargs={'figsize': [7, 11]},
+            heatmap_kwargs={'square': False},
+            gs_kwargs={'left': 0.25}
+        )
+        # reduce y label font size
+        for ax in axs:
+            plt.setp(ax.yaxis.get_ticklabels(), fontsize=8.5)
+        # add dividing lines
+        xbreaks = [3, 8]
+        for ax in axs:
+            for t in xbreaks:
+                ax.axvline(t, color='w', linewidth=2.5)
+                ax.axvline(t, color='0.4', linewidth=1.)
+        fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_yg.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "marr_sb-circad_ncott_homol_yg.pdf"))
+
+    # plot: clustered heatmap, Ncott + hkeeping only
+    gg = []
+    for _, arr in ncott_genesym_mo:
+        gg.extend(arr)
+    mo_ncott_sym = mo_all_sym.loc[gg]
+    z = hierarchy.linkage(mo_ncott_sym.transpose(), method='average', metric='correlation')
+
+    col_colors = pd.DataFrame(index=mo_ncott_sym.columns, columns=['chd7_status',])
+    cluster_colours = {
+        -1: '#000000',
+        0: '#a5a5a5',
+        1: '#dbdbdb',
+    }
+
+    a = np.zeros(len(chd7))
+    a[chd7] = 1
+    a = np.concatenate((a, -np.ones(meta_he.shape[0])))
+
+    col_colors.loc[:, 'chd7_status'] = [cluster_colours.get(t) for t in a]
+
+    cg = plot_clustermap(
+        mo_ncott_sym,
+        cmap='RdBu_r',
+        col_colors=col_colors,
+        col_linkage=z,
+        z_score=0,
+        xticklabels=True,
+        show_gene_labels=True,
+        row_cluster=None,
+    )
+    plt.setp(cg.ax_heatmap.yaxis.get_ticklabels(), fontsize=7)
+    if SAVE_PLOTS:
+        cg.savefig(os.path.join(OUTDIR, "clustermap_ncott.png"), dpi=200)
+        cg.savefig(os.path.join(OUTDIR, "clustermap_ncott.pdf"))
+
+    mo_ncott_sym_yg = mo_all_sym_yg.loc[gg]
+    z_yg = hierarchy.linkage(mo_ncott_sym_yg.transpose(), method='average', metric='correlation')
+
+    cg = plot_clustermap(
+        mo_ncott_sym_yg,
+        cmap='RdBu_r',
+        col_colors=col_colors,
+        col_linkage=z_yg,
+        z_score=0,
+        xticklabels=True,
+        show_gene_labels=True
+    )
+    plt.setp(cg.ax_heatmap.yaxis.get_ticklabels(), fontsize=7)

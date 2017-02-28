@@ -152,25 +152,6 @@ dubuc_sb_screen <- function(by.gene = T) {
 }
 
 
-gse54650 <- function() {
-  pre_saved.file = file.path(data.dir, 'microarray_GSE54650', 'expr.rma.median_entrez_id.rds')
-  if (file.exists(pre_saved.file)) {
-    expr <- readRDS(pre_saved.file)
-  } else {
-    library(mogene10sttranscriptcluster.db)
-    in.dir = file.path(data.dir, 'microarray_GSE54650', 'raw')
-    expr <- annotated_expr_from_celdir(
-      in.dir, 
-      annotlib = mogene10sttranscriptcluster.db, 
-      gzipped = T, 
-      strip.title = '_MoGene1.0ST.CEL.gz')
-    saveRDS(expr, pre_saved.file)
-  }
-  
-  return(expr)
-}
-
-
 load_microarray_data_from_raw <- function(in.dir, annotlib, aggr.by = NULL, aggr.method = 'median', strip.title = '.CEL.gz', gzipped = T) {
   fn <- preprocessed_filename(aggr.by = aggr.by, aggr.method = aggr.method)
   pre_saved.file = file.path(in.dir, fn)
@@ -358,3 +339,47 @@ gse33199 <- function(aggr.by = NULL, aggr.method = 'median') {
   return(list(expr=expr, meta=meta))
 }
 
+# gse54650 <- function() {
+#   pre_saved.file = file.path(data.dir, 'microarray_GSE54650', 'expr.rma.median_entrez_id.rds')
+#   if (file.exists(pre_saved.file)) {
+#     expr <- readRDS(pre_saved.file)
+#   } else {
+#     library(mogene10sttranscriptcluster.db)
+#     in.dir = file.path(data.dir, 'microarray_GSE54650', 'raw')
+#     expr <- annotated_expr_from_celdir(
+#       in.dir, 
+#       annotlib = mogene10sttranscriptcluster.db, 
+#       gzipped = T, 
+#       strip.title = '_MoGene1.0ST.CEL.gz')
+#     saveRDS(expr, pre_saved.file)
+#   }
+#   
+#   return(expr)
+# }
+
+gse54650 <- function(aggr.by = NULL, aggr.method = 'median') {
+  library(mogene10sttranscriptcluster.db)
+  in.dir <- file.path(data.dir, 'microarray_GSE54650')
+  
+  expr <- load_microarray_data_from_raw(
+    in.dir = in.dir,
+    annotlib = mogene10sttranscriptcluster.db,
+    aggr.by = aggr.by,
+    aggr.method = aggr.method,
+    gzipped = T,
+    strip.title = '_MoGene1.0ST.CEL.gz')
+  
+  # load meta
+  meta.file = file.path(in.dir, 'sources.csv')
+  meta <- read.csv(meta.file, header=1, row.names = 1)
+  # rownames(meta) <- sapply(rownames(meta), function(x) sub('_', '.', x))
+  
+  # arrange so they are sorted in the same order
+  if (!is.null(aggr.by)) {
+    expr <- expr[, rownames(meta)]
+  } else {
+    expr <- expr[, c(rownames(meta), 'SYMBOL', 'ENTREZID', 'ENSEMBL')]
+  }
+  
+  return(list(expr=expr, meta=meta))
+}

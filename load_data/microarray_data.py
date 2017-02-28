@@ -138,43 +138,6 @@ def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None
     return arr, meta
 
 
-def load_annotated_microarray_gse54650(index_field='entrez_id'):
-    """
-    Circadian study (24 timepoints) in mouse cerebellum tissue.
-    :param index_field:
-    :return:
-    """
-    infile = os.path.join(DATA_DIR, 'microarray_GSE54650', 'data.ann.txt.gz')
-
-    sample_names = [
-        'Cer_CT18',
-        'Cer_CT20',
-        'Cer_CT22',
-        'Cer_CT24',
-        'Cer_CT26',
-        'Cer_CT28',
-        'Cer_CT30',
-        'Cer_CT32',
-        'Cer_CT34',
-        'Cer_CT36',
-        'Cer_CT38',
-        'Cer_CT40',
-        'Cer_CT42',
-        'Cer_CT44',
-        'Cer_CT46',
-        'Cer_CT48',
-        'Cer_CT50',
-        'Cer_CT52',
-        'Cer_CT54',
-        'Cer_CT56',
-        'Cer_CT58',
-        'Cer_CT60',
-        'Cer_CT62',
-        'Cer_CT64',
-    ]
-    return load_from_r_processed(infile, sample_names, aggr_field=index_field)
-
-
 def load_annotated_microarray_sb_data(aggr_field='ENTREZ', aggr_method='max'):
     """
     Data from Dubuc for 8 MB samples in mouse. 3 have an inactivating CHD7 insertion.
@@ -264,6 +227,21 @@ def load_annotated_microarray_gse37418(aggr_field=None, aggr_method=None):
     infile = os.path.join(indir, 'expr.rma.csv.gz')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')  # NB index by accession here
+    sample_names = list(meta.index)
+    arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
+    return arr, meta
+
+
+def load_annotated_microarray_gse54650(aggr_field=None, aggr_method=None):
+    """
+    Circadian rhythm mouse cerebellum data. 12 healthy cerebellum samples spearated by 2 hours.
+    :param index_field:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE54650')
+    infile = os.path.join(indir, 'expr.rma.csv.gz')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')  # NB index by filename here
     sample_names = list(meta.index)
     arr = load_from_r_processed(infile, sample_names, aggr_field=aggr_field, aggr_method=aggr_method)
     return arr, meta
