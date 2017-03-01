@@ -1,7 +1,11 @@
 import pandas as pd
+import re
 import os
+import glob
 import references
+from utils.log import get_console_logger
 from settings import DATA_DIR, DATA_DIR_NON_GIT
+logger = get_console_logger(__name__)
 
 INDEX_FIELDS = (
     'Approved Symbol',
@@ -9,6 +13,409 @@ INDEX_FIELDS = (
     'RefSeq IDs',
     'Ensembl Gene ID'
 )
+
+
+def strip_extension(s, file_ext):
+    regex = file_ext.replace('.', '\.')
+    return re.sub(r'%s$' % regex, '', s)
+
+
+class CountDatasetLoader(object):
+    cols_to_drop = tuple()
+    default_file_ext = ''
+
+    def __init__(
+            self,
+            meta_fn=None,
+            samples=None,
+            annotate_by=None,
+            annotation_type='protein_coding',
+            file_ext=None,
+            *args,
+            **kwargs):
+
+        """
+        Base class for loading a single dataset.
+        :param annotate_by: If supplied, convert the index (initially Ensembl ID) to the requested annotation.
+        If 'all' add all supported annotations (will result in additional columns).
+        If None, add no extra annotations.
+        :param annotation_type: Passed on to the `type` variable of the conversion table loader
+        """
+
+        self.meta_fn = meta_fn
+        self.samples_to_keep = samples
+        self.annotate_by = annotate_by
+        self.annotation_type = annotation_type
+
+        self.logger = get_console_logger(self.__class__.__name__)
+
+        self.raw_meta = None
+        self.meta = None
+        self.meta_has_sample_names = None
+        self.raw_data = None
+        self.data = None
+        self.transcript_lengths = None
+        self.num_reads = None
+
+        # file extension appears in the column headings of the data but can be stripped for brevity
+        self.file_ext = file_ext if file_ext is not None else self.__class__.default_file_ext
+
+        self.load_meta()
+        self.load_data()
+        self.data = self.process()
+        self.data = self.annotate(data=self.data)
+
+    def load_meta(self):
+        """
+        Load the metadata, if a file has been specified
+        :return:
+        """
+        if self.meta_fn is not None:
+            self.raw_meta = pd.read_csv(self.meta_fn, header=0, index_col=0)
+            if 'sample' not in self.raw_meta.columns:
+                self.logger.warning("The meta data has no column 'sample', so sample names will not be used.")
+                self.meta_has_sample_names = False
+            else:
+                self.meta_has_sample_names = True
+
+    def load_data(self):
+        """
+        Load raw data
+        :return:
+        """
+        raise NotImplementedError
+
+    def process(self):
+        """
+        Performed after raw data is loaded
+        :return: Processed data
+        """
+        # filter by sample if requested
+        if self.samples_to_keep is not None:
+            # we require the 'sample' column in metadata
+            if not self.meta_has_sample_names:
+                raise AttributeError("Sample names have been supplied but the meta data has no 'sample' column.")
+            keep_idx = self.raw_meta.loc[:, 'sample'].isin(self.samples_to_keep)
+            to_keep = self.raw_meta.loc[keep_idx].index
+            # append file_ext if required
+            to_keep = [t + self.file_ext for t in to_keep]
+
+        else:
+            # just drop the known columns if there are any
+            keep_idx = self.raw_meta.index if self.raw_meta is not None else None
+            to_keep = self.raw_data.columns.difference(self.cols_to_drop)
+
+        if self.raw_meta is not None:
+            self.meta = self.raw_meta.loc[keep_idx]
+        data = self.raw_data.loc[:, to_keep]
+
+        # set column names if we have metadata to do so
+        # the file extension may already have been stripped by this point (e.g. HTSeqCountLoader)
+        # but this will have no effect here
+        col_idx = [strip_extension(t, self.file_ext) for t in data.columns]
+        if self.meta_has_sample_names:
+            data.columns = self.meta.loc[col_idx, 'sample'].values
+        else:
+            # just strip the extension where present
+            data.columns = col_idx
+        return data
+
+    def annotate(self, data, annotate_by=None, annotation_type=None):
+        data = data if data is not None else self.data
+        annotate_by = annotate_by or self.annotate_by
+        annotation_type = annotation_type or self.annotation_type
+        if annotate_by == 'Ensembl Gene ID':
+            # this is the default indexing anyway
+            annotate_by = None
+        return annotate(
+            data,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+
+    @property
+    def data_by_symbol(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Approved Symbol', annotation_type='protein_coding')
+
+    @property
+    def data_by_ensembl(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Ensembl Gene ID', annotation_type='protein_coding')
+
+    @property
+    def data_by_entrez(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Entrez Gene ID', annotation_type='protein_coding')
+
+    def get_counts(self):
+        return self.data
+
+    def get_fpkm(self):
+        raise NotImplementedError
+
+    def get_tpm(self):
+        raise NotImplementedError
+
+
+class FeatureCountLoader(CountDatasetLoader):
+    default_file_ext = '.bam'
+    cols_to_drop = ['Chr', 'Start', 'End', 'Strand', 'Length']
+
+    def __init__(self, count_file, *args, **kwargs):
+        """
+        If meta_fn is supplied, it is expected that the first column will match the columns in the data file.
+        If samples is supplied, meta is required and the entries of the samples iterable should reference a column
+        named `sample`
+        :param count_file:
+        :param file_ext: If supplied, this is appended to each meta index. In practice, featureCounts s
+        :param args:
+        :param kwargs:
+        """
+        self.data_files = count_file
+        if kwargs.get('samples') is not None and 'meta_fn' not in kwargs:
+            raise AttributeError("If samples are specified, must provide a meta filename.")
+        super(FeatureCountLoader, self).__init__(*args, **kwargs)
+
+    def load_data(self):
+        self.raw_data = pd.read_csv(self.data_files, comment='#', header=0, index_col=0, sep='\t')
+
+    def process(self):
+        # we need to store a useful column now from the raw data
+        self.transcript_lengths = self.raw_data.loc[:, 'Length']
+        return super(FeatureCountLoader, self).process()
+
+    def get_fpkm(self):
+        if 'read_count' not in self.meta.columns:
+            raise AttributeError("Cannot convert to FPKM without 'read_count' column in metadata.")
+        nreads = self.meta.loc[:, 'read_count']
+        return self.data.divide(nreads, axis=1).divide(self.transcript_lengths, axis=0) * 1e9
+
+    def get_tpm(self):
+        rpk = self.data.divide(self.transcript_lengths, axis=0)
+        return rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
+
+
+
+class MultipleFileCountLoader(CountDatasetLoader):
+    """
+    Used for loading data when one sample corresponds to one file, as is the case for htseq-count and STAR.
+    """
+    def __init__(self, count_dir=None, count_files=None, *args, **kwargs):
+        if (count_dir is None) == (count_files is None):
+            raise AttributeError("Supply EITHER count_files OR count_dir")
+
+        if count_dir is not None:
+            # pick out all files in the directory
+            file_ext = kwargs.get('file_ext', self.__class__.default_file_ext)
+            if not os.path.exists(count_dir):
+                raise ValueError("Supplied count_dir does not exist")
+            flist = glob.glob(os.path.join(count_dir, '*%s' % file_ext))
+            self.data_files = []
+            for f in flist:
+                if not os.path.isdir(f):
+                    if os.path.getsize(f) > 0:
+                        self.data_files.append(f)
+                    else:
+                        logger.warning(
+                            "File %s should be included but has size 0. Did something go wrong when you created it?",
+                            f
+                        )
+            if len(self.data_files) == 0:
+                raise AttributeError("No files matching the file extension '%s' were found in %s" % (
+                    file_ext,
+                    count_dir
+                ))
+        else:
+            if not hasattr(self.data_files, '__iter__'):
+                self.data_files = [self.data_files]
+
+        super(MultipleFileCountLoader, self).__init__(*args, **kwargs)
+
+
+    def get_sample_names(self):
+        """
+        Generate an array of sample names for use as the columns of the counts matrix.
+        We don't impose metadata sample names at this stage - that happens in the process() call.
+        If appropriate metadata is present, this is used to name the samples.
+        Otherwise the filename (stripped of file_ext) is used.
+        :return: ITerable of sample names
+        """
+        # if self.meta_has_sample_names:
+        #     sample_names = self.raw_meta.loc[:, 'sample'].values
+        #     if len(sample_names) != len(self.data_files):
+        #         self.logger.warning(
+        #             "Number of data files provided (%d) does not match number of metadata entries (%d). Using filenames instead.",
+        #             len(self.data_files),
+        #             len(sample_names)
+        #         )
+        #         sample_names = [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
+        # else:
+        #     sample_names = [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
+        # return sample_names
+        return [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
+
+
+class HTSeqCountLoader(MultipleFileCountLoader):
+    default_file_ext = '.count'
+
+    def load_data(self):
+        sample_names = self.get_sample_names()
+
+        self.raw_data = pd.DataFrame()
+        for sn, fn in zip(sample_names, self.data_files):
+            # logger.info("Loading file %s with sample name %s", fn, sn)
+            self.raw_data.loc[:, sn] = pd.read_csv(fn, sep='\t', index_col=0, header=None).iloc[:, 0]
+
+
+class StarCountLoader(MultipleFileCountLoader):
+    default_file_ext = 'ReadsPerGene.out.tab'
+
+    def __init__(self, strandedness='u', *args, **kwargs):
+        if strandedness not in ('u', 'f', 'r'):
+            raise ValueError("Variable 'strandedness' must be one of ('u', 'f', 'r')")
+        self.strandedness = strandedness
+        super(StarCountLoader, self).__init__(*args, **kwargs)
+
+    def load_data(self):
+        sample_names = self.get_sample_names()
+        self.raw_data = pd.DataFrame()
+        for sn, fn in zip(sample_names, self.data_files):
+            dat = pd.read_csv(fn, sep='\t', index_col=0, header=None)
+            # get correct strand
+            if self.strandedness == 'u':
+                self.raw_data.loc[:, sn] = dat.iloc[:, 0]
+            elif self.strandedness == 'f':
+                self.raw_data.loc[:, sn] = dat.iloc[:, 1]
+            else:
+                self.raw_data.loc[:, sn] = dat.iloc[:, 2]
+
+
+class MultipleLaneCountDatasetLoader(object):
+    loader_class = CountDatasetLoader
+
+    def __init__(
+            self,
+            meta_fns=None,
+            *args,
+            **kwargs
+    ):
+        self.meta_fns = meta_fns
+        self.loaders = None
+        self.load_lanes(*args, **kwargs)
+        self.data = self.combine_counts()
+
+    def load_lanes(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def combine_counts(self):
+        data = self.loaders[0].data.copy()
+        for l in self.loaders[1:]:
+            data += l.data
+        return data
+
+    @property
+    def data_by_symbol(self):
+        data = self.loaders[0].data_by_symbol
+        for l in self.loaders[1:]:
+            data += l.data_by_symbol
+        return data
+
+    @property
+    def data_by_ensembl(self):
+        data = self.loaders[0].data_by_ensembl
+        for l in self.loaders[1:]:
+            data += l.data_by_ensembl
+        return data
+
+    @property
+    def data_by_entrez(self):
+        data = self.loaders[0].data_by_entrez
+        for l in self.loaders[1:]:
+            data += l.data_by_entrez
+        return data
+
+    def get_counts(self):
+        return self.data
+
+    def get_fpkm(self):
+        raise NotImplementedError
+
+    def get_tpm(self):
+        raise NotImplementedError
+
+
+class MultipleLaneFeatureCountLoader(MultipleLaneCountDatasetLoader):
+    loader_class = FeatureCountLoader
+
+    def __init__(self, count_files, meta_fns=None, *args, **kwargs):
+        if not hasattr(count_files, '__iter__'):
+            raise ValueError("count_files must be iterable, otherwise you should use the single lane loader %s" %
+                             self.loader_class.__name__)
+
+        if meta_fns is None:
+            meta_fns = [None] * len(count_files)
+
+        if len(meta_fns) != len(count_files):
+            raise ValueError("meta_fns and count_files must have the same length")
+        self.data_files = count_files
+        super(MultipleLaneFeatureCountLoader, self).__init__(meta_fns=meta_fns, *args, **kwargs)
+
+    def load_lanes(self, *args, **kwargs):
+        self.loaders = []
+        for mfn, dfn in zip(self.meta_fns, self.data_files):
+            self.loaders.append(self.loader_class(count_file=dfn, meta_fn=mfn, *args, **kwargs))
+
+
+class MultipleLaneStarCountLoader(MultipleLaneCountDatasetLoader):
+    loader_class = StarCountLoader
+
+    def __init__(self, count_files=None, count_dirs=None, meta_fns=None, *args, **kwargs):
+        """
+        Load and combine count data from multiple lanes using STAR outputs.
+        NB: exactly one of count_files and count_dirs must be supplied.
+        :param count_files: If supplied, this is a list of lists (or other iterables). Each sublist is the files
+        to use for one lane. This is a bit of a masochistic option, directories is much easier.
+        :param count_dirs: If supplied, this is an iterable of directories which are searched for files matching the
+        pattern ReadsPerGene.out.tab.
+        :param meta_fns:
+        :param args:
+        :param kwargs:
+        """
+        if (count_dirs is None) == (count_files is None):
+            raise AttributeError("Supply EITHER count_files OR count_dirs")
+
+        if count_files is not None:
+            self.data_files = count_files
+            self.dirs_supplied = False
+            if not hasattr(count_files, '__iter__'):
+                raise ValueError("count_files must be iterable, otherwise you should use the single lane loader %s" %
+                                 self.loader_class.__name__)
+
+        if count_dirs is not None:
+            self.data_files = count_dirs
+            self.dirs_supplied = True
+            if not hasattr(count_dirs, '__iter__'):
+                raise ValueError("count_dirs must be iterable, otherwise you should use the single lane loader %s" %
+                                 self.loader_class.__name__)
+
+        if meta_fns is None:
+            meta_fns = [None] * len(self.data_files)
+
+        if len(meta_fns) != len(self.data_files):
+            raise ValueError("meta_fns and count_files must have the same length")
+
+        super(MultipleLaneStarCountLoader, self).__init__(meta_fns=meta_fns, *args, **kwargs)
+
+
+    def load_lanes(self, *args, **kwargs):
+        self.loaders = []
+        for mfn, dfn in zip(self.meta_fns, self.data_files):
+            # kwarg used depends on whether directories or files were supplied
+            if self.dirs_supplied:
+                self.loaders.append(self.loader_class(count_dir=dfn, meta_fn=mfn, *args, **kwargs))
+            else:
+                self.loaders.append(self.loader_class(count_file=dfn, meta_fn=mfn, *args, **kwargs))
 
 
 def annotate(
@@ -91,39 +498,6 @@ def htseqcounts(
         return dat
 
 
-
-def gse83696(index_by='Ensembl Gene ID'):
-    """
-    Data are initially indexed by Ensembl ID. Coversion is carried out using HGNC data, if required.
-    Index field options are: Approved Symbol, Entrez Gene ID, RefSeq IDs
-    :param index_by:
-    :return:
-    """
-    # TODO: convert this into a generic loader for htseq-count outputs
-    indir = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'htseq-count')
-    samples = [
-        ('XZ1', 'XZ-1.count'),
-        ('XZ2', 'XZ-2.count'),
-        ('XZ3', 'XZ-3.count'),
-        ('XZ4', 'XZ-4.count'),
-        ('XZ5', 'XZ-5.count'),
-        ('XZ6', 'XZ-6.count'),
-        ('XZ7', 'XZ-7.count'),
-        ('XZ8', 'XZ-8.count'),
-    ]
-    df = pd.DataFrame()
-    for sn, fn in samples:
-        t = pd.read_csv(os.path.join(indir, fn), sep='\t', index_col=0, header=None).iloc[:, 0]
-        df.loc[:, sn] = t
-
-    if index_by is not None and index_by != 'Ensembl Gene ID':
-        new_idx = references.translate(df.index, to_field=index_by, from_field='Ensembl Gene ID')
-        new_idx.dropna(inplace=True)
-        df = df.loc[new_idx.index]
-        df.index = new_idx.values
-    return df
-
-
 def featurecounts(
         count_files,
         metafiles,
@@ -201,6 +575,38 @@ def featurecounts(
     return res, meta
 
 
+def gse83696(index_by='Ensembl Gene ID'):
+    """
+    Data are initially indexed by Ensembl ID. Coversion is carried out using HGNC data, if required.
+    Index field options are: Approved Symbol, Entrez Gene ID, RefSeq IDs
+    :param index_by:
+    :return:
+    """
+    # TODO: convert this into a generic loader for htseq-count outputs
+    indir = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'htseq-count')
+    samples = [
+        ('XZ1', 'XZ-1.count'),
+        ('XZ2', 'XZ-2.count'),
+        ('XZ3', 'XZ-3.count'),
+        ('XZ4', 'XZ-4.count'),
+        ('XZ5', 'XZ-5.count'),
+        ('XZ6', 'XZ-6.count'),
+        ('XZ7', 'XZ-7.count'),
+        ('XZ8', 'XZ-8.count'),
+    ]
+    df = pd.DataFrame()
+    for sn, fn in samples:
+        t = pd.read_csv(os.path.join(indir, fn), sep='\t', index_col=0, header=None).iloc[:, 0]
+        df.loc[:, sn] = t
+
+    if index_by is not None and index_by != 'Ensembl Gene ID':
+        new_idx = references.translate(df.index, to_field=index_by, from_field='Ensembl Gene ID')
+        new_idx.dropna(inplace=True)
+        df = df.loc[new_idx.index]
+        df.index = new_idx.values
+    return df
+
+
 def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
@@ -219,6 +625,22 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
         'DURA026N31D_NSC',
         'DURA031N44B_NSC',
     )
+
+    obj = MultipleLaneFeatureCountLoader(
+        count_files=count_files,
+        meta_fns=metafiles,
+        samples=samples,
+        annotate_by=annotate_by,
+        annotation_type=annotation_type
+    )
+
+    if units == 'counts':
+        return obj.data
+    elif units == 'fpkm':
+        return obj.get_fpkm()
+    elif units == 'tpm':
+        return obj.get_tpm()
+
     return featurecounts(
         count_files,
         metafiles,
