@@ -157,6 +157,12 @@ class CountDatasetLoader(object):
     def get_tpm(self):
         raise NotImplementedError
 
+    def get_normed(self):
+        if self.annotate_by == 'all':
+            raise AttributeError("Cannot normalise data if annotation columns are present.")
+        k = self.data.sum(axis=0)
+        return self.data.divide(k, axis=1)
+
 
 class FeatureCountLoader(CountDatasetLoader):
     default_file_ext = '.bam'
@@ -237,22 +243,8 @@ class MultipleFileCountLoader(CountDatasetLoader):
         """
         Generate an array of sample names for use as the columns of the counts matrix.
         We don't impose metadata sample names at this stage - that happens in the process() call.
-        If appropriate metadata is present, this is used to name the samples.
-        Otherwise the filename (stripped of file_ext) is used.
-        :return: ITerable of sample names
+        :return: Iterable of sample names
         """
-        # if self.meta_has_sample_names:
-        #     sample_names = self.raw_meta.loc[:, 'sample'].values
-        #     if len(sample_names) != len(self.data_files):
-        #         self.logger.warning(
-        #             "Number of data files provided (%d) does not match number of metadata entries (%d). Using filenames instead.",
-        #             len(self.data_files),
-        #             len(sample_names)
-        #         )
-        #         sample_names = [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
-        # else:
-        #     sample_names = [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
-        # return sample_names
         return [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
 
 
@@ -707,3 +699,70 @@ def brainrnaseq_preprocessed():
     data = pd.read_csv(infile, header=0, index_col=0)
 
     return data, meta
+
+
+def gse73721(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Barres data on GEO.
+    Astrocytes, oligodendrocytes, etc...
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    elif source == 'htseq-count':
+        logger.warning("htseq-count fails with some samples in this dataset.")
+        obj = HTSeqCountLoader(
+            count_dir=os.path.join(indir, 'hisat2_alignment', 'htseq-count'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    elif source == 'featurecounts':
+        obj = FeatureCountLoader(
+            count_file=os.path.join(indir, 'hisat2_alignment', 'featureCounts'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj
+
+
+def gse61794(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    2 samples similar to Gibbco NSC line.
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    elif source == 'htseq-count':
+        raise NotImplementedError
+        # obj = HTSeqCountLoader(
+        #     count_dir=os.path.join(indir, 'hisat2_alignment', 'htseq-count'),
+        #     meta_fn=metafn,
+        #     annotate_by=annotate_by,
+        #     annotation_type=annotation_type
+        # )
+    elif source == 'featurecounts':
+        obj = FeatureCountLoader(
+            count_file=os.path.join(indir, 'hisat2_alignment', 'featureCounts'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj

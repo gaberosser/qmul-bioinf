@@ -14,6 +14,9 @@ if __name__ == "__main__":
     N_GENES = 1500
     OUTDIR = unique_output_dir("astrocytes", reuse_empty=True)
 
+    # GSE73721 (reference astrocytes, oligos, ...)
+
+
     a, meta_a = rnaseq_data.gbm_astrocyte_nsc_samples(units='fpkm', annotate_by='Approved Symbol')
     a = a.loc[:, a.columns.str.contains('dura', flags=re.IGNORECASE)]
     b, meta_b = rnaseq_data.brainrnaseq_preprocessed()
