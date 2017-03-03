@@ -24,7 +24,9 @@ def known_genes(tax_id=9606, index_field=None):
 
 def conversion_table(type='protein_coding'):
     if type == 'protein_coding':
-        in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2016.12.tsv')
+        in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
+    elif type == 'all':
+        in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.03.tsv')
     else:
         raise ValueError("Unsupported type option '%s'" % type)
     # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
@@ -41,15 +43,20 @@ def translate(x, to_field, from_field):
 
 
 def gene_symbol_to_entrez(g):
-    cat = conversion_table()
+    cat = conversion_table(type='all')
     return _translate(cat, g, 'Entrez Gene ID', 'Approved Symbol')
 
 
 def entrez_to_gene_symbol(e):
-    cat = conversion_table()
+    cat = conversion_table(type='all')
     return _translate(cat, e, 'Approved Symbol', 'Entrez Gene ID')
 
 
 def ensembl_to_gene_symbol(e):
-    cat = conversion_table()
+    cat = conversion_table(type='all')
     return _translate(cat, e, 'Approved Symbol', 'Ensembl Gene ID')
+
+
+def ensembl_to_name(e):
+    cat = conversion_table(type='all')
+    return _translate(cat, e, 'Approved Name', 'Ensembl Gene ID')
