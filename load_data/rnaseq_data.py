@@ -245,7 +245,7 @@ class MultipleFileCountLoader(CountDatasetLoader):
         We don't impose metadata sample names at this stage - that happens in the process() call.
         :return: Iterable of sample names
         """
-        return [os.path.basename(t).strip(self.file_ext) for t in self.data_files]
+        return [os.path.basename(t) for t in self.data_files]
 
 
 class HTSeqCountLoader(MultipleFileCountLoader):
@@ -643,6 +643,51 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
     )
 
 
+def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    samples = (
+        'GBM018',
+        'GBM019',
+        'GBM024',
+        'GBM026',
+        'GBM031',
+        'DURA018N2_NSC',
+        'DURA019N8C_NSC',
+        'DURA024N28_NSC',
+        'DURA026N31D_NSC',
+        'DURA031N44B_NSC',
+    )
+
+    if source == 'star':
+        count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneStarCountLoader(
+            count_dirs=count_dirs,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+            strandedness='r',
+        )
+    elif source == 'htseq-count':
+        raise NotImplementedError
+    elif source == 'featurecounts':
+        count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneFeatureCountLoader(
+            count_files=count_files,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj
+
+
+
 def gbm_astrocyte_nsc_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
@@ -663,6 +708,43 @@ def gbm_astrocyte_nsc_samples(units='counts', annotate_by='all', annotation_type
         annotate_by=annotate_by,
         annotation_type=annotation_type
     )
+
+
+def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    samples = (
+        'DURA018N2_NSC',
+        'DURA019N8C_NSC',
+        'DURA018N2_ASTRO_DAY12',
+        'DURA019N8C_ASTRO_DAY12',    )
+
+    if source == 'star':
+        count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneStarCountLoader(
+            count_dirs=count_dirs,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+            strandedness='r',
+        )
+    elif source == 'htseq-count':
+        raise NotImplementedError
+    elif source == 'featurecounts':
+        count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneFeatureCountLoader(
+            count_files=count_files,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj
 
 
 def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein_coding'):

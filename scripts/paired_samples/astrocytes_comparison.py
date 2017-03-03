@@ -9,19 +9,34 @@ from scipy.cluster import hierarchy
 from load_data import rnaseq_data
 from microarray import process
 from utils.output import unique_output_dir
+from plotting import clustering
 
 if __name__ == "__main__":
     N_GENES = 1500
     OUTDIR = unique_output_dir("astrocytes", reuse_empty=True)
 
     # GSE73721 (reference astrocytes, oligos, ...)
+    obj73721 = rnaseq_data.gse73721(source='star', annotate_by='Ensembl Gene ID')
 
+    # GSE61794 (NSC x 2)
+    obj61794 = rnaseq_data.gse61794(source='star', annotate_by='Ensembl Gene ID')
 
-    a, meta_a = rnaseq_data.gbm_astrocyte_nsc_samples(units='fpkm', annotate_by='Approved Symbol')
-    a = a.loc[:, a.columns.str.contains('dura', flags=re.IGNORECASE)]
-    b, meta_b = rnaseq_data.brainrnaseq_preprocessed()
-    # omit the mouse samples
-    b = b.loc[:, ~b.columns.str.contains('mouse', flags=re.IGNORECASE)]
+    # GBM paired samples
+    objwtchg = rnaseq_data.gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='Ensembl Gene ID')
+
+    # combine the data
+    data = pd.concat((obj73721.data, obj61794.data, objwtchg.data), axis=1)
+    data = data.loc[data.index.str.contains('ENSG')]
+
+    mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
+    top_mad = mad.iloc[:N_GENES].index
+
+    clustering.plot_clustermap(data.loc[top_mad], z_score=0, show_gene_labels=False)
+
+    # for reference, we can also load the original 'pre-processed' GSE73721 data
+    # but these are indexed by mouse gene??
+    fpkm, meta = rnaseq_data.brainrnaseq_preprocessed()
+
 
     # find common genes based on lowercase match
     common_genes = a.index.str.lower().intersection(b.index.str.lower())
@@ -90,9 +105,7 @@ if __name__ == "__main__":
 
     z = hierarchy.linkage(d.transpose(), method='average', metric='correlation')
 
-
-    from scripts.mb_subgroup_classifier.hierarchical_following_roussel import plot_clustermap
-    cg = plot_clustermap(d, show_gene_labels=False,
+    cg = clustering.plot_clustermap(d, show_gene_labels=False,
         cmap='RdBu_r',
         col_colors=col_colors,
         col_linkage=z,
