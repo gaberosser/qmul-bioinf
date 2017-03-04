@@ -52,6 +52,11 @@ def entrez_to_gene_symbol(e):
     return _translate(cat, e, 'Approved Symbol', 'Entrez Gene ID')
 
 
+def gene_symbol_to_ensembl(g):
+    cat = conversion_table(type='all')
+    return _translate(cat, g, 'Ensembl Gene ID', 'Approved Symbol')
+
+
 def ensembl_to_gene_symbol(e):
     cat = conversion_table(type='all')
     return _translate(cat, e, 'Approved Symbol', 'Ensembl Gene ID')

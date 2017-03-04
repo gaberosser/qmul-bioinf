@@ -72,7 +72,6 @@ def plot_clustermap(
         plt.setp(
             cg.ax_heatmap.yaxis.get_ticklabels(),
             rotation=0,
-            fontsize=14
         )
     else:
         cg.ax_heatmap.yaxis.set_ticklabels([])
