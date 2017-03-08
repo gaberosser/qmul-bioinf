@@ -848,3 +848,26 @@ def gse61794(source='star', annotate_by='all', annotation_type='protein_coding')
     else:
         raise ValueError("Unrecognised source.")
     return obj
+
+
+def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    2 biological replicates of NSC cells.
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'E-MTAB-3867')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
