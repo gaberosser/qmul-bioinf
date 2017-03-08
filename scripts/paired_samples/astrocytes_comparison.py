@@ -9,7 +9,7 @@ from scipy.cluster import hierarchy
 from load_data import rnaseq_data
 from microarray import process
 from utils.output import unique_output_dir
-from plotting import clustering
+from plotting import clustering, bar
 
 from scripts.rnaseq import get_rrna_from_gtf
 
@@ -44,6 +44,51 @@ if __name__ == "__main__":
     # combine the data
     data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg.data), axis=1)
     data = data.loc[data.index.str.contains('ENSG')]
+
+    # compare with qPCR: comparing markers in the NSC samples and paired astrocytes
+    astro_markers1 = [
+        'S100B',
+        'CD44',
+        'ALDH1L1',
+        'NFIA',
+    ]
+    data_markers = data.loc[
+        references.gene_symbol_to_ensembl(astro_markers1),
+        data.columns.str.contains('DURA')
+    ]
+    data_markers.index = astro_markers1
+    series = [data_markers.iloc[i] for i in range(data_markers.shape[0])]
+    colours = [
+        '#0000FF',
+        '#FF0000',
+        '#00C000',
+        '#AD07E3',
+    ]
+
+    # plot absolute counts
+    fig = plt.figure(figsize=(8, 7.5))
+    ax = fig.add_subplot(111)
+    bar.grouped_bar_chart(series, ax=ax, colours=colours)
+    ax.legend(data_markers.index)
+    ax.set_position([0.125, .3, .85, .65])
+    ax.set_ylabel('Raw counts')
+    fig.savefig(os.path.join(OUTDIR, 'astro_markers_abs_counts.pdf'))
+    fig.savefig(os.path.join(OUTDIR, 'astro_markers_abs_counts.png'), dpi=200)
+
+    # plot relative fold change
+    relfc18 = data_markers.loc[:, 'DURA018N2_ASTRO_DAY12'] / data_markers.loc[:, 'DURA018N2_NSC']
+    relfc19 = data_markers.loc[:, 'DURA019N8C_ASTRO_DAY12'] / data_markers.loc[:, 'DURA019N8C_NSC']
+    series = [
+        pd.Series([1., relfc18.loc[g], relfc19.loc[g]], index=['NSC', 'ASTRO018', 'ASTRO019']) for g in relfc18.index
+    ]
+    fig = plt.figure(figsize=(8, 7.5))
+    ax = fig.add_subplot(111)
+    bar.grouped_bar_chart(series, ax=ax, colours=colours)
+    ax.legend(data_markers.index, pos='upper left')
+    ax.set_position([0.125, .15, .85, .8])
+    ax.set_ylabel('Fold change')
+    fig.savefig(os.path.join(OUTDIR, 'astro_markers_fold_change.pdf'))
+    fig.savefig(os.path.join(OUTDIR, 'astro_markers_fold_change.png'), dpi=200)
 
     mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
     top_mad = mad.iloc[:N_GENES].index
@@ -172,7 +217,7 @@ if __name__ == "__main__":
 
     # bar charts of successive markers, used to characterise based on timeline
     # for this, only astrocytes and NSCs useful, so remove oligo and neuron
-    astro_markers = [
+    astro_markers2 = [
         'NFIA',
         'SLC1A3',
         'ALDH1L1',
@@ -185,14 +230,14 @@ if __name__ == "__main__":
         'SLC1A3'
     ]
     data_timeline = data.loc[
-        references.gene_symbol_to_ensembl(astro_markers),
+        references.gene_symbol_to_ensembl(astro_markers2),
         ~data.columns.str.contains('neuron') & ~data.columns.str.contains('oligo')]
 
     n = data_rr.loc[:, ~data.columns.str.contains('neuron') & ~data.columns.str.contains('oligo')].sum(axis=0)
     data_timeline = data_timeline.divide(n, axis=1) * 1e6  # arbitrary multiplier to improve small number visualisation
 
-    fig, axs = plt.subplots(1, len(astro_markers), sharey=True)
-    for i, m in enumerate(astro_markers):
+    fig, axs = plt.subplots(1, len(astro_markers2), sharey=True)
+    for i, m in enumerate(astro_markers2):
         ax = axs[i]
         ax.barh(range(data_timeline.shape[1]), data_timeline.iloc[i], height=0.9)
         if i == 0:
