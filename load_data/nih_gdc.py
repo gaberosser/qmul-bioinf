@@ -7,10 +7,36 @@ from utils.log import get_file_logger
 from utils.output import unique_output_dir
 
 API_ROOT = 'https://gdc-api.nci.nih.gov/'
+LEGACY_API_ROOT = 'https://gdc-api.nci.nih.gov/legacy/'
+
 FILES_ENDPOINT = urljoin(API_ROOT, 'files/')
+LEGACY_FILES_ENDPOINT = urljoin(LEGACY_API_ROOT, 'files/')
+
 DATA_ENDPOINT = urljoin(API_ROOT, 'data/')
+LEGACY_DATA_ENDPOINT = urljoin(LEGACY_API_ROOT, 'data/')
+
 CASE_ENDPOINT = urljoin(API_ROOT, 'cases/')
 
+
+def equal_query(field, value):
+    return {
+        "op": "=",
+        "content": {
+            "field": field,
+            "value": value,
+        }
+    }
+
+
+def in_query(field, arr):
+    arr = list(arr)
+    return {
+        "op": "in",
+        "content": {
+            "field": field,
+            "value": arr
+        }
+    }
 
 def and_query(*args):
     qry = {
@@ -28,41 +54,32 @@ def or_query(*args):
     return qry
 
 
-def get_paired_methylation_gene_expression_data():
-    outdir = unique_output_dir("gdc-nih_paired_methylation_gene_expr", reuse_empty=True)
-    logger = get_file_logger("paired_methylation_gene_counts", os.path.join(outdir, "getter.log"))
+qry_meth450 = equal_query("files.platform", "Illumina Human Methylation 450")
 
-    qry_meth450 = {
-        "op": "=",
-        "content": {
-            "field": "files.platform",
-            "value": "Illumina Human Methylation 450",
-        }
-    }
+qry_trans = equal_query("files.data_type", "Gene Expression Quantification")
 
-    qry_trans = {
-        "op": "=",
-        "content": {
-            "field": "files.data_type",
-            "value": "Gene Expression Quantification",
-        }
-    }
+qry_gbm = equal_query("cases.project.project_id", "TCGA-GBM")
 
-    qry_gbm = {
-        "op": "=",
-        "content": {
-            "field": "cases.project.project_id",
-            "value": "TCGA-GBM",
-        }
-    }
+qry_primary = equal_query("cases.samples.sample_type", "Primary Tumor")
 
-    qry_primary = {
-        "op": "=",
-        "content": {
-            "field": "cases.samples.sample_type",
-            "value": "Primary Tumor",
-        }
-    }
+
+def download_data(file_id, outfile, legacy=False, create_dirs=True):
+    endpoint = LEGACY_DATA_ENDPOINT if legacy else DATA_ENDPOINT
+    response = requests.get(urljoin(endpoint, file_id))
+    outdir = os.path.split(outfile)[0]
+
+    if not os.path.isdir(outdir):
+        if create_dirs:
+            os.makedirs(outdir)
+        else:
+            raise AttributeError("Directory %s does not exist" % outdir)
+
+    with open(outfile, 'wb') as fout:
+        for blk in response.iter_content(1024):
+            fout.write(blk)
+
+
+def get_case_ids_with_paired_data():
 
     # Query 1: cases in TCGA-GBM with methylation data
 
@@ -90,7 +107,60 @@ def get_paired_methylation_gene_expression_data():
 
     # find the intersecting case IDs
 
-    case_ids = set(case_ids_meth).intersection(case_ids_trans)
+    return set(case_ids_meth).intersection(case_ids_trans)
+
+
+def get_legacy_idat(case_ids):
+    outdir = unique_output_dir("gdc-nih_paired_methylation_gene_expr", reuse_empty=True)
+    logger = get_file_logger("legacy_idats", os.path.join(outdir, "getter.log"))
+
+    qry_case = in_query("cases.case_id", case_ids)
+
+    qry_idat = equal_query("files.data_format", "idat")
+
+    qry = {
+        "filters": and_query(qry_primary, qry_case, qry_idat, qry_meth450),
+        "format": "json",
+        "fields": "file_id,file_name,data_type,cases.case_id",
+        "size": 10000
+    }
+
+    response = requests.post(LEGACY_FILES_ENDPOINT, json=qry)
+    if response.status_code != 200:
+        logger.error("Initial query failed: %s", response.content)
+        raise ValueError("Query failed")
+
+    res = response.json()['data']['hits']
+    logger.info("Found %d idat files.", len(res))
+
+    num_error = 0
+    num_files = 0
+
+    for r in res:
+        if len(r['cases']) > 1:
+            logger.error("File with ID %s has multiple case ID matches", r['file_id'])
+        cid = r['cases'][0]['case_id']
+        fid = r['file_id']
+        fname = r['file_name']
+        outfn = os.path.join(outdir, cid, fname)
+        logger.info("Case %s. File ID %s. Output path %s.", cid, fid, outfn)
+        try:
+            download_data(fid, outfn, legacy=True)
+        except Exception:
+            logger.exception("Failed to download %s for case id %s", fname, cid)
+            num_error += 1
+        else:
+            logger.info("Downloaded case ID %s file ID %s to %s", cid, fid, outfn)
+            num_files += 1
+
+    logger.info("Downloaded %d files. Encountered %d errors.", num_files, num_error)
+
+
+def get_paired_methylation_gene_expression_data():
+    outdir = unique_output_dir("gdc-nih_paired_methylation_gene_expr", reuse_empty=True)
+    logger = get_file_logger("paired_methylation_gene_counts", os.path.join(outdir, "getter.log"))
+
+    case_ids = get_case_ids_with_paired_data()
 
     # get relevant files for download
 
@@ -121,7 +191,6 @@ def get_paired_methylation_gene_expression_data():
         elif t['data_type'] == 'Methylation Beta Value':
             flist.setdefault(cid, {})['methylation'] = t['file_id']
 
-    num_cases = 0
     num_files = 0
     num_error = 0
     for k, v in flist.items():
@@ -145,10 +214,7 @@ def get_paired_methylation_gene_expression_data():
                 raise ValueError("Unsupported data type %s" % fn)
 
             try:
-                response = requests.get(urljoin(DATA_ENDPOINT, fid))
-                with open(ff, 'wb') as fout:
-                    for blk in response.iter_content(1024):
-                        fout.write(blk)
+                download_data(fid, ff)
             except Exception:
                 logger.exception("Failed to download %s for case id %s", fn, k)
                 num_error += 1

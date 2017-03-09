@@ -4,6 +4,8 @@ import re
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from matplotlib import ticker
+import seaborn as sns
 from scipy.cluster import hierarchy
 
 from load_data import rnaseq_data
@@ -15,8 +17,56 @@ from scripts.rnaseq import gtf_reader
 
 import references
 
+
+N_GENES = 500
+
+
+def plot_clustermap(data, yugene=False, n_genes=N_GENES, **kwargs):
+    if yugene:
+        data = process.yugene_transform(data)
+
+    kwargs.setdefault('cmap', 'RdBu_r')
+
+    mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
+    top_mad = mad.iloc[:n_genes].index
+    z = hierarchy.linkage(data.loc[top_mad].transpose(), method='average', metric='correlation')
+    cg = clustering.plot_clustermap(
+        data.loc[top_mad],
+        col_linkage=z,
+        **kwargs
+    )
+    plt.setp(
+        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
+    )
+    cg.gs.update(bottom=0.2)
+    return cg
+
+
+def plot_correlation_heatmap(data, yugene=False, n_genes=None, **kwargs):
+    if yugene:
+        data = process.yugene_transform(data)
+
+    kwargs.setdefault('cmap', 'Reds')
+    kwargs.setdefault('vmin', 0.)
+    kwargs.setdefault('vmax', 1.)
+
+    if n_genes is not None:
+        mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
+        top_mad = mad.iloc[:n_genes].index
+        data = data.loc[top_mad]
+
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111)
+    ax = sns.heatmap(data.corr(), ax=ax, **kwargs)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    plt.tight_layout()
+
+    return ax
+
+
 if __name__ == "__main__":
-    N_GENES = 500
+
     SHOW_GENE_LABELS = False
     OUTDIR = unique_output_dir("astrocytes", reuse_empty=True)
 
@@ -98,10 +148,6 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(OUTDIR, 'astro_markers_qpcr_fold_change.pdf'))
     fig.savefig(os.path.join(OUTDIR, 'astro_markers_qpcr_fold_change.png'), dpi=200)
 
-    mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
-    top_mad = mad.iloc[:N_GENES].index
-
-    z = hierarchy.linkage(data.loc[top_mad].transpose(), method='average', metric='correlation')
     col_colors = pd.DataFrame(index=data.columns, columns=['group'])
     cmap = {
         'Hippocampus': '#7fc97f',
@@ -120,42 +166,20 @@ if __name__ == "__main__":
     row_colors.loc[row_colors.index.isin(rrna_ensg)] = 'black'
 
     # plot clustermap with unmodified data (MT-rRNA still included)
-
-    cg = clustering.plot_clustermap(
-        data.loc[top_mad],
-        col_linkage=z,
+    cg = plot_clustermap(
+        data,
         z_score=0,
         col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS,
+        show_gene_labels=SHOW_GENE_LABELS
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_unmodified.png'), dpi=200)
 
-    data_yg = process.yugene_transform(data)
-    # reindex by gene name
-    gg = references.ensembl_to_gene_symbol(data_yg.index)
-    mad_yg = process.median_absolute_deviation(data_yg, axis=1).sort_values(ascending=False)
-    top_mad_yg = mad_yg.iloc[:N_GENES].index
-
-    z_yg = hierarchy.linkage(data_yg.loc[top_mad_yg].transpose(), method='average', metric='correlation')
-
-    # repeat the plot with YuGene processing
-
-    cg = clustering.plot_clustermap(
-        data_yg.loc[top_mad_yg],
-        cmap='RdBu_r',
-        col_linkage=z_yg,
+    cg = plot_clustermap(
+        data,
+        yugene=True,
         col_colors=col_colors,
         show_gene_labels=SHOW_GENE_LABELS,
-        # row_colors=row_colors,
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_unmodified_yg.png'), dpi=200)
 
     # plot rRNA quantity
@@ -166,21 +190,16 @@ if __name__ == "__main__":
     ax = aa.plot.bar(width=0.9)
     ax.set_ylim([0, 1])
     ax.set_ylabel("Proportion rRNA")
+    plt.tight_layout()
     fig.savefig(os.path.join(OUTDIR, 'proportion_rrna.pdf'))
     fig.savefig(os.path.join(OUTDIR, 'proportion_rrna.png'), dpi=200)
 
     # remove rRNA
 
     data_rr = data.loc[~data.index.isin(rrna_ensg)]
-    data_rr_yg = process.yugene_transform(data_rr)
 
-    mad_rr = process.median_absolute_deviation(data_rr, axis=1).sort_values(ascending=False)
-    top_mad_rr = mad_rr.iloc[:N_GENES].index
-    mad_rr_yg = process.median_absolute_deviation(data_rr_yg, axis=1).sort_values(ascending=False)
-    top_mad_rr_yg = mad_rr_yg.iloc[:N_GENES].index
-
-    z_rr = hierarchy.linkage(data_rr.loc[top_mad_rr].transpose(), method='average', metric='correlation')
-    z_rr_yg = hierarchy.linkage(data_rr_yg.loc[top_mad_rr_yg].transpose(), method='average', metric='correlation')
+    # correlation heatmap
+    ax = plot_correlation_heatmap(data_rr)
 
     # plot MT RNA quantity (excluding rRNA)
 
@@ -191,84 +210,78 @@ if __name__ == "__main__":
     ax = bb.plot.bar(width=0.9)
     ax.set_ylim([0, .2])  # the maximum value observed is ~18%
     ax.set_ylabel("Proportion MT genes (excluding rRNA)")
+    plt.tight_layout()
     fig.savefig(os.path.join(OUTDIR, 'proportion_mt.pdf'))
     fig.savefig(os.path.join(OUTDIR, 'proportion_mt.png'), dpi=200)
 
-    # remove MT in additino to rRNA
+    # remove MT in addition to rRNA
 
     data_rr_mt = data_rr.loc[~data_rr.index.isin(mt_ensg)]
-    data_rr_mt_yg = process.yugene_transform(data_rr_mt)
 
-    mad_rr_mt = process.median_absolute_deviation(data_rr_mt, axis=1).sort_values(ascending=False)
-    top_mad_rr_mt = mad_rr_mt.iloc[:N_GENES].index
-    mad_rr_mt_yg = process.median_absolute_deviation(data_rr_mt_yg, axis=1).sort_values(ascending=False)
-    top_mad_rr_mt_yg = mad_rr_mt_yg.iloc[:N_GENES].index
-
-    z_rr_mt = hierarchy.linkage(data_rr_mt.loc[top_mad_rr_mt].transpose(), method='average', metric='correlation')
-    z_rr_mt_yg = hierarchy.linkage(data_rr_mt_yg.loc[top_mad_rr_mt_yg].transpose(), method='average', metric='correlation')
+    # correlation heatmap rRNA removed
+    ax = plot_correlation_heatmap(data_rr)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.png'), dpi=200)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.pdf'))
 
     # plot clustermap with rRNA removed
-
-    cg = clustering.plot_clustermap(
-        data_rr.loc[top_mad_rr],
-        cmap='RdBu_r',
+    cg = plot_clustermap(
+        data_rr,
         z_score=0,
-        col_linkage=z_rr,
         col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS,
+        show_gene_labels=SHOW_GENE_LABELS
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna.png'), dpi=200)
 
-    # repeat with YuGene processing
-
-    cg = clustering.plot_clustermap(
-        data_rr_yg.loc[top_mad_rr_yg],
-        cmap='RdBu_r',
-        col_linkage=z_rr_yg,
+    cg = plot_clustermap(
+        data_rr,
+        yugene=True,
         col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS,
+        show_gene_labels=SHOW_GENE_LABELS
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_yg.png'), dpi=200)
-
 
     # plot clustermap with rRNA and MT RNA removed
 
-    cg = clustering.plot_clustermap(
-        data_rr_mt.loc[top_mad_rr_mt],
-        cmap='RdBu_r',
+    cg = plot_clustermap(
+        data_rr_mt,
         z_score=0,
-        col_linkage=z_rr_mt,
         col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS,
+        show_gene_labels=SHOW_GENE_LABELS
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt.png'), dpi=200)
 
-    # repeat with YuGene processing
-
-    cg = clustering.plot_clustermap(
-        data_rr_mt_yg.loc[top_mad_rr_mt_yg],
-        cmap='RdBu_r',
-        col_linkage=z_rr_mt_yg,
+    cg = plot_clustermap(
+        data_rr_mt,
+        yugene=True,
         col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS,
+        show_gene_labels=SHOW_GENE_LABELS
     )
-    plt.setp(
-        cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-    )
-    cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_yg.png'), dpi=200)
+
+    # correlation heatmap rRNA and MT removed
+    ax = plot_correlation_heatmap(data_rr_mt)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.png'), dpi=200)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.pdf'))
+
+    # re-run clustering without Barres data (since this has different distribution)
+    data_no_barres = pd.concat((obj61794.data, objwtchg.data, objpollard.data), axis=1)
+    data_no_barres = data_no_barres.loc[data_no_barres.index.str.contains('ENSG')]
+
+    cg = plot_clustermap(
+        data_no_barres,
+        z_score=0,
+        col_colors=col_colors,
+        show_gene_labels=SHOW_GENE_LABELS
+    )
+    cg.savefig(os.path.join(OUTDIR, 'clustermap_no_barres.png'), dpi=200)
+
+    cg = plot_clustermap(
+        data_no_barres,
+        yugene=True,
+        col_colors=col_colors,
+        show_gene_labels=SHOW_GENE_LABELS
+    )
+    cg.savefig(os.path.join(OUTDIR, 'clustermap_no_barres_yg.png'), dpi=200)
 
     # for every sample, extract the top N by count and summarise
 
@@ -284,20 +297,28 @@ if __name__ == "__main__":
 
         top_dat = data_rr_mt.loc[list(common_genes)].divide(data_rr.sum(), axis=1)
         top_dat.index = references.ensembl_to_gene_symbol(top_dat.index)
-        z_topdat = hierarchy.linkage(top_dat.transpose(), method='average', metric='correlation')
 
-        cg = clustering.plot_clustermap(
+        # z_topdat = hierarchy.linkage(top_dat.transpose(), method='average', metric='correlation')
+        #
+        # cg = clustering.plot_clustermap(
+        #     top_dat,
+        #     cmap='RdBu_r',
+        #     col_linkage=z_topdat,
+        #     col_colors=col_colors,
+        #     show_gene_labels=True,
+        #     z_score=0,
+        # )
+        # plt.setp(
+        #     cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
+        # )
+        # cg.gs.update(bottom=0.2)
+        cg = plot_clustermap(
             top_dat,
-            cmap='RdBu_r',
-            col_linkage=z_topdat,
+            n_genes=topN,  # plot all genes
             col_colors=col_colors,
             show_gene_labels=True,
-            z_score=0,
+            z_score=0
         )
-        plt.setp(
-            cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-        )
-        cg.gs.update(bottom=0.2)
         cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_top%dgenes.png' % topN), dpi=200)
 
     # bar charts of successive markers, used to characterise based on timeline
@@ -328,15 +349,21 @@ if __name__ == "__main__":
     ].sum(axis=0)
     data_timeline = data_timeline.divide(n, axis=1) * 1e6  # arbitrary multiplier to improve small number visualisation
 
-    fig, axs = plt.subplots(1, len(astro_markers2), sharey=True)
+    fig = plt.figure(figsize=(10.5, 4.8))
+    gs = plt.GridSpec(1, len(astro_markers2), left=0.2, bottom=0.02, right=0.98, top=0.95, wspace=0.01)
     for i, m in enumerate(astro_markers2):
-        ax = axs[i]
-        ax.barh(range(data_timeline.shape[1]), data_timeline.iloc[i], height=0.9)
+        ax = fig.add_subplot(gs[i])
+        ax.barh(np.arange(data_timeline.shape[1]), data_timeline.iloc[i], height=0.9, align='center')
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1.))
         if i == 0:
-            ax.set_yticks(np.arange(data_timeline.shape[1]) + 0.5)
+            ax.set_yticks(np.arange(data_timeline.shape[1]))
             ax.set_yticklabels(data_timeline.columns)
+        else:
+            ax.set_yticklabels([])
         ax.set_title(m)
         ax.set_xticks([])
+        ax.set_ylim([-1, data_timeline.shape[1]])
+
     fig.savefig(os.path.join(OUTDIR, 'astro_markers.pdf'))
     fig.savefig(os.path.join(OUTDIR, 'astro_markers.png'), dpi=200)
 
