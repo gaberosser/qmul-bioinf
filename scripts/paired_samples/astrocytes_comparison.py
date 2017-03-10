@@ -298,20 +298,6 @@ if __name__ == "__main__":
         top_dat = data_rr_mt.loc[list(common_genes)].divide(data_rr.sum(), axis=1)
         top_dat.index = references.ensembl_to_gene_symbol(top_dat.index)
 
-        # z_topdat = hierarchy.linkage(top_dat.transpose(), method='average', metric='correlation')
-        #
-        # cg = clustering.plot_clustermap(
-        #     top_dat,
-        #     cmap='RdBu_r',
-        #     col_linkage=z_topdat,
-        #     col_colors=col_colors,
-        #     show_gene_labels=True,
-        #     z_score=0,
-        # )
-        # plt.setp(
-        #     cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
-        # )
-        # cg.gs.update(bottom=0.2)
         cg = plot_clustermap(
             top_dat,
             n_genes=topN,  # plot all genes

@@ -3,14 +3,12 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR_NON_GIT, HEIDELBERG_CLASSIFIER_CONFIG
 from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
 
 
-pw = 'Nucleus1'
-email = 'g.rosser@qmul.ac.uk'
 the_login_url = 'https://www.molecularneuropathology.org/mnp/authenticate'
 the_sample_url = 'https://www.molecularneuropathology.org/mnp/sample/{sid}'
 the_report_url = 'https://www.molecularneuropathology.org/mnp/sample/{sid}/run/{rid}/report'
@@ -44,13 +42,23 @@ def read_table(tbl):
 #     '2017-01'
 # )
 
-sample_ids = range(802, 810)
+# sample_ids = range(802, 810)
+# outdir = os.path.join(
+#     DATA_DIR_NON_GIT,
+#     'methylation',
+#     '2016-09-21_dutt',
+#     'heidelberg_classifier',
+#     '2017-01'
+# )
+
+# sample_ids = range(2248, 2298)
+sample_ids = range(2285, 2298)
 outdir = os.path.join(
     DATA_DIR_NON_GIT,
     'methylation',
-    '2016-09-21_dutt',
+    'tcga_gbm',
     'heidelberg_classifier',
-    '2017-01'
+    '2017-03'
 )
 
 if not os.path.exists(outdir):
@@ -61,7 +69,7 @@ else:
 
 
 s = requests.Session()
-s.post(the_login_url, data={"email": "g.rosser@qmul.ac.uk", "password": pw})
+s.post(the_login_url, data=HEIDELBERG_CLASSIFIER_CONFIG)
 
 for sid in sample_ids:
     try:
