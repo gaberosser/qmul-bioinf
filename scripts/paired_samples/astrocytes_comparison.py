@@ -11,7 +11,7 @@ from scipy.cluster import hierarchy
 from load_data import rnaseq_data
 from microarray import process
 from utils.output import unique_output_dir
-from plotting import clustering, bar
+from plotting import clustering, bar, heatmap
 
 from scripts.rnaseq import gtf_reader
 
@@ -149,6 +149,18 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(OUTDIR, 'astro_markers_qpcr_fold_change.png'), dpi=200)
 
     col_colors = pd.DataFrame(index=data.columns, columns=['group'])
+
+    sample_groups = {
+        'Hippocampal astrocytes': {'regex': 'Hippocampus', 'colour' : '#7fc97f'},
+        'Fetal cortical astrocytes': {'regex': 'Fetal', 'colour' : '#beaed4'},
+        'Cortical astrocytes': {'regex': re.compile(r'[0-9]*yo *ctx [0-9]* *astro', flags=re.IGNORECASE), 'colour' : '#fdc086'},
+        'Cortical neurons': {'regex': 'ctx neuron', 'colour': '#ffff99'},
+        'Oligodendrocytes': {'regex': 'oligo', 'colour': '#386cb0'},
+        'Our iNSC': {'regex': '_NSC', 'colour': '#777777'},
+        'H9 iNSC': {'regex': 'H9', 'colour': '#cccccc'},
+        'Our induced astrocytes': {'regex': 'ASTRO', 'colour': 'black'},
+    }
+
     cmap = {
         'Hippocampus': '#7fc97f',
         'Fetal': '#beaed4',
@@ -198,9 +210,6 @@ if __name__ == "__main__":
 
     data_rr = data.loc[~data.index.isin(rrna_ensg)]
 
-    # correlation heatmap
-    ax = plot_correlation_heatmap(data_rr)
-
     # plot MT RNA quantity (excluding rRNA)
 
     mt_no_rrna = mt_ensg.difference(rrna_ensg)
@@ -218,11 +227,6 @@ if __name__ == "__main__":
 
     data_rr_mt = data_rr.loc[~data_rr.index.isin(mt_ensg)]
 
-    # correlation heatmap rRNA removed
-    ax = plot_correlation_heatmap(data_rr)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.pdf'))
-
     # plot clustermap with rRNA removed
     cg = plot_clustermap(
         data_rr,
@@ -231,6 +235,12 @@ if __name__ == "__main__":
         show_gene_labels=SHOW_GENE_LABELS
     )
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna.png'), dpi=200)
+
+    # correlation heatmap rRNA removed
+    ax = plot_correlation_heatmap(data_rr.iloc[:, cg.dendrogram_col.reordered_ind])
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.png'), dpi=200)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.pdf'))
+
 
     cg = plot_clustermap(
         data_rr,
@@ -250,6 +260,11 @@ if __name__ == "__main__":
     )
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt.png'), dpi=200)
 
+    # correlation heatmap rRNA and MT removed
+    ax = plot_correlation_heatmap(data_rr_mt.iloc[:, cg.dendrogram_col.reordered_ind])
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.png'), dpi=200)
+    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.pdf'))
+
     cg = plot_clustermap(
         data_rr_mt,
         yugene=True,
@@ -257,11 +272,6 @@ if __name__ == "__main__":
         show_gene_labels=SHOW_GENE_LABELS
     )
     cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_yg.png'), dpi=200)
-
-    # correlation heatmap rRNA and MT removed
-    ax = plot_correlation_heatmap(data_rr_mt)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.pdf'))
 
     # re-run clustering without Barres data (since this has different distribution)
     data_no_barres = pd.concat((obj61794.data, objwtchg.data, objpollard.data), axis=1)
@@ -319,7 +329,7 @@ if __name__ == "__main__":
         'ALDOC',
         'GFAP',
         'AQP4',
-        'SLC1A3'
+        'SLC1A2'
     ]
     data_timeline = data.loc[
         references.gene_symbol_to_ensembl(astro_markers2),
@@ -327,8 +337,8 @@ if __name__ == "__main__":
         # & ~data.columns.str.contains('oligo')
     ]
 
-    # normalise by dividing by the sum of non-rRNA genes
-    n = data_rr.loc[
+    # normalise by dividing by the sum of non-rRNA, non-MT genes
+    n = data_rr_mt.loc[
         :,
         ~data.columns.str.contains('neuron')
         # & ~data.columns.str.contains('oligo')
@@ -352,6 +362,107 @@ if __name__ == "__main__":
 
     fig.savefig(os.path.join(OUTDIR, 'astro_markers.pdf'))
     fig.savefig(os.path.join(OUTDIR, 'astro_markers.png'), dpi=200)
+
+    # more general neuronal lineage markers
+    neuronal_lineage_markers = {
+        'NSC': [
+            'VIM',  # VIM
+            'BMI1',
+            'NES',
+            'NEUROD1',
+            'SOX2',
+            'FABP7'
+        ],
+        'oligodendrocyte': [
+            'GALC',
+            'SOX10',
+            'MOG',
+        ],
+        'OPC': [
+            'PDGFRA',
+            'NKX2-2',
+            'OLIG2',
+        ],
+        'astrocyte': [
+            'FGFR3',
+            'GFAP',
+            'S100B',
+            'MSI1',
+        ]
+    }
+    all_neuronal_markers = []
+    for grp, arr in neuronal_lineage_markers.items():
+        all_neuronal_markers.extend(arr)
+    all_neuronal_markers_ens = references.gene_symbol_to_ensembl(all_neuronal_markers)
+
+    n = data_rr_mt.loc[
+        :,
+        ~data.columns.str.contains('neuron')
+        # & ~data.columns.str.contains('oligo')
+    ].sum(axis=0)
+
+    data_rr_mt_markers = data_rr_mt.loc[
+        all_neuronal_markers_ens,
+        ~data.columns.str.contains('neuron')
+     ] / n
+    data_rr_mt_markers.index = all_neuronal_markers
+    data_rr_mt_markers = data_rr_mt_markers.divide(
+        data_rr_mt_markers.sum(axis=1), axis=0
+    )
+
+    fig, axs, _, gs = heatmap.grouped_expression_heatmap(
+        neuronal_lineage_markers.items(),
+        data_rr_mt_markers,
+        heatmap_kwargs={'cmap': 'Reds', 'square': False},
+        cbar=False,
+        vmin=0., vmax=0.1,
+        fig_kwargs={'figsize': [5.5, 6.3]})
+    gs.update(left=0.4, wspace=.1, bottom=0.2, top=0.98, right=.98)
+    fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_norm_expr.png'), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_norm_expr.pdf'))
+
+    # playing around with dynamic range, etc.
+
+    def dynamic_range_plot(data, ax):
+        for lbl, d in sample_groups.items():
+            this_data = data.loc[:, data.columns.str.contains(d['regex'])]
+            first = True
+            for t in this_data.columns:
+                col = this_data.loc[:, t].sort_values()
+                col /= col.max()
+                x = np.linspace(0, 1, col.size)
+                plt_lbl = None
+                if first:
+                    plt_lbl = lbl
+                    first = False
+                ax.plot(x, col.values, color=d['colour'], label=plt_lbl)
+
+
+    data_rr_yg = process.yugene_transform(data_rr)
+    data_rr_log = np.log(data_rr + 1)
+    data_rr_log_yg = process.yugene_transform(data_rr_log)
+
+    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+
+    dynamic_range_plot(data_rr, axs[0, 0])
+    dynamic_range_plot(data_rr_log, axs[0, 1])
+    dynamic_range_plot(data_rr_yg, axs[1, 0])
+    dynamic_range_plot(data_rr_log_yg, axs[1, 1])
+    axs[0, 0].set_xlim(0.4, 1.)
+    axs[0, 0].set_ylabel('Expression level (normalised)')
+    axs[1, 0].set_ylabel('Expression level (normalised)')
+    axs[1, 0].set_xlabel('Percentile')
+    axs[1, 1].set_xlabel('Percentile')
+
+    axs[0, 0].legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.9)
+    axs[0, 0].set_title('Raw counts')
+    axs[0, 1].set_title('Log counts')
+    axs[1, 0].set_title('YuGene counts')
+    axs[1, 1].set_title('YuGene log counts')
+    plt.tight_layout()
+
+    fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.pdf"))
 
     # for reference, we can also load the original 'pre-processed' GSE73721 data
     # but these are indexed by mouse gene??
