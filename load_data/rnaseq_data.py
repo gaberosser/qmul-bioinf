@@ -783,6 +783,27 @@ def brainrnaseq_preprocessed():
     return data, meta
 
 
+def nih_gdc_gbm_preprocessed(units='counts'):
+    """
+    Load the preprocessed gene expression data downloaded from NIH genomic data commons
+    :param units: Either 'counts' or 'fpkm' are available.
+    :return: data, meta
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm')
+    if units == 'counts':
+        infile = os.path.join(indir, 'htseq_count', 'counts.csv')
+    elif units == 'fpkm':
+        infile = os.path.join(indir, 'htseq_count', 'fpkm.csv')
+    else:
+        raise ValueError("Unsupported units. Supported values are 'counts' and 'fpkm'.")
+
+    meta_fn = os.path.join(indir, 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0)
+
+    if not os.path.exists(infile):
+        logger.info("Unable to find summarised file %s. Calculating from individual files now.", infile)
+
+
 def gse73721(source='star', annotate_by='all', annotation_type='protein_coding'):
     """
     Barres data on GEO.

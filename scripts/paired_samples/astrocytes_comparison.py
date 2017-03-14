@@ -42,6 +42,62 @@ def plot_clustermap(data, yugene=False, n_genes=N_GENES, **kwargs):
     return cg
 
 
+def plot_all_clustermaps(data, filestem, **kwargs):
+    """
+    Run the clustermap process and save to disk for each of the possible data transformation combinations:
+    Counts
+    Log (counts + 1)
+    YuGene counts
+    YuGene log (counts + 1)
+    :param data:
+    :param filestem:
+    :param yugene:
+    :param n_genes:
+    :param kwargs:
+    :return:
+    """
+    # store column ordering
+    col_order = {}
+
+    # 1) counts
+    cg = plot_clustermap(
+        data,
+        z_score=0,
+        **kwargs
+    )
+    cg.savefig('%s.png' % filestem, dpi=200)
+    col_order['counts'] = cg.dendrogram_col.reordered_ind
+
+    # 2) yugene counts
+    cg = plot_clustermap(
+        data,
+        yugene=True,
+        **kwargs
+    )
+    cg.savefig('%s_yg.png' % filestem, dpi=200)
+    col_order['yg_counts'] = cg.dendrogram_col.reordered_ind
+
+    # 3) log (counts + 1)
+    cg = plot_clustermap(
+        np.log(data + 1),
+        z_score=0,
+        **kwargs
+    )
+    cg.savefig('%s_log.png' % filestem, dpi=200)
+    col_order['log_counts'] = cg.dendrogram_col.reordered_ind
+
+    # 4) yugene log (counts + 1)
+    cg = plot_clustermap(
+        np.log(data + 1),
+        yugene=True,
+        **kwargs
+    )
+    cg.savefig('%s_log_yg.png' % filestem, dpi=200)
+    col_order['yg_log_counts'] = cg.dendrogram_col.reordered_ind
+
+    return col_order
+
+
 def plot_correlation_heatmap(data, yugene=False, n_genes=None, **kwargs):
     if yugene:
         data = process.yugene_transform(data)
@@ -63,6 +119,26 @@ def plot_correlation_heatmap(data, yugene=False, n_genes=None, **kwargs):
     plt.tight_layout()
 
     return ax
+
+def plot_all_correlation_heatmaps(data, filestem, col_orders, **kwargs):
+    ax = plot_correlation_heatmap(data.iloc[:, col_orders['counts']], **kwargs)
+    ax.figure.savefig("%s.png" % filestem, dpi=200)
+    ax.figure.savefig("%s.pdf" % filestem)
+
+    t = process.yugene_transform(data)
+    ax = plot_correlation_heatmap(t.iloc[:, col_orders['yg_counts']], **kwargs)
+    ax.figure.savefig("%s_yg.png" % filestem, dpi=200)
+    ax.figure.savefig("%s_yg.pdf" % filestem)
+
+    t = np.log(data + 1)
+    ax = plot_correlation_heatmap(t.iloc[:, col_orders['log_counts']], **kwargs)
+    ax.figure.savefig("%s_log.png" % filestem, dpi=200)
+    ax.figure.savefig("%s_log.pdf" % filestem)
+
+    t = process.yugene_transform(np.log(data + 1))
+    ax = plot_correlation_heatmap(t.iloc[:, col_orders['yg_log_counts']], **kwargs)
+    ax.figure.savefig("%s_log_yg.png" % filestem, dpi=200)
+    ax.figure.savefig("%s_log_yg.pdf" % filestem)
 
 
 if __name__ == "__main__":
@@ -158,6 +234,7 @@ if __name__ == "__main__":
         'Oligodendrocytes': {'regex': 'oligo', 'colour': '#386cb0'},
         'Our iNSC': {'regex': '_NSC', 'colour': '#777777'},
         'H9 iNSC': {'regex': 'H9', 'colour': '#cccccc'},
+        'Pollard NSC': {'regex': 'Pollard', 'colour': '#cccccc'},
         'Our induced astrocytes': {'regex': 'ASTRO', 'colour': 'black'},
     }
 
@@ -226,6 +303,12 @@ if __name__ == "__main__":
     # remove MT in addition to rRNA
 
     data_rr_mt = data_rr.loc[~data_rr.index.isin(mt_ensg)]
+
+    filestem = os.path.join(OUTDIR, 'clustermap_sub_rrna_mt')
+    col_order = plot_all_clustermaps(data_rr_mt, filestem, col_colors=col_colors)
+
+    filestem = os.path.join(OUTDIR, 'correlation_sub_rrna_mt')
+    plot_all_correlation_heatmaps(data_rr_mt, filestem, col_order, vmin=0.5, vmax=1.)
 
     # plot clustermap with rRNA removed
     cg = plot_clustermap(
@@ -421,22 +504,45 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_norm_expr.png'), dpi=200)
     fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_norm_expr.pdf'))
 
+    # for each marker, plot the MAX normalised expression for comparison
+    marker_level = data_rr.loc[all_neuronal_markers_ens] / data_rr_mt.sum(axis=0)
+    marker_level.index = all_neuronal_markers
+
+    fig = plt.figure(figsize=(6.8, 3.2))
+    ax = fig.add_subplot(111)
+    sns.boxplot(marker_level.transpose(), ax=ax)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    # max_marker_level.plot.bar(ax=ax)
+    ax.set_ylabel("Proportion of reads")
+    plt.tight_layout()
+    fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_level_boxplot.png'), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, 'neuronal_lineage_marker_level_boxplot.pdf'))
+
+
     # playing around with dynamic range, etc.
 
-    def dynamic_range_plot(data, ax):
+    def dynamic_range_plot(data, ax=None, renorm=True):
+        """
+        Show the dynamic range of the supplied data.
+        :param data:
+        :param ax:
+        :param renorm: If True, rescale the x axis so that zero represents the first non-zero y value.
+        :return:
+        """
         for lbl, d in sample_groups.items():
             this_data = data.loc[:, data.columns.str.contains(d['regex'])]
             first = True
             for t in this_data.columns:
                 col = this_data.loc[:, t].sort_values()
                 col /= col.max()
+                if renorm:
+                    col = col.loc[col > 0]
                 x = np.linspace(0, 1, col.size)
                 plt_lbl = None
                 if first:
                     plt_lbl = lbl
                     first = False
                 ax.plot(x, col.values, color=d['colour'], label=plt_lbl)
-
 
     data_rr_yg = process.yugene_transform(data_rr)
     data_rr_log = np.log(data_rr + 1)
@@ -448,11 +554,11 @@ if __name__ == "__main__":
     dynamic_range_plot(data_rr_log, axs[0, 1])
     dynamic_range_plot(data_rr_yg, axs[1, 0])
     dynamic_range_plot(data_rr_log_yg, axs[1, 1])
-    axs[0, 0].set_xlim(0.4, 1.)
+    axs[0, 0].set_xlim(0., 1.)
     axs[0, 0].set_ylabel('Expression level (normalised)')
     axs[1, 0].set_ylabel('Expression level (normalised)')
-    axs[1, 0].set_xlabel('Percentile')
-    axs[1, 1].set_xlabel('Percentile')
+    axs[1, 0].set_xlabel('Non-zero percentile')
+    axs[1, 1].set_xlabel('Non-zero percentile')
 
     axs[0, 0].legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.9)
     axs[0, 0].set_title('Raw counts')
@@ -463,6 +569,68 @@ if __name__ == "__main__":
 
     fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.pdf"))
+
+    # little sidetrack: resample from a high count Barres datum. Does this support the low count YG distribution?
+    total_read_counts = [200000, 500000, 1000000, 2000000, 5000000]
+    n_rpt = 100
+
+    # set the reference (~7.5mi reads)
+    ref_data = data_rr.loc[:, '13yo ctx astro'].sort_values()
+    ref_data /= ref_data.sum()
+    ref_data = ref_data.loc[ref_data != 0]
+
+    sim_data = {}
+    for trc in total_read_counts:
+        print "Read count %d" % trc
+        simd = np.random.choice(ref_data.index, p=ref_data.values, size=(trc, n_rpt))
+        # count for each column
+        counted = [pd.value_counts(simd[:, i]) for i in range(n_rpt)]
+        sim_data[trc] = pd.DataFrame(counted, columns=ref_data.index).transpose().fillna(0)
+
+    # yugene transform the ref_data
+    ref_data_yg = process.yugene_transform(pd.DataFrame(ref_data))
+
+    # yugene transform each of the expt runs
+    sim_data_yg = dict([
+        (k, process.yugene_transform(v)) for k, v in sim_data.iteritems()
+    ])
+
+    # plot them all together using a modified plot code and look for a difference in the distribution
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    sim_colours = {
+        200000: 'y',
+        500000: 'b',
+        1000000: 'c',
+        2000000: 'r',
+        5000000: 'g'
+    }
+    ref_col = ref_data_yg.iloc[:, 0].sort_values()
+    ref_col = ref_col.loc[ref_col > 0]
+    ref_x = x = np.linspace(0, 1, ref_col.size)
+    ax.plot(ref_x, ref_col, color='k')
+
+    for n, arr in sim_data_yg.items():
+        first = True
+        for t in arr.columns:
+            col = arr.loc[:, t].sort_values()
+            col = col.loc[col > 0]
+            x = np.linspace(0, 1, col.size)
+            if first:
+                lbl = str(n)
+                first = False
+            else:
+                lbl = None
+            ax.plot(x, col.values, color=sim_colours[n], label=lbl)
+
+    ax.set_xlabel('Rescaled percentile')
+    ax.set_ylabel('Normalised expression value')
+    ax.set_ylim([0, 1])
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.9)
+    fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.pdf"))
+
 
     # for reference, we can also load the original 'pre-processed' GSE73721 data
     # but these are indexed by mouse gene??

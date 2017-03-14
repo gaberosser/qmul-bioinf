@@ -96,11 +96,17 @@ def yugene_transform(marray_data):
 
     for t in marray_data.columns:
         col = res.loc[:, t].sort_values(ascending=False)
-        a = 1 - col.cumsum() / col.sum()
+        cs = col.cumsum()
+        s = col.sum()
+        # numerical error: the final value in cumsum() may not equal the sum
+        if cs[-1] != s:
+            cs[cs == cs[-1]] = s
+        a = 1 - cs / s
         res.loc[a.index, t] = a
 
     # a numerical error in cumsum() may result in some small negative values. Zero these.
     res[res < 0] = 0.
+
     # colmin = res.min(axis=0)
     # colmin[colmin >= 0] = 0.
     # res = res.subtract(colmin, axis=1)
