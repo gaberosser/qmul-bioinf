@@ -296,6 +296,7 @@ class MultipleLaneCountDatasetLoader(object):
         self.loaders = None
         self.load_lanes(*args, **kwargs)
         self.data = self.combine_counts()
+        self.meta = self.combine_metas()
 
     def load_lanes(self, *args, **kwargs):
         raise NotImplementedError
@@ -305,6 +306,44 @@ class MultipleLaneCountDatasetLoader(object):
         for l in self.loaders[1:]:
             data += l.data
         return data
+
+    def combine_metas(self):
+        meta = self.loaders[0].meta.copy()
+        idx = meta.index
+        b_sample = 'sample' in meta.columns
+        if not b_sample:
+            logger.warning("Sample names column not found so matching will assume that rows are matched.")
+        b_readcount = 'read_count' in meta.columns
+
+        for i, l in enumerate(self.loaders[1:]):
+            this_meta = l.meta.copy()
+            if b_sample:
+                s = meta.loc[idx, 'sample']
+                this_meta.set_index('sample', inplace=True)
+                # check that entries match
+                if len(this_meta.index.intersection(s)) != len(s):
+                    raise ValueError("Meta file %s entries do not match meta file %s entries." % (
+                        self.meta_fns[0],
+                        self.meta_fns[i + 1],
+                    ))
+                # increment read count
+                if b_readcount:
+                    meta.loc[idx, 'read_count'] += this_meta.loc[s, 'read_count'].values
+
+            else:
+                s = meta.index
+                # check that the number of entries match
+                if len(this_meta.index) != len(s):
+                    raise ValueError("Meta file %s entries do not match meta file %s entries." % (
+                        self.meta_fns[0],
+                        self.meta_fns[i + 1],
+                    ))
+                # increment read count
+                if b_readcount:
+                    meta.loc[:, 'read_count'] += this_meta.loc[:, 'read_count'].values
+
+        return meta
+
 
     @property
     def data_by_symbol(self):
@@ -802,6 +841,29 @@ def nih_gdc_gbm_preprocessed(units='counts'):
 
     if not os.path.exists(infile):
         logger.info("Unable to find summarised file %s. Calculating from individual files now.", infile)
+        dat = []
+        for cid in meta.index:
+            if units == 'counts':
+                this_infile = os.path.join(indir, 'htseq_count', cid, 'counts.gz')
+            else:
+                this_infile = os.path.join(indir, 'htseq_count', cid, 'fpkm.gz')
+            try:
+                this_dat = pd.read_csv(this_infile, header=None, index_col=0, sep='\t')
+                # amend Ensembl IDs (remove version number)
+                this_dat.index = this_dat.index.str.replace(r'\.[0-9]*$', '')
+                dat.append(this_dat)
+            except Exception:
+                logger.exception("Failed to read file %s", this_infile)
+
+        dat = pd.concat(dat, axis=1)
+        dat.columns = meta.loc[:, 'sample']
+        logger.info("Saving data from %d samples to %s.", dat.columns.size, infile)
+        dat.to_csv(infile)
+    else:
+        dat = pd.read_csv(infile, header=0, index_col=0)
+
+    meta.set_index('sample', inplace=True)
+    return dat, meta
 
 
 def gse73721(source='star', annotate_by='all', annotation_type='protein_coding'):

@@ -1,8 +1,118 @@
 from microarray import process
 import numpy as np
+import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 from scipy.cluster import hierarchy as hc
+
+
+def generate_colour_map_dict(meta, colname, contains_arr, label=None, existing=None, sample_names=None, non_matching=False):
+    """
+    Generates a DataFrame colour map suitable for use as a row_color or col_color input to clustermap.
+    Colours are selected automatically based on the number of categories, up to a total of 9.
+    If an existing dataframe is supplied, an additional column is added for the new label
+    :param meta: The full metadata.
+    :param colname: The name of the column to access in metadata. If None, index is used.
+    :param contains_arr: An array of strings or compiled regex objects. These will be used to match on `contains`.
+    :param label: If supplied, this label is used as the column name in the output. Otherwise, colname is used.
+    :param existing: If supplied, this is an existing DataFrame. A new column is added and a copy returned.
+    :param sample_names: If supplied, this array contains the samples names, used as the index of the output. Otherwise
+    use the columns of metadata.
+    :param non_matching: If True, also apportion a colour for cases that don't match anything in contains_arr. If a
+    string, use this as the extra colour. If False, ignore non-matching colours.
+    :return:
+    """
+    colour_brewers = {
+        2: ['#1f78b4','#b2df8a'],
+        3: ['#7fc97f','#beaed4','#fdc086'],
+        4: ['#7fc97f','#beaed4','#fdc086','#ffff99'],
+        5: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0'],
+        6: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0','#f0027f'],
+        7: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0','#f0027f','#bf5b17'],
+        8: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00'],
+        9: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6'],
+        10: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a'],
+        11: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99'],
+        12: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928'],
+    }
+    if len(contains_arr) not in colour_brewers:
+        raise AttributeError(
+            "Unsupported number of categories: %d" % len(contains_arr)
+        )
+    if non_matching is True and (len(contains_arr) + 1) not in colour_brewers:
+        raise AttributeError(
+            "Unsupported number of categories due to non_matching addition: %d + 1" % len(contains_arr)
+        )
+
+    if sample_names is None:
+        sample_names = meta.index
+
+    if colname is None:
+        attr = meta.index
+        if label is None:
+            label = meta.name
+    else:
+        attr = meta.loc[:, colname]
+        if label is None:
+            label = colname
+
+    if existing is not None:
+        out = existing.copy()
+        if len(out.index.intersection(sample_names)) != len(out.index):
+            raise AttributeError("The index of the supplied existing dataframe do not match the expected sample names")
+    else:
+        out = pd.DataFrame(index=sample_names)
+
+    if non_matching is False:
+        cmap = colour_brewers[len(contains_arr)]
+        col = pd.Series(index=sample_names, name=label)
+    elif non_matching is True:
+        cmap = colour_brewers[len(contains_arr) + 1]
+        bg = cmap.pop()
+        col = pd.Series(data=bg, index=sample_names, name=label)
+    else:
+        cmap = colour_brewers[len(contains_arr)]
+        col = pd.Series(data=non_matching, index=sample_names, name=label)
+
+    for i, r in enumerate(contains_arr):
+        # NB must use values here because the indexes may not match
+        col.loc[attr.str.contains(r).values] = cmap[i]
+
+    out.loc[:, label] = col
+
+    return out
+
+
+def dendrogram_with_colours(
+    data,
+    col_colours,
+    method='average',
+    metric='correlation'
+):
+    """
+    IMPORTANT: it is assumed that samples are in COLUMNS. If not, this routine might crash due to memory overflow!
+    :param data:
+    :param method:
+    :param metric:
+    :param col_colours:
+    :return:
+    """
+    gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
+    fig = plt.figure()
+    axs = [fig.add_subplot(ax) for ax in gs]
+    axs[1].yaxis.set_visible(False)
+    axs[1].set_facecolor(fig.get_facecolor())
+
+    # plot dendrogram
+    z = hc.linkage(data.transpose(), metric=metric, method=method)
+    r = hc.dendrogram(z, ax=axs[0])
+
+    # plot colours
+    matrix = np.ones((1, data.shape[1]))
+    
+    sns.matrix.ClusterGrid.color_list_to_matrix_and_cmap(list(col_colours.group.values), range(len(col_colours)))
+
+
 
 
 def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average'):

@@ -177,6 +177,14 @@ if __name__ == "__main__":
     data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg.data, objpollard.data), axis=1)
     data = data.loc[data.index.str.contains('ENSG')]
 
+    # combine the metadata
+    meta = pd.concat((
+        obj73721.meta.loc[to_keep73721],
+        obj61794.meta,
+        objwtchg.meta,
+        objpollard.meta
+    ), axis=0)
+
     # compare with qPCR: comparing markers in the NSC samples and paired astrocytes
     astro_markers1 = [
         'S100B',
@@ -310,71 +318,15 @@ if __name__ == "__main__":
     filestem = os.path.join(OUTDIR, 'correlation_sub_rrna_mt')
     plot_all_correlation_heatmaps(data_rr_mt, filestem, col_order, vmin=0.5, vmax=1.)
 
-    # plot clustermap with rRNA removed
-    cg = plot_clustermap(
-        data_rr,
-        z_score=0,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna.png'), dpi=200)
-
-    # correlation heatmap rRNA removed
-    ax = plot_correlation_heatmap(data_rr.iloc[:, cg.dendrogram_col.reordered_ind])
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna.pdf'))
-
-
-    cg = plot_clustermap(
-        data_rr,
-        yugene=True,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_yg.png'), dpi=200)
-
-    # plot clustermap with rRNA and MT RNA removed
-
-    cg = plot_clustermap(
-        data_rr_mt,
-        z_score=0,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt.png'), dpi=200)
-
-    # correlation heatmap rRNA and MT removed
-    ax = plot_correlation_heatmap(data_rr_mt.iloc[:, cg.dendrogram_col.reordered_ind])
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'correlation_sub_rrna_mt.pdf'))
-
-    cg = plot_clustermap(
-        data_rr_mt,
-        yugene=True,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_yg.png'), dpi=200)
-
     # re-run clustering without Barres data (since this has different distribution)
     data_no_barres = pd.concat((obj61794.data, objwtchg.data, objpollard.data), axis=1)
     data_no_barres = data_no_barres.loc[data_no_barres.index.str.contains('ENSG')]
 
-    cg = plot_clustermap(
-        data_no_barres,
-        z_score=0,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_no_barres.png'), dpi=200)
+    filestem = os.path.join(OUTDIR, 'clustermap_no_barres')
+    col_order = plot_all_clustermaps(data_no_barres, filestem, col_colors=col_colors)
 
-    cg = plot_clustermap(
-        data_no_barres,
-        yugene=True,
-        col_colors=col_colors,
-        show_gene_labels=SHOW_GENE_LABELS
-    )
-    cg.savefig(os.path.join(OUTDIR, 'clustermap_no_barres_yg.png'), dpi=200)
+    filestem = os.path.join(OUTDIR, 'correlation_no_barres')
+    plot_all_correlation_heatmaps(data_no_barres, filestem, col_order, vmin=0.5, vmax=1.)
 
     # for every sample, extract the top N by count and summarise
 
@@ -391,14 +343,12 @@ if __name__ == "__main__":
         top_dat = data_rr_mt.loc[list(common_genes)].divide(data_rr.sum(), axis=1)
         top_dat.index = references.ensembl_to_gene_symbol(top_dat.index)
 
-        cg = plot_clustermap(
-            top_dat,
-            n_genes=topN,  # plot all genes
-            col_colors=col_colors,
-            show_gene_labels=True,
-            z_score=0
-        )
-        cg.savefig(os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_top%dgenes.png' % topN), dpi=200)
+        filestem = os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_top_%d' % topN)
+        col_order = plot_all_clustermaps(top_dat, filestem, col_colors=col_colors)
+
+        filestem = os.path.join(OUTDIR, 'correlation_sub_rrna_mt_top_%d' % topN)
+        plot_all_correlation_heatmaps(top_dat, filestem, col_order, vmin=0.5, vmax=1.)
+
 
     # bar charts of successive markers, used to characterise based on timeline
     # for this, only astrocytes and NSCs useful, so remove oligo and neuron
@@ -570,7 +520,11 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.png"), dpi=200)
     fig.savefig(os.path.join(OUTDIR, "dynamic_range_transformations.pdf"))
 
-    # little sidetrack: resample from a high count Barres datum. Does this support the low count YG distribution?
+    # little sidetrack: resample reads from a high count Barres datum.
+    # This is achieved by weighted random sampling of the genes based on the empirical distribution function
+    # Key Q: Does this support the low count YG distribution?
+    # Spoiler alert: Yes, it seems so.
+
     total_read_counts = [200000, 500000, 1000000, 2000000, 5000000]
     n_rpt = 100
 
@@ -638,31 +592,3 @@ if __name__ == "__main__":
     fpkm_idx = np.array(fpkm.index.str.capitalize())
     fpkm_idx[fpkm_idx == 'Spata2l'] = 'Spata2L'
     fpkm.index = fpkm_idx
-
-
-    # housekeeping?
-    #
-    # genes = [
-    #     'Slc1a3',
-    #     'Gja1',
-    #     'Aldh1l1',
-    #     'S100b',
-    #     'Aqp4',
-    #     'Gfap',
-    #     'Cd44',
-    #     'Aldoc',
-    #     'Gfap',
-    #     'Gapdh',
-    #     'B2m'
-    # ]
-    # for g in genes:
-    #     fig = plt.figure(figsize=(4.5, 7))
-    #     ax = fig.add_subplot(111)
-    #     ax.set_position([0.5, 0.08, 0.48, 0.9])
-    #     data_by_symbol.loc[g].plot.barh(width=0.8, ax=ax)
-    #     ax.set_xlabel(g)
-    #     fig.savefig(os.path.join(OUTDIR, '%s.png' % g), dpi=200)
-    #     fig.savefig(os.path.join(OUTDIR, '%s.pdf' % g))
-        # plt.close(fig)
-
-    # TODO: if required, make a single chart with all early-stage markers side by side
