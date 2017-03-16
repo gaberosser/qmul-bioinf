@@ -2,13 +2,23 @@ from microarray import process
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, colors, patches
 from scipy.cluster import hierarchy as hc
 
 
-def generate_colour_map_dict(meta, colname, contains_arr, label=None, existing=None, sample_names=None, non_matching=False):
+def generate_colour_map_dict(
+        meta,
+        colname,
+        contains_arr,
+        label=None,
+        existing=None,
+        sample_names=None,
+        non_matching=False,
+        group_names=None
+):
     """
     Generates a DataFrame colour map suitable for use as a row_color or col_color input to clustermap.
+    Also generates a dict suitable for dendrogram plot (used to make the legend)
     Colours are selected automatically based on the number of categories, up to a total of 9.
     If an existing dataframe is supplied, an additional column is added for the new label
     :param meta: The full metadata.
@@ -63,22 +73,35 @@ def generate_colour_map_dict(meta, colname, contains_arr, label=None, existing=N
     else:
         out = pd.DataFrame(index=sample_names)
 
+    bg = None
     if non_matching is False:
         cmap = colour_brewers[len(contains_arr)]
         col = pd.Series(index=sample_names, name=label)
-    elif non_matching is True:
-        cmap = colour_brewers[len(contains_arr) + 1]
-        bg = cmap.pop()
-        col = pd.Series(data=bg, index=sample_names, name=label)
     else:
-        cmap = colour_brewers[len(contains_arr)]
+        if non_matching is True:
+            # auto-select a colour for non matching
+            cmap = colour_brewers[len(contains_arr) + 1]
+            bg = cmap.pop()
+        else:
+            # use supplied value
+            cmap = colour_brewers[len(contains_arr)]
+            bg = non_matching
         col = pd.Series(data=non_matching, index=sample_names, name=label)
 
     for i, r in enumerate(contains_arr):
         # NB must use values here because the indexes may not match
-        col.loc[attr.str.contains(r).values] = cmap[i]
+        # fillna ensures that there are no NaNs in the array used for lookups
+        col.loc[attr.str.contains(r).fillna(False).values] = cmap[i]
 
     out.loc[:, label] = col
+
+    if group_names is not None:
+        legend_dict = {label: dict([
+            (group_names[i], cmap[i]) for i in range(len(contains_arr))
+        ])}
+        if bg is not None:
+            legend_dict[label]['Other'] = bg
+        return out, legend_dict
 
     return out
 
@@ -86,31 +109,123 @@ def generate_colour_map_dict(meta, colname, contains_arr, label=None, existing=N
 def dendrogram_with_colours(
     data,
     col_colours,
+    linkage=None,
     method='average',
-    metric='correlation'
+    metric='correlation',
+    distance_threshold=None,
+    fig_kws=None,
+    legend_labels=None,
 ):
     """
     IMPORTANT: it is assumed that samples are in COLUMNS. If not, this routine might crash due to memory overflow!
     :param data:
-    :param method:
-    :param metric:
-    :param col_colours:
+    :param linkage: If supplied, this is the output from hc.linkage (or similar). This overrides method and metric.
+    :param method: Passed to hc.linkage()
+    :param metric: Passed to hc.linkage()
+    :param col_colours: DataFrame with one column per classifying feature. One coloured row will be generated per col.
+    :param distance_threshold: If supplied, this is the distance below which the dendrogram is broken into different
+    colours
+    :param fig_kws: Passed to plt.figure() upon figure creation.
+    :param legend_labels: If supplied, a legend is generated explaining the interpretation of the col_colours.
+    If col_colours contains just one column, this is a dict with keys corresponding to labels and values corresponding
+    to the same colours given in col_colours.
+    If multiple columns are found in col_colours, this is a dict with keys matching the column names and values
+    dictionaries as above for each separate legend block
     :return:
     """
-    gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
-    fig = plt.figure()
-    axs = [fig.add_subplot(ax) for ax in gs]
-    axs[1].yaxis.set_visible(False)
-    axs[1].set_facecolor(fig.get_facecolor())
+    if distance_threshold is None:
+        # set distance threshold so everything is above it
+        distance_threshold = -1
+    if fig_kws is None:
+        fig_kws = dict()
+    if linkage is not None:
+        z = linkage
+    else:
+        z = hc.linkage(data.transpose(), metric=metric, method=method)
+
+    nsample = data.shape[1]
+    ngroup = col_colours.shape[1]
+
+    fig = plt.figure(**fig_kws)
+    if legend_labels is not None:
+        # gs = plt.GridSpec(2, 2, height_ratios=(12, 1), width_ratios=(5, 1), hspace=0.01, wspace=0.)
+        gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
+        dend_ax = fig.add_subplot(gs[0, 0])
+        cc_ax = fig.add_subplot(gs[1, 0])
+        # leg_ax = fig.add_subplot(gs[:, 1])
+        if ngroup == 1 and len(legend_labels) != 1:
+            legend_labels = {col_colours.columns[0]: legend_labels}
+    else:
+        gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
+        dend_ax = fig.add_subplot(gs[0, 0])
+        cc_ax = fig.add_subplot(gs[1, 0])
+        leg_ax = None
+
+    # cc_ax.yaxis.set_visible(False)
+    cc_ax.set_axis_bgcolor(fig.get_facecolor())
 
     # plot dendrogram
-    z = hc.linkage(data.transpose(), metric=metric, method=method)
-    r = hc.dendrogram(z, ax=axs[0])
+    # labels will be added manually afterwards
+    r = hc.dendrogram(
+        z,
+        ax=dend_ax,
+        labels=data.columns,
+        above_threshold_color='k',
+        color_threshold=distance_threshold,
+        no_labels=True,
+    )
 
-    # plot colours
-    matrix = np.ones((1, data.shape[1]))
-    
-    sns.matrix.ClusterGrid.color_list_to_matrix_and_cmap(list(col_colours.group.values), range(len(col_colours)))
+    # get all colours and convert to unique integer
+    unique_cols = np.unique(col_colours.values.flatten())
+
+    # generate matrix and cmap for colour bar
+    mat = np.ones_like(col_colours)
+    cmap_colours = []
+    for i, c in enumerate(unique_cols):
+        cmap_colours.append(colors.colorConverter.to_rgb(c))
+        mat[(col_colours == c).values] = i
+    mat = mat.transpose().astype(int)
+
+    # reorder based on dendrogram
+    mat = mat[:, r['leaves']]
+
+    # plot coloured bar using heatmap
+    sns.heatmap(mat, cmap=colors.ListedColormap(cmap_colours), ax=cc_ax, cbar=False)
+    cc_ax.xaxis.set_ticks(np.arange(nsample) + 0.5)
+    cc_ax.xaxis.set_ticklabels(r['ivl'], rotation=90)
+    cc_ax.yaxis.set_ticks(np.arange(ngroup) + 0.5)
+    cc_ax.yaxis.set_ticklabels(col_colours.columns, rotation=0)
+
+    if legend_labels is not None:
+        handles = []
+        for grp, d in legend_labels.items():
+            for ttl, c in d.items():
+                handles.append(patches.Patch(color=colors.colorConverter.to_rgb(c), label=ttl))
+            handles.append(patches.Patch(color='w', alpha=0., label=''))
+        handles.pop()
+        dend_ax.legend(handles=handles, loc='upper left', borderaxespad=0., bbox_to_anchor=(1., 1.01))
+
+    gs.tight_layout(fig, h_pad=0., w_pad=0.)
+
+    # this is a HACK: we have to force the figure drawing to get the size of the legend
+    fig.canvas.draw()
+
+    # now we need to change right coords to keep legend on the screen
+    leg = dend_ax.get_legend()
+    bb = leg.get_window_extent()  # bbox in window coordinates
+    bb_ax = bb.transformed(leg.axes.transAxes.inverted())  # bbox in ax coordinates
+
+    # update the rightmost coordinates
+    gs.update(right=(1 - bb_ax.width))
+
+    return {
+        'fig': fig,
+        'gridspec': gs,
+        'dendrogram_ax': dend_ax,
+        'col_colour_ax': cc_ax,
+        'dendrogram': r,
+        'linkage': z,
+    }
 
 
 

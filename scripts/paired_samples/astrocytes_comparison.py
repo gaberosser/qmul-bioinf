@@ -256,8 +256,8 @@ if __name__ == "__main__":
         'H9': '#cccccc',
         'ASTRO': 'black'
     }
-    for t, col in cmap.items():
-        col_colors.loc[col_colors.index.str.contains(t)] = col
+    for d in sample_groups.values():
+        col_colors.loc[col_colors.index.str.contains(d['regex'])] = d['colour']
 
     row_colors = pd.DataFrame(index=data.index, columns=['RNA type'])
     row_colors.loc[row_colors.index.isin(rrna_ensg)] = 'black'
@@ -341,7 +341,10 @@ if __name__ == "__main__":
             common_genes.update(t.index)
 
         top_dat = data_rr_mt.loc[list(common_genes)].divide(data_rr.sum(), axis=1)
-        top_dat.index = references.ensembl_to_gene_symbol(top_dat.index)
+        symb = references.ensembl_to_gene_symbol(top_dat.index)
+        tidx = np.array(top_dat.index)
+        tidx[~symb.isnull().values] = symb.loc[~symb.isnull()].values
+        top_dat.index = tidx
 
         filestem = os.path.join(OUTDIR, 'clustermap_sub_rrna_mt_top_%d' % topN)
         col_order = plot_all_clustermaps(top_dat, filestem, col_colors=col_colors)
