@@ -844,9 +844,9 @@ def nih_gdc_gbm_preprocessed(units='counts'):
         dat = []
         for cid in meta.index:
             if units == 'counts':
-                this_infile = os.path.join(indir, 'htseq_count', cid, 'counts.gz')
+                this_infile = os.path.join(indir, 'htseq_count', 'counts', '%s.gz' % cid)
             else:
-                this_infile = os.path.join(indir, 'htseq_count', cid, 'fpkm.gz')
+                this_infile = os.path.join(indir, 'htseq_count', 'fpkm', '%s.gz' % cid)
             try:
                 this_dat = pd.read_csv(this_infile, header=None, index_col=0, sep='\t')
                 # amend Ensembl IDs (remove version number)

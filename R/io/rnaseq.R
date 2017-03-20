@@ -140,7 +140,6 @@ star.load_one <- function(filename, label=NULL, annotation.col=NULL, stranded='u
 }
 
 star.load_all <- function(indir, metafile=NULL, annotation.col=NULL, stranded='u') {
-  # TODO: rename columns (sample names) based on meta if ('sample' %in% colnames(meta))?
   fname.pattern <- 'ReadsPerGene\\.out\\.tab'
   flist <- list.files(indir, pattern=fname.pattern)
   
@@ -192,5 +191,71 @@ star.combine_lanes <- function(indirs, metafiles=NULL, annotation.col=NULL, stra
   }
   
   return(list(data=data, meta=meta))
+  
+}
+
+
+htseq.load_one <- function(infile, label=NULL, annotation.col=NULL) {
+  dat <- read.csv(infile, header = F, row.names = 1, sep='\t', check.names = F)
+  
+  if (!is.null(label)) {
+    colnames(dat) <- label
+  }
+  
+  # remove accession version numbers if required
+  rownames(dat) <- gsub("\\.[[:digit:]]+$", "", rownames(dat))
+  
+  # annotate if required
+  dat <- annotate_ensembl_data(dat, annotation.col = annotation.col)
+  
+  return(dat)
+}
+
+
+htseq.load_all <- function(indir, metafile=NULL, annotation.col=NULL, file.pattern=NULL) {
+  # assuming that all files in the directory are relevant, unless a pattern has been supplied
+  flist <- list.files(indir, pattern=file.pattern)
+  
+  meta <- NULL
+  if (!is.null(metafile)) {
+    meta <- read.csv(metafile, header = 1, row.names = 1, check.names = F)
+    # compare file count in dir with meta
+    if (nrow(meta) != length(flist)) {
+      warning("Number of meta entries(", nrow(meta), ") is not equal to number of matching files (", length(flist), ")")
+    }
+  }
+  
+  # load individual files, deferring annotation to later
+  get_label <- function(x) {
+    if (!is.null(file.pattern)) {
+      y <- gsub(file.pattern, "", x)
+    } else {
+      y <- x
+    }
+    return(y)
+  }
+  dat <- data.frame(lapply(flist, FUN = function (x) {
+    htseq.load_one(file.path(indir, x), label = get_label(x), annotation.col=NULL)
+  }), check.names = F)
+  
+  # apply annotation if requested
+  dat <- annotate_ensembl_data(dat, annotation.col = annotation.col)
+  
+  # no need to test for null
+  if ('sample' %in% colnames(meta)) {
+    # check whether the data column names match and rename if they do
+    if (!any(colnames(dat) %in% rownames(meta))) {
+      warning(
+        "The data column names ",  
+        paste0(paste(colnames(dat)[1:3], collapse = ', '), ', ...'),
+        " do not match the meta row names ", 
+        paste0(paste(rownames(meta)[1:3], collapse = ', '), ', ...'),
+        " so we won't rename.")
+    } else {
+      colnames(dat) <- meta[colnames(dat), 'sample']
+    }
+  }
+  
+  return(list(data=dat, meta=meta))  
   
 }
