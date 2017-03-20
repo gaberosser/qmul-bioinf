@@ -1,3 +1,13 @@
+#' Replicate a vector n times and stack as columns to form a matrix
+rep.col<-function(x,n){
+  matrix(rep(x,each=n), ncol=n, byrow=TRUE)
+}
+
+#' Replicate a vector n times and stack as rows to form a matrix
+rep.row<-function(x,n){
+  matrix(rep(x,each=n),nrow=n)
+}
+
 #' Function source: http://slowkow.com/notes/data-table-aggregate/
 #' Author: Kamil Slowikowski
 #' Aggregate all columns of a matrix or dataframe, where rows are
