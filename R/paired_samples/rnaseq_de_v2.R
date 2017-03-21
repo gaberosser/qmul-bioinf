@@ -143,32 +143,39 @@ dat.wtchg_ip <- bind_cols(
   dat.wtchg,
   dat.ip
 )
+rownames(dat.wtchg_ip) <- rownames(dat.wtchg)
 
 meta.wtchg_ip <- data.frame(row.names = c(
   as.vector(meta.wtchg[,'sample']), 
   as.vector(meta.ip[,'sample'])
 ))
 
-meta.wtchg_ip[grep(pattern = '018', x = rownames(meta.wtchg_ip)), 'pair'] = 1
-meta.wtchg_ip[grep(pattern = '019', x = rownames(meta.wtchg_ip)), 'pair'] = 2
-meta.wtchg_ip[grep(pattern = '026', x = rownames(meta.wtchg_ip)), 'pair'] = 3
-meta.wtchg_ip[grep(pattern = '031', x = rownames(meta.wtchg_ip)), 'pair'] = 4
-meta.wtchg_ip[grep(pattern = 'Pollard', x = rownames(meta.wtchg_ip)), 'pair'] = -1
-meta.wtchg_ip$pair <- as.factor(meta.wtchg_ip$pair)
+# meta.wtchg_ip[grep(pattern = '018', x = rownames(meta.wtchg_ip)), 'pair'] = 1
+# meta.wtchg_ip[grep(pattern = '019', x = rownames(meta.wtchg_ip)), 'pair'] = 2
+# meta.wtchg_ip[grep(pattern = '026', x = rownames(meta.wtchg_ip)), 'pair'] = 3
+# meta.wtchg_ip[grep(pattern = '031', x = rownames(meta.wtchg_ip)), 'pair'] = 4
+# meta.wtchg_ip[grep(pattern = 'Pollard', x = rownames(meta.wtchg_ip)), 'pair'] = -1
+# meta.wtchg_ip$pair <- as.factor(meta.wtchg_ip$pair)
+# 
+# meta.wtchg_ip[grep(pattern = 'GBM', x = rownames(meta.wtchg_ip)), 'type'] = 'GBM'
+# meta.wtchg_ip[grep(pattern = 'NSC', x = rownames(meta.wtchg_ip)), 'type'] = 'NSC'
+# meta.wtchg_ip$type <- as.factor(meta.wtchg_ip$type)
 
-meta.wtchg_ip[grep(pattern = 'GBM', x = rownames(meta.wtchg_ip)), 'type'] = 'GBM'
-meta.wtchg_ip[grep(pattern = 'NSC', x = rownames(meta.wtchg_ip)), 'type'] = 'NSC'
-meta.wtchg_ip$type <- as.factor(meta.wtchg_ip$type)
+meta.wtchg_ip[, 'group'] = 'other'
+meta.wtchg_ip['GBM018', 'group'] = 'GBM018'
+meta.wtchg_ip['DURA018N2_NSC', 'group'] = 'iNSC018'
+meta.wtchg_ip[grep(pattern = 'Pollard', x = rownames(meta.wtchg_ip)), 'group'] = 'eNSC'
+meta.wtchg_ip[, 'group'] = as.factor(meta.wtchg_ip[, 'group'])
 
 # edgeR
 
 # GBM vs NSC for 3 x RTK I
-y <- DGEList(counts = dat.wtchg_ip)
+y <- DGEList(counts = dat.wtchg_ip, group = meta.wtchg_ip$group)
 y <- calcNormFactors(y)
-design <- model.matrix(~meta.wtchg_ip$pair + meta.wtchg_ip$type)
+design <- model.matrix(~meta.wtchg_ip$group)
 y <- estimateDisp(y, design)
 fit <- glmQLFit(y, design)
-qlf <- glmQLFTest(fit, contrast = c(0, 1, 0, 0, 0, -1))
+qlf <- glmQLFTest(fit, contrast = c(0, 1, -1, 0))
 
 
 # dat.all <- bind_cols(
