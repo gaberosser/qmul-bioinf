@@ -259,3 +259,134 @@ htseq.load_all <- function(indir, metafile=NULL, annotation.col=NULL, file.patte
   return(list(data=dat, meta=meta))  
   
 }
+
+
+paired_gbm_nsc_data <- function() {
+  samples <- c(
+    'GBM018',
+    'GBM019',
+    'GBM026',
+    'GBM031',
+    'DURA018N2_NSC',
+    'DURA019N8C_NSC',
+    'DURA026N31D_NSC',
+    'DURA031N44B_NSC'
+  )
+  
+  in.dirs <- c(
+    file.path(
+      data.dir.raid, 
+      'rnaseq',
+      'wtchg_p160704',
+      '161219_K00198_0151_BHGYHTBBXX',
+      'star_alignment'
+    ),
+    file.path(
+      data.dir.raid, 
+      'rnaseq',
+      'wtchg_p160704',
+      '161222_K00198_0152_AHGYG3BBXX',
+      'star_alignment'
+    )
+  )
+  
+  meta.files <- c(
+    file.path(
+      data.dir.raid, 
+      'rnaseq',
+      'wtchg_p160704',
+      '161219_K00198_0151_BHGYHTBBXX',
+      'sources.csv'
+    ),
+    file.path(
+      data.dir.raid, 
+      'rnaseq',
+      'wtchg_p160704',
+      '161222_K00198_0152_AHGYG3BBXX',
+      'sources.csv'
+    )
+  )
+  
+  loaded <- star.combine_lanes(in.dirs, metafiles = meta.files, stranded='r')
+  dat <- loaded$data[grep("ENSG", rownames(loaded$data)), samples]
+  meta <- loaded$meta[loaded$meta$sample %in% samples,]
+  
+  return(list(data=dat, meta=meta))
+  
+}
+
+
+tcga_gbm_data <- function(modify.subgroup.names=T) {
+  in.dir.tcga = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'tcga_gbm',
+    'htseq_count',
+    'counts'
+  )
+  
+  meta.file.tcga = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'tcga_gbm',
+    'sources.csv'
+  )
+  
+  loaded <- htseq.load_all(in.dir.tcga, metafile = meta.file.tcga, file.pattern = '.gz')
+  dat <- loaded$data
+  meta <- loaded$meta
+  
+  if (modify.subgroup.names) {
+    # change subgroup names to match
+    meta$subgroup <- replace(as.vector(meta$subgroup), meta$subgroup == 'GBM_RTK_I', 'RTK I')
+    meta$subgroup <- replace(as.vector(meta$subgroup), meta$subgroup == 'GBM_RTK_II', 'RTK II')
+    meta$subgroup <- replace(as.vector(meta$subgroup), meta$subgroup == 'GBM_MES', 'MES')    
+  }
+
+  return(list(data=dat, meta=meta))
+}
+
+pollard_nsc_data <- function() {
+  in.dir.ip = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'E-MTAB-3867',
+    'star_alignment'
+  )
+  
+  meta.file.ip = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'E-MTAB-3867',
+    'sources.csv'
+  )
+  
+  loaded.ip <- star.load_all(in.dir.ip, metafile = meta.file.ip, stranded='u')
+  dat.ip <- loaded.ip$data[grep("ENSG", rownames(loaded.ip$data)), ]
+  meta.ip <- loaded.ip$meta  
+  return(list(data=dat.ip, meta=meta.ip))
+}
+
+
+duan_nsc_data <- function() {
+  in.dir.h9 = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'GSE61794',
+    'star_alignment'
+  )
+  
+  meta.file.h9 = file.path(
+    data.dir.raid,
+    'rnaseq',
+    'GSE61794',
+    'sources.csv'
+  )
+  
+  loaded.h9 <- star.load_all(in.dir.h9, metafile = meta.file.h9, stranded='u')
+  dat.h9 <- loaded.h9$data[grep("ENSG", rownames(loaded.h9$data)), ]
+  meta.h9 <- loaded.h9$meta
+
+  return(list(data=dat.h9, meta=meta.h9))
+}
+
