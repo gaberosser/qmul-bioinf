@@ -171,9 +171,12 @@ meta.wtchg_ip[, 'group'] = as.factor(meta.wtchg_ip[, 'group'])
 
 # GBM vs NSC for 3 x RTK I
 y <- DGEList(counts = dat.wtchg_ip, group = meta.wtchg_ip$group)
+# y <- DGEList(counts = dat.wtchg_ip, group = 1:nrow(meta.wtchg_ip))
 y <- calcNormFactors(y)
 design <- model.matrix(~meta.wtchg_ip$group)
+# design <- model.matrix(~y$samples$group)
 y <- estimateDisp(y, design)
+
 fit <- glmQLFit(y, design)
 qlf <- glmQLFTest(fit, contrast = c(0, 1, -1, 0))
 
