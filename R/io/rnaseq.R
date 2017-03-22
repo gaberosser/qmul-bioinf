@@ -57,10 +57,14 @@ biomart_annotation <- function(
   # attempt to find a suitable input file
   outfile = get_dated_files(outdir)
   
-  if (!is.null(outfile) & file.exists(outfile) & !force_download) {
-    print(paste0("Found existing file: ", outfile))
-    ens.map <- read.csv(outfile, header=TRUE, row.names=1)
+  if (!is.null(outfile) & !force_download) {
+    if (file.exists(outfile)) {
+      print(paste0("Found existing file: ", outfile))
+      ens.map <- read.csv(outfile, header=TRUE, row.names=1)
+    }
   } else {
+    today <- Sys.Date()
+    outfile <- file.path(outdir, format(today, "%Y-%m-%d.csv"))
     print("Downloading files.")
     ens.map <- download_annotations_from_biomart(
       mart = mart,
