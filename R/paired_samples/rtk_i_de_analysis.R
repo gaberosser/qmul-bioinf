@@ -23,10 +23,12 @@ meta.tcga <- loaded.tcga$meta
 loaded.h9 <- duan_nsc_data()
 dat.h9 <- loaded.h9$data
 meta.h9 <- loaded.h9$meta
+n.h9 <- ncol(dat.h9)
 
 loaded.ip <- pollard_nsc_data()
 dat.ip <- loaded.ip$data
 meta.ip <- loaded.ip$meta
+n.ip <- ncol(dat.ip)
 
 #' FILTER
 #' The smallest library is ~10mi, the mean lib size is 45mi. 
@@ -44,21 +46,32 @@ dat.non_tcga <- bind_cols(
 )
 rownames(dat.non_tcga) <- rownames(dat.wtchg)
 
-
 y.non_tcga <- DGEList(counts=dat.non_tcga)
 keep.non_tcga <- rowSums(cpm(y.non_tcga) > 1) >= 3
 print("summary(keep.non_tcga)")
 print(summary(keep.non_tcga))
 
 genes <- intersect(rownames(dat.wtchg)[keep.non_tcga], rownames(dat.tcga))
+genes.no_tcga <- rownames(dat.wtchg)[keep.non_tcga]
+
+# Restrict data to this gene list in-place
+dat.wtchg <- dat.wtchg[genes,]
+dat.ip <- dat.ip[genes,]
+dat.h9 <- data.frame(H9NSC=dat.h9[genes,], row.names = genes)  # required for any dataset with only 1 column
+dat.tcga <- dat.tcga[genes,]
+
+#' Load annotations from biomart. 
+#' We will use this to annotate DE results.
+#' 
+ens.map <- biomart_annotation(index.by='ensembl_gene_id')
 
 # recreate the counts matrix with the new intersecting, filtered gene list
 
 dat.all <- bind_cols(
-  dat.wtchg[genes,],
-  dat.ip[genes,],
-  dat.h9[genes,],
-  dat.tcga[genes,]
+  dat.wtchg,
+  dat.ip,
+  dat.h9,
+  dat.tcga
 )
 rownames(dat.all) <- genes
 
@@ -73,13 +86,13 @@ title("MDS plot for all data")
 #' Lump iNSC, eNSC, GBM together and use them to estimate dispersion
 
 dat.lumped <- bind_cols(
-  dat.wtchg[genes,],
-  dat.h9[genes,]
+  dat.wtchg,
+  dat.h9
 )
 rownames(dat.lumped) <- genes
 groups.lumped <- c(
   as.vector(meta.wtchg$type),
-  rep('eNSC', 2)
+  rep('eNSC', n.h9)
 )
 y.lumped <- DGEList(counts=dat.lumped, group=groups.lumped)
 y.lumped <- calcNormFactors(y.lumped)
@@ -102,14 +115,14 @@ dispersion.tagwise.lumped <- y.lumped$tagwise.dispersion
 
 #' run it again with the IP data included and store the dispersion estimates again
 dat.lumped <- bind_cols(
-dat.wtchg[genes,],
-dat.h9[genes,],
-dat.ip[genes,]
+dat.wtchg,
+dat.h9,
+dat.ip
 )
 rownames(dat.lumped) <- genes
 groups.lumped <- c(
   as.vector(meta.wtchg$type),
-  rep('eNSC', 4)
+  rep('eNSC', n.h9 + n.ip)
 )
 y.lumped <- DGEList(counts=dat.lumped, group=groups.lumped)
 y.lumped <- calcNormFactors(y.lumped)
@@ -121,25 +134,20 @@ dispersion.trended.lumped_ip <- y.lumped$trended.dispersion
 dispersion.common.lumped_ip <- y.lumped$common.dispersion
 dispersion.tagwise.lumped_ip <- y.lumped$tagwise.dispersion
 
-
-#' Load annotations from biomart. 
-#' We will use this to annotate DE results.
-ens.map <- biomart_annotation(index.by='ensembl_gene_id')
-
 setup_comparison_data <- function(gbm.sample_name, insc.sample_name, include.ip=F) {
   if (include.ip) {
     this.dat <- bind_cols(
-      dat.wtchg[genes, c(gbm.sample_name, insc.sample_name)],
-      dat.h9[genes,],
-      dat.ip[genes,]
+      dat.wtchg[, c(gbm.sample_name, insc.sample_name)],
+      dat.h9,
+      dat.ip
     )
-    this.groups <- c('GBM', 'iNSC', rep('eNSC', 4))
+    this.groups <- c('GBM', 'iNSC', rep('eNSC', n.h9 + n.ip))
   } else {
     this.dat <- bind_cols(
-      dat.wtchg[genes, c(gbm.sample_name, insc.sample_name)],
-      dat.h9[genes,]
+      dat.wtchg[, c(gbm.sample_name, insc.sample_name)],
+      dat.h9
     )
-    this.groups <- c('GBM', 'iNSC', rep('eNSC', 2))
+    this.groups <- c('GBM', 'iNSC', rep('eNSC', n.h9))
   }
   rownames(this.dat) <- genes
   return(list(
@@ -183,15 +191,21 @@ run_one_comparison <- function(
   # fix rownames
   rownames(toptags.gbm_insc) <- rownames(this.y$counts)[as.integer(rownames(toptags.gbm_insc))]
 
-  lrt.ensc <- glmLRT(fit, contrast=contrasts[,"GBMvseNSC"])
+  lrt.ref <- glmLRT(fit, contrast=contrasts[,"GBMvseNSC"])
   print(
-    paste0("LR test finds ", dim(topTags(lrt.ensc, n=Inf, p.value=p.value))[1], " significantly DE genes between ", gbm.sample_name, " and endogenous NSC")
+    paste0("LR test finds ", dim(topTags(lrt.ref, n=Inf, p.value=p.value))[1], " significantly DE genes between ", gbm.sample_name, " and endogenous NSC")
   )
-  toptags.gbm_ensc <- as.data.frame(topTags(lrt.ensc, n=Inf, p.value=p.value))
+  toptags.gbm_ensc <- as.data.frame(topTags(lrt.ref, n=Inf, p.value=p.value))
   # fix rownames
   rownames(toptags.gbm_ensc) <- rownames(this.y$counts)[as.integer(rownames(toptags.gbm_ensc))]
 
-  return(list(y=this.y, gbm_insc=toptags.gbm_insc, gbm_ensc=toptags.gbm_ensc))
+  return(list(
+    y=this.y, 
+    gbm_insc=toptags.gbm_insc, 
+    gbm_ensc=toptags.gbm_ensc,
+    lrt.paired=lrt.paired,
+    lrt.ref=lrt.ref
+    ))
 }
 
 res.018 <- run_one_comparison('GBM018', 'DURA018N2_NSC', include.ip = F)
@@ -244,27 +258,211 @@ export_de_list <- function(res, outfile) {
   write.csv(xy, outfile, row.names = F)
   
 }
-list.outdir <- getOutputDir(name = "paired_analysis_de_gene_lists")
+list.outdir <- getOutputDir(name = "paired_analysis_de_rtkI")
 
-export_de_list(res.018, file.path(list.outdir, "gbm018_nsc_de_gene.csv"))
-export_de_list(res.019, file.path(list.outdir, "gbm019_nsc_de_gene.csv"))
-export_de_list(res.031, file.path(list.outdir, "gbm031_nsc_de_gene.csv"))
+export_de_list(res.018, file.path(list.outdir, "gbm018_nsc_h9.csv"))
+export_de_list(res.ip.018, file.path(list.outdir, "gbm018_nsc_all.csv"))
+
+export_de_list(res.019, file.path(list.outdir, "gbm019_nsc_h9.csv"))
+export_de_list(res.ip.019, file.path(list.outdir, "gbm019_nsc_all.csv"))
+
+export_de_list(res.031, file.path(list.outdir, "gbm031_nsc_h9.csv"))
+export_de_list(res.ip.031, file.path(list.outdir, "gbm031_nsc_all.csv"))
+
+#' Run the paired sample analysis.
+#' Here we're looking for common effects present across all 3 pairs.
+
+y.paired <- DGEList(dat.wtchg[, meta.wtchg$disease_subgroup == 'RTK I'], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
+y.paired <- calcNormFactors(y.paired)
+groups.paired <- data.frame(row.names = rownames(meta.wtchg[meta.wtchg$disease_subgroup == 'RTK I',]))
+groups.paired$cell_type <- c(rep('GBM', 3), rep('iNSC', 3))
+groups.paired$patient <- c(rep('018', 2), rep('019', 2), rep('031', 2))  
+design <- model.matrix(~0+patient+cell_type, data=groups.paired)
+y.paired <- estimateDisp(y.paired, design)
+fit.glm <- glmFit(y.paired, design)
+# we need to take the negative effect to get GBM relative to iNSC
+lrt <- glmLRT(fit.glm, contrast=c(0, 0, 0, -1))
+de <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
+
+de$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de))]
+de$direction <- ifelse(de$logFC > 0, 'U', 'D')
+de <- de[, c("genes", "logFC", "ensembl", "direction")]
+colnames(de) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+# save
+write.csv(de, file.path(list.outdir, "all_gbm_paired.csv"), row.names = F)
+
+#' Run for all GBM (lumped) vs all reference NSC
+#' Here we're looking for common effects present across all 3 pairs.
+
+filt <- meta.wtchg$disease_subgroup == 'RTK I' & meta.wtchg$type == 'GBM'
+dat.lumped <- bind_cols(
+  dat.wtchg[, filt],
+  dat.h9,
+  dat.ip
+)
+rownames(dat.lumped) <- genes
+groups.lumped <- c(
+  as.vector(meta.wtchg[filt, 'type']),
+  rep('eNSC', n.h9 + n.ip)
+)
+y.lumped <- DGEList(dat.lumped, genes = ens.map[rownames(dat.lumped), "hgnc_symbol"])
+y.lumped <- calcNormFactors(y.lumped)
+design <- model.matrix(~0+groups.lumped)
+y.lumped <- estimateDisp(y.lumped, design)
+fit.glm.lumped <- glmFit(y.lumped, design)
+lrt.lumped <- glmLRT(fit.glm.lumped, contrast=c(-1, 1))  # GBM rel to eNSC
+de <- as.data.frame(topTags(lrt.lumped, n=Inf, p.value=0.05))
+
+print(paste0("When we compare all our RTK I GBM samples against all ref NSC samples, we find ", nrow(de), " DE genes."))
+
+de$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de))]
+de$direction <- ifelse(de$logFC > 0, 'U', 'D')
+de <- de[, c("genes", "logFC", "ensembl", "direction")]
+colnames(de) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+# save
+write.csv(de, file.path(list.outdir, "all_gbm_vs_all_reference.csv"), row.names = F)
+
+# repeat with H9 only
+
+dat.lumped <- bind_cols(
+  dat.wtchg[, filt],
+  dat.h9
+)
+rownames(dat.lumped) <- genes
+groups.lumped <- c(
+  as.vector(meta.wtchg[filt, 'type']),
+  rep('eNSC', n.h9)
+)
+y.lumped <- DGEList(dat.lumped, genes = ens.map[rownames(dat.lumped), "hgnc_symbol"])
+y.lumped <- calcNormFactors(y.lumped)
+design <- model.matrix(~0+groups.lumped)
+y.lumped <- estimateDisp(y.lumped, design)
+fit.glm.lumped <- glmFit(y.lumped, design)
+lrt.lumped <- glmLRT(fit.glm.lumped, contrast=c(-1, 1)) # GBM rel to eNSC
+de <- as.data.frame(topTags(lrt.lumped, n=Inf, p.value=0.05))
+
+print(paste0("When we compare all our RTK I GBM samples against only the H9 sample, we find ", nrow(de), " DE genes."))
+
+de$ensembl <- rownames(y.lumped$counts)[as.integer(rownames(de))]
+de$direction <- ifelse(de$logFC > 0, 'U', 'D')
+de <- de[, c("genes", "logFC", "ensembl", "direction")]
+colnames(de) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+# save
+write.csv(de, file.path(list.outdir, "all_gbm_vs_h9_reference.csv"), row.names = F)
+
+
+#' Run GO (and KEGG) analysis
+#' This will highlight the pathways that are enriched in the gene lists. Indexing is by Entrez ID
+#' Requires GO.db: biocLite("GO.db")
+# go.018.paired <- goana(res.018$lrt.paired, geneid = ens.map[rownames(res.018$lrt.paired), 'entrezgene'])
+# go.018.ref <- goana(res.018$lrt.ref, geneid = ens.map[rownames(res.018$lrt.ref), 'entrezgene'])
+# go.019.paired <- goana(res.019$lrt.paired, geneid = ens.map[rownames(res.019$lrt.paired), 'entrezgene'])
+# go.019.ref <- goana(res.019$lrt.ref, geneid = ens.map[rownames(res.019$lrt.ref), 'entrezgene'])
+# go.031.paired <- goana(res.031$lrt.paired, geneid = ens.map[rownames(res.031$lrt.paired), 'entrezgene'])
+# go.031.ref <- goana(res.031$lrt.ref, geneid = ens.map[rownames(res.031$lrt.ref), 'entrezgene'])
 
 # plot venn diagrams showing number of genes overlapping
 library(VennDiagram)
-plot_venn <- function(res, obj.title) {
-  area1 = nrow(res$gbm_insc)
-  area2 = nrow(res$gbm_ensc)
+plot_venn <- function(res, obj.title=NULL, plot.direction=NULL, png.file=NULL, pdf.file=NULL) {
+  #' plot.direction: NULL, 'up' or 'down'. Controls which DE genes are included (NULL means all)
+  if (is.null(plot.direction)) {
+    x1 = res$gbm_insc
+    x2 = res$gbm_ensc
+  } else if (tolower(plot.direction) == 'up') {
+    x1 = res$gbm_insc[res$gbm_insc$logFC > 0,]
+    x2 = res$gbm_ensc[res$gbm_ensc$logFC > 0,]
+  } else if (tolower(plot.direction) == 'down') {
+    x1 = res$gbm_insc[res$gbm_insc$logFC < 0,]
+    x2 = res$gbm_ensc[res$gbm_ensc$logFC < 0,]
+  }
+  area1 = nrow(x1)
+  area2 = nrow(x2)
   cross_area = length(intersect(
-    rownames(res$gbm_insc), rownames(res$gbm_ensc)
+    rownames(x1), rownames(x2)
   ))
-  grid.newpage()
-  venn.plot <- draw.pairwise.venn(area1, area2, cross_area, category = c(paste0(obj.title, " vs paired NSC"), paste0(obj.title, " vs reference NSC")),
+
+  if (!is.null(png.file)) {
+    png(png.file)
+    plot.new()
+    venn.plot <- draw.pairwise.venn(area1, area2, cross_area, category = c("GBM vs paired NSC", "GBM vs reference NSC"),
+                                    lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                                    cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+    title(obj.title)
+    dev.off()
+  }
+  if (!is.null(pdf.file)) {
+    pdf(pdf.file)
+    plot.new()
+    venn.plot <- draw.pairwise.venn(area1, area2, cross_area, category = c("GBM vs paired NSC", "GBM vs reference NSC"),
+                                    lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                                    cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+    title(obj.title)
+    dev.off()
+  }
+  
+  plot.new()
+  venn.plot <- draw.pairwise.venn(area1, area2, cross_area, category = c("GBM vs paired NSC", "GBM vs reference NSC"),
                      lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
                      cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
-  grid.draw(venn.plot)
+  title(obj.title)
+  return(venn.plot)
 }
 
-plot_venn(res.018, "GBM018")
-plot_venn(res.019, "GBM019")
-plot_venn(res.031, "GBM031")
+plot_multivenn <- function(res, png.file=NULL) {
+  x.1 = res$gbm_insc
+  x.2 = res$gbm_ensc
+
+  x.up.1 = res$gbm_insc[res$gbm_insc$logFC > 0,]
+  x.up.2 = res$gbm_ensc[res$gbm_ensc$logFC > 0,]
+
+  x.down.1 = res$gbm_insc[res$gbm_insc$logFC < 0,]
+  x.down.2 = res$gbm_ensc[res$gbm_ensc$logFC < 0,]
+    
+  area.1 = nrow(x.1)
+  area.2 = nrow(x.2)
+  cross_area = length(intersect(
+    rownames(x.1), rownames(x.2)
+  ))
+  
+  area.up.1 <- nrow(x.up.1)
+  area.up.2 <- nrow(x.up.2)
+  cross_area.up <- length(intersect(
+    rownames(x.up.1), rownames(x.up.2)
+  ))
+  
+  area.down.1 <- nrow(x.down.1)
+  area.down.2 <- nrow(x.down.2)
+  cross_area.down <- length(intersect(
+    rownames(x.down.1), rownames(x.down.2)
+  ))
+  
+  if (!is.null(png.file)) {
+    png(png.file, width=600, height=1200, units='px', res=120)
+  }
+  
+  venn <- draw.pairwise.venn(area.1, area.2, cross_area, category = c("GBM - paired NSC", "GBM - reference NSC"),
+                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                             cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  venn.up <- draw.pairwise.venn(area.up.1, area.up.2, cross_area.up, category = c("GBM - paired NSC (UP)", "GBM - reference NSC (UP)"),
+                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                             cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  venn.down <- draw.pairwise.venn(area.down.1, area.down.2, cross_area.down, category = c("GBM - paired NSC (DOWN)", "GBM - reference NSC (DOWN)"),
+                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                             cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  grid.arrange(gTree(children=venn), gTree(children=venn.up), gTree(children=venn.down), nrow=3)
+
+  if (!is.null(png.file)) {
+    dev.off()
+  }
+}
+
+
+plot_multivenn(res.018, png.file=file.path(list.outdir, "gbm018.png"))
+plot_multivenn(res.ip.018, png.file=file.path(list.outdir, "gbm018_ip.png"))
+
+plot_multivenn(res.019, png.file=file.path(list.outdir, "gbm019.png"))
+plot_multivenn(res.ip.019, png.file=file.path(list.outdir, "gbm019_ip.png"))
+
+plot_multivenn(res.031, png.file=file.path(list.outdir, "gbm031.png"))
+plot_multivenn(res.ip.031, png.file=file.path(list.outdir, "gbm031_ip.png"))
+

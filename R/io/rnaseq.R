@@ -372,7 +372,7 @@ pollard_nsc_data <- function() {
 }
 
 
-duan_nsc_data <- function() {
+duan_nsc_data <- function(collapse.replicates = T) {
   in.dir.h9 = file.path(
     data.dir.raid,
     'rnaseq',
@@ -390,6 +390,12 @@ duan_nsc_data <- function() {
   loaded.h9 <- star.load_all(in.dir.h9, metafile = meta.file.h9, stranded='u')
   dat.h9 <- loaded.h9$data[grep("ENSG", rownames(loaded.h9$data)), ]
   meta.h9 <- loaded.h9$meta
+  
+  if (collapse.replicates) {
+    vals <- rowSums(dat.h9)
+    dat.h9 <- data.frame(H9NSC=vals, row.names = names(vals))
+    meta.h9 <- data.frame(type='NSC', sample='H9 NSC', read_count=sum(meta.h9$read_count), row.names = 'H9 NSC')
+  }
 
   return(list(data=dat.h9, meta=meta.h9))
 }
