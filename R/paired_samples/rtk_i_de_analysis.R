@@ -271,25 +271,46 @@ export_de_list(res.ip.031, file.path(list.outdir, "gbm031_nsc_all.csv"))
 
 #' Run the paired sample analysis.
 #' Here we're looking for common effects present across all 3 pairs.
-
-y.paired <- DGEList(dat.wtchg[, meta.wtchg$disease_subgroup == 'RTK I'], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
+filt = meta.wtchg$disease_subgroup == 'RTK I'
+y.paired <- DGEList(dat.wtchg[, filt], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
 y.paired <- calcNormFactors(y.paired)
 groups.paired <- data.frame(row.names = rownames(meta.wtchg[meta.wtchg$disease_subgroup == 'RTK I',]))
 groups.paired$cell_type <- c(rep('GBM', 3), rep('iNSC', 3))
 groups.paired$patient <- c(rep('018', 2), rep('019', 2), rep('031', 2))  
-design <- model.matrix(~0+patient+cell_type, data=groups.paired)
-y.paired <- estimateDisp(y.paired, design)
-fit.glm <- glmFit(y.paired, design)
+design.paired <- model.matrix(~0+patient+cell_type, data=groups.paired)
+y.paired <- estimateDisp(y.paired, design.paired)
+fit.glm <- glmFit(y.paired, design.paired)
 # we need to take the negative effect to get GBM relative to iNSC
 lrt <- glmLRT(fit.glm, contrast=c(0, 0, 0, -1))
-de <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
+de.paired <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
 
-de$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de))]
-de$direction <- ifelse(de$logFC > 0, 'U', 'D')
-de <- de[, c("genes", "logFC", "ensembl", "direction")]
-colnames(de) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+de.paired$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de.paired))]
+de.paired$direction <- ifelse(de.paired$logFC > 0, 'U', 'D')
+de.paired <- de.paired[, c("genes", "logFC", "ensembl", "direction")]
+colnames(de.paired) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
 # save
-write.csv(de, file.path(list.outdir, "all_gbm_paired.csv"), row.names = F)
+write.csv(de.paired, file.path(list.outdir, "all_gbm_paired.csv"), row.names = F)
+
+#' Run almost the same thing again, but without the blocking variables (i.e. no individual ID in the design matrix)
+filt = meta.wtchg$disease_subgroup == 'RTK I'
+y.pooled <- DGEList(dat.wtchg[, filt], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
+y.pooled <- calcNormFactors(y.pooled)
+groups.pooled <- data.frame(row.names = rownames(meta.wtchg[meta.wtchg$disease_subgroup == 'RTK I',]))
+groups.pooled$cell_type <- c(rep('GBM', 3), rep('iNSC', 3))
+design.pooled <- model.matrix(~0+cell_type, data=groups.pooled)  # this is different
+y.pooled <- estimateDisp(y.pooled, design.pooled)
+fit.glm <- glmFit(y.pooled, design.pooled)
+# GBM vs iNSC
+lrt <- glmLRT(fit.glm, contrast=c(1, -1))
+de.pooled <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
+
+de.pooled$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de.pooled))]
+de.pooled$direction <- ifelse(de.pooled$logFC > 0, 'U', 'D')
+de.pooled <- de.pooled[, c("genes", "logFC", "ensembl", "direction")]
+colnames(de.pooled) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+# save
+write.csv(de.pooled, file.path(list.outdir, "all_gbm_pooled.csv"), row.names = F)
+
 
 #' Run for all GBM (lumped) vs all reference NSC
 #' Here we're looking for common effects present across all 3 pairs.
