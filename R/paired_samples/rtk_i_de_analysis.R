@@ -6,6 +6,7 @@ library('biomaRt')
 library(calibrate)
 library("pheatmap")
 library("edgeR")
+library("gridExtra")
 
 source('io/rnaseq.R')
 source('io/output.R')
@@ -133,6 +134,15 @@ y.lumped <- estimateDisp(y.lumped, design)
 dispersion.trended.lumped_ip <- y.lumped$trended.dispersion
 dispersion.common.lumped_ip <- y.lumped$common.dispersion
 dispersion.tagwise.lumped_ip <- y.lumped$tagwise.dispersion
+
+#' dispersion estimated from iNSC RTK I samples ONLY
+filt = (meta.wtchg$disease_subgroup == 'RTK I') & (meta.wtchg$type == 'iNSC')
+y.lumped <- DGEList(dat.wtchg[, filt], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
+y.lumped <- calcNormFactors(y.lumped)
+y.lumped <- estimateDisp(y.lumped)
+dispersion.common.inscrtki <- y.lumped$common.dispersion
+dispersion.trended.inscrtki <- y.lumped$trended.dispersion
+dispersion.tagwise.inscrtki <- y.lumped$tagwise.dispersion
 
 setup_comparison_data <- function(gbm.sample_name, insc.sample_name, include.ip=F) {
   if (include.ip) {
@@ -271,23 +281,24 @@ export_de_list(res.ip.031, file.path(list.outdir, "gbm031_nsc_all.csv"))
 
 #' Run the paired sample analysis.
 #' Here we're looking for common effects present across all 3 pairs.
+
 filt = meta.wtchg$disease_subgroup == 'RTK I'
 y.paired <- DGEList(dat.wtchg[, filt], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
 y.paired <- calcNormFactors(y.paired)
 groups.paired <- data.frame(row.names = rownames(meta.wtchg[meta.wtchg$disease_subgroup == 'RTK I',]))
-groups.paired$cell_type <- c(rep('GBM', 3), rep('iNSC', 3))
-groups.paired$patient <- c(rep('018', 2), rep('019', 2), rep('031', 2))  
-design.paired <- model.matrix(~0+patient+cell_type, data=groups.paired)
+groups.paired$cell_type <- rep(c('GBM', 'iNSC'), each=3)
+groups.paired$patient <- rep(c('018', '019', '031'), 2)
+design.paired <- model.matrix(~0+cell_type+patient, data=groups.paired)
 y.paired <- estimateDisp(y.paired, design.paired)
 fit.glm <- glmFit(y.paired, design.paired)
 # we need to take the negative effect to get GBM relative to iNSC
-lrt <- glmLRT(fit.glm, contrast=c(0, 0, 0, -1))
-de.paired <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
+lrt2 <- glmLRT(fit.glm, contrast=c(1, -1, 0, 0))
+de.paired2 <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
 
 de.paired$ensembl <- rownames(y.paired$counts)[as.integer(rownames(de.paired))]
 de.paired$direction <- ifelse(de.paired$logFC > 0, 'U', 'D')
-de.paired <- de.paired[, c("genes", "logFC", "ensembl", "direction")]
-colnames(de.paired) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
+de.paired <- de.paired[, c("genes", "logFC", "ensembl", "direction", "FDR")]
+colnames(de.paired) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction", "FDR")
 # save
 write.csv(de.paired, file.path(list.outdir, "all_gbm_paired.csv"), row.names = F)
 
@@ -311,6 +322,41 @@ colnames(de.pooled) <- c("HGNC Symbol", "logFC", "Ensembl ID", "Direction")
 # save
 write.csv(de.pooled, file.path(list.outdir, "all_gbm_pooled.csv"), row.names = F)
 
+
+#' Once more with feeling... enumerating all groups
+
+filt = meta.wtchg$disease_subgroup == 'RTK I'
+y.paired <- DGEList(dat.wtchg[, filt], genes = ens.map[rownames(dat.wtchg), "hgnc_symbol"])
+y.paired <- calcNormFactors(y.paired)
+groups.paired <- data.frame(row.names = rownames(meta.wtchg[meta.wtchg$disease_subgroup == 'RTK I',]))
+groups.paired$cell_type <- rep(c('GBM', 'iNSC'), each=3)
+groups.paired$patient <- rep(c('018', '019', '031'), 2)
+grp <- factor(paste(groups.paired$cell_type, groups.paired$patient, sep="."))
+groups.paired <- cbind(groups.paired, grp)
+
+design.paired <- model.matrix(~0 + grp)
+colnames(design.paired) <- levels(grp)
+
+# in this case, we need to use the dispersion estimated earlier
+y.paired$common.dispersion <- dispersion.common.lumped
+y.paired$trended.dispersion <- dispersion.trended.lumped
+y.paired$tagwise.dispersion <- dispersion.tagwise.lumped
+
+fit.glm <- glmFit(y.paired, design.paired)
+my.contrasts <- makeContrasts(
+  GBMvsiNSC=(GBM.018+GBM.019+GBM.031)-(iNSC.018+iNSC.019+iNSC.031), 
+  GBM018vsiNSC018=GBM.018-iNSC.018,
+  GBM019vsiNSC019=GBM.019-iNSC.019,
+  GBM031vsiNSC031=GBM.031-iNSC.031,
+  levels=design.paired
+)
+# we need to take the negative effect to get GBM relative to iNSC
+lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
+lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
+lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
+lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
+
+de.paired <- as.data.frame(topTags(lrt, n=Inf, p.value=0.05))
 
 #' Run for all GBM (lumped) vs all reference NSC
 #' Here we're looking for common effects present across all 3 pairs.

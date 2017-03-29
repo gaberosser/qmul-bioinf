@@ -7,6 +7,7 @@ library(calibrate)
 library("pheatmap")
 library("edgeR")
 library("gridExtra")
+library(VennDiagram)
 
 source('io/rnaseq.R')
 source('io/output.R')
@@ -22,20 +23,17 @@ prepare_de_table <- function(lrt, fdr=0.05) {
   de
 }
 
-
-#' Export to CSV lists
-#' We have two LRT objects (result of glmLRT). We first extract the DE genes for a given FDR in each list.
-#' Then we match the DE genes and generate a CSV in blocks: (A and B), A only, B only
-export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
+#' Get intersecting and unique results
+decompose_de_lists <- function(lrt1, lrt2, fdr=0.05) {
   de1 <- prepare_de_table(lrt1, fdr=fdr)
   de2 <- prepare_de_table(lrt2, fdr=fdr)
-
+  
   # block 1: intersection
   
   x1 <- de1[de1$ensembl %in% de2$ensembl,]
   y1 <- de2[de2$ensembl %in% de1$ensembl,]
   # order by FDR in iNSC (arbitrary)
-  ord <- order(-x1$FDR)
+  ord <- order(x1$FDR)
   x1 <- x1[ord,]
   y1 <- y1[rownames(x1),]
   
@@ -45,21 +43,85 @@ export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
   y2[,colnames(x2)] <- NA
   
   # block 3: eNSC only
-  y3 <- y[setdiff(rownames(y), rownames(x)),]
+  y3 <- de2[setdiff(rownames(de2), rownames(de1)),]
   x3 <- data.frame(row.names = rownames(y3))
   x3[,colnames(y3)] <- NA
+  
+  return(list(x1=x1, y1=y1, x2=x2, y2=y2, x3=x3, y3=y3))
+}
+
+
+#' Export to CSV lists
+#' We have two LRT objects (result of glmLRT). We first extract the DE genes for a given FDR in each list.
+#' Then we match the DE genes and generate a CSV in blocks: (A and B), A only, B only
+export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
+
+  res <- decompose_de_lists(lrt1, lrt2, fdr)
+  x1 <- res$x1
+  x2 <- res$x2
+  x3 <- res$x3
+  y1 <- res$y1
+  y2 <- res$y2
+  y3 <- res$y3
   
   xt <- rbind(x1, x2, x3)
   yt <- rbind(y1, y2, y3)
   
   xy <- cbind(xt, yt)
-  colnames(xy) <- rep(c("HGNC Symbol", "logFC", "Ensembl ID", "Direction"), 2)
+  # colnames(xy) <- rep(c("HGNC Symbol", "logFC", "Ensembl ID", "Direction"), 2)
   rownames(xy) <- 1:nrow(xy)
   # replace NA with empty string
   xy[is.na(xy)] <- ''
   
   write.csv(xy, outfile, row.names = F)
+  return(list(de1=de1, de2=de2))
+}
+
+# plot venn diagrams showing number of genes overlapping in 2 DE results
+plot_multivenn <- function(de1, de2, png.file=NULL) {
+
+  de1.up = de1[de1$logFC > 0,]
+  de2.up = de2[de2$logFC > 0,]
   
+  de1.down = de1[de1$logFC < 0,]
+  de2.down = de2[de2$logFC < 0,]
+  
+  area.1 = nrow(de1)
+  area.2 = nrow(de2)
+  cross_area = length(intersect(
+    rownames(de1), rownames(de2)
+  ))
+  
+  area.up.1 <- nrow(de1.up)
+  area.up.2 <- nrow(de2.up)
+  cross_area.up <- length(intersect(
+    rownames(de1.up), rownames(de2.up)
+  ))
+  
+  area.down.1 <- nrow(de1.down)
+  area.down.2 <- nrow(de2.down)
+  cross_area.down <- length(intersect(
+    rownames(de1.down), rownames(de2.down)
+  ))
+  
+  if (!is.null(png.file)) {
+    png(png.file, width=600, height=1200, units='px', res=120)
+  }
+  
+  venn <- draw.pairwise.venn(area.1, area.2, cross_area, category = c("GBM - paired NSC", "GBM - reference NSC"),
+                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                             cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  venn.up <- draw.pairwise.venn(area.up.1, area.up.2, cross_area.up, category = c("GBM - paired NSC (UP)", "GBM - reference NSC (UP)"),
+                                lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                                cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  venn.down <- draw.pairwise.venn(area.down.1, area.down.2, cross_area.down, category = c("GBM - paired NSC (DOWN)", "GBM - reference NSC (DOWN)"),
+                                  lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                                  cat.pos = c(0,0), cat.dist = rep(0.025, 2), scaled = T)
+  grid.arrange(gTree(children=venn), gTree(children=venn.up), gTree(children=venn.down), nrow=3)
+  
+  if (!is.null(png.file)) {
+    dev.off()
+  }
 }
 
 
@@ -87,7 +149,6 @@ n.ip <- ncol(dat.ip)
 #' We use non-TCGA libraries for this purpose, as they are of main interest
 #' The TCGA dataset retains around 5000 more genes based on this cutoff criterion. This is probably in part down to the increased sample size.
 #' It could also be down to a different protocol?
-#' Only 23 genes in our gene list are not in TCGA, so we remove those to harmonise the datasets
 
 # non-TCGA samples - no need to limit genes as they are all aligned alike
 dat.non_tcga <- bind_cols(
@@ -108,24 +169,13 @@ genes.no_tcga <- rownames(dat.wtchg)[keep.non_tcga]
 # Restrict data to this gene list in-place
 dat.wtchg <- dat.wtchg[genes,]
 dat.ip <- dat.ip[genes,]
-dat.h9 <- data.frame(H9NSC=dat.h9[genes,], row.names = genes)  # required for any dataset with only 1 column
+dat.h9 <- dat.h9[genes, , drop=F]
 dat.tcga <- dat.tcga[genes,]
 
 #' Load annotations from biomart. 
 #' We will use this to annotate DE results.
 #' 
 ens.map <- biomart_annotation(index.by='ensembl_gene_id')
-
-# recreate the counts matrix with the new intersecting, filtered gene list
-
-dat.all <- bind_cols(
-  dat.wtchg,
-  dat.ip,
-  dat.h9,
-  dat.tcga
-)
-rownames(dat.all) <- genes
-
 
 #' Lump iNSC, eNSC, GBM together and use them to estimate dispersion
 
@@ -155,9 +205,39 @@ dispersion.trended.lumped <- y.lumped$trended.dispersion
 dispersion.common.lumped <- y.lumped$common.dispersion
 dispersion.tagwise.lumped <- y.lumped$tagwise.dispersion
 
+#' QQ plot of deviance values, used to show the utility of tagwise estimates
+#' This will not work for a 'saturated' design matrix because the dof = 0
+#' Basically, the results show that you have a lot of poor fits to the model if you don't use genewise dispersion estimates
+qqplot_chisq_fit <- function(y, design, dispersion, outfile=NULL, title=NULL) {
+
+  fit <- glmFit(y, design, dispersion=dispersion)
+  p <- pchisq(fit$deviance, fit$df.residual)
+  q <- 1 - p
+  qq.obs <- qnorm(p)
+  qq.obs[qq.obs > 10] = 10
+  qq.theor <- qnorm(rank(fit$deviance) / (length(fit$deviance) + 1))
+  df1 <- data.frame(x=qq.theor[q < 0.05], y=qq.obs[q < 0.05])
+  df2 <- data.frame(x=qq.theor[q >= 0.05], y=qq.obs[q >= 0.05])
+
+  gg <- ggplot(data=df1, aes(x, y)) + 
+    geom_point(colour='red') +
+    geom_point(data=df2, aes(x, y), colour='black') + 
+    geom_abline(slope = 1, intercept = 0) +
+    coord_cartesian(ylim=c(-8, 8), xlim = c(-4, 4)) 
+  if (!is.null(title)) {
+    gg + ggtitle(title)
+  }
+  
+  if (!is.null(outfile)) {
+    ggsave(filename = outfile)
+  }
+  
+}
+qqplot_chisq_fit(y.lumped, design, dispersion.common.lumped, outfile=file.path(list.outdir, "qqplot_fit_common.png"), title="Common dispersion")
+qqplot_chisq_fit(y.lumped, design, dispersion.trended.lumped, outfile=file.path(list.outdir, "qqplot_fit_trended.png"), title="Trended dispersion")
+qqplot_chisq_fit(y.lumped, design, dispersion.tagwise.lumped, outfile=file.path(list.outdir, "qqplot_fit_tagwise.png"), title="Genewise dispersion")
 
 #' Now run the analysis with all data included, separated into the correct groups (GBM.018, etc.)
-
 
 filt = meta.wtchg$disease_subgroup == 'RTK I'
 
@@ -186,7 +266,7 @@ y$tagwise.dispersion <- dispersion.tagwise.lumped
 
 fit.glm <- glmFit(y, design)
 my.contrasts <- makeContrasts(
-  GBMvsiNSC=(GBM.018+GBM.019+GBM.031)-(iNSC.018+iNSC.019+iNSC.031), 
+  GBMvsiNSC=(GBM.018+GBM.019+GBM.031)/3-(iNSC.018+iNSC.019+iNSC.031)/3, 
   GBM018vsiNSC018=GBM.018-iNSC.018,
   GBM019vsiNSC019=GBM.019-iNSC.019,
   GBM031vsiNSC031=GBM.031-iNSC.031,
@@ -196,9 +276,87 @@ my.contrasts <- makeContrasts(
   GBM031vseNSC=GBM.031-eNSC.,
   levels=design
 )
-# we need to take the negative effect to get GBM relative to iNSC
-lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
-lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
-lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSC"])
-lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
-lrt <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
+
+list.outdir <- getOutputDir(name = "paired_analysis_de_rtkI")
+
+lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
+lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSC"])
+res.tot <- export_de_list(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
+
+lrt1.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
+lrt2.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSC"])
+res.018 <- export_de_list(lrt1.018, lrt2.018, file.path(list.outdir, "gbm-insc-ensc-018.csv"))
+
+lrt1.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
+lrt2.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSC"])
+res.019 <- export_de_list(lrt1.019, lrt2.019, file.path(list.outdir, "gbm-insc-ensc-019.csv"))
+
+lrt1.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
+lrt2.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSC"])
+res.031 <- export_de_list(lrt1.031, lrt2.031, file.path(list.outdir, "gbm-insc-ensc-031.csv"))
+
+plot_multivenn(res.tot$de1, res.tot$de2, png.file=file.path(list.outdir, "all.png"))
+plot_multivenn(res.018$de1, res.018$de2, png.file=file.path(list.outdir, "018.png"))
+plot_multivenn(res.019$de1, res.019$de2, png.file=file.path(list.outdir, "019.png"))
+plot_multivenn(res.031$de1, res.031$de2, png.file=file.path(list.outdir, "031.png"))
+
+
+run_one_go <- function(ens.all, ens.up, ens.down, p.value=0.05) {
+  go <- goana(lapply(list(ens.all, ens.up, ens.down), FUN = function(x) {ens.map[x, 'entrezgene']}))
+  colnames(go)[4:9] <- c('N.all', 'N.up', 'N.down', 'P.all', 'P.up', 'P.down')
+  go <- go[go$P.all < p.value,]
+  go <- go[order(go$P.all),]
+  go
+}
+
+
+#' Run GO (and KEGG) analysis
+#' This will highlight the pathways that are enriched in the gene lists. Indexing is by Entrez ID
+#' Requires GO.db: biocLite("GO.db")
+run_go <- function(lrt1, lrt2, fdr=0.05) {
+  res <- decompose_de_lists(lrt1, lrt2, fdr = fdr)
+  
+  x.all <- rbind(res$x1, res$x2)
+  ens1.all <- x.all$ensembl
+  ens1.up <- x.all[x.all$direction == 'U', 'ensembl']
+  ens1.down <- x.all[x.all$direction == 'D', 'ensembl']
+  go1 <- run_one_go(ens1.all, ens1.up, ens1.down)
+
+  ens1.only.all <- res$x2$ensembl
+  ens1.only.up <- res$x2[res$x2$direction == 'U', 'ensembl']
+  ens1.only.down <- res$x2[res$x2$direction == 'D', 'ensembl']
+  
+  go1.only <- run_one_go(ens1.only.all, ens1.only.up, ens1.only.down)
+
+  y.all <- rbind(res$y1, res$y3)
+  ens2.all <- y.all$ensembl
+  ens2.up <- y.all[y.all$direction == 'U', 'ensembl']
+  ens2.down <- y.all[y.all$direction == 'D', 'ensembl']
+  
+  go2 <- run_one_go(ens2.all, ens2.up, ens2.down)
+
+  ens2.only.all <- res$y3$ensembl
+  ens2.only.up <- res$y3[res$y3$direction == 'U', 'ensembl']
+  ens2.only.down <- res$y3[res$y3$direction == 'D', 'ensembl']
+  
+  go2.only <- run_one_go(ens2.only.all, ens2.only.up, ens2.only.down)
+
+  ens.both.all <- res$x1[res$x1$direction == res$y1$direction, 'ensembl']
+  ens.both.up <- res$x1[(res$x1$direction == 'U') & (res$y1$direction == 'U'), 'ensembl']
+  ens.both.down <- res$x1[(res$x1$direction == 'D') & (res$y1$direction == 'D'), 'ensembl']
+  
+  go.both <- run_one_go(ens.both.all, ens.both.up, ens.both.down)
+  
+  return(list(
+    go1=go1,
+    go1.only=go1.only,
+    go2=go2,
+    go2.only=go2.only,
+    go.both=go.both
+  ))
+
+}
+
+go.018 <- run_go(lrt1.018, lrt2.018, fdr = 0.05)
+go.019 <- run_go(lrt1.019, lrt2.019, fdr = 0.05)
+go.031 <- run_go(lrt1.031, lrt2.031, fdr = 0.05)
