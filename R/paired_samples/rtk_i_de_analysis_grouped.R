@@ -287,25 +287,22 @@ dispersion.tagwise.lumped <- y.lumped$tagwise.dispersion
 qqplot_chisq_fit <- function(y, design, dispersion, outfile=NULL, title=NULL) {
 
   fit <- glmFit(y, design, dispersion=dispersion)
-  p <- pchisq(fit$deviance, fit$df.residual)
-  q <- 1 - p
-  qq.obs <- qnorm(p)
-  qq.obs[qq.obs > 10] = 10
-  qq.theor <- qnorm(rank(fit$deviance) / (length(fit$deviance) + 1))
-  df1 <- data.frame(x=qq.theor[q < 0.05], y=qq.obs[q < 0.05])
-  df2 <- data.frame(x=qq.theor[q >= 0.05], y=qq.obs[q >= 0.05])
+  p <- pchisq(fit$deviance, fit$df.residual, lower.tail = F)
+  p.holm <- p.adjust(p, method='holm')
+  z <- zscoreGamma(fit$deviance, shape=fit$df.residual/2, scale=2)
+  z[abs(z) == Inf] <- NA
+  col <- ifelse(p.holm < 0.05, 'blue', 'black')
 
-  gg <- ggplot(data=df1, aes(x, y)) + 
-    geom_point(colour='red') +
-    geom_point(data=df2, aes(x, y), colour='black') + 
-    geom_abline(slope = 1, intercept = 0) +
-    coord_cartesian(ylim=c(-8, 8), xlim = c(-4, 4)) 
-  if (!is.null(title)) {
-    gg + ggtitle(title)
+  plot.new()
+  if (!is.null(outfile)){
+    png(outfile)
   }
   
+  qqnorm(z, pch=16, col=col, main=title)
+  qqline(z)
+
   if (!is.null(outfile)) {
-    ggsave(filename = outfile)
+    dev.off()
   }
   
 }
