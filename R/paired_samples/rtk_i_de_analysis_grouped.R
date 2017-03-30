@@ -8,6 +8,7 @@ library("pheatmap")
 library("edgeR")
 library("gridExtra")
 library(VennDiagram)
+library(ggplot2)
 
 source('io/rnaseq.R')
 source('io/output.R')
@@ -51,6 +52,45 @@ decompose_de_lists <- function(lrt1, lrt2, fdr=0.05) {
 }
 
 
+#' Get intersecting and unique results for 3 components
+decompose_de_lists.3 <- function(lrt1, lrt2, lrt3, fdr=0.05) {
+  de1 <- prepare_de_table(lrt1, fdr=fdr)
+  de2 <- prepare_de_table(lrt2, fdr=fdr)
+  de3 <- prepare_de_table(lrt3, fdr=fdr)
+  de <- list(
+    de1, de2, de3
+  )
+  ens <- list(
+    de1$ensembl,
+    de2$ensembl,
+    de3$ensembl
+  )
+  
+  blocks <- list()
+  
+  for (i in seq(1, 7)) {
+    comb <- as.integer(intToBits(i))[1:3]
+    idx.in <- which(comb == 1)
+    idx.out <- which(comb == 0)
+    
+    ens.in <- Reduce(intersect, lapply(idx.in, function(x){ ens[[x]] }))
+    ens.out <- Reduce(union, lapply(idx.out, function(x){ ens[[x]] }))
+    ens.this <- setdiff(ens.in, ens.out)
+    
+    get_de <- function(x) {
+      tmp <- de[[x]][de[[x]]$ensembl %in% ens.this,]
+      tmp <- tmp[order(tmp$ensembl),]
+    }
+    
+    de.in <- lapply(idx.in, get_de)
+    
+    blocks[[paste0(comb, collapse = '')]] <- do.call(cbind, de.in)
+  }
+  
+  blocks
+}
+
+
 #' Export to CSV lists
 #' We have two LRT objects (result of glmLRT). We first extract the DE genes for a given FDR in each list.
 #' Then we match the DE genes and generate a CSV in blocks: (A and B), A only, B only
@@ -74,7 +114,7 @@ export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
   xy[is.na(xy)] <- ''
   
   write.csv(xy, outfile, row.names = F)
-  return(list(de1=de1, de2=de2))
+  return(list(de1=prepare_de_table(lrt1, fdr=fdr), de2=prepare_de_table(lrt2, fdr=fdr)))
 }
 
 # plot venn diagrams showing number of genes overlapping in 2 DE results
@@ -125,6 +165,41 @@ plot_multivenn <- function(de1, de2, png.file=NULL) {
 }
 
 
+# plot venn diagrams showing number of genes overlapping in 3 DE results
+plot_multivenn.3 <- function(blocks, png.file=NULL) {
+  
+  n123 = nrow(blocks[["111"]])
+  
+  n1 = nrow(blocks[["100"]])
+  n2 = nrow(blocks[["010"]])
+  n3 = nrow(blocks[["001"]])
+  
+  n12 = nrow(blocks[["110"]])
+  n23 = nrow(blocks[["011"]])
+  n13 = nrow(blocks[["101"]])
+  
+  area1 = n1 + n12 + n13 + n123
+  area2 = n2 + n12 + n23 + n123
+  area3 = n3 + n13 + n23 + n123
+  
+  n12 = n12 + n123
+  n23 = n23 + n123
+  n13 = n13 + n123
+  
+  category = c("GBM - paired NSC", "GBM - H9 NSC", "GBM - IP NSC")
+
+  if (!is.null(png.file)) {
+    png(png.file, width=800, height=800, units='px', res=120)
+  }
+  
+  draw.triple.venn(area1, area2, area3, n12, n23, n13, n123, category = category, scaled = T)
+
+  if (!is.null(png.file)) {
+    dev.off()
+  }
+}
+
+
 loaded.wtchg <- paired_gbm_nsc_data()
 dat.wtchg <- loaded.wtchg$data
 meta.wtchg <- loaded.wtchg$meta
@@ -133,6 +208,7 @@ loaded.tcga <- tcga_gbm_data()
 dat.tcga <- loaded.tcga$data
 meta.tcga <- loaded.tcga$meta
 
+loaded.h9.sep <- duan_nsc_data(collapse.replicates = F)
 loaded.h9 <- duan_nsc_data()
 dat.h9 <- loaded.h9$data
 meta.h9 <- loaded.h9$meta
@@ -233,6 +309,9 @@ qqplot_chisq_fit <- function(y, design, dispersion, outfile=NULL, title=NULL) {
   }
   
 }
+
+list.outdir <- getOutputDir(name = "paired_analysis_de_rtkI")
+
 qqplot_chisq_fit(y.lumped, design, dispersion.common.lumped, outfile=file.path(list.outdir, "qqplot_fit_common.png"), title="Common dispersion")
 qqplot_chisq_fit(y.lumped, design, dispersion.trended.lumped, outfile=file.path(list.outdir, "qqplot_fit_trended.png"), title="Trended dispersion")
 qqplot_chisq_fit(y.lumped, design, dispersion.tagwise.lumped, outfile=file.path(list.outdir, "qqplot_fit_tagwise.png"), title="Genewise dispersion")
@@ -277,8 +356,6 @@ my.contrasts <- makeContrasts(
   levels=design
 )
 
-list.outdir <- getOutputDir(name = "paired_analysis_de_rtkI")
-
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSC"])
 res.tot <- export_de_list(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
@@ -300,6 +377,91 @@ plot_multivenn(res.018$de1, res.018$de2, png.file=file.path(list.outdir, "018.pn
 plot_multivenn(res.019$de1, res.019$de2, png.file=file.path(list.outdir, "019.png"))
 plot_multivenn(res.031$de1, res.031$de2, png.file=file.path(list.outdir, "031.png"))
 
+#' Repeat but include TWO reference datasets
+
+filt = meta.wtchg$disease_subgroup == 'RTK I'
+
+dat <- bind_cols(
+  dat.wtchg[, filt],
+  dat.h9,
+  dat.ip
+)
+rownames(dat) <- genes
+grp = data.frame(
+  cell_type=c(rep(c('GBM', 'iNSC'), each=3), 'eNSC.H9', rep('eNSC.IP', n.ip)),
+  patient=c(rep(c('018', '019', '031'), 2), rep('', n.h9 + n.ip)), 
+  row.names = colnames(dat)
+)
+
+grp <- factor(paste(grp$cell_type, grp$patient, sep="."))
+
+y <- DGEList(dat, genes = ens.map[rownames(dat), "hgnc_symbol"])
+y <- calcNormFactors(y)
+
+design <- model.matrix(~0 + grp)
+colnames(design) <- levels(grp)
+
+# in this case, we need to use the dispersion estimated earlier
+y$common.dispersion <- dispersion.common.lumped
+y$trended.dispersion <- dispersion.trended.lumped
+y$tagwise.dispersion <- dispersion.tagwise.lumped
+
+fit.glm <- glmFit(y, design)
+my.contrasts <- makeContrasts(
+  GBMvsiNSC=(GBM.018+GBM.019+GBM.031)/3-(iNSC.018+iNSC.019+iNSC.031)/3, 
+  GBM018vsiNSC018=GBM.018-iNSC.018,
+  GBM019vsiNSC019=GBM.019-iNSC.019,
+  GBM031vsiNSC031=GBM.031-iNSC.031,
+  GBMvseNSCH9=(GBM.018+GBM.019+GBM.031)/3 - eNSC.H9.,
+  GBMvseNSCIP=(GBM.018+GBM.019+GBM.031)/3 - eNSC.IP.,
+  GBM018vseNSCH9=GBM.018-eNSC.H9.,
+  GBM019vseNSCH9=GBM.019-eNSC.H9.,
+  GBM031vseNSCH9=GBM.031-eNSC.H9.,
+  GBM018vseNSCIP=GBM.018-eNSC.IP.,
+  GBM019vseNSCIP=GBM.019-eNSC.IP.,
+  GBM031vseNSCIP=GBM.031-eNSC.IP.,
+  levels=design
+)
+
+
+lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
+lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSCH9"])
+lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSCIP"])
+blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
+plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_all.png"))
+
+lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
+lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSCH9"])
+lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSCIP"])
+blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
+plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_018.png"))
+
+lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
+lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSCH9"])
+lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSCIP"])
+blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
+plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_019.png"))
+
+lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
+lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSCH9"])
+lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSCIP"])
+blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
+plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_031.png"))
+
+
+res.tot <- export_de_list(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
+
+lrt1.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
+lrt2.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSC"])
+res.018 <- export_de_list(lrt1.018, lrt2.018, file.path(list.outdir, "gbm-insc-ensc-018.csv"))
+
+lrt1.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
+lrt2.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSC"])
+res.019 <- export_de_list(lrt1.019, lrt2.019, file.path(list.outdir, "gbm-insc-ensc-019.csv"))
+
+lrt1.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
+lrt2.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSC"])
+res.031 <- export_de_list(lrt1.031, lrt2.031, file.path(list.outdir, "gbm-insc-ensc-031.csv"))
 
 run_one_go <- function(ens.all, ens.up, ens.down, p.value=0.05) {
   go <- goana(lapply(list(ens.all, ens.up, ens.down), FUN = function(x) {ens.map[x, 'entrezgene']}))
