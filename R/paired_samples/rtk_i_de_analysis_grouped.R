@@ -9,6 +9,7 @@ library("edgeR")
 library("gridExtra")
 library(VennDiagram)
 library(ggplot2)
+library("WriteXLS")
 
 source('io/rnaseq.R')
 source('io/output.R')
@@ -25,7 +26,7 @@ prepare_de_table <- function(lrt, fdr=0.05) {
 }
 
 #' Get intersecting and unique results
-decompose_de_lists <- function(lrt1, lrt2, fdr=0.05) {
+decompose_de_lists.2 <- function(lrt1, lrt2, fdr=0.05) {
   de1 <- prepare_de_table(lrt1, fdr=fdr)
   de2 <- prepare_de_table(lrt2, fdr=fdr)
   
@@ -94,9 +95,9 @@ decompose_de_lists.3 <- function(lrt1, lrt2, lrt3, fdr=0.05) {
 #' Export to CSV lists
 #' We have two LRT objects (result of glmLRT). We first extract the DE genes for a given FDR in each list.
 #' Then we match the DE genes and generate a CSV in blocks: (A and B), A only, B only
-export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
+export_de_list.2 <- function(lrt1, lrt2, outfile, fdr=0.05) {
 
-  res <- decompose_de_lists(lrt1, lrt2, fdr)
+  res <- decompose_de_lists.2(lrt1, lrt2, fdr)
   x1 <- res$x1
   x2 <- res$x2
   x3 <- res$x3
@@ -117,8 +118,31 @@ export_de_list <- function(lrt1, lrt2, outfile, fdr=0.05) {
   return(list(de1=prepare_de_table(lrt1, fdr=fdr), de2=prepare_de_table(lrt2, fdr=fdr)))
 }
 
+toExcel.3 <- function(blocks, labels, outfile) {
+  dfs <- list()
+  
+  for (i in seq(1, 7)) {
+    comb <- as.integer(intToBits(i))[1:3]
+    idx.in <- which(comb == 1)
+    
+    this.df <- blocks[[i]]
+    this.df.up <- this.df[this.df$direction == 'U',]
+    this.df.down <- this.df[this.df$direction == 'D',]
+    
+    this.label <- paste(labels[idx.in], collapse = " & ")
+    this.label.up <- paste(this.label, "U")
+    this.label.down <- paste(this.label, "D")
+    
+    dfs[[this.label]] <- this.df
+    dfs[[this.label.up]] <- this.df.up
+    dfs[[this.label.down]] <- this.df.down
+  }
+  WriteXLS(dfs, ExcelFileName = outfile)
+  dfs
+}
+
 # plot venn diagrams showing number of genes overlapping in 2 DE results
-plot_multivenn <- function(de1, de2, png.file=NULL) {
+plot_multivenn.2 <- function(de1, de2, png.file=NULL) {
 
   de1.up = de1[de1$logFC > 0,]
   de2.up = de2[de2$logFC > 0,]
@@ -166,25 +190,60 @@ plot_multivenn <- function(de1, de2, png.file=NULL) {
 
 
 # plot venn diagrams showing number of genes overlapping in 3 DE results
-plot_multivenn.3 <- function(blocks, png.file=NULL) {
+plot_multivenn.3 <- function(blocks, direction=NULL, png.file=NULL) {
   
-  n123 = nrow(blocks[["111"]])
+  getUp <- function(x) {
+    x[x$direction == 'U',]
+  }
   
-  n1 = nrow(blocks[["100"]])
-  n2 = nrow(blocks[["010"]])
-  n3 = nrow(blocks[["001"]])
+  getDown <- function(x) {
+    x[x$direction == 'D',]
+  }
   
-  n12 = nrow(blocks[["110"]])
-  n23 = nrow(blocks[["011"]])
-  n13 = nrow(blocks[["101"]])
+  getAll <- function(x) {x}
   
-  area1 = n1 + n12 + n13 + n123
-  area2 = n2 + n12 + n23 + n123
-  area3 = n3 + n13 + n23 + n123
+  if (is.null(direction)) {
+    getFunc = getAll
+  } else if (tolower(direction) == 'u') {
+    getFunc = getUp
+  } else if (tolower(direction) == 'd') {
+    getFunc = getDown
+  } else {
+    stop("Unrecognised direction argument.")
+  }
   
-  n12 = n12 + n123
-  n23 = n23 + n123
-  n13 = n13 + n123
+  computeAreas <- function(b, getFunc) {
+    n123 = nrow(getFunc(b[["111"]]))
+    
+    n1 = nrow(getFunc(b[["100"]]))
+    n2 = nrow(getFunc(b[["010"]]))
+    n3 = nrow(getFunc(b[["001"]]))
+    
+    n12 = nrow(getFunc(b[["110"]]))
+    n23 = nrow(getFunc(b[["011"]]))
+    n13 = nrow(getFunc(b[["101"]]))
+
+    area1 = n1 + n12 + n13 + n123
+    area2 = n2 + n12 + n23 + n123
+    area3 = n3 + n13 + n23 + n123
+    
+    n12 = n12 + n123
+    n23 = n23 + n123
+    n13 = n13 + n123
+    
+    list(
+      area1=area1,
+      area2=area2,
+      area3=area3,
+      n12=n12,
+      n23=n23,
+      n13=n13,
+      n123=n123
+    )
+    
+  }
+
+  res <- computeAreas(blocks, getFunc)
   
   category = c("GBM - paired NSC", "GBM - H9 NSC", "GBM - IP NSC")
 
@@ -192,11 +251,17 @@ plot_multivenn.3 <- function(blocks, png.file=NULL) {
     png(png.file, width=800, height=800, units='px', res=120)
   }
   
-  draw.triple.venn(area1, area2, area3, n12, n23, n13, n123, category = category, scaled = T)
+  venn <- draw.triple.venn(
+    res$area1, res$area2, res$area3, 
+    res$n12, res$n23, res$n13, res$n123, 
+    category = category, scaled = F
+  )
 
   if (!is.null(png.file)) {
     dev.off()
   }
+  
+  return(venn)
 }
 
 
@@ -355,24 +420,24 @@ my.contrasts <- makeContrasts(
 
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSC"])
-res.tot <- export_de_list(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
+res.tot <- export_de_list.2(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
 
 lrt1.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
 lrt2.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSC"])
-res.018 <- export_de_list(lrt1.018, lrt2.018, file.path(list.outdir, "gbm-insc-ensc-018.csv"))
+res.018 <- export_de_list.2(lrt1.018, lrt2.018, file.path(list.outdir, "gbm-insc-ensc-018.csv"))
 
 lrt1.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
 lrt2.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSC"])
-res.019 <- export_de_list(lrt1.019, lrt2.019, file.path(list.outdir, "gbm-insc-ensc-019.csv"))
+res.019 <- export_de_list.2(lrt1.019, lrt2.019, file.path(list.outdir, "gbm-insc-ensc-019.csv"))
 
 lrt1.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
 lrt2.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSC"])
-res.031 <- export_de_list(lrt1.031, lrt2.031, file.path(list.outdir, "gbm-insc-ensc-031.csv"))
+res.031 <- export_de_list.2(lrt1.031, lrt2.031, file.path(list.outdir, "gbm-insc-ensc-031.csv"))
 
-plot_multivenn(res.tot$de1, res.tot$de2, png.file=file.path(list.outdir, "all.png"))
-plot_multivenn(res.018$de1, res.018$de2, png.file=file.path(list.outdir, "018.png"))
-plot_multivenn(res.019$de1, res.019$de2, png.file=file.path(list.outdir, "019.png"))
-plot_multivenn(res.031$de1, res.031$de2, png.file=file.path(list.outdir, "031.png"))
+plot_multivenn.2(res.tot$de1, res.tot$de2, png.file=file.path(list.outdir, "all.png"))
+plot_multivenn.2(res.018$de1, res.018$de2, png.file=file.path(list.outdir, "018.png"))
+plot_multivenn.2(res.019$de1, res.019$de2, png.file=file.path(list.outdir, "019.png"))
+plot_multivenn.2(res.031$de1, res.031$de2, png.file=file.path(list.outdir, "031.png"))
 
 #' Repeat but include TWO reference datasets
 
@@ -445,21 +510,6 @@ lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSCIP"])
 blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
 plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_031.png"))
 
-
-res.tot <- export_de_list(lrt1, lrt2, file.path(list.outdir, "gbm-insc-ensc-all.csv"))
-
-lrt1.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
-lrt2.018 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSC"])
-res.018 <- export_de_list(lrt1.018, lrt2.018, file.path(list.outdir, "gbm-insc-ensc-018.csv"))
-
-lrt1.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
-lrt2.019 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSC"])
-res.019 <- export_de_list(lrt1.019, lrt2.019, file.path(list.outdir, "gbm-insc-ensc-019.csv"))
-
-lrt1.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
-lrt2.031 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSC"])
-res.031 <- export_de_list(lrt1.031, lrt2.031, file.path(list.outdir, "gbm-insc-ensc-031.csv"))
-
 run_one_go <- function(ens.all, ens.up, ens.down, p.value=0.05) {
   go <- goana(lapply(list(ens.all, ens.up, ens.down), FUN = function(x) {ens.map[x, 'entrezgene']}))
   colnames(go)[4:9] <- c('N.all', 'N.up', 'N.down', 'P.all', 'P.up', 'P.down')
@@ -473,7 +523,7 @@ run_one_go <- function(ens.all, ens.up, ens.down, p.value=0.05) {
 #' This will highlight the pathways that are enriched in the gene lists. Indexing is by Entrez ID
 #' Requires GO.db: biocLite("GO.db")
 run_go <- function(lrt1, lrt2, fdr=0.05) {
-  res <- decompose_de_lists(lrt1, lrt2, fdr = fdr)
+  res <- decompose_de_lists.2(lrt1, lrt2, fdr = fdr)
   
   x.all <- rbind(res$x1, res$x2)
   ens1.all <- x.all$ensembl
