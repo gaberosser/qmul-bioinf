@@ -1,0 +1,37 @@
+---
+title: "Analysing the DNA methylation data from paired GBM samples"
+output: html_notebook
+---
+
+```{r setup}
+require("knitr")
+opts_knit$set(root.dir = normalizePath('..'))
+```
+
+
+```{r, results="hide"}
+source('io/output.R')
+source('_settings.R')
+source("utils.R")
+library("ChAMP")
+library("minfi")
+```
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+We'll be using the `ChAMP` package to extract methylation beta values from the Illumina raw data files (`*.idat`).
+
+Start by defining the input directory.
+
+```{r}
+in.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics', 'idat')
+myLoad <- champ.load(directory=in.dir, arraytype = "EPIC")
+myNorm <- champ.norm(arraytype = "EPIC")
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
