@@ -9,12 +9,13 @@ opts_knit$set(root.dir = normalizePath('..'))
 ```
 
 
-```{r, results="hide"}
+```{r, message=FALSE, warning=FALSE, results="hide"}
 source('io/output.R')
 source('_settings.R')
 source("utils.R")
 library("ChAMP")
 library("minfi")
+library("wateRmelon")
 ```
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook.
@@ -23,13 +24,67 @@ Try executing this chunk by clicking the *Run* button within the chunk or by pla
 
 We'll be using the `ChAMP` package to extract methylation beta values from the Illumina raw data files (`*.idat`).
 
-Start by defining the input directory.
+Start by defining the input directory. This must contain a single `.csv` file in the standard Illumina sample sheet format. Data from different chips are located in subdirectories with the name of the chip. *All* of the samples listed will be loaded. We don't want all of them, so we will run the first few steps manually. 
+
+Load data, filter to keep only the relevant samples, filter by beadcount (this can't be done downstream as it relies on the raw data and we only use beta values beyond this point). For beadcount filtering, the `ChAMP` implementation removes those probes for which >5% of records have a beadcount of <3. In our small sample case, this is the same as requiring that *no single sample* has <3 beads. Otherwise, we use the default filtering options ($p<0.1$ for detection).
 
 ```{r}
 in.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics', 'idat')
-myLoad <- champ.load(directory=in.dir, arraytype = "EPIC")
-myNorm <- champ.norm(arraytype = "EPIC")
+
+# Carry out filtering on the targets sheet before loading data
+targets <- read.metharray.sheet(in.dir)
+targets <- targets[!grepl('icb', targets$Sample_Name, ignore.case = T),]
+targets <- targets[grepl('018|019|031', targets$Sample_Name),]
+targets$Sample_Name <- c(
+  "GBM018",
+  "GBM019",
+  "GBM031",
+  "Dura018",
+  "Dura019",
+  "Dura031"
+)
+targets$Sample_Group <- c(
+  rep("GBM", 3), rep("iNSC", 3)
+)
+
+rgSet <- read.metharray.exp(targets = targets, extended=TRUE)
+rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilmn10.hg19")
+
+bc <- beadcount(rgSet)
+keep.idx <- which(as.vector(rowSums(is.na(bc)) == 0))
+bc <- na.omit(bc)
+
+mset <- preprocessRaw(rgSet)
+mset <- mset[rownames(bc),]
+
+detP <- detectionP(rgSet)
+detP <- detP[rownames(bc),]
+
+pd <- pData(rgSet)
+
+beta.raw <- getBeta(mset, "Illumina")
+
+myLoad <- champ.filter(beta.raw, detP = detP, pd = pd, arraytype = "EPIC")
 ```
+
+Now we have loaded the data, we could (should?) normalise it. There are several options: BMIQ, SWAN, PBC and FunctionalNormalize. The latter is *not* supported for EPIC arrays.
+
+```{r}
+beta.bmiq <- champ.norm(beta = myLoad$beta, method = 'BMIQ', arraytype = "EPIC", cores=4)
+beta.pbc <- champ.norm(beta = myLoad$beta, method = 'PBC', arraytype = "EPIC")
+beta.swan <- champ.norm(beta = NULL, rgSet = rgSet, mset = preprocessRaw(rgSet), method = 'SWAN', arraytype = "EPIC", cores=4)
+
+# colnames(beta) <- pd$Sample_Name
+```
+
+Since that process is fairly time-consuming, we'll save the beta values to CSV.
+
+```{r}
+outDir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics', 'beta')
+dir.create(outDir, showWarnings = FALSE)
+write.csv(beta, file = file.path(outDir, "beta.csv"))
+```
+
 
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
