@@ -954,3 +954,26 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
         raise ValueError("Unrecognised source")
 
     return obj
+
+def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', '170328_K00150_0177_BHJ2C2BBXX')
+    metafn = os.path.join(indir, 'sources.csv')
+    samples = (
+        'GBM018 FFPE',
+        'GBM019 FFPE',
+        'GBM031 FFPE',
+        'GBM026 FF',
+        'GBM031 FF',
+    )
+
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise NotImplementedError
+
+    return obj
