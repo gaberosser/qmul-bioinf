@@ -26,10 +26,11 @@ We'll be using the `ChAMP` package to extract methylation beta values from the I
 
 Start by defining the input directory. This must contain a single `.csv` file in the standard Illumina sample sheet format. Data from different chips are located in subdirectories with the name of the chip. *All* of the samples listed will be loaded. We don't want all of them, so we will run the first few steps manually. 
 
-Load data, filter to keep only the relevant samples, filter by beadcount (this can't be done downstream as it relies on the raw data and we only use beta values beyond this point). For beadcount filtering, the `ChAMP` implementation removes those probes for which >5% of records have a beadcount of <3. In our small sample case, this is the same as requiring that *no single sample* has <3 beads. Otherwise, we use the default filtering options ($p<0.1$ for detection).
+Load data, filtering by beadcount to keep only the relevant probes (this can't be done downstream as it relies on the raw red/green data and we only use beta/M values beyond this point). For beadcount filtering, the `ChAMP` implementation removes those probes for which >5% of records have a beadcount of <3. In our small sample case, this is the same as requiring that *no single sample* has <3 beads.
 
 ```{r}
-in.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics', 'idat')
+base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
+in.dir <- file.path(base.dir, 'idat')
 
 # Carry out filtering on the targets sheet before loading data
 targets <- read.metharray.sheet(in.dir)
@@ -63,26 +64,50 @@ detP <- detP[rownames(bc),]
 pd <- pData(rgSet)
 
 beta.raw <- getBeta(mset, "Illumina")
+colnames(beta.raw) <- pd[colnames(beta.raw), 'Sample_Name']
+```
 
+Now we filter the data using the default ChAMP process. This has a few steps:
+ - Remove any samples with too many failed probes
+ - Remove probes with a poor detection probability
+ - Remove some probes that other research has shown to be poor
+ - Remove X, Y chromosome probes.
+
+```{r}
 myLoad <- champ.filter(beta.raw, detP = detP, pd = pd, arraytype = "EPIC")
 ```
 
-Now we have loaded the data, we could (should?) normalise it. There are several options: BMIQ, SWAN, PBC and FunctionalNormalize. The latter is *not* supported for EPIC arrays.
+Now we have loaded the data, we should normalise it. There are several options: BMIQ, SWAN, PBC and FunctionalNormalize. The latter is *not* supported for EPIC arrays.
 
 ```{r}
 beta.bmiq <- champ.norm(beta = myLoad$beta, method = 'BMIQ', arraytype = "EPIC", cores=4)
 beta.pbc <- champ.norm(beta = myLoad$beta, method = 'PBC', arraytype = "EPIC")
-beta.swan <- champ.norm(beta = NULL, rgSet = rgSet, mset = preprocessRaw(rgSet), method = 'SWAN', arraytype = "EPIC", cores=4)
 
-# colnames(beta) <- pd$Sample_Name
+mset.swan <- preprocessSWAN(rgSet, mSet = mset)
+beta.swan <- getBeta(mset.swan)
+beta.swan <- beta.swan[rownames(myLoad$beta),]
+colnames(beta.swan) <- pd[colnames(beta.swan), 'Sample_Name']
 ```
 
 Since that process is fairly time-consuming, we'll save the beta values to CSV.
 
-```{r}
-outDir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics', 'beta')
+```{r, message=FALSE, warning=FALSE}
+outDir <- file.path(base.dir, 'beta')
 dir.create(outDir, showWarnings = FALSE)
-write.csv(beta, file = file.path(outDir, "beta.csv"))
+write.csv(beta.raw, file = file.path(outDir, "beta_raw.csv"))
+write.csv(beta.bmiq, file = file.path(outDir, "beta_bmiq.csv"))
+write.csv(beta.swan, file = file.path(outDir, "beta_swan.csv"))
+write.csv(beta.pbc, file = file.path(outDir, "beta_pbc.csv"))
+```
+
+Now we load annotations for the probes. In particular, we want the chromosome and chromosomal coordinate, but we also get any associated genes and a very approximate categorical distance from the TSS.
+
+*NB: Illumina released an updated version of the manifest (b3) on 17th Apr 2017, but this hasn't been supplied in Bioconductor yet. Keep an eye out for it!*
+
+```{r}
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations)
+head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other)
 ```
 
 
