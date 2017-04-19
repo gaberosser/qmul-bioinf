@@ -786,6 +786,36 @@ def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotatio
     return obj
 
 
+def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
+    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+    if source == 'star':
+        count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneStarCountLoader(
+            count_dirs=count_dirs,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            strandedness='r',
+        )
+    elif source == 'htseq-count':
+        raise NotImplementedError
+    elif source == 'featurecounts':
+        count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneFeatureCountLoader(
+            count_files=count_files,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj
+
+
+
 def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')

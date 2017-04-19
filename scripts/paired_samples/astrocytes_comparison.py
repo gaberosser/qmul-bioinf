@@ -145,6 +145,7 @@ if __name__ == "__main__":
 
     SHOW_GENE_LABELS = False
     OUTDIR = unique_output_dir("astrocytes", reuse_empty=True)
+    INCLUDE_ALL_NSC = True
 
     # GSE73721 (reference astrocytes, oligos, ...)
     obj73721 = rnaseq_data.gse73721(source='star', annotate_by='Ensembl Gene ID')
@@ -162,7 +163,16 @@ if __name__ == "__main__":
     obj61794 = rnaseq_data.gse61794(source='star', annotate_by='Ensembl Gene ID')
 
     # GBM paired samples
-    objwtchg = rnaseq_data.gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='Ensembl Gene ID')
+    objwtchg_paired = rnaseq_data.gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='Ensembl Gene ID')
+
+    # WTCHG ALL samples
+    objwtchg_all = rnaseq_data.all_wtchg_loader(source='star', annotate_by='Ensembl Gene ID')
+    to_keepwtchg = (
+        objwtchg_all.data.columns.str.contains('NSC')
+        | objwtchg_all.data.columns.str.contains('ASTRO')
+    )
+    objwtchg_all.data = objwtchg_all.data.loc[:, to_keepwtchg]
+    objwtchg_all.meta = objwtchg_all.meta.loc[to_keepwtchg, :]
 
     # Pollard (NSC x 2)
     objpollard = rnaseq_data.pollard_nsc(source='star', annotate_by='Ensembl Gene ID')
@@ -174,16 +184,29 @@ if __name__ == "__main__":
     mt_ensg = set(gtf_reader.get_mitochondrial())
 
     # combine the data
-    data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg.data, objpollard.data), axis=1)
-    data = data.loc[data.index.str.contains('ENSG')]
+    if INCLUDE_ALL_NSC:
+        data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg_all.data, objpollard.data), axis=1)
 
-    # combine the metadata
-    meta = pd.concat((
-        obj73721.meta.loc[to_keep73721],
-        obj61794.meta,
-        objwtchg.meta,
-        objpollard.meta
-    ), axis=0)
+        # combine the metadata
+        meta = pd.concat((
+            obj73721.meta.loc[to_keep73721],
+            obj61794.meta,
+            objwtchg_all.meta,
+            objpollard.meta
+        ), axis=0)
+
+    else:
+        data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg_paired.data, objpollard.data), axis=1)
+
+        # combine the metadata
+        meta = pd.concat((
+            obj73721.meta.loc[to_keep73721],
+            obj61794.meta,
+            objwtchg_paired.meta,
+            objpollard.meta
+        ), axis=0)
+
+    data = data.loc[data.index.str.contains('ENSG')]
 
     # compare with qPCR: comparing markers in the NSC samples and paired astrocytes
     astro_markers1 = [
@@ -319,7 +342,8 @@ if __name__ == "__main__":
     plot_all_correlation_heatmaps(data_rr_mt, filestem, col_order, vmin=0.5, vmax=1.)
 
     # re-run clustering without Barres data (since this has different distribution)
-    data_no_barres = pd.concat((obj61794.data, objwtchg.data, objpollard.data), axis=1)
+
+    data_no_barres = pd.concat((obj61794.data, objwtchg_paired.data, objpollard.data), axis=1)
     data_no_barres = data_no_barres.loc[data_no_barres.index.str.contains('ENSG')]
 
     filestem = os.path.join(OUTDIR, 'clustermap_no_barres')
@@ -327,6 +351,16 @@ if __name__ == "__main__":
 
     filestem = os.path.join(OUTDIR, 'correlation_no_barres')
     plot_all_correlation_heatmaps(data_no_barres, filestem, col_order, vmin=0.5, vmax=1.)
+
+    # Requested by LG: all data except our astrocytes
+    data_no_iastro = data_rr_mt.loc[:, ~data_rr_mt.columns.str.contains('_ASTRO')]
+    filestem = os.path.join(OUTDIR, 'clustermap_no_iastro')
+    col_order = plot_all_clustermaps(data_no_iastro, filestem, col_colors=col_colors)
+
+    # all NSCs
+    data_nsc = data_rr_mt.loc[:, data_rr_mt.columns.str.contains('NSC')]
+    filestem = os.path.join(OUTDIR, 'clustermap_nsc_only')
+    col_order = plot_all_clustermaps(data_nsc, filestem, col_colors=col_colors)
 
     # for every sample, extract the top N by count and summarise
 
