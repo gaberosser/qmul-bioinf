@@ -933,6 +933,7 @@ def gse73721(source='star', annotate_by='all', annotation_type='protein_coding')
 def gse61794(source='star', annotate_by='all', annotation_type='protein_coding'):
     """
     2 samples similar to Gibbco NSC line.
+    These may be technical replicates as they are very highly correlated.
     """
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
     metafn = os.path.join(indir, 'sources.csv')

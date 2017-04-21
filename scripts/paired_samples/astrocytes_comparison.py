@@ -39,6 +39,14 @@ def plot_clustermap(data, yugene=False, n_genes=N_GENES, **kwargs):
         cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90
     )
     cg.gs.update(bottom=0.2)
+
+    # it is helpful to have access to the row index so we'll add it here
+    # I *think* certain kwargs might cause this to fail (if no row dend has been computed?) so add a generic try-exc
+    try:
+        cg.row_index = top_mad[cg.dendrogram_row.reordered_ind]
+    except Exception:
+        pass
+
     return cg
 
 
@@ -146,6 +154,8 @@ if __name__ == "__main__":
     SHOW_GENE_LABELS = False
     OUTDIR = unique_output_dir("astrocytes", reuse_empty=True)
     INCLUDE_ALL_NSC = True
+    COMBINE_REPLICATES = True  # merges the H9 replicates
+    SIDETRACK_1 = False
 
     # GSE73721 (reference astrocytes, oligos, ...)
     obj73721 = rnaseq_data.gse73721(source='star', annotate_by='Ensembl Gene ID')
@@ -158,9 +168,21 @@ if __name__ == "__main__":
         & ~obj73721.data.columns.str.contains('myeloid')
     )
 
-
     # GSE61794 (H9-derived NSC x 2)
     obj61794 = rnaseq_data.gse61794(source='star', annotate_by='Ensembl Gene ID')
+    if COMBINE_REPLICATES:
+        rc = obj61794.meta.read_count.sum()
+        obj61794.meta = pd.DataFrame(
+            data={
+                'cell_type': 'NSC',
+                'srr': 'SRR1586371-2',
+                'read_count': rc,
+                'sample': 'H9 NSC',
+            },
+            index=['SRR1586371-2']
+        )
+        obj61794.data = pd.DataFrame(obj61794.data.sum(axis=1), columns=['H9 NSC'])
+
 
     # GBM paired samples
     objwtchg_paired = rnaseq_data.gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='Ensembl Gene ID')
@@ -562,70 +584,133 @@ if __name__ == "__main__":
     # Key Q: Does this support the low count YG distribution?
     # Spoiler alert: Yes, it seems so.
 
-    total_read_counts = [200000, 500000, 1000000, 2000000, 5000000]
-    n_rpt = 100
+    # takes a while, so allow disabling it
+    if SIDETRACK_1:
 
-    # set the reference (~7.5mi reads)
-    ref_data = data_rr.loc[:, '13yo ctx astro'].sort_values()
-    ref_data /= ref_data.sum()
-    ref_data = ref_data.loc[ref_data != 0]
+        total_read_counts = [200000, 500000, 1000000, 2000000, 5000000]
+        n_rpt = 100
 
-    sim_data = {}
-    for trc in total_read_counts:
-        print "Read count %d" % trc
-        simd = np.random.choice(ref_data.index, p=ref_data.values, size=(trc, n_rpt))
-        # count for each column
-        counted = [pd.value_counts(simd[:, i]) for i in range(n_rpt)]
-        sim_data[trc] = pd.DataFrame(counted, columns=ref_data.index).transpose().fillna(0)
+        # set the reference (~7.5mi reads)
+        ref_data = data_rr.loc[:, '13yo ctx astro'].sort_values()
+        ref_data /= ref_data.sum()
+        ref_data = ref_data.loc[ref_data != 0]
 
-    # yugene transform the ref_data
-    ref_data_yg = process.yugene_transform(pd.DataFrame(ref_data))
+        sim_data = {}
+        for trc in total_read_counts:
+            print "Read count %d" % trc
+            simd = np.random.choice(ref_data.index, p=ref_data.values, size=(trc, n_rpt))
+            # count for each column
+            counted = [pd.value_counts(simd[:, i]) for i in range(n_rpt)]
+            sim_data[trc] = pd.DataFrame(counted, columns=ref_data.index).transpose().fillna(0)
 
-    # yugene transform each of the expt runs
-    sim_data_yg = dict([
-        (k, process.yugene_transform(v)) for k, v in sim_data.iteritems()
-    ])
+        # yugene transform the ref_data
+        ref_data_yg = process.yugene_transform(pd.DataFrame(ref_data))
 
-    # plot them all together using a modified plot code and look for a difference in the distribution
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+        # yugene transform each of the expt runs
+        sim_data_yg = dict([
+            (k, process.yugene_transform(v)) for k, v in sim_data.iteritems()
+        ])
 
-    sim_colours = {
-        200000: 'y',
-        500000: 'b',
-        1000000: 'c',
-        2000000: 'r',
-        5000000: 'g'
-    }
-    ref_col = ref_data_yg.iloc[:, 0].sort_values()
-    ref_col = ref_col.loc[ref_col > 0]
-    ref_x = x = np.linspace(0, 1, ref_col.size)
-    ax.plot(ref_x, ref_col, color='k')
+        # plot them all together using a modified plot code and look for a difference in the distribution
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
 
-    for n, arr in sim_data_yg.items():
-        first = True
-        for t in arr.columns:
-            col = arr.loc[:, t].sort_values()
-            col = col.loc[col > 0]
-            x = np.linspace(0, 1, col.size)
-            if first:
-                lbl = str(n)
-                first = False
-            else:
-                lbl = None
-            ax.plot(x, col.values, color=sim_colours[n], label=lbl)
+        sim_colours = {
+            200000: 'y',
+            500000: 'b',
+            1000000: 'c',
+            2000000: 'r',
+            5000000: 'g'
+        }
+        ref_col = ref_data_yg.iloc[:, 0].sort_values()
+        ref_col = ref_col.loc[ref_col > 0]
+        ref_x = x = np.linspace(0, 1, ref_col.size)
+        ax.plot(ref_x, ref_col, color='k')
 
-    ax.set_xlabel('Rescaled percentile')
-    ax.set_ylabel('Normalised expression value')
-    ax.set_ylim([0, 1])
-    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.9)
-    fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.png"), dpi=200)
-    fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.pdf"))
+        for n, arr in sim_data_yg.items():
+            first = True
+            for t in arr.columns:
+                col = arr.loc[:, t].sort_values()
+                col = col.loc[col > 0]
+                x = np.linspace(0, 1, col.size)
+                if first:
+                    lbl = str(n)
+                    first = False
+                else:
+                    lbl = None
+                ax.plot(x, col.values, color=sim_colours[n], label=lbl)
+
+        ax.set_xlabel('Rescaled percentile')
+        ax.set_ylabel('Normalised expression value')
+        ax.set_ylim([0, 1])
+        ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.9)
+        fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "dynamic_range_simulations.pdf"))
 
 
     # for reference, we can also load the original 'pre-processed' GSE73721 data
     # but these are indexed by mouse gene??
-    fpkm, meta = rnaseq_data.brainrnaseq_preprocessed()
-    fpkm_idx = np.array(fpkm.index.str.capitalize())
-    fpkm_idx[fpkm_idx == 'Spata2l'] = 'Spata2L'
-    fpkm.index = fpkm_idx
+    # fpkm, meta = rnaseq_data.brainrnaseq_preprocessed()
+    # fpkm_idx = np.array(fpkm.index.str.capitalize())
+    # fpkm_idx[fpkm_idx == 'Spata2l'] = 'Spata2L'
+    # fpkm.index = fpkm_idx
+
+
+    # Seaborn pairplot of NSC (scatter matrix) with two populations of points:
+    # In both cases, require that more than half of the samples have a read count > MIN_COUNT
+    # UNLESS one sample has a reading > HIGH_COUNT
+    # top 500 by MAD
+    # randomly drawn 500 from non-MAD
+    MIN_COUNT = 4
+    MAX_BELOW = int(np.ceil(data_nsc.shape[1] * 0.5))
+    HIGH_COUNT = 100
+
+    nz_idx = (
+        ((data_nsc < MIN_COUNT).sum(axis=1) < MAX_BELOW) | ((data_nsc > HIGH_COUNT).any(axis=1))
+    )
+    data_nsc_nz = data_nsc.loc[nz_idx, :]
+
+    # yugene
+    data_nsc_nz_yg = process.yugene_transform(data_nsc_nz)
+
+    # add one, norm, take log
+    data_nsc_nz += 1
+    data_nsc_nz = data_nsc_nz.divide(data_nsc_nz.sum(axis=0), axis=1)
+    data_nsc_nz = np.log(data_nsc_nz + 1)
+
+    # MAD - compute on normalised values
+    mad_nsc_nz = process.median_absolute_deviation(data_nsc_nz).sort_values(ascending=False)
+    top_idx = mad_nsc_nz.index[:N_GENES]
+    rem_idx = mad_nsc_nz.index[N_GENES:]
+
+    # reduce number of remainder for plotting purposes
+    to_discard = rem_idx[np.random.permutation(rem_idx.size)[N_GENES:]]
+    data_nsc_nz = data_nsc_nz.drop(to_discard)
+
+    # add 'hue' column
+    data_nsc_nz.loc[:, 'hue'] = 'Remainder'
+    data_nsc_nz.loc[top_idx, 'hue'] = 'Top %d by MAD' % N_GENES
+
+    # generate the plot
+    # pg = sns.pairplot(data_nsc_nz, hue='hue')
+
+    # repeat on YuGene
+    mad_nsc_nz_yg = process.median_absolute_deviation(data_nsc_nz_yg).sort_values(ascending=False)
+    top_idx = mad_nsc_nz_yg.index[:N_GENES]
+    rem_idx = mad_nsc_nz_yg.index[N_GENES:]
+
+    # reduce number of remainder for plotting purposes
+    to_discard = rem_idx[np.random.permutation(rem_idx.size)[N_GENES:]]
+    data_nsc_nz_yg = data_nsc_nz_yg.drop(to_discard)
+
+    data_nsc_nz_yg.loc[:, 'hue'] = 'Remainder'
+    data_nsc_nz_yg.loc[top_idx, 'hue'] = 'Top %d by MAD' % N_GENES
+
+    pg = sns.pairplot(data_nsc_nz_yg, hue='hue')
+    delta = 0.04
+    pg.set(ylim=[-delta, 1 + delta], xlim=[-delta, 1 + delta])
+    pg._legend.set_visible(False)
+    pg.fig.subplots_adjust(bottom=0.05)
+    pg.savefig(os.path.join(OUTDIR, 'scatter_matrix_yg.png'), dpi=200)
+    pg.savefig(os.path.join(OUTDIR, 'scatter_matrix_yg.pdf'))
+
