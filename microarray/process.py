@@ -74,15 +74,18 @@ def aggregate_by_probe_set(marray_data, method='median', groupby='gene_symbol'):
     return data
 
 
-def yugene_transform(marray_data):
+def yugene_transform(marray_data, resolve_ties=True):
     """
     Apply the YuGene transform to the supplied data.
     Le Cao, Kim-Anh, Florian Rohart, Leo McHugh, Othmar Korn, and Christine A. Wells.
     "YuGene: A Simple Approach to Scale Gene Expression Data Derived from Different Platforms for Integrated Analyses."
     Genomics 103, no. 4 (April 2014): 239-51. doi:10.1016/j.ygeno.2014.03.001.
     Assume the data are supplied with samples in columns and genes in rows
-    Assume data are all positive
+    :param resolve_ties: If True (default), replace all tied values with the mean. This is especially significant at
+    low count values, which are often highly degenerate.
     """
+    logger = get_console_logger(__name__)
+
     res = marray_data.copy()
     # add columnwise offset to ensure all positive values
     colmin = res.min(axis=0)
@@ -91,7 +94,6 @@ def yugene_transform(marray_data):
         res.iloc[:, i] -= colmin[i]
         neg_warn = True
     if neg_warn:
-        logger = get_console_logger(__name__)
         logger.warning("Data contained negative values. Columnwise shift applied to correct this.")
 
     for t in marray_data.columns:
@@ -102,6 +104,18 @@ def yugene_transform(marray_data):
         if cs[-1] != s:
             cs[cs == cs[-1]] = s
         a = 1 - cs / s
+
+        if resolve_ties:
+            # FIXME: this is tediously slow; can definitely improve it!
+            # find tied values in the input data
+            tied = np.unique(col.loc[col.duplicated()].values)
+            if tied.size > 1:
+                logger.info("Resolving %d ties in column %s.", tied.size - 1, t)
+                for i in tied[tied > 0]:
+                    a[col == i] = a[col == i].mean()
+            else:
+                logger.info("No ties to resolve in column %s.", t)
+
         res.loc[a.index, t] = a
 
     # a numerical error in cumsum() may result in some small negative values. Zero these.
