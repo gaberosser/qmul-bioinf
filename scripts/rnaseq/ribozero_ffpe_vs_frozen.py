@@ -240,6 +240,7 @@ if __name__ == '__main__':
     res['fig'].savefig(os.path.join(outdir, 'clustering_dendrogram.png'), dpi=200)
     res['fig'].savefig(os.path.join(outdir, 'clustering_dendrogram.pdf'))
 
+    # can add n_gene kwarg here to pick top N genes by MAD:
     cg = clustering.plot_correlation_clustermap(comp_data)
     cg.savefig(os.path.join(outdir, 'clustering_corr_map.png'), dpi=200)
     cg.savefig(os.path.join(outdir, 'clustering_corr_map.pdf'))

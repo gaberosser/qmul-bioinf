@@ -49,7 +49,8 @@ targets$Sample_Group <- c(
 )
 
 rgSet <- read.metharray.exp(targets = targets, extended=TRUE)
-rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilmn10.hg19")
+# rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilmn10.hg19")
+rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
 
 bc <- beadcount(rgSet)
 keep.idx <- which(as.vector(rowSums(is.na(bc)) == 0))
@@ -81,12 +82,22 @@ Now we have loaded the data, we should normalise it. There are several options: 
 
 ```{r}
 beta.bmiq <- champ.norm(beta = myLoad$beta, method = 'BMIQ', arraytype = "EPIC", cores=4)
-beta.pbc <- champ.norm(beta = myLoad$beta, method = 'PBC', arraytype = "EPIC")
+```
 
+```{r}
+beta.pbc <- champ.norm(beta = myLoad$beta, method = 'PBC', arraytype = "EPIC")
+```
+
+```{r}
 mset.swan <- preprocessSWAN(rgSet, mSet = mset)
 beta.swan <- getBeta(mset.swan)
 beta.swan <- beta.swan[rownames(myLoad$beta),]
 colnames(beta.swan) <- pd[colnames(beta.swan), 'Sample_Name']
+```
+
+```{r}
+grSet.funnorm <- preprocessFunnorm(rgSet)
+beta.funnorm <- getBeta(grSet.funnorm)[rownames(myLoad$beta),]
 ```
 
 Since that process is fairly time-consuming, we'll save the beta values to CSV.
@@ -98,6 +109,7 @@ write.csv(beta.raw, file = file.path(outDir, "beta_raw.csv"))
 write.csv(beta.bmiq, file = file.path(outDir, "beta_bmiq.csv"))
 write.csv(beta.swan, file = file.path(outDir, "beta_swan.csv"))
 write.csv(beta.pbc, file = file.path(outDir, "beta_pbc.csv"))
+write.csv(beta.funnorm, file = file.path(outDir, "beta_funnorm.csv"))
 ```
 
 Now we load annotations for the probes. In particular, we want the chromosome and chromosomal coordinate, but we also get any associated genes and a very approximate categorical distance from the TSS.
@@ -109,6 +121,7 @@ library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
 head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations)
 head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other)
 ```
+
 
 
 
