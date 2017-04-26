@@ -122,6 +122,20 @@ head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations)
 head(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other)
 ```
 
+We could test for individual probes that differ between pairs of samples (differentially methylated probes, DMP). However, this seems less compelling than seeking out _regions_ of high methylation (differentially methylated regions, DMR). DMR "works" because probes that are close in genomic distance are correlated. 
+
+There are a few available methods:
+
+* Bumphunting. Eliminate batch effects, run a regression to determine coefficients for the contrast of interest, define a symmetric threshold for the coefficients, identify regions where all probes exceed it, permutation test. The implementation is designed for large datasets.
+* DMRforPairs. More heuristic. Define minimum number of probes, maximum distance between them and minimum absolute methylation then use Mann-Whitney to run statistical test of each identified cluster. Designed for unique samples.
+ 
+In fact, we want something that combines both and incorporates a paired sample statistical model. In bumphunting, this would be useful in the first step (building a linear model and parametrising it). Does that make sense?
+ 
+Start with DMRForPairs.
+
+```{r}
+library(DMRforPairs)
+```
 
 
 
