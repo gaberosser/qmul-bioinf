@@ -3,11 +3,14 @@ title: "Analysing the DNA methylation data from paired GBM samples"
 output: html_notebook
 ---
 
+This piece of code ensures that the working directory for all subsequent calls is the required root directory for the project.
+
 ```{r setup}
 require("knitr")
 opts_knit$set(root.dir = normalizePath('..'))
 ```
 
+Load some required packages.
 
 ```{r, message=FALSE, warning=FALSE, results="hide"}
 source('io/output.R')
@@ -18,9 +21,16 @@ library("minfi")
 library("wateRmelon")
 ```
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook.
+We will need to convert between $\beta$ values and M values. The relationship is
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+$$
+M = \log_2\left(\dfrac{\beta}{1 - \beta}\right)
+$$
+```{r}
+MfromBeta <- function(beta) {
+  log2(beta / (1 - beta))
+}
+```
 
 We'll be using the `ChAMP` package to extract methylation beta values from the Illumina raw data files (`*.idat`).
 
@@ -65,6 +75,8 @@ detP <- detP[rownames(bc),]
 pd <- pData(rgSet)
 
 beta.raw <- getBeta(mset, "Illumina")
+# there is a method `getM` designed for this, but it seems inconsistent
+m.raw <- MfromBeta(beta.raw)
 colnames(beta.raw) <- pd[colnames(beta.raw), 'Sample_Name']
 ```
 
@@ -82,10 +94,12 @@ Now we have loaded the data, we should normalise it. There are several options: 
 
 ```{r}
 beta.bmiq <- champ.norm(beta = myLoad$beta, method = 'BMIQ', arraytype = "EPIC", cores=4)
+m.bmiq <- MfromBeta(beta.bmiq)
 ```
 
 ```{r}
 beta.pbc <- champ.norm(beta = myLoad$beta, method = 'PBC', arraytype = "EPIC")
+m.pbc <- MfromBeta(beta.pbc)
 ```
 
 ```{r}
@@ -93,11 +107,13 @@ mset.swan <- preprocessSWAN(rgSet, mSet = mset)
 beta.swan <- getBeta(mset.swan)
 beta.swan <- beta.swan[rownames(myLoad$beta),]
 colnames(beta.swan) <- pd[colnames(beta.swan), 'Sample_Name']
+m.swan <- MfromBeta(beta.swan)
 ```
 
 ```{r}
 grSet.funnorm <- preprocessFunnorm(rgSet)
 beta.funnorm <- getBeta(grSet.funnorm)[rownames(myLoad$beta),]
+m.funnorm <- MfromBeta(beta.funnorm)
 ```
 
 Since that process is fairly time-consuming, we'll save the beta values to CSV.
@@ -131,13 +147,65 @@ There are a few available methods:
  
 In fact, we want something that combines both and incorporates a paired sample statistical model. In bumphunting, this would be useful in the first step (building a linear model and parametrising it). Does that make sense?
  
-Start with DMRForPairs.
+Start with DMRForPairs. This requires us to specify two key parameters: $d_{\text{max}}$ is the maximum accepted distance between neighbouring probes for membership in a cluster and $n_{\text{min}}$ is the minimum number of probes in a cluster. We can tune these beforehand.
 
 ```{r}
 library(DMRforPairs)
+beta.v <- beta.bmiq
+m.v <- MfromBeta(beta.v)
+
+target_id <- rownames(beta.v)
+gene_classes <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other[target_id, 'UCSC_RefGene_Group']
+gene_symbol <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other[target_id, 'UCSC_RefGene_Name']
+island_classes <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Islands.UCSC[target_id, 'Relation_to_Island']
+
+chr <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations[target_id, 'chr']
+pos <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations[target_id, 'pos']
+
+parameters <- expand.grid(min_distance = c(200, 300, 400), min_n = c(4, 6, 8))
+sweep.results <- tune_parameters(
+  parameters = parameters,
+  classes_gene = gene_classes,
+  classes_island = island_classes,
+  targetID = target_id,
+  chr = chr,
+  position = pos,
+  m.v = m.v,
+  beta.v = beta.v,
+  gs = gene_symbol,
+  do.parallel = -1,
+  recode=2  # for speed - puts all probe classes together
+)
 ```
 
+```{r}
+d_max <- matrix(sweep.results[,'min_distance'], nrow=3)
+n_min <- matrix(sweep.results[,'min_n'], nrow=3)
+n_regions <- matrix(sweep.results[,'n.regions'], nrow=3)
+prop_probes <- matrix(
+  sweep.results[,'n.valid.probes'] / sweep.results[,'n.probes.included'],
+  nrow=3)
+xi = 1:ncol(d_max)
+yi = 1:nrow(d_max)
+centres <- expand.grid(yi, xi)
+par(mar = c(2,7,4,2))
+image(xi, yi, t(n_regions),
+      col = rev(terrain.colors(25)),
+      xaxt = 'n',
+      yaxt = 'n',
+      xlab = '', 
+      ylab = '',
+      ylim = c(max(yi) + 0.5, min(yi) - 0.5)
+      )
+# title(xlab='n_min', ylab='d_max')
+text(centres[,2], centres[,1], n_regions, col="black")
+mtext(n_min[1,], at=1:ncol(n_regions))
+mtext(d_max[,1], at=1:nrow(n_regions), side=2, padj=-1)
+mtext("n_min", side=3, padj=-2.)
+mtext("d_max", side=2, padj=-3.)
+```
 
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
 
