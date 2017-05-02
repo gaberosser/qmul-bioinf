@@ -942,7 +942,8 @@ def gse61794(source='star', annotate_by='all', annotation_type='protein_coding')
             count_dir=os.path.join(indir, 'star_alignment'),
             meta_fn=metafn,
             annotate_by=annotate_by,
-            annotation_type=annotation_type
+            annotation_type=annotation_type,
+            strandedness='u',
         )
     elif source == 'htseq-count':
         raise NotImplementedError
@@ -979,7 +980,8 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
             count_dir=os.path.join(indir, 'star_alignment'),
             meta_fn=metafn,
             annotate_by=annotate_by,
-            annotation_type=annotation_type
+            annotation_type=annotation_type,
+            strandedness='u',
         )
     else:
         raise ValueError("Unrecognised source")
@@ -1003,7 +1005,8 @@ def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_typ
             count_dir=os.path.join(indir, 'star_alignment'),
             meta_fn=metafn,
             annotate_by=annotate_by,
-            annotation_type=annotation_type
+            annotation_type=annotation_type,
+            strandedness='r',
         )
     else:
         raise NotImplementedError
@@ -1026,7 +1029,8 @@ def gse77920_loader(source='star', annotate_by='all', annotation_type='protein_c
             count_dir=os.path.join(indir, 'star_alignment'),
             meta_fn=metafn,
             annotate_by=annotate_by,
-            annotation_type=annotation_type
+            annotation_type=annotation_type,
+            strandedness='r',
         )
     else:
         raise ValueError("Unrecognised source")
