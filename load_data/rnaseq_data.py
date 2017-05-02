@@ -986,6 +986,7 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
 
     return obj
 
+
 def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', '170328_K00150_0177_BHJ2C2BBXX')
     metafn = os.path.join(indir, 'sources.csv')
@@ -1006,5 +1007,50 @@ def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_typ
         )
     else:
         raise NotImplementedError
+
+    return obj
+
+
+def gse77920_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Single deep sequenced H9 ESC line
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE77920')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
+
+def gse24399_merged_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Merged technical triplicate H9 ESC cell line
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE24399')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+    else:
+        raise ValueError("Unrecognised source")
 
     return obj

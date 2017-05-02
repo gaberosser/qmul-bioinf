@@ -46,8 +46,16 @@ if __name__ == "__main__":
     fl = {}
     for t in flist:
         is_gz = t[-2:].lower() == 'gz'
-        base = re.sub(r'_[12]\.fastq(\.gz)?', '', t)
-        read_num = int(re.sub(r'\.fastq(\.gz)?', '', t)[-1])
+        # check for SE vs PE reads
+        if re.search(r'_[12].fastq(\.gz)?', t, flags=re.I):
+            is_pe = True
+            base = re.sub(r'_[12]\.fastq(\.gz)?', '', t)
+            read_num = int(re.sub(r'\.fastq(\.gz)?', '', t)[-1])
+        else:
+            is_pe = False
+            base = re.sub(r'\.fastq(\.gz)?', '', t)
+            read_num = 1
+
         out_prefix = os.path.join(out_dir, base)
         # if SAM output file exists, log warning and skip
         if os.path.isfile("%sLog.final.out" % out_prefix):
@@ -59,6 +67,7 @@ if __name__ == "__main__":
                 read_num: os.path.join(read_dir, t),
                 'out_prefix': out_prefix,
                 'gzipped': is_gz,
+                'is_pe': is_pe
             }
         else:
             fl[base][read_num] = os.path.join(read_dir, t)
@@ -73,7 +82,7 @@ if __name__ == "__main__":
         cmd = [STAR_CMD] + star_args + [
             '--genomeDir',
             ref_fn,
-            '--readFilesIn %s %s' % (d[1], d[2]),
+            # '--readFilesIn %s %s' % (d[1], d[2]),
             '--outFileNamePrefix',
             d['out_prefix'],
             '--outSAMtype BAM Unsorted SortedByCoordinate',  # needs to be included like this to avoid quoting spaces
@@ -82,6 +91,12 @@ if __name__ == "__main__":
             '--quantMode',
             'GeneCounts',
         ]
+
+        if d['is_pe']:
+            cmd += ['--readFilesIn %s %s' % (d[1], d[2])]
+        else:
+            cmd += ['--readFilesIn %s' % d[1]]
+
         if d['gzipped']:
             cmd += ['--readFilesCommand', 'zcat']
         logger.info("Running alignment on sample %s: %s", base, ' '.join(cmd))

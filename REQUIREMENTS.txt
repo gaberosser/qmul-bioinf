@@ -1,0 +1,8 @@
+numpy
+scipy
+scikit-learn
+matplotlib
+pandas
+xlrd
+ipython
+matplotlib_venn

@@ -21,9 +21,9 @@ import references
 N_GENES = 500
 
 
-def plot_clustermap(data, yugene=False, n_genes=N_GENES, **kwargs):
+def plot_clustermap(data, yugene=False, n_genes=N_GENES, yugene_resolve_ties=False, **kwargs):
     if yugene:
-        data = process.yugene_transform(data)
+        data = process.yugene_transform(data, resolve_ties=yugene_resolve_ties)
 
     kwargs.setdefault('cmap', 'RdBu_r')
 
@@ -364,7 +364,6 @@ if __name__ == "__main__":
     plot_all_correlation_heatmaps(data_rr_mt, filestem, col_order, vmin=0.5, vmax=1.)
 
     # re-run clustering without Barres data (since this has different distribution)
-
     data_no_barres = pd.concat((obj61794.data, objwtchg_paired.data, objpollard.data), axis=1)
     data_no_barres = data_no_barres.loc[data_no_barres.index.str.contains('ENSG')]
 
