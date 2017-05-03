@@ -147,7 +147,7 @@ There are a few available methods:
  
 In fact, we want something that combines both and incorporates a paired sample statistical model. In bumphunting, this would be useful in the first step (building a linear model and parametrising it). Does that make sense?
  
-Start with DMRForPairs. This requires us to specify two key parameters: $d_{\text{max}}$ is the maximum accepted distance between neighbouring probes for membership in a cluster and $n_{\text{min}}$ is the minimum number of probes in a cluster. We can tune these beforehand.
+Start with DMRForPairs. Setup the input variables.
 
 ```{r}
 library(DMRforPairs)
@@ -162,6 +162,44 @@ island_classes <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Islands.UCSC[ta
 chr <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations[target_id, 'chr']
 pos <- IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Locations[target_id, 'pos']
 
+```
+
+Let's play around with it first to understand the algorithm.
+
+```{r}
+# debug: limit to a single chromosome
+idx <- chr == "chr1"
+tid <- target_id[idx]
+gcs <- gene_classes[idx]
+gs <- gene_symbol[idx]
+ics <- island_classes[idx]
+
+ch <- chr[idx]
+po <- pos[idx]
+
+# merge classes (TSS, island, body)
+classes <- merge_classes(gcs, ics, recode = 1, sep = ';')
+rownames(classes$pclass) <- tid
+rownames(classes$pclass_recoded) <- tid
+
+b <- beta.v[idx,]
+m <- m.v[idx,]
+
+regions <- regionfinder(tid, ch, po, classes$pclass_recoded, 
+                        classes$no.pclass, classes$u_pclass, 200, m, 
+                        b, n_min = 4, gs = gs)
+probes <- regions$perprobe
+m <- regions$valid.m
+b <- regions$valid.beta
+n <- dim(m)[2]  # number of samples
+dMth = 1.4  # minimum difference in M required to declare a bump
+ID = data.frame(regions$boundaries$regionID)
+```
+
+
+The algorithm requires us to specify two key parameters: $d_{\text{max}}$ is the maximum accepted distance between neighbouring probes for membership in a cluster and $n_{\text{min}}$ is the minimum number of probes in a cluster. We can tune these beforehand by parameter sweeping using `tune_parameters`.
+
+```{r}
 parameters <- expand.grid(min_distance = c(200, 300, 400), min_n = c(4, 6, 8))
 sweep.results <- tune_parameters(
   parameters = parameters,
