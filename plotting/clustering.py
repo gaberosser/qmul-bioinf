@@ -2,6 +2,7 @@ from microarray import process
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from plotting.utils import COLOUR_BREWERS
 from matplotlib import pyplot as plt, colors, patches
 from scipy.cluster import hierarchy as hc
 
@@ -32,24 +33,11 @@ def generate_colour_map_dict(
     string, use this as the extra colour. If False, ignore non-matching colours.
     :return:
     """
-    colour_brewers = {
-        2: ['#1f78b4','#b2df8a'],
-        3: ['#7fc97f','#beaed4','#fdc086'],
-        4: ['#7fc97f','#beaed4','#fdc086','#ffff99'],
-        5: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0'],
-        6: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0','#f0027f'],
-        7: ['#7fc97f','#beaed4','#fdc086','#ffff99','#386cb0','#f0027f','#bf5b17'],
-        8: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00'],
-        9: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6'],
-        10: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a'],
-        11: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99'],
-        12: ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928'],
-    }
-    if len(contains_arr) not in colour_brewers:
+    if len(contains_arr) not in COLOUR_BREWERS:
         raise AttributeError(
             "Unsupported number of categories: %d" % len(contains_arr)
         )
-    if non_matching is True and (len(contains_arr) + 1) not in colour_brewers:
+    if non_matching is True and (len(contains_arr) + 1) not in COLOUR_BREWERS:
         raise AttributeError(
             "Unsupported number of categories due to non_matching addition: %d + 1" % len(contains_arr)
         )
@@ -75,16 +63,16 @@ def generate_colour_map_dict(
 
     bg = None
     if non_matching is False:
-        cmap = colour_brewers[len(contains_arr)]
+        cmap = COLOUR_BREWERS[len(contains_arr)]
         col = pd.Series(index=sample_names, name=label)
     else:
         if non_matching is True:
             # auto-select a colour for non matching
-            cmap = colour_brewers[len(contains_arr) + 1]
+            cmap = COLOUR_BREWERS[len(contains_arr) + 1]
             bg = cmap.pop()
         else:
             # use supplied value
-            cmap = colour_brewers[len(contains_arr)]
+            cmap = COLOUR_BREWERS[len(contains_arr)]
             bg = non_matching
         col = pd.Series(data=non_matching, index=sample_names, name=label)
 

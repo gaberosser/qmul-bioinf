@@ -1,5 +1,21 @@
 import numpy as np
 
+COLOUR_BREWERS = {
+    2: ['#1f78b4', '#b2df8a'],
+    3: ['#7fc97f', '#beaed4', '#fdc086'],
+    4: ['#7fc97f', '#beaed4', '#fdc086', '#ffff99'],
+    5: ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0'],
+    6: ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f'],
+    7: ['#7fc97f', '#beaed4', '#fdc086', '#ffff99', '#386cb0', '#f0027f', '#bf5b17'],
+    8: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00'],
+    9: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6'],
+    10: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a'],
+    11: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a',
+         '#ffff99'],
+    12: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a',
+         '#ffff99', '#b15928'],
+}
+
 
 def axis_border(ax, c=None, lw=1):
     """
