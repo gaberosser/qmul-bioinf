@@ -88,7 +88,7 @@ class PyDMR(object):
 
     def start_pool(self):
         if self.n_jobs > 1:
-            logger.info("Creating a pool of %d workers to do my bidding.", n_jobs)
+            logger.info("Creating a pool of %d workers to do my bidding.", self.n_jobs)
             self.pool = mp.Pool(self.n_jobs)
 
     def identify_regions(self, n_min=4, d_max=200):
@@ -240,4 +240,4 @@ if __name__ == "__main__":
     #     n_lbl[cl] = len(set(fit.labels_).difference({-1}))
 
     obj = PyDMR(anno, b, m)
-    reg = obj.identify_regions(n_min=n_min, d_max=d_max)
+    # reg = obj.identify_regions(n_min=n_min, d_max=d_max)
