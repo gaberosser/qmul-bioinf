@@ -182,18 +182,20 @@ classes <- merge_classes(gcs, ics, recode = 1, sep = ';')
 rownames(classes$pclass) <- tid
 rownames(classes$pclass_recoded) <- tid
 
-b <- beta.v[idx,]
-m <- m.v[idx,]
+bv <- beta.v[idx,]
+mv <- m.v[idx,]
 
 regions <- regionfinder(tid, ch, po, classes$pclass_recoded, 
-                        classes$no.pclass, classes$u_pclass, 200, m, 
-                        b, n_min = 4, gs = gs)
+                        classes$no.pclass, classes$u_pclass, 200, mv, 
+                        bv, n_min = 4, gs = gs)
 probes <- regions$perprobe
+
 m <- regions$valid.m
 b <- regions$valid.beta
 n <- dim(m)[2]  # number of samples
 dMth = 1.4  # minimum difference in M required to declare a bump
 ID = data.frame(regions$boundaries$regionID)
+testregion(1, probes, m, b, n, dMth, do.format = T)
 ```
 
 
