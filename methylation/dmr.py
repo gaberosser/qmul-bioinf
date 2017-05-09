@@ -1,6 +1,6 @@
 from load_data import methylation_array
 from methylation.process import m_from_beta, merge_illumina_probe_gene_classes
-from methylation.plots import illustrate_probes
+from methylation import plots
 from scipy import ndimage
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -52,6 +52,20 @@ def identify_region(coords, n_min, d_max):
             j += 1
     # return probes, genes
     return probes
+
+
+def get_bounded_region(reg_coll, anno, chr, loc_from, loc_to):
+    """
+    :param reg_coll: The output of PyDMR.identify_regions. This is a dict, indexed by chr, with nested dict elements
+    indexed by probe class.
+    """
+    portion = anno.loc[(anno.MAPINFO > loc_from) & (anno.MAPINFO < loc_to) & (anno.CHR == '1')]
+    this_regs = {}
+    for cls, d in reg_coll[chr].iteritems():
+        for k, prs in d.items():
+            if len(portion.index.intersection(prs) == len(prs)):
+                this_regs.setdefault(cls, []).append(prs)
+    return this_regs
 
 
 def test_region_1vs1(probes, dat=None, min_median_foldchange=1.4):
@@ -234,15 +248,6 @@ if __name__ == "__main__":
     anno.loc[:, 'UCSC_RefGene_Name'] = \
         anno.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
-    loc_from = 1000000
-    loc_to = loc_from + 500000
-
-    ax = illustrate_probes(anno, anno.merged_class, '1', loc_from, loc_to, alpha_classed=1.)
-    fig = ax.figure
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.png"), dpi=200)
-    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.pdf"))
-
     # identify connected regions with same class, ignoring strand
     dm = 1.4
     n_min = 4
@@ -262,60 +267,79 @@ if __name__ == "__main__":
 
     obj = PyDMR(anno, b, m)
 
-    # carry out a parameter sweep to see how the n_min and d_max parameters affect the number of valid regions
-    d_max_arr = np.arange(100, 1100, 100)
-    n_min_arr = np.arange(4, 11)
-    nreg, npro = dmr_region_parameter_sweep(obj, d_max_arr=d_max_arr, n_min_arr=n_min_arr)
+    if False:
 
-    # combine results for the distinct classes
-    nreg_all = reduce(operator.add, nreg.values())
-    npro_all = reduce(operator.add, npro.values())
-    n_pro_tot = float(anno.shape[0])
+        # carry out a parameter sweep to see how the n_min and d_max parameters affect the number of valid regions
+        d_max_arr = np.arange(100, 1100, 100)
+        n_min_arr = np.arange(4, 11)
+        nreg, npro = dmr_region_parameter_sweep(obj, d_max_arr=d_max_arr, n_min_arr=n_min_arr)
 
-    # heatmap plots
-    # number of regions
+        # combine results for the distinct classes
+        nreg_all = reduce(operator.add, nreg.values())
+        npro_all = reduce(operator.add, npro.values())
+        n_pro_tot = float(anno.shape[0])
 
-    ax = plot_n_region_heatmap(nreg_all, n_min_arr, d_max_arr)
-    cax = [a for a in ax.figure.get_axes() if a is not ax][0]
-    cax.set_ylabel('Number of regions considered', rotation=270, labelpad=14)
+        # heatmap plots
+        # number of regions
 
-    ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.pdf'))
+        ax = plot_n_region_heatmap(nreg_all, n_min_arr, d_max_arr)
+        cax = [a for a in ax.figure.get_axes() if a is not ax][0]
+        cax.set_ylabel('Number of regions considered', rotation=270, labelpad=14)
 
-    fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
-    for i, k in enumerate(nreg.keys()):
-        plot_n_region_heatmap(nreg[k], n_min_arr, d_max_arr, ax=axs[i], cbar=False)
-        axs[i].set_title(k)
-        plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
-        if i == 0:
-            plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
-        else:
-            axs[i].yaxis.label.set_visible(False)
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.png'), dpi=200)
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.pdf'))
+
+        fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
+        for i, k in enumerate(nreg.keys()):
+            plot_n_region_heatmap(nreg[k], n_min_arr, d_max_arr, ax=axs[i], cbar=False)
+            axs[i].set_title(k)
+            plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
+            if i == 0:
+                plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
+            else:
+                axs[i].yaxis.label.set_visible(False)
+        fig.tight_layout()
+
+        fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_by_class.png'), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_by_class.pdf'))
+
+        ax = plot_n_region_heatmap(npro_all / n_pro_tot * 100, n_min_arr, d_max_arr, vmin=0, vmax=100)
+        cax = [a for a in ax.figure.get_axes() if a is not ax][0]
+        cax.set_ylabel('% probes retained', rotation=270, labelpad=14)
+
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.png'), dpi=200)
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.pdf'))
+
+        fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
+        for i, k in enumerate(npro.keys()):
+            nt = anno.merged_class.str.contains(k).sum()
+            plot_n_region_heatmap(npro[k] / nt * 100, n_min_arr, d_max_arr, ax=axs[i], cbar=False, vmin=0, vmax=100)
+            axs[i].set_title(k)
+            plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
+            if i == 0:
+                plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
+            else:
+                axs[i].yaxis.label.set_visible(False)
+        fig.tight_layout()
+
+        fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.png'), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.pdf'))
+
+    reg = obj.identify_regions(n_min=n_min, d_max=d_max)
+
+    # plot illustrating probe locations/classes and regions of interest
+
+    loc_from = 1000000
+    loc_to = loc_from + 200000
+
+    ax = plots.illustrate_probes(anno, anno.merged_class, '1', loc_from, loc_to, alpha_classed=1.)
+    fig = ax.figure
     fig.tight_layout()
+    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.png"), dpi=200)
+    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.pdf"))
 
-    fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_by_class.png'), dpi=200)
-    fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_by_class.pdf'))
+    # add regions
+    bounded_reg = get_bounded_region(reg, anno, '1', loc_from, loc_to)
+    plots.illustrate_regions(anno, bounded_reg, CLASSES, '1', loc_from, loc_to, ax=ax)
 
-    ax = plot_n_region_heatmap(npro_all / n_pro_tot * 100, n_min_arr, d_max_arr, vmin=0, vmax=100)
-    cax = [a for a in ax.figure.get_axes() if a is not ax][0]
-    cax.set_ylabel('% probes retained', rotation=270, labelpad=14)
 
-    ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.png'), dpi=200)
-    ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.pdf'))
-
-    fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
-    for i, k in enumerate(npro.keys()):
-        nt = anno.merged_class.str.contains(k).sum()
-        plot_n_region_heatmap(npro[k] / nt * 100, n_min_arr, d_max_arr, ax=axs[i], cbar=False, vmin=0, vmax=100)
-        axs[i].set_title(k)
-        plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
-        if i == 0:
-            plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
-        else:
-            axs[i].yaxis.label.set_visible(False)
-    fig.tight_layout()
-
-    fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.png'), dpi=200)
-    fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.pdf'))
-
-    # reg = obj.identify_regions(n_min=n_min, d_max=d_max)
