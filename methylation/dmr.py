@@ -307,8 +307,8 @@ if __name__ == "__main__":
         cax = [a for a in ax.figure.get_axes() if a is not ax][0]
         cax.set_ylabel('% probes retained', rotation=270, labelpad=14)
 
-        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.png'), dpi=200)
-        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_regions_total.pdf'))
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_total.png'), dpi=200)
+        ax.figure.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_total.pdf'))
 
         fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
         for i, k in enumerate(npro.keys()):
