@@ -1,0 +1,191 @@
+---
+title: "Metastudy: activation of the mTOR signalling pathway in bone marrow-derived macrophages and microglia"
+output: html_notebook
+---
+
+```{r setup}
+require("knitr")
+opts_knit$set(root.dir = normalizePath('..'))
+```
+
+# Outline
+
+* When the blood brain barrier is disrupted, bone marrow-derived macrophages (BMDM) can migrate across into the brain tissue.
+* Disruption can be caused by a tumour or irradiation.
+* They join the existing population of microglia (MG).
+* The two cell types are difficult to distinguish.
+* There is epigenetic evidence that certain pathways do differ between BMDM and MG.
+* Both cell types seem to acquire a new 'education' in a tumour environment. They are known as tumour-associated (TA).
+* _Hypothesis: The mTOR pathway is more active in TA-MG (relative to healthy MG) than in TA-BMDM (relative to healthy BMDM)._
+
+# Aim
+
+Use analyse differential expression in the 'gene count' data published by Bowman et al. This is stored under GEO repository GSE86573. Use the outcome to test the hypothesis.
+
+# Analysis
+
+Import necessary libraries and load data. We set the metadata here too. *NB: the monocytes are labelled as BMDM - it that OK?*. We'll set the FDR and minimum effect size (absolute fold change) here for all comparisons. I've added a 'composite' column to the metadata, which will make it easier to define comparisons in the analysis.
+
+```{r, message=FALSE, warning=FALSE, results="hide"}
+fdr <- 0.05
+logFC <- 1  # FC = 2
+
+library(edgeR)
+library(DESeq2)
+library(VennDiagram)
+source('io/output.R')
+source('_settings.R')
+
+in.file <- file.path(data.dir.raid, "rnaseq", "GSE86573", "GSE86573_raw_counts.csv")
+data <- read.csv(in.file, row.names = 1)
+# we'll change the sample names for clarity
+colnames(data) <- c("gl261_bmdm_rep1", "gl261_mg_rep1", "gl261_bmdm_rep2", "gl261_mg_rep2", "gl261_bmdm_rep3", "gl261_mg_rep3",
+                    paste0("monocyte_rep", seq(1:5)), paste0("mg_rep", seq(1:3)),
+                    "gemm_bmdm_rep1", "gemm_mg_rep1", "gemm_bmdm_rep2", "gemm_mg_rep2", "gemm_bmdm_rep3", "gemm_mg_rep3")
+# set the group metadata
+meta <- data.frame(row.names = colnames(data))
+meta$cell_type = as.factor(c(
+  rep(c("bmdm", "mg"), 3), rep("bmdm", 5), rep("mg", 3), rep(c("bmdm", "mg"), 3)
+))
+meta$model = as.factor(c(
+  rep('gl261', 6), rep('gemm', 8), rep('gemm', 6)
+))  # healthy cells come from a GEMM background?
+meta$disease = as.factor(c(
+  rep('tumour', 6), rep('healthy', 8), rep('tumour', 6)
+))
+meta$group <- 'h-mg'
+meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'tumour')] = 'ta-bmdm'
+meta$group[(meta$cell_type == 'mg') & (meta$disease == 'tumour')] = 'ta-mg'
+meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'healthy')] = 'h-bmdm'
+meta$group <- as.factor(meta$group)
+meta
+```
+
+Normalise the data and look at the number of genes. 
+
+```{r}
+dgel <- DGEList(counts = data, samples = meta)
+dgel <- calcNormFactors(dgel)
+sprintf("Number of genes in raw data: %i", nrow(dgel))
+```
+
+Some of these have very low expression. Filtering them out now will help reduce the number of hypothesis tests we will carry out later, and increase the power accordingly. We should use counts per million (CPM) so that we take library size into account. In the smallest sample (~5mi reads), 1 CPM means 5 reads. In the largest sample (~30mi reads), 1 CPM means 30 reads. Let's require that at least 2 samples have CPM > 1 to retain a gene.
+
+```{r}
+keep <- rowSums(cpm(dgel) > 1) >= 2
+dgel <- dgel[keep, ,  keep.lib.sizes=F]
+sprintf("Number of genes in filtered data: %i. %.2f%% of genes retained.", nrow(dgel), sum(keep) / length(keep) * 100)
+```
+
+Let's look at the MDS plots. This can indicate batch effects and/or significant groupings.
+
+```{r}
+plotMDS(dgel)
+title("MDS plot")
+```
+
+The first dimension separates monocytes from MG and BMDM. The second dimension is less clear: it separates MG and BMDM but very imperfectly.
+
+Now we can run `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.
+
+## `edgeR`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
+
+Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
+
+```{r}
+design <- model.matrix(~0 + cell_type:disease, data = meta)
+dgel <- estimateDisp(dgel, design)
+fit <- glmFit(dgel, design)
+lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
+ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_mg.vs.h_mg)[1], 
+  fdr,
+  sum(ta_mg.vs.h_mg$table$logFC < 0),
+  sum(ta_mg.vs.h_mg$table$logFC > 0)
+)
+
+lrt <- glmTreat(fit, contrast=c(-1, 0, 1, 0), lfc=logFC)
+ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_bmdm.vs.h_bmdm)[1], 
+  fdr,
+  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
+  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
+)
+```
+Look for the intersection.
+```{r}
+area.1 <- nrow(ta_mg.vs.h_mg$table)
+area.2 <- nrow(ta_bmdm.vs.h_bmdm$table)
+area.cross <- length(intersect(rownames(ta_bmdm.vs.h_bmdm), rownames(ta_mg.vs.h_mg)))
+grid.newpage()
+venn <- draw.pairwise.venn(area.1, area.2, area.cross, category = c("TA-MG vs healthy MG", "TA-BMDM vs healthy monocytes"),
+                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2)
+)
+```
+
+For my own records: this is _exactly_ the same as using group variable and carrying out the fitting on that instead.
+
+```{r}
+design <- model.matrix(~0 + group, data = meta)
+colnames(design) <- sub('group', '', colnames(design))
+dgel <- estimateDisp(dgel, design)
+fit <- glmFit(dgel, design)
+lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
+ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_mg.vs.h_mg)[1], 
+  fdr,
+  sum(ta_mg.vs.h_mg$table$logFC < 0),
+  sum(ta_mg.vs.h_mg$table$logFC > 0)
+)
+
+lrt <- glmTreat(fit, contrast=c(-1, 0, 1, 0), lfc=logFC)
+ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_bmdm.vs.h_bmdm)[1], 
+  fdr,
+  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
+  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
+)
+```
+
+That's a much larger number than Bowman et al. reported. Why?
+
+```{r}
+meta$cell_type <- relevel(meta$cell_type, ref='mg')
+meta$disease <- relevel(meta$disease, ref='healthy')
+design <- model.matrix(~disease * cell_type, data = meta)
+
+dgel <- estimateDisp(dgel, design)
+fit <- glmFit(dgel, design)
+lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
+ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_mg.vs.h_mg)[1], 
+  fdr,
+  sum(ta_mg.vs.h_mg$table$logFC < 0),
+  sum(ta_mg.vs.h_mg$table$logFC > 0)
+)
+
+lrt <- glmTreat(fit, coef = 2, lfc=logFC)
+ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+sprintf(
+  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  dim(ta_bmdm.vs.h_bmdm)[1], 
+  fdr,
+  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
+  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
+)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
