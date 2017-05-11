@@ -6,6 +6,14 @@ output: html_notebook
 ```{r setup}
 require("knitr")
 opts_knit$set(root.dir = normalizePath('..'))
+
+library(edgeR)
+library(DESeq2)
+library(VennDiagram)
+library(vsn)
+library("dplyr")
+library("ggplot2")
+
 ```
 
 # Outline
@@ -16,11 +24,21 @@ opts_knit$set(root.dir = normalizePath('..'))
 * The two cell types are difficult to distinguish.
 * There is epigenetic evidence that certain pathways do differ between BMDM and MG.
 * Both cell types seem to acquire a new 'education' in a tumour environment. They are known as tumour-associated (TA).
-* _Hypothesis: The mTOR pathway is more active in TA-MG (relative to healthy MG) than in TA-BMDM (relative to healthy BMDM)._
+
+# Hypothesis
+*The mTOR pathway is more active in TA-MG (relative to healthy MG) than in TA-BMDM (relative to healthy BMDM).*
+
+# Available data
+
+Two public mouse RNA-Seq datasets retrieved from GEO.
+
+GSE68376: _Genetic Cell Ablation Reveals Clusters of Local Self-Renewing Microglia in the Mammalian Central Nervous System_ Bruttger, J. et al. Immunity (2015).  All samples from a healthy animal.  3 x BMDM biological replicates; 2 x WT MG biological replicates; 3 x repopulating MG biological replicates (following genetic ablation).
+
+GSE86573: _Macrophage Ontogeny Underlies Differences in Tumor-Specific Education in Brain Malignancies_ Bowman et al. Cell Reports (2016). 3 x BMDM biological replicates and 3 x MG biological replicates from 2 different mouse models (total of 12 samples, 6 of each cell type).
 
 # Aim
 
-Use analyse differential expression in the 'gene count' data published by Bowman et al. This is stored under GEO repository GSE86573. Use the outcome to test the hypothesis.
+Use differential expression analysis of the 'gene count' data to test the hypothesis. Identify significantly DE genes in TA-BMDM vs healthy BMDM and TA-MG vs healthy MG. Then find genes that only appear in one or the other list. Finally, look for enrichment in mTOR pathway.
 
 # Analysis
 
@@ -30,14 +48,17 @@ Import necessary libraries and load data. We set the metadata here too. *NB: the
 fdr <- 0.05
 logFC <- 1  # FC = 2
 
-library(edgeR)
-library(DESeq2)
-library(VennDiagram)
 source('io/output.R')
 source('_settings.R')
 
 in.file <- file.path(data.dir.raid, "rnaseq", "GSE86573", "GSE86573_raw_counts.csv")
-data <- read.csv(in.file, row.names = 1)
+data.bowman <- read.csv(in.file, row.names = 1)
+
+in.file <- file.path(data.dir.raid, "rnaseq", "GSE68376", "GSE86573_raw_counts.csv")
+data.bruttger <- read.csv(in.file, row.names = 1)
+
+##TODO
+
 # we'll change the sample names for clarity
 colnames(data) <- c("gl261_bmdm_rep1", "gl261_mg_rep1", "gl261_bmdm_rep2", "gl261_mg_rep2", "gl261_bmdm_rep3", "gl261_mg_rep3",
                     paste0("monocyte_rep", seq(1:5)), paste0("mg_rep", seq(1:3)),
@@ -58,6 +79,7 @@ meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'tumour')] = 'ta-bmdm'
 meta$group[(meta$cell_type == 'mg') & (meta$disease == 'tumour')] = 'ta-mg'
 meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'healthy')] = 'h-bmdm'
 meta$group <- as.factor(meta$group)
+meta$composite <- paste(as.vector(meta[,1]), as.vector(meta[, 2]), as.vector(meta[, 3]), sep='_')
 meta
 ```
 
@@ -85,6 +107,36 @@ title("MDS plot")
 ```
 
 The first dimension separates monocytes from MG and BMDM. The second dimension is less clear: it separates MG and BMDM but very imperfectly.
+
+We can also transform our data for the purpose of running other exploratory methods like PCA or hierarchical clustering. We could just use $\log_2(x+1)$, but there are other options including `rlog` and `vst`. Here, we take two samples and look at how their gene values compare under the three transformations.
+
+```{r}
+
+dds <- DESeqDataSetFromMatrix(countData = data, colData = meta, design = ~0 + group)
+dds <- estimateSizeFactors(dds)
+
+
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation)  
+
+```
+
+Let's look at the PCA plot for `rlog` transformed data.
+
+```{r}
+rld <- rlog(dds, blind = FALSE)
+plotPCA(rld, intgroup = c("cell_type", "disease", "model"))
+```
+
+All the groups cluster together. Principal component 1 is most important in splitting by cell type.  PC2 divides the two model types.
 
 Now we can run `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.
 
@@ -155,7 +207,40 @@ sprintf(
 )
 ```
 
-That's a much larger number than Bowman et al. reported. Why?
+That's a much larger number than Bowman et al. reported. Why? They used DESeq2. Let's try that.
+
+## `DESeq2`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
+
+Start similarly, filtering out genes with low counts in most samples.
+
+```{r}
+samples <- colnames(data)
+dds <- DESeqDataSetFromMatrix(countData = data[, samples], colData = meta[samples,], design = ~composite)
+keep <- rowSums(counts(dds) > 5) >= 2
+dds <- dds[keep,]
+sprintf(
+  "Number of genes in raw data: %i. Number after filtering: %i. %.02f %% retained.",
+  length(keep),
+  sum(keep),
+  sum(keep) / length(keep) * 100.
+)
+dds <- estimateSizeFactors(dds)
+des <- DESeq(dds, parallel = T)
+for (t in c("mg", "bmtm")){
+  res <- results(des, contrast=list(paste0("groupta.", t), paste0("grouph.", t)), cooksCutoff = F)
+  padj <- res$padj
+  padj[is.na(padj)] = 1.
+  res <- res[(padj < fdr) & (abs(res$log2FoldChange) > logFC),]
+}
+
+
+res.mg <- results(des, contrast=list("groupta.mg", "grouph.mg"))
+res.bmdm <- results(des, contrast=list("groupta.bmdm", "grouph.bmdm"))
+
+```
+
+
+
 
 ```{r}
 meta$cell_type <- relevel(meta$cell_type, ref='mg')
