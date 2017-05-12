@@ -42,7 +42,7 @@ Use differential expression analysis of the 'gene count' data to test the hypoth
 
 # Analysis
 
-Import necessary libraries and load data. We set the metadata here too. *NB: the monocytes are labelled as BMDM - it that OK?*. We'll set the FDR and minimum effect size (absolute fold change) here for all comparisons. I've added a 'composite' column to the metadata, which will make it easier to define comparisons in the analysis.
+Import necessary libraries and load data. We set the metadata here too. We'll set the FDR and minimum effect size (absolute fold change) here for all comparisons. I've added a 'composite' column to the metadata, which will make it easier to define comparisons in the analysis.
 
 ```{r, message=FALSE, warning=FALSE, results="hide"}
 fdr <- 0.05
@@ -53,32 +53,52 @@ source('_settings.R')
 
 in.file <- file.path(data.dir.raid, "rnaseq", "GSE86573", "GSE86573_raw_counts.csv")
 data.bowman <- read.csv(in.file, row.names = 1)
-
-in.file <- file.path(data.dir.raid, "rnaseq", "GSE68376", "GSE86573_raw_counts.csv")
-data.bruttger <- read.csv(in.file, row.names = 1)
-
-##TODO
-
 # we'll change the sample names for clarity
-colnames(data) <- c("gl261_bmdm_rep1", "gl261_mg_rep1", "gl261_bmdm_rep2", "gl261_mg_rep2", "gl261_bmdm_rep3", "gl261_mg_rep3",
+colnames(data.bowman) <- c("gl261_bmdm_rep1", "gl261_mg_rep1", "gl261_bmdm_rep2", "gl261_mg_rep2", "gl261_bmdm_rep3", "gl261_mg_rep3",
                     paste0("monocyte_rep", seq(1:5)), paste0("mg_rep", seq(1:3)),
                     "gemm_bmdm_rep1", "gemm_mg_rep1", "gemm_bmdm_rep2", "gemm_mg_rep2", "gemm_bmdm_rep3", "gemm_mg_rep3")
-# set the group metadata
-meta <- data.frame(row.names = colnames(data))
-meta$cell_type = as.factor(c(
-  rep(c("bmdm", "mg"), 3), rep("bmdm", 5), rep("mg", 3), rep(c("bmdm", "mg"), 3)
-))
-meta$model = as.factor(c(
-  rep('gl261', 6), rep('gemm', 8), rep('gemm', 6)
-))  # healthy cells come from a GEMM background?
-meta$disease = as.factor(c(
-  rep('tumour', 6), rep('healthy', 8), rep('tumour', 6)
-))
-meta$group <- 'h-mg'
-meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'tumour')] = 'ta-bmdm'
-meta$group[(meta$cell_type == 'mg') & (meta$disease == 'tumour')] = 'ta-mg'
-meta$group[(meta$cell_type == 'bmdm') & (meta$disease == 'healthy')] = 'h-bmdm'
-meta$group <- as.factor(meta$group)
+
+# we don't use the control MG samples here
+# data.bowman <- data.bowman[, !grepl("^mg_rep", colnames(data.bowman))]
+
+meta.bowman <- data.frame(row.names = colnames(data.bowman))
+
+meta.bowman$cell_type <- "bmdm"
+meta.bowman$cell_type[grepl("mg", rownames(meta.bowman))] <- "mg"
+meta.bowman$cell_type[grepl("monocyte", rownames(meta.bowman))] <- "monocyte"
+
+meta.bowman$model <- "gemm"
+meta.bowman$model[grepl("gemm", rownames(meta.bowman))] <- "gemm"
+meta.bowman$model[grepl("gl261", rownames(meta.bowman))] <- "gl261"
+
+meta.bowman$disease <- "healthy"
+meta.bowman$disease[grepl("gemm", rownames(meta.bowman))] <- "tumour"
+meta.bowman$disease[grepl("gl261", rownames(meta.bowman))] <- "tumour"
+
+
+in.file <- file.path(data.dir.raid, "rnaseq", "GSE68376", "GSE68376_normalizedCounts.txt")
+data.bruttger <- read.csv(in.file, row.names = 1, sep='\t')
+colnames(data.bruttger) <- c(
+  paste0("ctrl_bmdm_rep", seq(1:3)), paste0("ctrl_mg_rep", seq(1:2)), paste0("repop_mg_rep", seq(1:3))
+)
+
+# Think that the authors only used the repopulated MG cells?
+# data.bruttger <- data.bruttger[, !grepl('ctrl_mg', colnames(data.bruttger))]
+
+meta.bruttger <- data.frame(row.names = colnames(data.bruttger))
+
+meta.bruttger$cell_type <- "bmdm"
+meta.bruttger$cell_type[grepl("mg", rownames(meta.bruttger))] <- "mg"
+
+meta.bruttger$model <- "endog"
+meta.bruttger$disease <- "healthy"
+
+genes <- intersect(rownames(data.bowman), rownames(data.bruttger))
+
+meta <- rbind(meta.bowman, meta.bruttger)
+data <- cbind(data.bowman[genes,], data.bruttger[genes,])
+
+meta$group <- as.factor(paste(as.vector(meta[,1]), as.vector(meta[, 3]), sep='_'))
 meta$composite <- paste(as.vector(meta[,1]), as.vector(meta[, 2]), as.vector(meta[, 3]), sep='_')
 meta
 ```
@@ -99,27 +119,58 @@ dgel <- dgel[keep, ,  keep.lib.sizes=F]
 sprintf("Number of genes in filtered data: %i. %.2f%% of genes retained.", nrow(dgel), sum(keep) / length(keep) * 100)
 ```
 
-Let's look at the MDS plots. This can indicate batch effects and/or significant groupings.
+Let's look at the MDS and PCA plots. These can indicate batch effects and/or significant groupings.
 
 ```{r}
 plotMDS(dgel)
 title("MDS plot")
+
+dds <- DESeqDataSetFromMatrix(countData = round(data), colData = meta, design = ~0 + group)
+dds <- estimateSizeFactors(dds)
+vsd <- vst(dds, blind = FALSE)
+
+plotPCA(vsd, intgroup = c("cell_type", "disease", "model"))
 ```
 
-The first dimension separates monocytes from MG and BMDM. The second dimension is less clear: it separates MG and BMDM but very imperfectly.
-
-We can also transform our data for the purpose of running other exploratory methods like PCA or hierarchical clustering. We could just use $\log_2(x+1)$, but there are other options including `rlog` and `vst`. Here, we take two samples and look at how their gene values compare under the three transformations.
+All the groups cluster together. If we remove monocytes, do we get a more apparent separation of the remaining samples?
 
 ```{r}
+samples = rownames(meta[meta$cell_type != 'monocyte',])
+dgel.reduced <- DGEList(counts = data[,samples], samples = meta[samples,])
+plotMDS(dgel.reduced)
 
-dds <- DESeqDataSetFromMatrix(countData = data, colData = meta, design = ~0 + group)
+dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~0 + group)
+dds <- estimateSizeFactors(dds)
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = c("cell_type", "disease", "model"))
+```
+
+Yes - now the first dimension separates the two models and endogenous samples and the second dimension separates MG and BMDM.  On the basis of this, we'll discard the monocytes. We don't need to use them anyway. We also repeat the filtering process.
+
+```{r}
+data <- data[, samples]
+meta <- droplevels(meta[samples,])  # drop unused factors
+dgel <- DGEList(counts = data, samples = meta)
+dgel <- calcNormFactors(dgel)
+sprintf("EdgeR: Number of genes in raw data: %i", nrow(dgel))
+keep <- rowSums(cpm(dgel) > 1) >= 2
+dgel <- dgel[keep, ,  keep.lib.sizes=F]
+sprintf("EdgeR: Number of genes in filtered data: %i. %.2f%% of genes retained.", nrow(dgel), sum(keep) / length(keep) * 100)
+```
+
+We can also transform our data for the purpose of running other exploratory methods like PCA or hierarchical clustering. We could just use $\log_2(x+1)$, but there are other options including `rlog` (slow, disabled for now) and `vst`. Here, we take two samples and look at how their gene values compare under the three transformations.
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = round(data), colData = meta, design = ~0 + group)
 dds <- estimateSizeFactors(dds)
 
+# rld <- rlog(dds, blind = FALSE)
+vsd <- vst(dds, blind = FALSE)
 
 df <- bind_rows(
   as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
          mutate(transformation = "log2(x + 1)"),
-  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"),
+  # as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"),
   as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"))
   
 colnames(df)[1:2] <- c("x", "y")  
@@ -129,22 +180,102 @@ ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
 
 ```
 
-Let's look at the PCA plot for `rlog` transformed data.
+
+## `DESeq2`: recreating the results of Bowman et al.
+
+In the published study by Bowman et al., the authors report the number of up- (Fig 2E) and downregulated (Fig S2D) genes in model-specific comparisons of BMDM vs MG. Can we approximately recreate those? The source code for their own analyses is available [here](https://bitbucket.org/bowmanr/joycelab-brain-tme). 
+
+We don't filter lowly-expressed genes for this purpose, as it doesn't appear that the authors carried out this step in their analysis.
+
 
 ```{r}
-rld <- rlog(dds, blind = FALSE)
-plotPCA(rld, intgroup = c("cell_type", "disease", "model"))
+samples <- colnames(data)
+dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~composite)
+dds <- estimateSizeFactors(dds)
+des <- DESeq(dds)
+
+de.up = list()
+de.down = list()
+
+for (t in c("gemm", "gl261", "endog")) {
+  if (t == 'endog') {
+    u = "_healthy"
+  } else {
+    u = "_tumour"
+  }
+  res <- results(des, contrast=list(paste0("compositebmdm_", t, u), paste0("compositemg_", t, u)), cooksCutoff = F)
+  padj <- res$padj
+  padj[is.na(padj)] = 1.
+  print(sprintf(
+    "Model %s. BMDM vs MG, FDR = %.02f, logFC cutoff %.1f. %i genes up. %i genes down.",
+    t, fdr, logFC,
+    sum((padj < fdr) & (res$log2FoldChange > logFC)),
+    sum((padj < fdr) & (res$log2FoldChange < -logFC))
+  ))
+  de.up[[t]] <- res[(padj < fdr) & (res$log2FoldChange > logFC),]
+  de.down[[t]] <- res[(padj < fdr) & (res$log2FoldChange < logFC),]
+}
+
+area1 = nrow(de.up[[1]])
+area2 = nrow(de.up[[2]])
+area3 = nrow(de.up[[3]])
+
+g12 = intersect(
+  rownames(de.up[[1]]), rownames(de.up[[2]])
+)
+n12 = length(g12)
+n23 = length(intersect(
+  rownames(de.up[[2]]), rownames(de.up[[3]])
+))
+n13 = length(intersect(
+  rownames(de.up[[1]]), rownames(de.up[[3]])
+))
+
+g123 = intersect(
+  intersect(
+    rownames(de.up[[1]]), rownames(de.up[[2]])
+  ),
+  rownames(de.up[[3]])
+)
+n123 = length(g123)
+
+grid.newpage()
+venn <- draw.triple.venn(area1, area2, area3, n12, n23, n13, n123, category=names(de.up), fill = c("blue", "red", "white"))
+
+# redefine g12: DE genes that overlap GEMM and GL261 but NOT healthy
+g12 <- setdiff(g12, g123)
+
 ```
 
-All the groups cluster together. Principal component 1 is most important in splitting by cell type.  PC2 divides the two model types.
+Adding the numbers in the Venn diagrams in the publication, here are the numbers reported:
 
-Now we can run `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.
+* GEMM BMDM vs MG: 1059 up, 780 down.
+* GL261 BMDM vs MG: 712 up, 660 down.
+* Healthy BMDM vs MG: 840 up, 865 down.
+
+So we are finding too many in every case. However, the Venn diagram is quite close to Fig 2E and a quick check shows that many of the genes listed are indeed detected:
+
+```{r}
+expctd_in_g12 = c("Ccl1", "Ccl17", "Ccl22", "Cd80", "Jak2", "Kmo", "Ptger2")
+for (g in expctd_in_g12) {
+  print(g %in% g12)
+}
+
+expctd_in_g123 = c("Ahr", "Cd40", "Ciita", "Pdgfc", "Pf4", "Pparg", "Vdr", "Vav3")
+for (g in expctd_in_g123) {
+  print(g %in% g123)
+}
+```
+
 
 ## `edgeR`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
+
+Now we can analyse DE in `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.
 
 Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
 
 ```{r}
+dgel <- DGEList(counts = data, samples = meta)
 design <- model.matrix(~0 + cell_type:disease, data = meta)
 dgel <- estimateDisp(dgel, design)
 fit <- glmFit(dgel, design)
@@ -161,32 +292,32 @@ sprintf(
 lrt <- glmTreat(fit, contrast=c(-1, 0, 1, 0), lfc=logFC)
 ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
 sprintf(
-  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  "TA-BMDM vs healthy BMDM Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
   dim(ta_bmdm.vs.h_bmdm)[1], 
   fdr,
   sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
   sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
 )
 ```
-Look for the intersection.
+Plot a Venn diagram showing all DE genes.
 ```{r}
 area.1 <- nrow(ta_mg.vs.h_mg$table)
 area.2 <- nrow(ta_bmdm.vs.h_bmdm$table)
 area.cross <- length(intersect(rownames(ta_bmdm.vs.h_bmdm), rownames(ta_mg.vs.h_mg)))
 grid.newpage()
-venn <- draw.pairwise.venn(area.1, area.2, area.cross, category = c("TA-MG vs healthy MG", "TA-BMDM vs healthy monocytes"),
-                             lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2)
+venn <- draw.pairwise.venn(area.1, area.2, area.cross, category = c("MG", "BMDM"),
+                             lty = rep("blank", 2), fill = c("blue", "red"), alpha = rep(0.5, 2)
 )
 ```
 
 For my own records: this is _exactly_ the same as using group variable and carrying out the fitting on that instead.
 
-```{r}
+```{r, echo=FALSE, eval=FALSE}
 design <- model.matrix(~0 + group, data = meta)
 colnames(design) <- sub('group', '', colnames(design))
 dgel <- estimateDisp(dgel, design)
 fit <- glmFit(dgel, design)
-lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
+lrt <- glmTreat(fit, contrast=c(0, -0, -1, 1), lfc=logFC)
 ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
 sprintf(
   "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
@@ -196,10 +327,10 @@ sprintf(
   sum(ta_mg.vs.h_mg$table$logFC > 0)
 )
 
-lrt <- glmTreat(fit, contrast=c(-1, 0, 1, 0), lfc=logFC)
+lrt <- glmTreat(fit, contrast=c(-1, 1, 0, 0), lfc=logFC)
 ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
 sprintf(
-  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  "TA-BMDM vs healthy BMDM Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
   dim(ta_bmdm.vs.h_bmdm)[1], 
   fdr,
   sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
@@ -207,70 +338,81 @@ sprintf(
 )
 ```
 
-That's a much larger number than Bowman et al. reported. Why? They used DESeq2. Let's try that.
+Look at the DE gene list for suggestion of enrichment in the mTOR pathway. We need to check each of the segments in the Venn diagram.
+
+```{r}
+mtor_genes <- c(
+"Eif3h",
+"Eif4ebp1",
+"Hif1a",
+"Pik3r5",
+"Pld3",
+"Prkca",
+"Prr5l",
+"Rhoc",
+"Rps2",
+"Rps5",
+"Rps7",
+"Rps8",
+"Rps10",
+"Rps12",
+"Rps13",
+"Rps15",
+"Rps16",
+"Rps17",
+"Rps18",
+"Rps19",
+"Rps20",
+"Rps21",
+"Rps23",
+"Rps24",
+"Rps25",
+"Rps26",
+"Rps28",
+"Rps27a",
+"Rps27l",
+"Rps4y1",
+"Rps6ka4",
+"Rptor"
+)
+# check whether any are missing and remove them
+if (length(setdiff(mtor_genes, genes))) {
+  print(sprintf("The following mTOR-implicated genes are not present and will be ignored: %s", setdiff(mtor_genes, genes)))
+  mtor_genes <- intersect(mtor_genes, genes)
+}
+
+g.bmdm <- rownames(ta_bmdm.vs.h_bmdm)
+g.mg <- rownames(ta_mg.vs.h_mg)
+g.bmdm.only <- setdiff(g.bmdm, g.mg)
+g.mg.only <- setdiff(g.mg, g.bmdm)
+g.both <- intersect(g.mg, g.bmdm)
+g.all <- union(g.mg, g.bmdm)
+
+print(sprintf(
+  "Number mTOR genes DE in MG (tumour vs healthy): %i", length(intersect(g.mg.only, mtor_genes))
+))
+if (length(intersect(g.mg.only, mtor_genes))) {
+  print(ta_mg.vs.h_mg[intersect(g.mg.only, mtor_genes),])
+}
+print("****************")
+print(sprintf(
+  "Number mTOR genes DE in BMDM (tumour vs healthy): %i", length(intersect(g.bmdm.only, mtor_genes))
+))
+if (length(intersect(g.bmdm.only, mtor_genes))) {
+  print(ta_bmdm.vs.h_bmdm[intersect(g.bmdm.only, mtor_genes),])
+}
+print("****************")
+print(sprintf(
+  "Number mTOR genes DE in BMDM and MG (tumour vs healthy): %i", length(intersect(g.both, mtor_genes))
+))
+if (length(intersect(g.both, mtor_genes))) {
+  print(ta_mg.vs.h_mg[intersect(g.both, mtor_genes),])
+  print(ta_bmdm.vs.h_bmdm[intersect(g.both, mtor_genes),])
+}
+
+```
+
 
 ## `DESeq2`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
 
-Start similarly, filtering out genes with low counts in most samples.
-
-```{r}
-samples <- colnames(data)
-dds <- DESeqDataSetFromMatrix(countData = data[, samples], colData = meta[samples,], design = ~composite)
-keep <- rowSums(counts(dds) > 5) >= 2
-dds <- dds[keep,]
-sprintf(
-  "Number of genes in raw data: %i. Number after filtering: %i. %.02f %% retained.",
-  length(keep),
-  sum(keep),
-  sum(keep) / length(keep) * 100.
-)
-dds <- estimateSizeFactors(dds)
-des <- DESeq(dds, parallel = T)
-for (t in c("mg", "bmtm")){
-  res <- results(des, contrast=list(paste0("groupta.", t), paste0("grouph.", t)), cooksCutoff = F)
-  padj <- res$padj
-  padj[is.na(padj)] = 1.
-  res <- res[(padj < fdr) & (abs(res$log2FoldChange) > logFC),]
-}
-
-
-res.mg <- results(des, contrast=list("groupta.mg", "grouph.mg"))
-res.bmdm <- results(des, contrast=list("groupta.bmdm", "grouph.bmdm"))
-
-```
-
-
-
-
-```{r}
-meta$cell_type <- relevel(meta$cell_type, ref='mg')
-meta$disease <- relevel(meta$disease, ref='healthy')
-design <- model.matrix(~disease * cell_type, data = meta)
-
-dgel <- estimateDisp(dgel, design)
-fit <- glmFit(dgel, design)
-lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
-ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_mg.vs.h_mg)[1], 
-  fdr,
-  sum(ta_mg.vs.h_mg$table$logFC < 0),
-  sum(ta_mg.vs.h_mg$table$logFC > 0)
-)
-
-lrt <- glmTreat(fit, coef = 2, lfc=logFC)
-ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-BMDM vs healthy monocytes. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_bmdm.vs.h_bmdm)[1], 
-  fdr,
-  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
-  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
-)
-```
-
-
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+TODO?
