@@ -34,7 +34,7 @@ Two public mouse RNA-Seq datasets retrieved from GEO.
 
 GSE68376: _Genetic Cell Ablation Reveals Clusters of Local Self-Renewing Microglia in the Mammalian Central Nervous System_ Bruttger, J. et al. Immunity (2015).  All samples from a healthy animal.  3 x BMDM biological replicates; 2 x WT MG biological replicates; 3 x repopulating MG biological replicates (following genetic ablation).
 
-GSE86573: _Macrophage Ontogeny Underlies Differences in Tumor-Specific Education in Brain Malignancies_ Bowman et al. Cell Reports (2016). 3 x BMDM biological replicates and 3 x MG biological replicates from 2 different mouse models (total of 12 samples, 6 of each cell type).
+GSE86573: _Macrophage Ontogeny Underlies Differences in Tumor-Specific Education in Brain Malignancies_ Bowman et al. Cell Reports (2016). 3 x BMDM biological replicates and 3 x MG biological replicates from 2 different mouse models (total of 12 samples, 6 of each cell type). 5 normal blood monocytes, 3 normal MG (8 control samples).
 
 # Aim
 
@@ -45,7 +45,7 @@ Use differential expression analysis of the 'gene count' data to test the hypoth
 Import necessary libraries and load data. We set the metadata here too. We'll set the FDR and minimum effect size (absolute fold change) here for all comparisons. I've added a 'composite' column to the metadata, which will make it easier to define comparisons in the analysis.
 
 ```{r, message=FALSE, warning=FALSE, results="hide"}
-fdr <- 0.05
+fdr <- 0.01  # Conflicting advice on this value in the paper: either 0.01 or 0.05
 logFC <- 1  # FC = 2
 
 source('io/output.R')
@@ -75,6 +75,8 @@ meta.bowman$disease <- "healthy"
 meta.bowman$disease[grepl("gemm", rownames(meta.bowman))] <- "tumour"
 meta.bowman$disease[grepl("gl261", rownames(meta.bowman))] <- "tumour"
 
+meta.bowman$group <- paste(meta.bowman[,1], meta.bowman[, 3], sep='_')
+
 
 in.file <- file.path(data.dir.raid, "rnaseq", "GSE68376", "GSE68376_normalizedCounts.txt")
 data.bruttger <- read.csv(in.file, row.names = 1, sep='\t')
@@ -92,6 +94,10 @@ meta.bruttger$cell_type[grepl("mg", rownames(meta.bruttger))] <- "mg"
 
 meta.bruttger$model <- "endog"
 meta.bruttger$disease <- "healthy"
+
+meta.bruttger$group <- paste(meta.bruttger[,1], meta.bruttger[, 3], sep='_')
+
+# Combine all data together.
 
 genes <- intersect(rownames(data.bowman), rownames(data.bruttger))
 
@@ -145,9 +151,11 @@ vsd <- vst(dds, blind = FALSE)
 plotPCA(vsd, intgroup = c("cell_type", "disease", "model"))
 ```
 
-Yes - now the first dimension separates the two models and endogenous samples and the second dimension separates MG and BMDM.  On the basis of this, we'll discard the monocytes. We don't need to use them anyway. We also repeat the filtering process.
+Yes - now the first dimension separates the two models and endogenous samples and the second dimension separates MG and BMDM.
 
-```{r}
+Have toyed with removing monocytes, but leave them in for now. They may be used as the control for the BMDM population.
+
+```{r, eval=F, echo=F}
 data <- data[, samples]
 meta <- droplevels(meta[samples,])  # drop unused factors
 dgel <- DGEList(counts = data, samples = meta)
@@ -256,6 +264,8 @@ Adding the numbers in the Venn diagrams in the publication, here are the numbers
 So we are finding too many in every case. However, the Venn diagram is quite close to Fig 2E and a quick check shows that many of the genes listed are indeed detected:
 
 ```{r}
+
+
 expctd_in_g12 = c("Ccl1", "Ccl17", "Ccl22", "Cd80", "Jak2", "Kmo", "Ptger2")
 for (g in expctd_in_g12) {
   print(g %in% g12)
@@ -275,11 +285,11 @@ Now we can analyse DE in `edgeR`. The most crucial part is defining the _design 
 Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
 
 ```{r}
-dgel <- DGEList(counts = data, samples = meta)
-design <- model.matrix(~0 + cell_type:disease, data = meta)
+dgel <- DGEList(counts = data.bowman, samples = meta.bowman)
+design <- model.matrix(~0 + group, data = meta.bowman)
 dgel <- estimateDisp(dgel, design)
 fit <- glmFit(dgel, design)
-lrt <- glmTreat(fit, contrast=c(0, -1, 0, 1), lfc=logFC)
+lrt <- glmTreat(fit, contrast=c(0, -1, 1, 0), lfc=logFC)
 ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
 sprintf(
   "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
@@ -289,10 +299,10 @@ sprintf(
   sum(ta_mg.vs.h_mg$table$logFC > 0)
 )
 
-lrt <- glmTreat(fit, contrast=c(-1, 0, 1, 0), lfc=logFC)
+lrt <- glmTreat(fit, contrast=c(1, 0, 0, -1), lfc=logFC)
 ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
 sprintf(
-  "TA-BMDM vs healthy BMDM Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
+  "TA-BMDM vs healthy monocytes Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
   dim(ta_bmdm.vs.h_bmdm)[1], 
   fdr,
   sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
@@ -310,33 +320,7 @@ venn <- draw.pairwise.venn(area.1, area.2, area.cross, category = c("MG", "BMDM"
 )
 ```
 
-For my own records: this is _exactly_ the same as using group variable and carrying out the fitting on that instead.
-
-```{r, echo=FALSE, eval=FALSE}
-design <- model.matrix(~0 + group, data = meta)
-colnames(design) <- sub('group', '', colnames(design))
-dgel <- estimateDisp(dgel, design)
-fit <- glmFit(dgel, design)
-lrt <- glmTreat(fit, contrast=c(0, -0, -1, 1), lfc=logFC)
-ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_mg.vs.h_mg)[1], 
-  fdr,
-  sum(ta_mg.vs.h_mg$table$logFC < 0),
-  sum(ta_mg.vs.h_mg$table$logFC > 0)
-)
-
-lrt <- glmTreat(fit, contrast=c(-1, 1, 0, 0), lfc=logFC)
-ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-BMDM vs healthy BMDM Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_bmdm.vs.h_bmdm)[1], 
-  fdr,
-  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
-  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
-)
-```
+For my own records: this is _exactly_ the same as using interaction variables (`cell_type:disease`) and carrying out the fitting on that instead.
 
 Look at the DE gene list for suggestion of enrichment in the mTOR pathway. We need to check each of the segments in the Venn diagram.
 

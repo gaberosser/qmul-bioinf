@@ -1,7 +1,8 @@
 from load_data import methylation_array
 from methylation.process import m_from_beta, merge_illumina_probe_gene_classes
 from methylation import plots
-from scipy import ndimage
+from scipy import ndimage, stats
+from stats import nht
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -76,9 +77,18 @@ def test_region_1vs1(probes, dat=None, min_median_foldchange=1.4):
     :param probes: Iterable containing the probe IDs to be tested
     :param dat: The data corresponding to the probes. Columns are samples, rows are probes.
     :param min_median_foldchange:
-    :return:
+    :return: P value, unless comparison fails due to insufficient data, in which case None
     """
-    pass
+    y = dat.loc[probes]
+    y1 = y.iloc[:, 0].dropna()
+    y2 = y.iloc[:, 1].dropna()
+    if y1.size != y2.size:
+        logger.error("Data are not matched among the two groups")
+        return
+    if y1.size < 4:
+        logger.error("Unable to compute statistics for <4 observations")
+        return
+    return nht.mannwhitneyu_test(y1, y2)
 
 
 class PyDMR(object):
@@ -136,8 +146,45 @@ class PyDMR(object):
             self.anno.loc[:, 'UCSC_RefGene_Group'], self.anno.loc[:, 'Relation_to_UCSC_CpG_Island']
         )
 
-    def test_regions(self, dmr_probes):
-        pass
+    def test_regions(self, dmr_probes, use_data='beta'):
+        if use_data == 'beta':
+            data = self.b
+        elif use_data == 'm':
+            data = self.m
+        else:
+            raise AttributeError("Unrecognised use_data value.")
+        pvals = {}
+
+        if self.n_jobs > 1:
+            jobs = {}
+
+        for chr, v1 in dmr_probes.iteritems():
+            print chr
+            p1 = {}
+            dat = get_chr(self.anno, chr)
+            for typ, v2 in v1.iteritems():
+                p2 = []
+                for _, these_probes in v2.iteritems():
+                    # TODO
+                    pass
+        #         if self.n_jobs > 1:
+        #             jobs[(chr, cl)] = self.pool.apply_async(identify_region, args=(coords, n_min, d_max))
+        #         else:
+        #             p2 = identify_region(coords, n_min, d_max)
+        #             p1[cl] = p2
+        #     dmr_probes[chr] = p1
+        #
+        #     if self.n_jobs > 1:
+        #         # fill in the dict from the deferred results
+        #         for (chr, cl), j in jobs.items():
+        #             try:
+        #                 p2 = j.get(1e3)
+        #                 dmr_probes[chr][cl] = p2
+        #             except Exception:
+        #                 logger.exception("Failed to compute DMR for chr %s class %s", chr, cl)
+        #
+        # return dmr_probes
+
 
 
 def region_count(dmr_probes):
