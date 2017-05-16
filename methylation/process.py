@@ -7,6 +7,9 @@ def m_from_beta(beta):
     return np.log2(beta / (1 - beta))
 
 
+def beta_from_m(m):
+    return 2. ** m / (1 + 2. ** m)
+
 
 def merge_illumina_probe_gene_classes(gene_classes, island_classes):
     """

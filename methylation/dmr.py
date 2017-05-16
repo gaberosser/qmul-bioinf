@@ -1,5 +1,5 @@
 from load_data import methylation_array
-from methylation.process import m_from_beta, merge_illumina_probe_gene_classes
+from methylation.process import m_from_beta, beta_from_m, merge_illumina_probe_gene_classes
 from methylation import plots
 from scipy import ndimage, stats
 from stats import nht
@@ -15,6 +15,7 @@ from utils.output import unique_output_dir
 import numpy as np
 import logging
 import multiprocessing as mp
+from statsmodels.sandbox.stats import multicomp
 
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
@@ -36,6 +37,11 @@ def get_chr(dat, chr, col='CHR'):
 
 def get_coords(dat, gene_class, col='merged_class'):
     return dat.loc[dat.loc[:, col].str.contains(gene_class), 'MAPINFO']
+
+
+def init_pool(_data):
+    global pdata
+    pdata = _data
 
 
 def identify_region(coords, n_min, d_max):
@@ -69,8 +75,30 @@ def get_bounded_region(reg_coll, anno, chr, loc_from, loc_to):
     return this_regs
 
 
-def test_region_1vs1(probes, dat=None, min_median_foldchange=1.4):
+def test_region_1vs1(probes, y1, y2, min_median_foldchange=1.4):
     """
+    For the supplied probe list (which defines a region), run a statistical test to determine whether the median
+    difference observed in the data (e.g. M values or beta values) is meaningful. This function is designed to
+    compare only the case where there are two samples.
+    :param probes: Iterable containing the probe IDs to be tested
+    :param y1, y2: The data corresponding to the probes in samples 1 and 2. This may be beta or M values.
+    :param min_median_foldchange:
+    :return: P value, unless comparison fails due to insufficient data, in which case None
+    """
+    d1 = y1.loc[probes].dropna()
+    d2 = y2.loc[probes].dropna()
+    if len(y1) != len(y2):
+        logger.error("Data are not matched among the two groups")
+        return
+    if len(y1) < 4:
+        logger.error("Unable to compute statistics for <4 observations")
+        return
+    return nht.mannwhitneyu_test(d1, d2)
+
+
+def test_region_1vs1_parallel(probes, **kwargs):
+    """
+    Parallel version assumes that the data variable is available (it should be a global property in the pool)
     For the supplied probe list (which defines a region), run a statistical test to determine whether the median
     difference observed in the data (e.g. M values or beta values) is meaningful. This function is designed to
     compare only the case where there are two samples.
@@ -79,43 +107,120 @@ def test_region_1vs1(probes, dat=None, min_median_foldchange=1.4):
     :param min_median_foldchange:
     :return: P value, unless comparison fails due to insufficient data, in which case None
     """
-    y = dat.loc[probes]
-    y1 = y.iloc[:, 0].dropna()
-    y2 = y.iloc[:, 1].dropna()
-    if y1.size != y2.size:
-        logger.error("Data are not matched among the two groups")
-        return
-    if y1.size < 4:
-        logger.error("Unable to compute statistics for <4 observations")
-        return
-    return nht.mannwhitneyu_test(y1, y2)
+    y1 = pdata[0]
+    y2 = pdata[1]
+    return test_region_1vs1(probes, y1, y2, **kwargs)
+
+
+class ProbeCluster(object):
+    def __init__(self, pids, anno, cls=None, chr=None, beta=None, m=None):
+        """
+        Represents a collection of methylation probes
+        :param pids: The IDs of the probes belonging to this cluster
+        :param anno: The annotation data for this probe, from the Illumina manifest. Probes are in rows.
+        May include other columns (e.g. `merged_class`).
+        :param beta, m: If supplied, these are the beta and M data corresponding to these probes, in a pandas DataFrame.
+        Columns represent samples, rows represent probes.
+        """
+        self.anno = anno
+        self.pids = pids
+        self.beta = beta
+        self.m = m
+        self.n_probes = len(pids)
+
+        if chr is None:
+            self.chr = self.anno.CHR[0]
+            if (self.anno.CHR != self.chr).any():
+                raise AttributeError("Probes are located on different chromosomes")
+        else:
+            self.chr = chr
+
+        self.cls = cls
+
+        self.pval = None
+        self.padj = None
+
+    @property
+    def coord_list(self):
+        return self.anno.MAPINFO
+
+    @property
+    def coord_range(self):
+        cs = self.coord_list
+        return (min(cs), max(cs))
+
+    def check_inputs(self, samples, use_data):
+        if use_data == 'beta':
+            data = self.beta
+        elif use_data == 'm':
+            data = self.m
+        else:
+            raise AttributeError("Unsupported data")
+        if data is None:
+            raise AttributeError("Cannot continue without any data")
+
+        if samples is None:
+            if data.shape[1] > 2:
+                raise ValueError("If the number of samples is >2, must specify which two samples to compare")
+            else:
+                samples = data.columns
+        return samples, data
+
+    def relevant(self, min_median_diff, samples=None, use_data='beta'):
+        samples, data = self.check_inputs(samples, use_data)
+        y1 = data.loc[:, samples[0]]; y2 = data.loc[:, samples[1]]
+
+        return np.abs(np.median(y1 - y2)) > min_median_diff
+
+    def compute_pvalue(self, samples=None, use_data='beta'):
+        if self.n_probes < 4:
+            logger.error("Unable to compute statistics for <4 observations")
+            return
+        samples, data = self.check_inputs(samples, use_data)
+        y1 = data.loc[:, samples[0]]; y2 = data.loc[:, samples[1]]
+        self.pval = nht.mannwhitneyu_test(y1, y2)
+        return self.pval
+
+
+class ClusterCollection(object):
+    """
+    Class for managing a collection of clusters.
+    This allows indexing by chromosome or class type and adds methods for efficient bulk computation of p values.
+    """
+    def __init__(self):
+        # TODO
+        pass
 
 
 class PyDMR(object):
-    def __init__(self, anno, beta, m, n_jobs=-1):
-        self.anno = anno
-        self.b = beta
+    def __init__(self, anno, beta=None, m=None, n_jobs=-1):
+        if beta is None and m is None:
+            raise AttributeError("Must supply m and/or beta.")
+
         self.m = m
+        self.b = beta
+        if beta is None:
+            self.b = beta_from_m(m)
+        elif m is None:
+            self.m = m_from_beta(beta)
+
+        # limit the probes in the annotation to those included in the beta value
+        self.anno = anno.loc[anno.index.intersection(self.b.index)]
+
         if n_jobs == -1:
             n_jobs = mp.cpu_count()
 
         self.n_jobs = n_jobs
-        self.start_pool()
 
         logger.info("Merging classes.")
         self.add_merged_probe_classes()
 
-    def start_pool(self):
-        if self.n_jobs > 1:
-            logger.info("Creating a pool of %d workers to do my bidding.", self.n_jobs)
-            self.pool = mp.Pool(self.n_jobs)
-
     def identify_regions(self, n_min=4, d_max=200):
-
         dmr_probes = {}
 
         if self.n_jobs > 1:
             jobs = {}
+            pool = mp.Pool(processes=self.n_jobs)
 
         for chr in pd.factorize(self.anno.CHR)[1]:
             print chr
@@ -124,7 +229,7 @@ class PyDMR(object):
             for cl in CLASSES:
                 coords = get_coords(dat, cl)
                 if self.n_jobs > 1:
-                    jobs[(chr, cl)] = self.pool.apply_async(identify_region, args=(coords, n_min, d_max))
+                    jobs[(chr, cl)] = pool.apply_async(identify_region, args=(coords, n_min, d_max))
                 else:
                     p2 = identify_region(coords, n_min, d_max)
                     p1[cl] = p2
@@ -146,45 +251,67 @@ class PyDMR(object):
             self.anno.loc[:, 'UCSC_RefGene_Group'], self.anno.loc[:, 'Relation_to_UCSC_CpG_Island']
         )
 
-    def test_regions(self, dmr_probes, use_data='beta'):
+    def test_regions(self, dmr_probes, samples, use_data='beta', min_median_change=1.4):
+        """
+        Compare beta or M values between two samples.
+        Each cluster is marked as either 'not of interest', 'relevant and non-significant', or
+        'relevant AND significant'. Only relevant regions are tested, reducing the number of hypothesis tests and
+        increasing the power.
+        :param dmr_probes: Output of identify regions
+        :param samples: Iterable of length two, containing strings referencing the sample names.
+        :param use_data: String specifying which data to use for comparison,
+        :return:
+        """
+        if len(samples) != 2:
+            raise AttributeError("samples must have length two and reference columns in the data")
+
         if use_data == 'beta':
             data = self.b
         elif use_data == 'm':
             data = self.m
         else:
             raise AttributeError("Unrecognised use_data value.")
-        pvals = {}
+
+        y1 = data.loc[:, samples[0]]
+        y2 = data.loc[:, samples[1]]
 
         if self.n_jobs > 1:
+            pool = mp.Pool(self.n_jobs, initializer=init_pool, initargs=((y1, y2),))
             jobs = {}
 
-        for chr, v1 in dmr_probes.iteritems():
-            print chr
-            p1 = {}
-            dat = get_chr(self.anno, chr)
-            for typ, v2 in v1.iteritems():
-                p2 = []
-                for _, these_probes in v2.iteritems():
-                    # TODO
-                    pass
-        #         if self.n_jobs > 1:
-        #             jobs[(chr, cl)] = self.pool.apply_async(identify_region, args=(coords, n_min, d_max))
-        #         else:
-        #             p2 = identify_region(coords, n_min, d_max)
-        #             p1[cl] = p2
-        #     dmr_probes[chr] = p1
-        #
-        #     if self.n_jobs > 1:
-        #         # fill in the dict from the deferred results
-        #         for (chr, cl), j in jobs.items():
-        #             try:
-        #                 p2 = j.get(1e3)
-        #                 dmr_probes[chr][cl] = p2
-        #             except Exception:
-        #                 logger.exception("Failed to compute DMR for chr %s class %s", chr, cl)
-        #
-        # return dmr_probes
+        pvals = {}
 
+        for chr, d in dmr_probes.iteritems():
+            # chromosome loop
+            logger.info("Chromosome %s", chr)
+            p1 = {}
+            for typ, probedict in d.iteritems():
+                # cluster type loop
+                p2 = {}
+                for j, these_probes in probedict.iteritems():
+
+                    if self.n_jobs > 1:
+                        jobs[(chr, typ, j)] = pool.apply_async(
+                            test_region_1vs1_parallel,
+                            args=(these_probes,),
+                            kwds={'min_median_foldchange': min_median_change}
+                        )
+                    else:
+                        p2[j] = test_region_1vs1(these_probes, y1, y2, min_median_foldchange=min_median_change)
+
+                p1[typ] = p2
+            pvals[chr] = p1
+
+        if self.n_jobs > 1:
+            # close pool and wait for execution to complete
+            for (chr, typ, j), task in jobs.iteritems():
+                try:
+                    pvals[chr][typ][j] = task.get(1e3)
+                except Exception:
+                    logger.exception("Failed on chr %s type %s number %s", chr, typ, j)
+        pool.close()
+
+        return pvals
 
 
 def region_count(dmr_probes):
@@ -282,6 +409,7 @@ def plot_n_region_heatmap(dat, n_arr, d_arr, ax=None, **kwargs):
 
     return ax
 
+
 if __name__ == "__main__":
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
@@ -313,6 +441,12 @@ if __name__ == "__main__":
     #     n_lbl[cl] = len(set(fit.labels_).difference({-1}))
 
     obj = PyDMR(anno, b, m)
+
+    # identify possible DMRs based on probe class and location
+    reg = obj.identify_regions(n_min=n_min, d_max=d_max)
+
+    # carry out statistical testing
+    pvals = obj.test_regions(reg, samples=('GBM019', 'Dura019'))
 
     if False:
 
@@ -372,21 +506,19 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.png'), dpi=200)
         fig.savefig(os.path.join(OUTDIR, 'parameter_sweep_probes_by_class.pdf'))
 
-    reg = obj.identify_regions(n_min=n_min, d_max=d_max)
-
     # plot illustrating probe locations/classes and regions of interest
+    if False:
+        loc_from = 1000000
+        loc_to = loc_from + 200000
 
-    loc_from = 1000000
-    loc_to = loc_from + 200000
+        ax = plots.illustrate_probes(anno, anno.merged_class, '1', loc_from, loc_to, alpha_classed=1.)
+        fig = ax.figure
+        fig.tight_layout()
+        fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.png"), dpi=200)
+        fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.pdf"))
 
-    ax = plots.illustrate_probes(anno, anno.merged_class, '1', loc_from, loc_to, alpha_classed=1.)
-    fig = ax.figure
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.png"), dpi=200)
-    fig.savefig(os.path.join(OUTDIR, "chr1_probe_demo.pdf"))
-
-    # add regions
-    bounded_reg = get_bounded_region(reg, anno, '1', loc_from, loc_to)
-    plots.illustrate_regions(anno, bounded_reg, CLASSES, '1', loc_from, loc_to, ax=ax)
+        # add regions
+        bounded_reg = get_bounded_region(reg, anno, '1', loc_from, loc_to)
+        plots.illustrate_regions(anno, bounded_reg, CLASSES, '1', loc_from, loc_to, ax=ax)
 
 
