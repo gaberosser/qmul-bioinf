@@ -395,6 +395,32 @@ if (length(intersect(g.both, mtor_genes))) {
 }
 
 ```
+ 
+ Let's also generate a few boxplots for these genes, to visualise the actual difference in counts.
+ 
+```{r}
+# reformat so that each row is an observation
+mtor_data <- as.data.frame(t(data.bowman[mtor_genes, rownames(meta.bowman)]))
+mtor_data$group <- factor(meta.bowman$group, levels=c("monocyte_healthy", "bmdm_tumour", "mg_healthy", "mg_tumour"))
+meltData <- melt(mtor_data)
+p <- ggplot(meltData, aes(x = group, y = value, fill = group))
+p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.2, stroke=0), width = 0.3, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
+p <- p + theme(axis.text.x = element_blank()) + labs(y="Gene counts")
+p + facet_wrap(~variable, scale="free")
+
+```
+
+Interesting. The scatterplot shows several genes that we might expect to be tagged as DE in _both_ groups, but which only show up in one (or neither). This must be due to the estimation of dispersion? *TO DO*: check this.
+
+ 
+ Finally, we output the DE gene lists to text files.
+ 
+```{r}
+out.dir <- getOutputDir('mtor')
+write.csv(ta_bmdm.vs.h_bmdm, file=file.path(out.dir, "ta_bmdm_vs_h_monocyte.csv"))
+write.csv(ta_mg.vs.h_mg, file=file.path(out.dir, "ta_mg_vs_h_mg.csv"))
+```
+
 
 
 ## `DESeq2`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
