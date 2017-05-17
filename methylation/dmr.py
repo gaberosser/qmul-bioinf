@@ -375,6 +375,8 @@ def dmr_sweep_wrapper(n, d, anno=None):
 
 
 def dmr_region_parameter_sweep(anno, n_min_arr, d_max_arr, n_jobs=1):
+    # FIXME: the parallel version could be MUCH faster if we declare global anno data and use that rather than
+    # passing anno each time
     n_clusters = defaultdict(lambda: np.zeros((len(n_min_arr), len(d_max_arr))))
     n_probes = defaultdict(lambda: np.zeros((len(n_min_arr), len(d_max_arr))))
 
