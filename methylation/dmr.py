@@ -132,7 +132,7 @@ def test_cluster_data_values(y1, y2, min_median_change=1.4):
         median_change=np.median(y1 - y2),
         median_fc=np.nanmedian(y1 / y2),
     )
-    res['abs_median_change'] = np.abs(res['abs_median_change'])
+    res['abs_median_change'] = np.abs(res['median_change'])
     if res['abs_median_change'] > min_median_change:
         res['pval'] = nht.mannwhitneyu_test(y1, y2)
 

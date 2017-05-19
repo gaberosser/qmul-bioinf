@@ -183,3 +183,9 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.pdf"))
+
+
+    # TODO: consider running a large parameter sweep (possibly on Apocrita)
+    # matrix of (n, d) parameters
+    # for each parameter set and for each sample, store clusters, test_results
+    # analyse the number of clusters, relevant and significant. Why is 031 so weird?!
