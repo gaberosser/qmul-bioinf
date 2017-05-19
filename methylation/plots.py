@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from matplotlib import patches, collections
 from plotting.utils import COLOUR_BREWERS
 import seaborn as sns
 
@@ -72,8 +73,20 @@ def illustrate_probes(anno, cls, chr, loc_from, loc_to, cmap=None,
     return ax
 
 
-def illustrate_regions(anno, regions, cls_list, chr, loc_from, loc_to, cmap=None,
-                       alpha_classed=0.7, ax=None):
+def patch_from_cluster(anno, probes, y, height, **kwargs):
+    xs = anno.loc[probes, 'MAPINFO']
+    min_x = xs.min()
+    max_x = xs.max()
+    xy = (min_x, y)
+    width = max_x - min_x
+    return patches.Rectangle(xy, width, height, **kwargs)
+
+
+def illustrate_regions(anno, regions, cls_list, cmap=None,
+                       alpha=0.7, ax=None, ylim=None, linestyle='-'):
+    """
+    :param regions: From `get_clusters_by_location`,this is a nested dict.
+    """
     if ax is None:
         ax = plt.gca()
 
@@ -87,18 +100,27 @@ def illustrate_regions(anno, regions, cls_list, chr, loc_from, loc_to, cmap=None
                 "Too many classes (%d) for automatic cmap generation. Please provide cmap." % len(cls_list)
             )
 
-    this_dat = anno.loc[anno.CHR == chr].sort_values(by='MAPINFO', axis=0)
-    idx = (loc_from <= this_dat.MAPINFO) & (this_dat.MAPINFO < loc_to)
-    t = this_dat.loc[idx]
+    if ylim is None:
+        sq_buffer = 0.2
+        ymin = -sq_buffer
+        ymax = 1 + sq_buffer
+    else:
+        ymin, ymax = ylim
 
-    sq_buffer = 0.2
+    height = ymax - ymin
+
     for grp, c in cmap.items():
+        ptchs = []
         if grp in regions:
-            for p_arr in regions[grp]:
-                # get coords
-                xs = t.MAPINFO.loc[p_arr]
-                min_x = xs.min()
-                max_x = xs.max()
-                sq_x = [min_x, min_x, max_x, max_x, min_x]
-                sq_y = [-sq_buffer, 1 + sq_buffer, 1 + sq_buffer, -sq_buffer, -sq_buffer]
-                ax.plot(sq_x, sq_y, c=c, ls='-', lw=1.5, label=None, alpha=alpha_classed)
+            for p_arr in regions[grp].values():
+                ptchs.append(patch_from_cluster(anno, p_arr, ymin, height))
+            coll = collections.PatchCollection(
+                ptchs,
+                alpha=alpha,
+                linewidths=1.5,
+                linestyles=linestyle,
+                facecolors='none',
+                edgecolors=c
+            )
+            ax.add_collection(coll)
+            print "Added collection of %d patches with colour %s" % (len(ptchs), c)

@@ -141,6 +141,7 @@ toExcel.3 <- function(blocks, labels, outfile) {
   dfs
 }
 
+
 # plot venn diagrams showing number of genes overlapping in 2 DE results
 plot_multivenn.2 <- function(de1, de2, png.file=NULL) {
 
@@ -378,6 +379,8 @@ qqplot_chisq_fit(y.lumped, design, dispersion.common.lumped, outfile=file.path(l
 qqplot_chisq_fit(y.lumped, design, dispersion.trended.lumped, outfile=file.path(list.outdir, "qqplot_fit_trended.png"), title="Trended dispersion")
 qqplot_chisq_fit(y.lumped, design, dispersion.tagwise.lumped, outfile=file.path(list.outdir, "qqplot_fit_tagwise.png"), title="Genewise dispersion")
 
+#' Experiment 1
+#' GBM, paired iNSC and reference eNSC data (H9)
 #' Now run the analysis with all data included, separated into the correct groups (GBM.018, etc.)
 
 filt = meta.wtchg$disease_subgroup == 'RTK I'
@@ -439,7 +442,8 @@ plot_multivenn.2(res.018$de1, res.018$de2, png.file=file.path(list.outdir, "018.
 plot_multivenn.2(res.019$de1, res.019$de2, png.file=file.path(list.outdir, "019.png"))
 plot_multivenn.2(res.031$de1, res.031$de2, png.file=file.path(list.outdir, "031.png"))
 
-#' Repeat but include TWO reference datasets
+#' Experiment 2
+#' Include TWO eNSC reference datasets (H9 and fetal)
 
 filt = meta.wtchg$disease_subgroup == 'RTK I'
 
@@ -485,30 +489,47 @@ my.contrasts <- makeContrasts(
   levels=design
 )
 
+excel.labels <- c("iNSC", "eNSC_H9", "eNSC_fetal")
 
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvsiNSC"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSCH9"])
 lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBMvseNSCIP"])
 blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
 plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_all.png"))
+toExcel.3(blocks, labels = excel.labels, outfile = file.path(list.outdir, "gbm-insc-ensc_all.xls"))
+write.csv(prepare_de_table(lrt1, fdr = 0.05), file = file.path(list.outdir, "gbm-insc-all.csv"))
+write.csv(prepare_de_table(lrt2, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_h9-all.csv"))
+write.csv(prepare_de_table(lrt3, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_fe-all.csv"))
 
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vsiNSC018"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSCH9"])
 lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM018vseNSCIP"])
 blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
 plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_018.png"))
+toExcel.3(blocks, labels = excel.labels, outfile = file.path(list.outdir, "gbm-insc-ensc_018.xls"))
+write.csv(prepare_de_table(lrt1, fdr = 0.05), file = file.path(list.outdir, "gbm-insc-018.csv"))
+write.csv(prepare_de_table(lrt2, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_h9-018.csv"))
+write.csv(prepare_de_table(lrt3, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_fe-018.csv"))
 
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vsiNSC019"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSCH9"])
 lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM019vseNSCIP"])
 blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
 plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_019.png"))
+toExcel.3(blocks, labels = excel.labels, outfile = file.path(list.outdir, "gbm-insc-ensc_019.xls"))
+write.csv(prepare_de_table(lrt1, fdr = 0.05), file = file.path(list.outdir, "gbm-insc-019.csv"))
+write.csv(prepare_de_table(lrt2, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_h9-019.csv"))
+write.csv(prepare_de_table(lrt3, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_fe-019.csv"))
 
 lrt1 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vsiNSC031"])
 lrt2 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSCH9"])
 lrt3 <- glmLRT(fit.glm, contrast=my.contrasts[, "GBM031vseNSCIP"])
 blocks <- decompose_de_lists.3(lrt1, lrt2, lrt3)
 plot_multivenn.3(blocks, png.file = file.path(list.outdir, "gbm-insc-ensc_031.png"))
+toExcel.3(blocks, labels = excel.labels, outfile = file.path(list.outdir, "gbm-insc-ensc_031.xls"))
+write.csv(prepare_de_table(lrt1, fdr = 0.05), file = file.path(list.outdir, "gbm-insc-031.csv"))
+write.csv(prepare_de_table(lrt2, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_h9-031.csv"))
+write.csv(prepare_de_table(lrt3, fdr = 0.05), file = file.path(list.outdir, "gbm-ensc_fe-031.csv"))
 
 run_one_go <- function(ens.all, ens.up, ens.down, p.value=0.05) {
   go <- goana(lapply(list(ens.all, ens.up, ens.down), FUN = function(x) {ens.map[x, 'entrezgene']}))
