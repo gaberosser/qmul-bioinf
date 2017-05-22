@@ -78,9 +78,9 @@ if __name__ == '__main__':
 
     meth_de_joint = {}
     de_cols = ['genes', 'logFC', 'ensembl', 'direction', 'FDR', 'logCPM']
-    meth_cols = ['me_genes', 'me_mediandelta', 'me_medianfc', 'me_fdr']
+    meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_medianfc', 'me_fdr']
 
-    for sid in ['018', '019', '031']:
+    for sid in patient_ids:
         print sid
         this_de = de[('insc', sid)]
         meth_de_joint[sid] = {}
@@ -93,11 +93,12 @@ if __name__ == '__main__':
                 # matching entry in DE
                 de_match = this_de.loc[this_de.loc[:, 'genes'].isin(attrs['genes'])]
                 if de_match.shape[0] == 0:
-                    # print "No matching DE: (%s, %s, %d)" % (chr, cls, cid)
                     continue
-                else:
-                    print "Found %d matching DE: (%s, %s, %d)" % (de_match.shape[0], chr, cls, cid)
-                me_data = np.tile([attrs['median_change'], attrs['median_fc'], attrs['padj']], (de_match.shape[0], 1))
+                me_data = np.tile(
+                    [
+                        chr, cid, attrs['median_change'], attrs['median_fc'], attrs['padj']
+                    ],
+                    (de_match.shape[0], 1))
                 me_data = np.concatenate(
                     (
                         np.reshape(de_match.genes.values, (de_match.shape[0], 1)),
@@ -111,17 +112,54 @@ if __name__ == '__main__':
                 print "Failed to add data: (%s, %s, %d)" % (chr, cls, cid)
                 continue
             meth_de_joint[sid][cls] = pd.concat(
-                (meth_de_joint[sid][cls], this_match), axis=0
+                (meth_de_joint[sid][cls], this_match), axis=0, ignore_index=True
             )
-        meth_de_joint[sid]['all'] = pd.concat(meth_de_joint[sid].values(), axis=0)
+        meth_de_joint[sid]['all'] = pd.concat(meth_de_joint[sid].values(), axis=0, ignore_index=True)
+
+    # Generate table giving the number of overlaps in each patient and cluster class
+    # this includes the number of absolute overlaps AND the number of unique overlaps
+    the_cols = ['DE genes', 'DMR', 'DMR genes', 'overlaps', 'unique overlaps']
+    the_cols += reduce(lambda x, y: x + y, [['%s' % t, '%s_unique' % t] for t in dmr.CLASSES], [])
+    de_dmr_matches = pd.DataFrame(
+        columns=the_cols,
+        index=pd.Index(patient_ids, name='patient'),
+    )
+
+    for sid in patient_ids:
+        this_all = meth_de_joint[sid]['all']
+        n_de = de[('insc', sid)].shape[0]
+        n_dmr = len(list(dmr.dict_iterator(test_results_significant[sid], n_level=3)))
+        n_dmr_genes = len(
+            reduce(
+                lambda x, y: x.union(y), [t[1]['genes'] for t in dmr.dict_iterator(test_results_significant[sid], n_level=3)], set()
+            )
+        )
+        n_overlaps = meth_de_joint[sid]['all'].shape[0]
+        n_overlaps_unique = meth_de_joint[sid]['all'].me_genes.unique().shape[0]
+        this_datum = [n_de, n_dmr, n_dmr_genes, n_overlaps, n_overlaps_unique]
+        for cls in dmr.CLASSES:
+            this_datum.append(meth_de_joint[sid][cls].shape[0])
+            this_datum.append(meth_de_joint[sid][cls].me_genes.unique().shape[0])
+        de_dmr_matches.loc[sid] = this_datum
 
     # Scatter plots
     for sid in ['018', '019', '031']:
         fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
         for i, cls in enumerate(['all', 'tss', 'gene', 'island']):
             ax = axs.flat[i]
+
+            # get values for ALL DMR clusters of this class
             x = meth_de_joint[sid][cls].loc[:, 'logFC']
             y = meth_de_joint[sid][cls].loc[:, 'me_mediandelta']
+
+            # get values for DMR clusters that are ONLY in this class (no overlaps)
+            cid_other = set(
+                np.unique(
+                    np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
+                )
+            )
+            xu =
+
             # contingency table for Fisher's exact test
             conting = np.array([
                 [((x < 0) & (y < 0)).sum(), ((x > 0) & (y < 0)).sum()],
@@ -160,15 +198,15 @@ if __name__ == '__main__':
 
         # all
         for j in range(1, 8):
-            b = "{0:03b}".format(j)
+            bn = "{0:03b}".format(j)
             this_intersection = set(all_genes)
             for k in range(3):
-                if b[k] == '1':
+                if bn[k] == '1':
                     this_intersection = this_intersection.intersection(
                         meth_de_joint[sids[k]][cls].genes.unique()
                     )
-            this_genecount[b] = len(this_intersection)
-            this_geneset[b] = list(this_intersection)
+            this_genecount[bn] = len(this_intersection)
+            this_geneset[bn] = list(this_intersection)
         venn_counts[cls] = this_genecount
         venn_sets[cls] = this_geneset
         venn = venn3(subsets=venn_counts[cls], set_labels=sids, ax=axs[i])
