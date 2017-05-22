@@ -13,6 +13,13 @@ import seaborn as sns
 from matplotlib_venn import venn3, venn2
 
 
+def construct_contingency(x, y):
+    return np.array([
+        [((x < 0) & (y < 0)).sum(), ((x > 0) & (y < 0)).sum()],
+        [((x < 0) & (y > 0)).sum(), ((x > 0) & (y > 0)).sum()],
+    ])
+
+
 if __name__ == '__main__':
     outdir = unique_output_dir("rtk1_de_dmr", reuse_empty=True)
     d_max = 200
@@ -149,25 +156,38 @@ if __name__ == '__main__':
             ax = axs.flat[i]
 
             # get values for ALL DMR clusters of this class
-            x = meth_de_joint[sid][cls].loc[:, 'logFC']
-            y = meth_de_joint[sid][cls].loc[:, 'me_mediandelta']
+            x = meth_de_joint[sid][cls].loc[:, 'logFC'].astype(float)
+            y = meth_de_joint[sid][cls].loc[:, 'me_mediandelta'].astype(float)
 
             # get values for DMR clusters that are ONLY in this class (no overlaps)
-            cid_other = set(
-                np.unique(
-                    np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
+            if cls == 'all':
+                # here we are looking for any dmrs that only appear in the result from one class
+                # for this purpose, we want to exclude the 'all' result
+                not_all = pd.concat((meth_de_joint[sid][k] for k in dmr.CLASSES), ignore_index=True)
+                xu = x.loc[not_all.me_cid.groupby(not_all.me_cid).count().values == 1]
+                yu = y.loc[not_all.me_cid.groupby(not_all.me_cid).count().values == 1]
+            else:
+                cid_other = set(
+                    np.unique(
+                        np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
+                    )
                 )
-            )
-            # FIXME: test this!
-            xu = x.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)]
+                # FIXME: test this!
+                xu = x.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
+                yu = y.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
 
             # contingency table for Fisher's exact test
-            conting = np.array([
-                [((x < 0) & (y < 0)).sum(), ((x > 0) & (y < 0)).sum()],
-                [((x < 0) & (y > 0)).sum(), ((x > 0) & (y > 0)).sum()],
-            ])
+            conting = construct_contingency(x, y)
+            contingu = construct_contingency(xu, yu)
+
             logodds, fisherp = stats.fisher_exact(conting)
-            ax.scatter(x, y)
+            logoddsu, fisherpu = stats.fisher_exact(contingu)
+            print "%s - %s p = %.3f (incl overlaps), p = %.3f (excl overlaps)" % (
+                sid, cls, fisherp, fisherpu
+            )
+
+            ax.scatter(x, y, c='r', alpha=0.4)
+            ax.scatter(xu, yu, c='k')
             ax.axhline(0, c=0.4 * np.ones(3))
             ax.axvline(0, c=0.4 * np.ones(3))
             if fisherp < 0.001:
