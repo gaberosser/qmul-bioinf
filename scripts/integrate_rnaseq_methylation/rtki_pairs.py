@@ -158,7 +158,8 @@ if __name__ == '__main__':
                     np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
                 )
             )
-            xu =
+            # FIXME: test this!
+            xu = x.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)]
 
             # contingency table for Fisher's exact test
             conting = np.array([
