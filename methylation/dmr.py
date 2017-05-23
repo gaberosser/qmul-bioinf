@@ -99,15 +99,56 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1):
                 p1[cl] = p2
         clusters[chr] = p1
 
-        if n_jobs > 1:
-            # fill in the dict from the deferred results
-            for (chr, cl), j in jobs.items():
-                try:
-                    p2 = j.get(1e3)
-                    clusters[chr][cl] = p2
-                except Exception:
-                    logger.exception("Failed to compute DMR for chr %s class %s", chr, cl)
-    return clusters
+    if n_jobs > 1:
+        # fill in the dict from the deferred results
+        for (chr, cl), j in jobs.items():
+            try:
+                p2 = j.get(1e3)
+                clusters[chr][cl] = p2
+            except Exception:
+                logger.exception("Failed to compute DMR for chr %s class %s", chr, cl)
+
+    # run back over each chromosome
+    # for each cluster, add a list of classes it belongs to
+    classes = {}
+    for chr, dat in clusters.items():
+        t = {}
+        for cl in CLASSES:
+            for x in dat[cl].values():
+                t.setdefault(tuple(x), set()).add(cl)
+        classes[chr] = t
+
+    # reform the dictionary, but with meaningful cluster IDs and cluster classes added
+    clusters_new = {}
+    for chr, dat in clusters.items():
+        track_multiples = {}
+        clusters_new[chr] = {}
+        j = 0
+        for cl in CLASSES:
+            clusters_new[chr][cl] = {}
+            for x in dat[cl].values():
+                probe_tup = tuple(x)
+                probe_classes = classes[chr][probe_tup]
+                if len(probe_classes) == 1:
+                    clusters_new[chr][cl][j] = {
+                        'probes': x,
+                        'classes': probe_classes,
+                    }
+                    j += 1
+                elif probe_tup in track_multiples:
+                    # we've already added this cluster under a different class, so we'll just reference it here
+                    cid, pr = track_multiples[probe_tup]
+                    clusters_new[chr][cl][cid] = pr
+                else:
+                    # we need to add this cluster and track it
+                    clusters_new[chr][cl][j] = {
+                        'probes': x,
+                        'classes': probe_classes,
+                    }
+                    track_multiples[probe_tup] = (j, clusters_new[chr][cl][j])
+                    j += 1
+
+    return clusters_new
 
 
 def median_change(y1, y2):
@@ -177,21 +218,21 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1):
         # chromosome loop
         logger.info("Chromosome %s", chr)
         res[chr] = {}
-        for typ, probedict in d.iteritems():
+        for typ, cldict in d.iteritems():
             # cluster type loop
             res[chr][typ] = {}
-            for j, these_probes in probedict.iteritems():
-                res[chr][typ][j] = {'probes': these_probes}
+            for j, probedict in cldict.iteritems():
+                res[chr][typ][j] = dict(probedict)
                 if n_jobs > 1:
                     jobs[(chr, typ, j)] = pool.apply_async(
                         test_cluster_data_values_parallel,
-                        args=(these_probes,),
+                        args=(probedict['probes'],),
                         kwds={'min_median_change': min_median_change}
                     )
                 else:
                     try:
-                        this_y1 = y1.loc[these_probes].dropna()
-                        this_y2 = y2.loc[these_probes].dropna()
+                        this_y1 = y1.loc[probedict['probes']].dropna()
+                        this_y2 = y2.loc[probedict['probes']].dropna()
                         res[chr][typ][j].update(
                             test_cluster_data_values(this_y1, this_y2, min_median_change=min_median_change)
                         )

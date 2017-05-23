@@ -76,7 +76,7 @@ if __name__ == '__main__':
     for sid in ['018', '019', '031']:
         for (chr, cls, cid), attrs in dmr.dict_iterator(test_results_relevant[sid], n_level=3):
             pids = clusters[chr][cls][cid]
-            genes = anno.loc[clusters[chr][cls][cid]].UCSC_RefGene_Name.dropna()
+            genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
             geneset = reduce(lambda x, y: x.union(y), genes, set())
             attrs['genes'] = geneset
 
@@ -159,43 +159,55 @@ if __name__ == '__main__':
             x = meth_de_joint[sid][cls].loc[:, 'logFC'].astype(float)
             y = meth_de_joint[sid][cls].loc[:, 'me_mediandelta'].astype(float)
 
+            # contingency table for Fisher's exact test
+            conting = construct_contingency(x, y)
+            logodds, fisherp = stats.fisher_exact(conting)
+
             # get values for DMR clusters that are ONLY in this class (no overlaps)
             if cls == 'all':
-                # here we are looking for any dmrs that only appear in the result from one class
-                # for this purpose, we want to exclude the 'all' result
-                not_all = pd.concat((meth_de_joint[sid][k] for k in dmr.CLASSES), ignore_index=True)
-                xu = x.loc[not_all.me_cid.groupby(not_all.me_cid).count().values == 1]
-                yu = y.loc[not_all.me_cid.groupby(not_all.me_cid).count().values == 1]
+                print "%s - %s p = %.3e" % (
+                    sid, cls, fisherp
+                )
+                ax.scatter(x, y, c='k')
+                ax.axhline(0, c=0.4 * np.ones(3))
+                ax.axvline(0, c=0.4 * np.ones(3))
+                ttl = "%s; p={0}" % cls
+                if fisherp < 0.001:
+                    ttl = ttl.format('%.2e') % fisherp
+                else:
+                    ttl = ttl.format('%.3f') % fisherp
+
             else:
                 cid_other = set(
                     np.unique(
                         np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
                     )
                 )
-                # FIXME: test this!
                 xu = x.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
                 yu = y.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
+                contingu = construct_contingency(xu, yu)
+                logoddsu, fisherpu = stats.fisher_exact(contingu)
 
-            # contingency table for Fisher's exact test
-            conting = construct_contingency(x, y)
-            contingu = construct_contingency(xu, yu)
+                print "%s - %s p = %.3e (incl overlaps), p = %.3e (excl overlaps)" % (
+                    sid, cls, fisherp, fisherpu
+                )
 
-            logodds, fisherp = stats.fisher_exact(conting)
-            logoddsu, fisherpu = stats.fisher_exact(contingu)
-            print "%s - %s p = %.3f (incl overlaps), p = %.3f (excl overlaps)" % (
-                sid, cls, fisherp, fisherpu
-            )
+                ax.scatter(x, y, c='k')
+                ax.scatter(xu, yu, c='b')
+                ax.axhline(0, c=0.4 * np.ones(3))
+                ax.axvline(0, c=0.4 * np.ones(3))
 
-            ax.scatter(x, y, c='r', alpha=0.4)
-            ax.scatter(xu, yu, c='k')
-            ax.axhline(0, c=0.4 * np.ones(3))
-            ax.axvline(0, c=0.4 * np.ones(3))
-            if fisherp < 0.001:
-                ax.set_title("%s (Fisher's p=%.2e)" % (cls, fisherp))
-            else:
-                ax.set_title("%s (Fisher's p=%.3f)" % (cls, fisherp))
+                ttl = "%s; p={0}; unique p={0}" % cls
+
+                if fisherp < 0.001:
+                    ttl = ttl.format('%.2e') % (fisherp, fisherpu)
+                else:
+                    ttl = ttl.format('%.3f') % (fisherp, fisherpu)
+
+            ax.set_title(ttl)
+
         fig.text(0.5, 0.04, 'RNASeq DE logFC', ha='center')
-        fig.text(0.04, 0.4, 'EPIC DMR median delta M', va='center', rotation='vertical')
+        fig.text(0.04, 0.5, 'EPIC DMR median delta M', va='center', rotation='vertical')
         fig.savefig(os.path.join(outdir, "de_vs_dmr_%s.png" % sid), dpi=200)
         fig.savefig(os.path.join(outdir, "de_vs_dmr_%s.pdf" % sid))
 
