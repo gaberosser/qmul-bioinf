@@ -7,6 +7,15 @@ try:
     from rpy2 import robjects
     qwilcox = lambda q, n1, n2: robjects.r('qwilcox')(q, n1, n2)[0]
     pwilcox = lambda u, n1, n2: robjects.r('pwilcox')(u, n1, n2)[0]
+    global wilcoxonsign_test
+    wilcoxonsign_test = None
+    ## FIXME: this doesn't work?
+
+    def define_wilcoxonsrt():
+        global wilcoxonsign_test
+        robjects.r("library('coin')")
+        wilcoxonsign_test = lambda x, y: robjects.r('wilcoxonsign_test')(x, y, distribution='exact')
+
 except Exception:
     RFUNCTIONS_PRESENT = False
     r_absent_exc = AttributeError("Requires R functions to be accessible using rpy2")
@@ -57,3 +66,15 @@ def mannwhitneyu_test(x, y, alternative='two-tailed'):
     return p
 
 
+def wilcoxon_signed_rank_test(x, y):
+    """
+    Compute the Wilcoxon signed rank test for paired samples. We use an R package to make the computation exact.
+    :param x:
+    :param y:
+    :return:
+    """
+    if not RFUNCTIONS_PRESENT:
+        raise r_absent_exc
+    if wilcoxonsign_test is None:
+        define_wilcoxonsrt()
+    return wilcoxonsign_test(x, y)

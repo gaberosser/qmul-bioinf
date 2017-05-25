@@ -1,11 +1,10 @@
-from methylation import dmr, process
+from methylation import dmr, process, plots
 from load_data import methylation_array
 from settings import DATA_DIR
-import references
 from utils.output import unique_output_dir
+import operator
 import os
 import numpy as np
-from scipy import stats
 import pandas as pd
 import multiprocessing as mp
 from matplotlib import pyplot as plt
@@ -20,6 +19,27 @@ def construct_contingency(x, y):
     ])
 
 
+def plot_n_region_heatmap(dat, n_arr, d_arr, ax=None, **kwargs):
+    # heatmap plots for individual classes and combined
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    sns.heatmap(
+        dat,
+        cmap='RdBu_r',
+        xticklabels=d_arr,
+        yticklabels=n_arr,
+        ax=ax,
+        **kwargs
+    )
+    ax.set_xlabel("Maximum distance between probes")
+    ax.set_ylabel("Minimum number of probes")
+    ax.figure.tight_layout()
+
+    return ax
+
+
 if __name__ == '__main__':
     outdir = unique_output_dir("rtk1_de_dmr", reuse_empty=True)
     d_max = 200
@@ -29,7 +49,8 @@ if __name__ == '__main__':
 
     patient_ids = ['018', '019', '031']
     ref_samples = ['insc', 'ensc_h9', 'ensc_fe']
-    n_jobs = mp.cpu_count()
+    # n_jobs = mp.cpu_count()
+    n_jobs = 4
 
     ## load all DE gene lists
 
@@ -58,27 +79,105 @@ if __name__ == '__main__':
     anno.loc[:, 'UCSC_RefGene_Name'] = \
         anno.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
-    clusters = dmr.identify_clusters(anno, n_min=n_min, d_max=d_max, n_jobs=n_jobs)
-    test_results = {}
-    test_results_relevant = {}
-    test_results_significant = {}
-    for sid in ['018', '019', '031']:
-        samples = ('GBM%s' % sid, 'Dura%s' % sid)
-        test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
-        test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
-        test_results_significant[sid] = dmr.filter_dictionary(
-            test_results_relevant[sid],
-            filt=lambda x: x['rej_h0'],
-            n_level=3
-        )
+    if False:
+        # carry out a parameter sweep to see how the n_min and d_max parameters affect the number of valid regions
 
-    # add list of annotated genes to each relevant cluster
-    for sid in ['018', '019', '031']:
-        for (chr, cls, cid), attrs in dmr.dict_iterator(test_results_relevant[sid], n_level=3):
-            pids = clusters[chr][cls][cid]
-            genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
-            geneset = reduce(lambda x, y: x.union(y), genes, set())
-            attrs['genes'] = geneset
+        d_max_arr = np.arange(100, 1100, 100)
+        n_min_arr = np.arange(4, 11)
+        cluster_sweep, nreg, npro = dmr.dmr_region_parameter_sweep(anno, d_max_arr=d_max_arr, n_min_arr=n_min_arr, n_jobs=n_jobs)
+
+        # combine results for the distinct classes
+        nreg_all = reduce(operator.add, nreg.values())
+        npro_all = reduce(operator.add, npro.values())
+        n_pro_tot = float(anno.shape[0])
+
+        # heatmap plots
+        # number of regions
+
+        ax = plot_n_region_heatmap(nreg_all, n_min_arr, d_max_arr)
+        cax = [a for a in ax.figure.get_axes() if a is not ax][0]
+        cax.set_ylabel('Number of regions considered', rotation=270, labelpad=14)
+
+        ax.figure.savefig(os.path.join(outdir, 'parameter_sweep_regions_total.png'), dpi=200)
+        ax.figure.savefig(os.path.join(outdir, 'parameter_sweep_regions_total.pdf'))
+
+        fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
+        for i, k in enumerate(nreg.keys()):
+            plot_n_region_heatmap(nreg[k], n_min_arr, d_max_arr, ax=axs[i], cbar=False)
+            axs[i].set_title(k)
+            plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
+            if i == 0:
+                plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
+            else:
+                axs[i].yaxis.label.set_visible(False)
+        fig.tight_layout()
+
+        fig.savefig(os.path.join(outdir, 'parameter_sweep_regions_by_class.png'), dpi=200)
+        fig.savefig(os.path.join(outdir, 'parameter_sweep_regions_by_class.pdf'))
+
+        ax = plot_n_region_heatmap(npro_all / n_pro_tot * 100, n_min_arr, d_max_arr, vmin=0, vmax=100)
+        cax = [a for a in ax.figure.get_axes() if a is not ax][0]
+        cax.set_ylabel('% probes retained', rotation=270, labelpad=14)
+
+        ax.figure.savefig(os.path.join(outdir, 'parameter_sweep_probes_total.png'), dpi=200)
+        ax.figure.savefig(os.path.join(outdir, 'parameter_sweep_probes_total.pdf'))
+
+        fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True)
+        for i, k in enumerate(npro.keys()):
+            nt = anno.merged_class.str.contains(k).sum()
+            plot_n_region_heatmap(npro[k] / nt * 100, n_min_arr, d_max_arr, ax=axs[i], cbar=False, vmin=0, vmax=100)
+            axs[i].set_title(k)
+            plt.setp(axs[i].xaxis.get_ticklabels(), rotation=90)
+            if i == 0:
+                plt.setp(axs[i].yaxis.get_ticklabels(), rotation=0)
+            else:
+                axs[i].yaxis.label.set_visible(False)
+        fig.tight_layout()
+
+        fig.savefig(os.path.join(outdir, 'parameter_sweep_probes_by_class.png'), dpi=200)
+        fig.savefig(os.path.join(outdir, 'parameter_sweep_probes_by_class.pdf'))
+
+
+    # carry out full relevance / significance analysis for a number of parameter values
+    n_jobs = 2
+    d_max_arr = [200, 500, 800]
+    n_min_arr = [4, 6, 8]
+
+    all_results = {}
+    all_results_relevant = {}
+    all_results_significant = {}
+
+    for d in d_max_arr:
+        for n in n_min_arr:
+            print "d = %d; n = %d" % (d, n)
+
+            clusters = dmr.identify_clusters(anno, n_min=n, d_max=d, n_jobs=n_jobs)
+            test_results = {}
+            test_results_relevant = {}
+            test_results_significant = {}
+            for sid in ['018', '019', '031']:
+                samples = ('GBM%s' % sid, 'Dura%s' % sid)
+                test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
+                test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
+                test_results_significant[sid] = dmr.filter_dictionary(
+                    test_results_relevant[sid],
+                    filt=lambda x: x['rej_h0'],
+                    n_level=3
+                )
+
+            # add list of annotated genes to each relevant cluster
+            for sid in ['018', '019', '031']:
+                for (chr, cls, cid), attrs in dmr.dict_iterator(test_results_relevant[sid], n_level=3):
+                    pids = clusters[chr][cls][cid]
+                    genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
+                    geneset = reduce(lambda x, y: x.union(y), genes, set())
+                    attrs['genes'] = geneset
+
+            all_results[(d, n)] = test_results
+            all_results_relevant[(d, n)] = test_results_relevant
+            all_results_significant[(d, n)] = test_results_significant
+
+    raise StopIteration
 
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
