@@ -139,7 +139,9 @@ if __name__ == '__main__':
 
 
     # carry out full relevance / significance analysis for a number of parameter values
-    n_jobs = 2
+    # TODO: this is very SLOW. I have saved the results using dill.
+
+    n_jobs = 4
     d_max_arr = [200, 500, 800]
     n_min_arr = [4, 6, 8]
 
@@ -165,10 +167,10 @@ if __name__ == '__main__':
                     n_level=3
                 )
 
-            # add list of annotated genes to each relevant cluster
+            # add list of annotated genes to all clusters
             for sid in ['018', '019', '031']:
-                for (chr, cls, cid), attrs in dmr.dict_iterator(test_results_relevant[sid], n_level=3):
-                    pids = clusters[chr][cls][cid]
+                for (chr, cls, cid), attrs in dmr.dict_iterator(test_results[sid], n_level=3):
+                    pids = attrs['probes']
                     genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
                     geneset = reduce(lambda x, y: x.union(y), genes, set())
                     attrs['genes'] = geneset
@@ -176,6 +178,67 @@ if __name__ == '__main__':
             all_results[(d, n)] = test_results
             all_results_relevant[(d, n)] = test_results_relevant
             all_results_significant[(d, n)] = test_results_significant
+
+    # generate table with the number of proposed clusters, relevant clusters and significant clusters for each
+    # sample at each of the parameter values tested
+    cols = (
+        'd_max', 'n_min', 'sample', 'clusters_proposed', 'clusters_relevant', 'clusters_significant',
+        'genes_proposed', 'genes_relevant', 'genes_significant'
+    )
+    table_cluster_numbers = pd.DataFrame(columns=cols)
+
+    def count_genes(res, sid):
+        the_genes = reduce(
+            lambda x, y: x.union(y),
+            [t[1]['genes'] for t in dmr.dict_iterator(res[(d, n)][sid], n_level=3)],
+            set()
+        )
+        return len(the_genes)
+
+    for d in d_max_arr:
+        for n in n_min_arr:
+            ncl = len(list(
+                dmr.dict_iterator(all_results[(d, n)][patient_ids[0]], n_level=3)
+            ))
+            ng = count_genes(all_results, patient_ids[0])
+
+            for sid in ['018', '019', '031']:
+                ncl_re = len(list(
+                    dmr.dict_iterator(all_results_relevant[(d, n)][sid], n_level=3)
+                ))
+                ncl_si = len(list(
+                    dmr.dict_iterator(all_results_significant[(d, n)][sid], n_level=3)
+                ))
+                ng_re = count_genes(all_results_relevant, sid)
+                ng_si = count_genes(all_results_significant, sid)
+                this_row = pd.Series({
+                    'd_max': d,
+                    'n_min': n,
+                    'sample': sid,
+                    'clusters_proposed': ncl,
+                    'clusters_relevant': ncl_re,
+                    'clusters_significant': ncl_si,
+                    'genes_proposed': ng,
+                    'genes_relevant': ng_re,
+                    'genes_significant': ng_si
+                })
+                table_cluster_numbers = table_cluster_numbers.append(this_row, ignore_index=True)
+
+    # investigate issue with 031 and (200, 4): very low number of significant clusters
+    pvals = {}
+    padj = {}
+    for n in n_min_arr:
+        for d in d_max_arr:
+            pvals[(d, n)] = {}
+            padj[(d, n)] = {}
+            for sid in patient_ids:
+                pvals[(d, n)][sid] = []
+                padj[(d, n)][sid] = []
+                g = dmr.dict_iterator(all_results_relevant[(d, n)][sid], n_level=3)
+                for k, attrs in g:
+                    pvals[(d, n)][sid].append(attrs['pval'])
+                    padj[(d, n)][sid].append(attrs['padj'])
+
 
     raise StopIteration
 

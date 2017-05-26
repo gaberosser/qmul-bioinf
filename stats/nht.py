@@ -2,19 +2,48 @@ from scipy import stats
 import numpy as np
 
 
+class RFunctionDeferred(object):
+    """
+    Used for R functions that also require library imports.
+    Rather than importing all these libraries when the Python module is imported, we defer it until the function is
+    actually required
+    """
+    def __init__(self, func, imports=None):
+        self.imports = imports or []
+        self.func = func
+        self.ready = False
+
+    def import_packages(self):
+        for im in self.imports:
+            if not rpackages.isinstalled(im):
+                utils = rpackages.importr('utils')
+                utils.chooseCRANmirror(ind=1)
+                utils.install_packages(im)
+            rpackages.importr(im)
+        self.ready = True
+
+    def __call__(self, *args, **kwargs):
+        if not self.ready:
+            self.import_packages()
+        return self.func(*args, **kwargs)
+
+
 RFUNCTIONS_PRESENT = True
 try:
     from rpy2 import robjects
+    from rpy2.robjects import FloatVector, Formula
+    import rpy2.robjects.packages as rpackages
     qwilcox = lambda q, n1, n2: robjects.r('qwilcox')(q, n1, n2)[0]
     pwilcox = lambda u, n1, n2: robjects.r('pwilcox')(u, n1, n2)[0]
-    global wilcoxonsign_test
-    wilcoxonsign_test = None
-    ## FIXME: this doesn't work?
 
-    def define_wilcoxonsrt():
-        global wilcoxonsign_test
-        robjects.r("library('coin')")
-        wilcoxonsign_test = lambda x, y: robjects.r('wilcoxonsign_test')(x, y, distribution='exact')
+    def wilcoxsign_test_func(x, y, distribution='exact'):
+        frm = Formula("y ~ x")
+        frm.environment["x"] = FloatVector(x)
+        frm.environment["y"] = FloatVector(y)
+        res = robjects.r("wilcoxsign_test")(frm)
+        return robjects.r('pvalue')(res)[0]
+
+    wilcoxsign_test = RFunctionDeferred(wilcoxsign_test_func, imports=['coin'])
 
 except Exception:
     RFUNCTIONS_PRESENT = False
@@ -75,6 +104,4 @@ def wilcoxon_signed_rank_test(x, y):
     """
     if not RFUNCTIONS_PRESENT:
         raise r_absent_exc
-    if wilcoxonsign_test is None:
-        define_wilcoxonsrt()
-    return wilcoxonsign_test(x, y)
+    return wilcoxsign_test(x, y)
