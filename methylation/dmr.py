@@ -490,6 +490,91 @@ def dmr_region_parameter_sweep(anno, n_min_arr, d_max_arr, n_jobs=1):
     return clusters, n_clusters, n_probes
 
 
+def cluster_permutation_test(dat1, dat2, probes=None, n_probe=None, n_perm=1000):
+    """
+    Permute observed data and determine the null distribution of the observed median value change
+    Permutation is carried out so that alike probes are being considered.
+    :param dat1:
+    :param dat2:
+    :param probes:
+    :param n_perm:
+    :return:
+    """
+    if n_probe is None and probes is None:
+        raise AttributeError("Must supply either probes or n_probes")
+    if n_probe is not None and probes is not None:
+        raise AttributeError("Must supply either probes or n_probes")
+    if n_probe is None:
+        n_probe = len(probes)
+    m = dat1.size
+    medians = []
+    for i in range(n_perm):
+        idx = np.random.choice(m, n_probe, replace=True)
+        t1 = dat1[idx]; t2 = dat2[idx]
+        medians.append((t2 - t1).median())
+    if probes is not None:
+        obs = (dat2[probes] - dat1[probes]).median()
+        return obs, np.array(sorted(medians))
+    else:
+        return np.array(sorted(medians))
+
+
+def cluster_confined_permutation_test(dat1, dat2, anno, probes=None, n_probe=None, n_perm=1000):
+    """
+    Permute observed data and determine the null distribution of the observed median value change
+    Permutation is carried out so that probes must be consecutive
+    :param dat1:
+    :param dat2:
+    :param anno: Required to sort probes by location along the genome
+    :param probes:
+    :param n_perm:
+    :return:
+    """
+    if n_probe is None and probes is None:
+        raise AttributeError("Must supply either probes or n_probes")
+    if n_probe is not None and probes is not None:
+        raise AttributeError("Must supply either probes or n_probes")
+    if n_probe is None:
+        n_probe = len(probes)
+
+    m = dat1.size
+
+    # sort by chromosome then genomic coordinate
+    # we don't need chromosomes to be in any particular order
+    anno_sorted = anno.sort_values(by=['CHR', 'MAPINFO'])
+    sort_idx = anno_sorted.index
+    dat1 = dat1[sort_idx]
+    dat2 = dat2[sort_idx]
+
+    # find the indices of the changeover points for chromosomes. We need to discard any results that span these.
+    # the index gives the last entry for each chromosome
+    last_idx = np.where(np.diff(anno_sorted.CHR.factorize()[0]) != 0)[0]
+
+    medians = []
+    i_max = m - n_probe
+    count = 0
+    while count < n_perm:
+    # for i in range(n_perm):
+        i0 = np.random.randint(i_max)
+        i1 = i0 + n_probe
+        # check for overlap with breakpoint
+        if ((i0 <= last_idx) & (i1 > last_idx)).any():
+            continue
+        t1 = dat1[i0:i1]; t2 = dat2[i0:i1]
+        med = (t2 - t1).median()
+        if np.isnan(med).any():
+            import ipdb; ipdb.set_trace()
+        medians.append((t2 - t1).median())
+        count += 1
+
+    if probes is not None:
+        obs = (dat2[probes] - dat1[probes]).median()
+        return obs, np.array(sorted(medians))
+    else:
+        return np.array(sorted(medians))
+
+
+
 # slower way to assess clustering: but we might want to use this in future?
 # from sklearn.cluster import DBSCAN
 #

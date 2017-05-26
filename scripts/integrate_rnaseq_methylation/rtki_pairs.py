@@ -6,6 +6,7 @@ import operator
 import os
 import numpy as np
 import pandas as pd
+from scipy import stats
 import multiprocessing as mp
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -69,8 +70,11 @@ if __name__ == '__main__':
     b = methylation_array.gbm_nsc_methylationepic('swan')
     m = process.m_from_beta(b)
 
-    # reduce anno down to probes in the data
-    anno = anno.loc[anno.index.intersection(b.index)]
+    # reduce anno and data down to common probes
+    common_probes = anno.index.intersection(b.index)
+    anno = anno.loc[common_probes]
+    b = b.loc[common_probes]
+    m = m.loc[common_probes]
 
     # add merged class column to annotation
     dmr.add_merged_probe_classes(anno)
@@ -179,6 +183,16 @@ if __name__ == '__main__':
             all_results_relevant[(d, n)] = test_results_relevant
             all_results_significant[(d, n)] = test_results_significant
 
+    # run this to add genes to ALL tested clusters
+    # g = dmr.dict_iterator(all_results, n_level=5)
+    # for _, attrs in g:
+    #     if 'genes' in attrs:
+    #         continue
+    #     pids = attrs['probes']
+    #     genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
+    #     geneset = reduce(lambda x, y: x.union(y), genes, set())
+    #     attrs['genes'] = geneset
+
     # generate table with the number of proposed clusters, relevant clusters and significant clusters for each
     # sample at each of the parameter values tested
     cols = (
@@ -225,22 +239,96 @@ if __name__ == '__main__':
                 table_cluster_numbers = table_cluster_numbers.append(this_row, ignore_index=True)
 
     # investigate issue with 031 and (200, 4): very low number of significant clusters
+    # start by looking at the distribution of adjusted pvalues in each patient
     pvals = {}
     padj = {}
+    dupe_pvals = {}
+    dupe_padj = {}
     for n in n_min_arr:
         for d in d_max_arr:
             pvals[(d, n)] = {}
             padj[(d, n)] = {}
+            dupe_pvals[(d, n)] = {}
+            dupe_padj[(d, n)] = {}
             for sid in patient_ids:
+                already_seen = set()
                 pvals[(d, n)][sid] = []
                 padj[(d, n)][sid] = []
+                dupe_pvals[(d, n)][sid] = []
+                dupe_padj[(d, n)][sid] = []
                 g = dmr.dict_iterator(all_results_relevant[(d, n)][sid], n_level=3)
                 for k, attrs in g:
-                    pvals[(d, n)][sid].append(attrs['pval'])
-                    padj[(d, n)][sid].append(attrs['padj'])
+                    dupe_pvals[(d, n)][sid].append(attrs['pval'])
+                    dupe_padj[(d, n)][sid].append(attrs['padj'])
+                    probes = tuple(attrs['probes'])
+                    if probes not in already_seen:
+                        pvals[(d, n)][sid].append(attrs['pval'])
+                        padj[(d, n)][sid].append(attrs['padj'])
+                        already_seen.add(probes)
 
+    # histogram of (adj) pval
 
-    raise StopIteration
+    cutoff = np.log10(0.05)
+    x0 = np.linspace(-4, cutoff, 40)
+    x1 = np.arange(cutoff, 0., x0[1] - x0[0])
+    bins = np.concatenate((x0[:-1], x1))
+
+    (d, n) = (200, 6)
+    fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
+    for j, pid in enumerate(patient_ids):
+        axs[j].hist(np.log10(dupe_padj[(d, n)][pid]), bins, label='Incl duplicates')
+        axs[j].hist(np.log10(padj[(d, n)][pid]), bins, label='Excl duplicates')
+        axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
+        axs[j].set_title(pid)
+
+    axs[0].legend(loc='upper left')
+    axs[-1].set_xlabel('log10 adjusted pvalue')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.png' % (d, n)), dpi=200)
+    fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.pdf' % (d, n)))
+
+    fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
+    for j, pid in enumerate(patient_ids):
+        axs[j].hist(np.log10(dupe_pvals[(d, n)][pid]), bins, label='Incl duplicates')
+        axs[j].hist(np.log10(pvals[(d, n)][pid]), bins, label='Excl duplicates')
+        axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
+        axs[j].set_title(pid)
+
+    axs[0].legend(loc='upper left')
+    axs[-1].set_xlabel('log10 unadjusted pvalue')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.png' % (d, n)), dpi=200)
+    fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.pdf' % (d, n)))
+
+    padj_max = 0
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for j, pid in enumerate(patient_ids):
+        this_pval = np.array(dupe_pvals[(d, n)][pid])
+        this_padj = np.array(dupe_padj[(d, n)][pid])
+        sort_idx = np.argsort(this_pval)
+        this_pval = this_pval[sort_idx]
+        this_padj = this_padj[sort_idx]
+        first_idx = np.where(this_pval > alpha)[0][0]
+        padj_max = max(padj_max, this_padj[first_idx])
+        ax.scatter(this_pval, this_padj, label=pid)
+        ax.axhline(alpha, ls='--', c='k', label='FDR cutoff' if j == 0 else None)
+
+    ax.legend(loc='upper left')
+    ax.set_xlim([0, alpha])
+    ax.set_ylim([0, padj_max])
+    ax.set_xlabel("Unadjusted pvalue")
+    ax.set_ylabel("Adjusted pvalue")
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.png' % (d, n)), dpi=200)
+    fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.pdf' % (d, n)))
+
+    """
+    The histograms show a clear 'spiky' pattern, indicative of the pvalues coming from a finite set of values.
+    This makes sense: the Mann-Whitney U value depends on the ordering and the number of probes in a cluster. There
+    are a limited number of possibilities.
+    """
 
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
@@ -417,8 +505,68 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.pdf"))
 
+    # analysing the length distribution of the clusters
+    # this varies depending on the parameters to define clusters
+    cluster_size_dist = {}
+    cluster_size_max = 40
 
-    # TODO: consider running a large parameter sweep (possibly on Apocrita)
-    # matrix of (n, d) parameters
-    # for each parameter set and for each sample, store clusters, test_results
-    # analyse the number of clusters, relevant and significant. Why is 031 so weird?!
+    for n in n_min_arr:
+        for d in d_max_arr:
+            g = dmr.dict_iterator(all_results[(d, n)], n_level=4)
+            probesets = set([tuple(attrs['probes']) for _, attrs in g])
+            cluster_size_dist[(d, n)] = np.histogram([len(t) for t in probesets], bins=range(cluster_size_max))
+
+    fig, axs = plt.subplots(nrows=2, sharex=True)
+    [axs[0].plot(t[1][:-1], t[0], label="d_max = %d" % k[0]) for k, t in cluster_size_dist.items() if k[1] == 4]
+    axs[0].legend(loc='upper right')
+    [axs[1].plot(t[1][:-1], t[0], label="n_min = %d" % k[1]) for k, t in cluster_size_dist.items() if k[0] == 200]
+    axs[1].legend(loc='upper right')
+    axs[1].set_xlabel('Number in cluster')
+    fig.savefig(os.path.join(outdir, 'cluster_size_dist.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'cluster_size_dist.pdf'))
+
+    # permutation studies for the null hypothesis that probes are uniform randomly drawn from the full set of observed
+    # data
+    m1 = m.loc[:, 'Dura018']
+    m2 = m.loc[:, 'GBM018']
+    this_cluster = all_results_relevant[(200, 4)]['018']['1']['gene'].values()[0]
+    probes = this_cluster['probes']
+    n_perm = 10000
+
+    simulated_meds_1 = {}
+    simulated_meds_2 = {}
+
+    for n_probe in [4, 6, 8, 10]:
+        print "Running permutation study for a cluster with %d probes..." % n_probe
+        print "Model 1: randomly drawn probes"
+        simulated_meds_1[n_probe] = dmr.cluster_permutation_test(m1, m2, n_probe=n_probe, n_perm=10000)
+        print "Model 2: randomly drawn consecutive probes (not spanning chromosomes)"
+        simulated_meds_2[n_probe] = dmr.cluster_confined_permutation_test(m1, m2, anno, n_probe=n_probe, n_perm=10000)
+
+    fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
+    for j, n_probe in enumerate([4, 6, 8, 10]):
+        ax = axs.flat[j]
+        ax.hist(simulated_meds_1[n_probe], 100, normed=True, color='k', label='Random probe selection')
+        ax.hist(simulated_meds_2[n_probe], 100, normed=True, color='r', alpha=0.5, label='Consecutive probe selection')
+        ax.set_xlabel('Median difference in M (GBM - iNSC)')
+        ax.set_ylabel('Density')
+        ax.set_title("%d probes in cluster" % n_probe)
+    axs.flat[0].legend(loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "median_difference_permutation_test.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "median_difference_permutation_test.pdf"))
+
+    # TODO: compute some actual observed values for different cluster sizes and look at the pvalue similarity
+    # we can use the lookup table simulated_meds_2 to get the permutation background
+
+    # if obs_2 < 0:
+    #     pval_2 = 2 * np.where(meds_2 < obs_2)[0][0] / float(n_perm)
+    # else:
+    #     pval_2 = 2 * (1 - np.where(meds_2 > obs_2)[0][0] / float(n_perm))
+    #
+    #
+    # print "Observed median delta: %.2f.\nMann-Whitney p value: %.3e.\nPermutation value: %.3f." % (
+    #     obs_1,
+    #     this_cluster['pval'],
+    #     pval_2
+    # )
