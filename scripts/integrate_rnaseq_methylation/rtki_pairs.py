@@ -49,20 +49,28 @@ if __name__ == '__main__':
     alpha = 0.05
 
     patient_ids = ['018', '019', '031']
-    ref_samples = ['insc', 'ensc_h9', 'ensc_fe']
     # n_jobs = mp.cpu_count()
     n_jobs = 4
 
     ## load all DE gene lists
 
-    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1')
-
+    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9nsc')
     de = {}
 
     for p in patient_ids + ['all']:
-        for ref in ref_samples:
-            fn = os.path.join(indir_de, 'gbm-%s-%s.csv' % (ref, p))
-            de[(ref, p)] = pd.read_csv(fn, header=0, index_col=0)
+        fn = os.path.join(indir_de, 'gbm-insc-ensc-%s.csv' % p)
+        this_de_insc_only = pd.read_csv(fn, header=0, index_col=None)
+        in_insc = ~this_de_insc_only.iloc[:, 1].isnull()
+        in_ensc = ~this_de_insc_only.iloc[:, 7].isnull()
+
+        # DE genes in iNSC comparison only
+        de[(p, 'insc_only')] = this_de_insc_only.loc[in_insc & ~in_ensc].iloc[:, :6]
+        # DE genes in both comparisons
+        # here we use the logFC etc from the iNSC comparison, since this is what we're interested in
+        de[(p, 'insc_and_h9')] = this_de_insc_only.loc[in_insc & in_ensc].iloc[:, :6]
+        # DE genes in H9 comparison only
+        de[(p, 'h9_only')] = this_de_insc_only.loc[~in_insc & in_ensc].iloc[:, 6:]
+        de[(p, 'h9_only')].columns = this_de_insc_only.columns[:6]
 
     ## compute DMR
 
@@ -145,9 +153,11 @@ if __name__ == '__main__':
     # carry out full relevance / significance analysis for a number of parameter values
     # TODO: this is very SLOW. I have saved the results using dill.
 
-    n_jobs = 4
-    d_max_arr = [200, 500, 800]
-    n_min_arr = [4, 6, 8]
+    n_jobs = 12
+    # d_max_arr = [200, 500, 800]
+    d_max_arr = [500]
+    # n_min_arr = [4, 6, 8]
+    n_min_arr = [4]
 
     all_results = {}
     all_results_relevant = {}
@@ -182,16 +192,6 @@ if __name__ == '__main__':
             all_results[(d, n)] = test_results
             all_results_relevant[(d, n)] = test_results_relevant
             all_results_significant[(d, n)] = test_results_significant
-
-    # run this to add genes to ALL tested clusters
-    # g = dmr.dict_iterator(all_results, n_level=5)
-    # for _, attrs in g:
-    #     if 'genes' in attrs:
-    #         continue
-    #     pids = attrs['probes']
-    #     genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
-    #     geneset = reduce(lambda x, y: x.union(y), genes, set())
-    #     attrs['genes'] = geneset
 
     # generate table with the number of proposed clusters, relevant clusters and significant clusters for each
     # sample at each of the parameter values tested
@@ -240,89 +240,93 @@ if __name__ == '__main__':
 
     # investigate issue with 031 and (200, 4): very low number of significant clusters
     # start by looking at the distribution of adjusted pvalues in each patient
-    pvals = {}
-    padj = {}
-    dupe_pvals = {}
-    dupe_padj = {}
-    for n in n_min_arr:
-        for d in d_max_arr:
-            pvals[(d, n)] = {}
-            padj[(d, n)] = {}
-            dupe_pvals[(d, n)] = {}
-            dupe_padj[(d, n)] = {}
-            for sid in patient_ids:
-                already_seen = set()
-                pvals[(d, n)][sid] = []
-                padj[(d, n)][sid] = []
-                dupe_pvals[(d, n)][sid] = []
-                dupe_padj[(d, n)][sid] = []
-                g = dmr.dict_iterator(all_results_relevant[(d, n)][sid], n_level=3)
-                for k, attrs in g:
-                    dupe_pvals[(d, n)][sid].append(attrs['pval'])
-                    dupe_padj[(d, n)][sid].append(attrs['padj'])
-                    probes = tuple(attrs['probes'])
-                    if probes not in already_seen:
-                        pvals[(d, n)][sid].append(attrs['pval'])
-                        padj[(d, n)][sid].append(attrs['padj'])
-                        already_seen.add(probes)
+    if False:
 
-    # histogram of (adj) pval
+        pvals = {}
+        padj = {}
+        dupe_pvals = {}
+        dupe_padj = {}
+        for n in n_min_arr:
+            for d in d_max_arr:
+                pvals[(d, n)] = {}
+                padj[(d, n)] = {}
+                dupe_pvals[(d, n)] = {}
+                dupe_padj[(d, n)] = {}
+                for sid in patient_ids:
+                    already_seen = set()
+                    pvals[(d, n)][sid] = []
+                    padj[(d, n)][sid] = []
+                    dupe_pvals[(d, n)][sid] = []
+                    dupe_padj[(d, n)][sid] = []
+                    g = dmr.dict_iterator(all_results_relevant[(d, n)][sid], n_level=3)
+                    for k, attrs in g:
+                        dupe_pvals[(d, n)][sid].append(attrs['pval'])
+                        dupe_padj[(d, n)][sid].append(attrs['padj'])
+                        probes = tuple(attrs['probes'])
+                        if probes not in already_seen:
+                            pvals[(d, n)][sid].append(attrs['pval'])
+                            padj[(d, n)][sid].append(attrs['padj'])
+                            already_seen.add(probes)
 
-    cutoff = np.log10(0.05)
-    x0 = np.linspace(-4, cutoff, 40)
-    x1 = np.arange(cutoff, 0., x0[1] - x0[0])
-    bins = np.concatenate((x0[:-1], x1))
+        # histogram of (adj) pval
 
-    (d, n) = (200, 6)
-    fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
-    for j, pid in enumerate(patient_ids):
-        axs[j].hist(np.log10(dupe_padj[(d, n)][pid]), bins, label='Incl duplicates')
-        axs[j].hist(np.log10(padj[(d, n)][pid]), bins, label='Excl duplicates')
-        axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
-        axs[j].set_title(pid)
+        cutoff = np.log10(0.05)
+        x0 = np.linspace(-4, cutoff, 40)
+        x1 = np.arange(cutoff, 0., x0[1] - x0[0])
+        bins = np.concatenate((x0[:-1], x1))
 
-    axs[0].legend(loc='upper left')
-    axs[-1].set_xlabel('log10 adjusted pvalue')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.png' % (d, n)), dpi=200)
-    fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.pdf' % (d, n)))
+        # we need to use (200, 4) here to demonstrate the 'issue' being investigated
+        (d, n) = (500, 4)
 
-    fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
-    for j, pid in enumerate(patient_ids):
-        axs[j].hist(np.log10(dupe_pvals[(d, n)][pid]), bins, label='Incl duplicates')
-        axs[j].hist(np.log10(pvals[(d, n)][pid]), bins, label='Excl duplicates')
-        axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
-        axs[j].set_title(pid)
+        fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
+        for j, pid in enumerate(patient_ids):
+            axs[j].hist(np.log10(dupe_padj[(d, n)][pid]), bins, label='Incl duplicates')
+            axs[j].hist(np.log10(padj[(d, n)][pid]), bins, label='Excl duplicates')
+            axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
+            axs[j].set_title(pid)
 
-    axs[0].legend(loc='upper left')
-    axs[-1].set_xlabel('log10 unadjusted pvalue')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.png' % (d, n)), dpi=200)
-    fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.pdf' % (d, n)))
+        axs[0].legend(loc='upper left')
+        axs[-1].set_xlabel('log10 adjusted pvalue')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.png' % (d, n)), dpi=200)
+        fig.savefig(os.path.join(outdir, 'padj_distribution_%d_%d.pdf' % (d, n)))
 
-    padj_max = 0
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for j, pid in enumerate(patient_ids):
-        this_pval = np.array(dupe_pvals[(d, n)][pid])
-        this_padj = np.array(dupe_padj[(d, n)][pid])
-        sort_idx = np.argsort(this_pval)
-        this_pval = this_pval[sort_idx]
-        this_padj = this_padj[sort_idx]
-        first_idx = np.where(this_pval > alpha)[0][0]
-        padj_max = max(padj_max, this_padj[first_idx])
-        ax.scatter(this_pval, this_padj, label=pid)
-        ax.axhline(alpha, ls='--', c='k', label='FDR cutoff' if j == 0 else None)
+        fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
+        for j, pid in enumerate(patient_ids):
+            axs[j].hist(np.log10(dupe_pvals[(d, n)][pid]), bins, label='Incl duplicates')
+            axs[j].hist(np.log10(pvals[(d, n)][pid]), bins, label='Excl duplicates')
+            axs[j].axvline(cutoff, ls='--', c='k', label='FDR cutoff')
+            axs[j].set_title(pid)
 
-    ax.legend(loc='upper left')
-    ax.set_xlim([0, alpha])
-    ax.set_ylim([0, padj_max])
-    ax.set_xlabel("Unadjusted pvalue")
-    ax.set_ylabel("Adjusted pvalue")
+        axs[0].legend(loc='upper left')
+        axs[-1].set_xlabel('log10 unadjusted pvalue')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.png' % (d, n)), dpi=200)
+        fig.savefig(os.path.join(outdir, 'pval_distribution_%d_%d.pdf' % (d, n)))
 
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.png' % (d, n)), dpi=200)
-    fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.pdf' % (d, n)))
+        padj_max = 0
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        for j, pid in enumerate(patient_ids):
+            this_pval = np.array(dupe_pvals[(d, n)][pid])
+            this_padj = np.array(dupe_padj[(d, n)][pid])
+            sort_idx = np.argsort(this_pval)
+            this_pval = this_pval[sort_idx]
+            this_padj = this_padj[sort_idx]
+            first_idx = np.where(this_pval > alpha)[0][0]
+            padj_max = max(padj_max, this_padj[first_idx])
+            ax.scatter(this_pval, this_padj, label=pid)
+            ax.axhline(alpha, ls='--', c='k', label='FDR cutoff' if j == 0 else None)
+
+        ax.legend(loc='upper left')
+        ax.set_xlim([0, alpha])
+        ax.set_ylim([0, padj_max])
+        ax.set_xlabel("Unadjusted pvalue")
+        ax.set_ylabel("Adjusted pvalue")
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.png' % (d, n)), dpi=200)
+        fig.savefig(os.path.join(outdir, 'pval_vs_padj_%d_%d.pdf' % (d, n)))
 
     """
     The histograms show a clear 'spiky' pattern, indicative of the pvalues coming from a finite set of values.
@@ -330,180 +334,226 @@ if __name__ == '__main__':
     are a limited number of possibilities.
     """
 
+    # Match DMR and DE.
+    # We do this based on gene symbol, as it is (unfortunately) the only information contained in the EPIC annotation.
+    # We are interested in two comparisons:
+    # a) DE (in GBM vs iNSC but not in GBM vs H9)
+    # b) DE (in GBM vs iNSC and in GBM vs H9)
+
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
 
-    meth_de_joint = {}
-    de_cols = ['genes', 'logFC', 'ensembl', 'direction', 'FDR', 'logCPM']
-    meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_medianfc', 'me_fdr']
+    def compute_joint_de_dmr(this_test_results, this_de):
+        res = {}
 
-    for sid in patient_ids:
-        print sid
-        this_de = de[('insc', sid)]
-        meth_de_joint[sid] = {}
-        for (chr, cls, cid), attrs in dmr.dict_iterator(test_results_significant[sid], n_level=3):
-            meth_de_joint[sid].setdefault(cls, pd.DataFrame(columns=de_cols + meth_cols))
-            if len(attrs['genes']) == 0:
-                # print "No annotated genes: (%s, %s, %d)" % (chr, cls, cid)
-                continue
-            try:
-                # matching entry in DE
-                de_match = this_de.loc[this_de.loc[:, 'genes'].isin(attrs['genes'])]
-                if de_match.shape[0] == 0:
+        for sid in patient_ids:
+            print sid
+            res[sid] = {}
+
+            de_cols = ['genes', 'logFC', 'ensembl', 'direction', 'FDR', 'logCPM']
+            meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_medianfc', 'me_fdr']
+
+            for (chr, cls, cid), attrs in dmr.dict_iterator(this_test_results[sid], n_level=3):
+                res[sid].setdefault(cls, pd.DataFrame(columns=de_cols + meth_cols))
+
+                if len(attrs['genes']) == 0:
                     continue
-                me_data = np.tile(
-                    [
-                        chr, cid, attrs['median_change'], attrs['median_fc'], attrs['padj']
-                    ],
-                    (de_match.shape[0], 1))
-                me_data = np.concatenate(
-                    (
-                        np.reshape(de_match.genes.values, (de_match.shape[0], 1)),
-                        me_data
-                    ),
-                    axis=1
-                )
-                me_match = pd.DataFrame(data=me_data, columns=meth_cols, index=de_match.index)
-                this_match = pd.concat((de_match, me_match), axis=1)
-            except Exception:
-                print "Failed to add data: (%s, %s, %d)" % (chr, cls, cid)
-                continue
-            meth_de_joint[sid][cls] = pd.concat(
-                (meth_de_joint[sid][cls], this_match), axis=0, ignore_index=True
-            )
-        meth_de_joint[sid]['all'] = pd.concat(meth_de_joint[sid].values(), axis=0, ignore_index=True)
+
+                try:
+                    # matching entry in DE
+                    de_match = this_de[sid].loc[this_de[sid].loc[:, 'genes'].isin(attrs['genes'])]
+
+                    if de_match.shape[0] > 0:
+                        # form the DMR data block
+                        me_data = np.tile(
+                            [
+                                chr, cid, attrs['median_change'], attrs['median_fc'], attrs['padj']
+                            ],
+                            (de_match.shape[0], 1))
+                        me_data = np.concatenate(
+                            (
+                                np.reshape(de_match.genes.values, (de_match.shape[0], 1)),
+                                me_data
+                            ),
+                            axis=1
+                        )
+                        me_match = pd.DataFrame(data=me_data, columns=meth_cols, index=de_match.index)
+
+                        this_match = pd.concat((de_match, me_match), axis=1)
+                        res[sid][cls] = pd.concat(
+                            (res[sid][cls], this_match), axis=0, ignore_index=True
+                        )
+                except Exception as exc:
+                    print "Failed to add data (iNSC only): (%s, %s, %d)" % (chr, cls, cid)
+                    print repr(exc)
+                    continue
+
+            res[sid]['all'] = pd.concat(res[sid].values(), axis=0, ignore_index=True)
+
+        return res
+
+    this_de_insc_only = dict([(sid, de[(sid, 'insc_only')]) for sid in patient_ids])
+    this_de_insc_h9 = dict([(sid, de[(sid, 'insc_and_h9')]) for sid in patient_ids])
+    meth_de_joint_insc_only = compute_joint_de_dmr(test_results_significant, this_de_insc_only)
+    meth_de_joint_insc_h9 = compute_joint_de_dmr(test_results_significant, this_de_insc_h9)
 
     # Generate table giving the number of overlaps in each patient and cluster class
     # this includes the number of absolute overlaps AND the number of unique overlaps
     the_cols = ['DE genes', 'DMR', 'DMR genes', 'overlaps', 'unique overlaps']
     the_cols += reduce(lambda x, y: x + y, [['%s' % t, '%s_unique' % t] for t in dmr.CLASSES], [])
-    de_dmr_matches = pd.DataFrame(
+    de_dmr_matches_insc_only = pd.DataFrame(
         columns=the_cols,
         index=pd.Index(patient_ids, name='patient'),
     )
+    de_dmr_matches_insc_h9 = pd.DataFrame.copy(de_dmr_matches_insc_only)
 
-    for sid in patient_ids:
-        this_all = meth_de_joint[sid]['all']
-        n_de = de[('insc', sid)].shape[0]
+    def n_overlap_datum(sid, meth_de, this_de):
+        n_de = this_de.shape[0]
         n_dmr = len(list(dmr.dict_iterator(test_results_significant[sid], n_level=3)))
         n_dmr_genes = len(
             reduce(
                 lambda x, y: x.union(y), [t[1]['genes'] for t in dmr.dict_iterator(test_results_significant[sid], n_level=3)], set()
             )
         )
-        n_overlaps = meth_de_joint[sid]['all'].shape[0]
-        n_overlaps_unique = meth_de_joint[sid]['all'].me_genes.unique().shape[0]
+        n_overlaps = meth_de[sid]['all'].shape[0]
+        n_overlaps_unique = meth_de[sid]['all'].me_genes.unique().shape[0]
         this_datum = [n_de, n_dmr, n_dmr_genes, n_overlaps, n_overlaps_unique]
         for cls in dmr.CLASSES:
-            this_datum.append(meth_de_joint[sid][cls].shape[0])
-            this_datum.append(meth_de_joint[sid][cls].me_genes.unique().shape[0])
-        de_dmr_matches.loc[sid] = this_datum
+            this_datum.append(meth_de[sid][cls].shape[0])
+            this_datum.append(meth_de[sid][cls].me_genes.unique().shape[0])
+        return this_datum
 
-    # Scatter plots
-    for sid in ['018', '019', '031']:
-        fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
-        for i, cls in enumerate(['all', 'tss', 'gene', 'island']):
-            ax = axs.flat[i]
+    for sid in patient_ids:
+        de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only, de[(sid, 'insc_only')])
+        de_dmr_matches_insc_h9.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_h9, de[(sid, 'insc_and_h9')])
 
-            # get values for ALL DMR clusters of this class
-            x = meth_de_joint[sid][cls].loc[:, 'logFC'].astype(float)
-            y = meth_de_joint[sid][cls].loc[:, 'me_mediandelta'].astype(float)
 
-            # contingency table for Fisher's exact test
-            conting = construct_contingency(x, y)
-            logodds, fisherp = stats.fisher_exact(conting)
+    def scatter_plot_dmr_de(meth_de, fig_filestem):
+        for sid in ['018', '019', '031']:
+            fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
+            for i, cls in enumerate(['all', 'tss', 'gene', 'island']):
+                ax = axs.flat[i]
 
-            # get values for DMR clusters that are ONLY in this class (no overlaps)
-            if cls == 'all':
-                print "%s - %s p = %.3e" % (
-                    sid, cls, fisherp
-                )
-                ax.scatter(x, y, c='k')
-                ax.axhline(0, c=0.4 * np.ones(3))
-                ax.axvline(0, c=0.4 * np.ones(3))
-                ttl = "%s; p={0}" % cls
-                if fisherp < 0.001:
-                    ttl = ttl.format('%.2e') % fisherp
-                else:
-                    ttl = ttl.format('%.3f') % fisherp
+                # get values for ALL DMR clusters of this class
+                x = meth_de[sid][cls].loc[:, 'logFC'].astype(float)
+                y = meth_de[sid][cls].loc[:, 'me_mediandelta'].astype(float)
 
-            else:
-                cid_other = set(
-                    np.unique(
-                        np.concatenate([meth_de_joint[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls,})])
+                # contingency table for Fisher's exact test
+                conting = construct_contingency(x, y)
+                logodds, fisherp = stats.fisher_exact(conting)
+
+                # get values for DMR clusters that are ONLY in this class (no overlaps)
+                if cls == 'all':
+                    print "%s - %s p = %.3e" % (
+                        sid, cls, fisherp
                     )
-                )
-                xu = x.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
-                yu = y.loc[~meth_de_joint[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
-                contingu = construct_contingency(xu, yu)
-                logoddsu, fisherpu = stats.fisher_exact(contingu)
+                    ax.scatter(x, y, c='k')
+                    ax.axhline(0, c=0.4 * np.ones(3))
+                    ax.axvline(0, c=0.4 * np.ones(3))
+                    ttl = "%s; p={0}" % cls
+                    if fisherp < 0.001:
+                        ttl = ttl.format('%.2e') % fisherp
+                    else:
+                        ttl = ttl.format('%.3f') % fisherp
 
-                print "%s - %s p = %.3e (incl overlaps), p = %.3e (excl overlaps)" % (
-                    sid, cls, fisherp, fisherpu
-                )
-
-                ax.scatter(x, y, c='k')
-                ax.scatter(xu, yu, c='b')
-                ax.axhline(0, c=0.4 * np.ones(3))
-                ax.axvline(0, c=0.4 * np.ones(3))
-
-                ttl = "%s; p={0}; unique p={0}" % cls
-
-                if fisherp < 0.001:
-                    ttl = ttl.format('%.2e') % (fisherp, fisherpu)
                 else:
-                    ttl = ttl.format('%.3f') % (fisherp, fisherpu)
+                    cid_other = set(
+                        np.unique(
+                            np.concatenate([meth_de[sid][t].me_cid.values for t in dmr.CLASSES.difference({cls, })])
+                        )
+                    )
+                    xu = x.loc[~meth_de[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
+                    yu = y.loc[~meth_de[sid][cls].loc[:, 'me_cid'].isin(cid_other)].astype(float)
+                    contingu = construct_contingency(xu, yu)
+                    logoddsu, fisherpu = stats.fisher_exact(contingu)
 
-            ax.set_title(ttl)
+                    print "%s - %s p = %.3e (incl overlaps), p = %.3e (excl overlaps)" % (
+                        sid, cls, fisherp, fisherpu
+                    )
 
-        fig.text(0.5, 0.04, 'RNASeq DE logFC', ha='center')
-        fig.text(0.04, 0.5, 'EPIC DMR median delta M', va='center', rotation='vertical')
-        fig.savefig(os.path.join(outdir, "de_vs_dmr_%s.png" % sid), dpi=200)
-        fig.savefig(os.path.join(outdir, "de_vs_dmr_%s.pdf" % sid))
+                    ax.scatter(x, y, c='k')
+                    ax.scatter(xu, yu, c='b')
+                    ax.axhline(0, c=0.4 * np.ones(3))
+                    ax.axvline(0, c=0.4 * np.ones(3))
+
+                    ttl = "%s; p={0}; unique p={0}" % cls
+
+                    if fisherp < 0.001:
+                        ttl = ttl.format('%.2e') % (fisherp, fisherpu)
+                    else:
+                        ttl = ttl.format('%.3f') % (fisherp, fisherpu)
+
+                ax.set_title(ttl)
+
+            fig.text(0.5, 0.04, 'RNASeq DE logFC', ha='center')
+            fig.text(0.04, 0.5, 'EPIC DMR median delta M', va='center', rotation='vertical')
+            fig.savefig("%s_%s.png" % (fig_filestem, sid), dpi=200)
+            fig.savefig("%s_%s.png" % (fig_filestem, sid), dpi=200)
+
+    print "*** Genes that match and are DE in GBM vs iNSC only ***"
+    scatter_plot_dmr_de(meth_de_joint_insc_only, os.path.join(outdir, "de_vs_dmr_insc_only"))
+    print "*** Genes that match and are DE in GBM vs iNSC AND GBM vs H9 ***"
+    scatter_plot_dmr_de(meth_de_joint_insc_h9, os.path.join(outdir, "de_vs_dmr_insc_h9"))
 
     # 2: To what extent do the same genes appear in all RTK 1 samples?
-    # Venn diagram
-    all_genes = reduce(
-        lambda x, y: x.union(y),
-        (set(meth_de_joint[sid]['all'].genes.unique()) for sid in ['018', '019', '031']),
-        set()
+    def venn_diagram_and_core_genes(meth_de, text_file, fig_file):
+        all_genes = reduce(
+            lambda x, y: x.union(y),
+            (set(meth_de[sid]['all'].genes.unique()) for sid in patient_ids),
+            set()
+        )
+
+        fig, axs = plt.subplots(ncols=3, figsize=(8, 3.2))
+        f = open(text_file, 'wb')
+
+        venn_counts = {}
+        venn_sets = {}
+        for i, cls in enumerate(dmr.CLASSES):
+            this_genecount = {}
+            this_geneset = {}
+
+            # all
+            for j in range(1, 8):
+                bn = "{0:03b}".format(j)
+                this_intersection = set(all_genes)
+                for k in range(3):
+                    if bn[k] == '1':
+                        this_intersection = this_intersection.intersection(
+                            meth_de[patient_ids[k]][cls].genes.unique()
+                        )
+                this_genecount[bn] = len(this_intersection)
+                this_geneset[bn] = list(this_intersection)
+            venn_counts[cls] = this_genecount
+            venn_sets[cls] = this_geneset
+            venn = venn3(subsets=venn_counts[cls], set_labels=patient_ids, ax=axs[i])
+            axs[i].set_title(cls)
+            print "%s core genes: %s" % (cls, ', '.join(this_geneset['111']))
+            f.write("%s core genes: %s\n" % (cls, ', '.join(this_geneset['111'])))
+        core_all = set(venn_sets['tss']['111']).intersection(venn_sets['gene']['111']).intersection(
+            venn_sets['island']['111'])
+        print "Core genes shared across all classes: %s" % ', '.join(list(core_all))
+        f.write("Core genes shared across all classes: %s\n" % ', '.join(list(core_all)))
+        f.close()
+
+        fig.tight_layout()
+        fig.savefig("%s.png" % fig_file, dpi=200)
+        fig.savefig("%s.pdf" % fig_file)
+
+        return venn_sets
+
+
+    print "*** GBM vs iNSC and NOT GBM vs H9 Venn overlaps ***"
+    venn_insc_only = venn_diagram_and_core_genes(
+        meth_de_joint_insc_only,
+        os.path.join(outdir, "core_genes_de_dmr_insc_only.txt"),
+        os.path.join(outdir, "dmr_and_de_overlap_insc_only")
     )
-
-    fig, axs = plt.subplots(ncols=3, figsize=(8, 3.2))
-    f = open(os.path.join(outdir, "core_genes_de_dmr.txt"), 'wb')
-
-    sids = ('018', '019', '031')
-    venn_counts = {}
-    venn_sets = {}
-    for i, cls in enumerate(dmr.CLASSES):
-        this_genecount = {}
-        this_geneset = {}
-
-        # all
-        for j in range(1, 8):
-            bn = "{0:03b}".format(j)
-            this_intersection = set(all_genes)
-            for k in range(3):
-                if bn[k] == '1':
-                    this_intersection = this_intersection.intersection(
-                        meth_de_joint[sids[k]][cls].genes.unique()
-                    )
-            this_genecount[bn] = len(this_intersection)
-            this_geneset[bn] = list(this_intersection)
-        venn_counts[cls] = this_genecount
-        venn_sets[cls] = this_geneset
-        venn = venn3(subsets=venn_counts[cls], set_labels=sids, ax=axs[i])
-        axs[i].set_title(cls)
-        print "%s core genes: %s" % (cls, ', '.join(this_geneset['111']))
-        f.write("%s core genes: %s\n" % (cls, ', '.join(this_geneset['111'])))
-    core_all = set(venn_sets['tss']['111']).intersection(venn_sets['gene']['111']).intersection(venn_sets['island']['111'])
-    print "Core genes shared across all classes: %s" % ', '.join(list(core_all))
-    f.write("Core genes shared across all classes: %s\n" % ', '.join(list(core_all)))
-    f.close()
-
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "dmr_and_de_overlap.pdf"))
+    print "*** GBM vs iNSC and GBM vs H9 Venn overlaps ***"
+    venn_insc_h9 = venn_diagram_and_core_genes(
+        meth_de_joint_insc_h9,
+        os.path.join(outdir, "core_genes_de_dmr_insc_h9.txt"),
+        os.path.join(outdir, "dmr_and_de_overlap_insc_h9")
+    )
 
     # analysing the length distribution of the clusters
     # this varies depending on the parameters to define clusters
