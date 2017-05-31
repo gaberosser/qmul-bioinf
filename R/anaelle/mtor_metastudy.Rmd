@@ -13,6 +13,7 @@ library(VennDiagram)
 library(vsn)
 library("dplyr")
 library("ggplot2")
+library("reshape2")
 
 ```
 
@@ -36,9 +37,11 @@ GSE68376: _Genetic Cell Ablation Reveals Clusters of Local Self-Renewing Microgl
 
 GSE86573: _Macrophage Ontogeny Underlies Differences in Tumor-Specific Education in Brain Malignancies_ Bowman et al. Cell Reports (2016). 3 x BMDM biological replicates and 3 x MG biological replicates from 2 different mouse models (total of 12 samples, 6 of each cell type). 5 normal blood monocytes, 3 normal MG (8 control samples).
 
+I'll only use *GSE86573* for this analysis. Healthy blood monocytes are treated as the control for TA-BMDM.
+
 # Aim
 
-Use differential expression analysis of the 'gene count' data to test the hypothesis. Identify significantly DE genes in TA-BMDM vs healthy BMDM and TA-MG vs healthy MG. Then find genes that only appear in one or the other list. Finally, look for enrichment in mTOR pathway.
+Use differential expression analysis of the 'gene count' data to test the hypothesis. Identify significantly DE genes in TA-BMDM vs healthy monocytes and TA-MG vs healthy MG. Then find genes that only appear in one or the other list. Finally, look for enrichment in mTOR pathway.
 
 # Analysis
 
@@ -63,11 +66,10 @@ colnames(data.bowman) <- c("gl261_bmdm_rep1", "gl261_mg_rep1", "gl261_bmdm_rep2"
 
 meta.bowman <- data.frame(row.names = colnames(data.bowman))
 
-meta.bowman$cell_type <- "bmdm"
+meta.bowman$cell_type <- "monocyte"
 meta.bowman$cell_type[grepl("mg", rownames(meta.bowman))] <- "mg"
-meta.bowman$cell_type[grepl("monocyte", rownames(meta.bowman))] <- "monocyte"
 
-meta.bowman$model <- "gemm"
+meta.bowman$model <- "healthy"
 meta.bowman$model[grepl("gemm", rownames(meta.bowman))] <- "gemm"
 meta.bowman$model[grepl("gl261", rownames(meta.bowman))] <- "gl261"
 
@@ -75,8 +77,17 @@ meta.bowman$disease <- "healthy"
 meta.bowman$disease[grepl("gemm", rownames(meta.bowman))] <- "tumour"
 meta.bowman$disease[grepl("gl261", rownames(meta.bowman))] <- "tumour"
 
-meta.bowman$group <- paste(meta.bowman[,1], meta.bowman[, 3], sep='_')
+meta.bowman$group <- paste(meta.bowman[,1], meta.bowman[,2], meta.bowman[, 3], sep='_')
+# healthy_healthy is a mess so replace it
+meta.bowman$group <- as.factor(sub('healthy_healthy', 'healthy', meta.bowman$group))
 
+data <- data.bowman
+meta <- meta.bowman
+meta
+```
+
+```{r, eval=FALSE, echo=FALSE}
+#' Here is how we would load the other dataset, if we required it.
 
 in.file <- file.path(data.dir.raid, "rnaseq", "GSE68376", "GSE68376_normalizedCounts.txt")
 data.bruttger <- read.csv(in.file, row.names = 1, sep='\t')
@@ -106,7 +117,6 @@ data <- cbind(data.bowman[genes,], data.bruttger[genes,])
 
 meta$group <- as.factor(paste(as.vector(meta[,1]), as.vector(meta[, 3]), sep='_'))
 meta$composite <- paste(as.vector(meta[,1]), as.vector(meta[, 2]), as.vector(meta[, 3]), sep='_')
-meta
 ```
 
 Normalise the data and look at the number of genes. 
@@ -198,7 +208,7 @@ We don't filter lowly-expressed genes for this purpose, as it doesn't appear tha
 
 ```{r}
 samples <- colnames(data)
-dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~composite)
+dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~group)
 dds <- estimateSizeFactors(dds)
 des <- DESeq(dds)
 
@@ -207,11 +217,11 @@ de.down = list()
 
 for (t in c("gemm", "gl261", "endog")) {
   if (t == 'endog') {
-    u = "_healthy"
+    u = "healthy"
   } else {
-    u = "_tumour"
+    u = paste0(c(t, "tumour"), collapse='_')
   }
-  res <- results(des, contrast=list(paste0("compositebmdm_", t, u), paste0("compositemg_", t, u)), cooksCutoff = F)
+  res <- results(des, contrast=list(paste0(c("groupmonocyte", u), collapse='_'), paste0(c("groupmg", u), collapse='_')), cooksCutoff = F)
   padj <- res$padj
   padj[is.na(padj)] = 1.
   print(sprintf(
@@ -261,7 +271,7 @@ Adding the numbers in the Venn diagrams in the publication, here are the numbers
 * GL261 BMDM vs MG: 712 up, 660 down.
 * Healthy BMDM vs MG: 840 up, 865 down.
 
-So we are finding too many in every case. However, the Venn diagram is quite close to Fig 2E and a quick check shows that many of the genes listed are indeed detected:
+We can ignore the final result, since the authors used the Bruttger data for this section. Otherwise, we are finding very similar results. The Venn diagram is quite close to Fig 2E. A quick check shows that many but not all of the genes listed are indeed detected. The discrepancy isn't surprising, because we've comapred against different control data.
 
 ```{r}
 
@@ -285,39 +295,59 @@ Now we can analyse DE in `edgeR`. The most crucial part is defining the _design 
 Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
 
 ```{r}
-dgel <- DGEList(counts = data.bowman, samples = meta.bowman)
-design <- model.matrix(~0 + group, data = meta.bowman)
+dgel <- DGEList(counts = data, samples = meta)
+design <- model.matrix(~0 + group, data = meta)
 dgel <- estimateDisp(dgel, design)
 fit <- glmFit(dgel, design)
-lrt <- glmTreat(fit, contrast=c(0, -1, 1, 0), lfc=logFC)
-ta_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-MG vs healthy MG. Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_mg.vs.h_mg)[1], 
-  fdr,
-  sum(ta_mg.vs.h_mg$table$logFC < 0),
-  sum(ta_mg.vs.h_mg$table$logFC > 0)
-)
 
-lrt <- glmTreat(fit, contrast=c(1, 0, 0, -1), lfc=logFC)
-ta_bmdm.vs.h_bmdm <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
-sprintf(
-  "TA-BMDM vs healthy monocytes Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up", 
-  dim(ta_bmdm.vs.h_bmdm)[1], 
-  fdr,
-  sum(ta_bmdm.vs.h_bmdm$table$logFC < 0),
-  sum(ta_bmdm.vs.h_bmdm$table$logFC > 0)
-)
+lrt <- glmTreat(fit, contrast=c(1, 0, -1, 0, 0, 0), lfc=logFC)
+gemm_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+
+lrt <- glmTreat(fit, contrast=c(0, 1, -1, 0, 0, 0), lfc=logFC)
+gl261_mg.vs.h_mg <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+
+lrt <- glmTreat(fit, contrast=c(0, 0, 0, 1, 0, -1), lfc=logFC)
+gemm_mono.vs.h_mono <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+
+lrt <- glmTreat(fit, contrast=c(0, 0, 0, 0, 1, -1), lfc=logFC)
+gl261_mono.vs.h_mono <- topTags(lrt, n=Inf, p.value=fdr)  # p value here is the FDR
+
+announceDE <- function(dat, ttl) {
+  sprintf(
+    "** %s ** Found %i DE genes at FDR=%.03f. Of these, %i are down and %i are up",
+    ttl,
+    dim(dat)[1], 
+    fdr,
+    sum(dat$table$logFC < 0),
+    sum(dat$table$logFC > 0)
+  )  
+}
+
+announceDE(gemm_mg.vs.h_mg, "TA-MG vs healthy MG (GEMM model)")
+announceDE(gl261_mg.vs.h_mg, "TA-MG vs healthy MG (GL261 model)")
+announceDE(gemm_mono.vs.h_mono, "TA-BMDM vs healthy monocyte (GEMM model)")
+announceDE(gl261_mono.vs.h_mono, "TA-BMDM vs healthy monocyte (GL261 model)")
+
+
 ```
 Plot a Venn diagram showing all DE genes.
 ```{r}
-area.1 <- nrow(ta_mg.vs.h_mg$table)
-area.2 <- nrow(ta_bmdm.vs.h_bmdm$table)
-area.cross <- length(intersect(rownames(ta_bmdm.vs.h_bmdm), rownames(ta_mg.vs.h_mg)))
-grid.newpage()
-venn <- draw.pairwise.venn(area.1, area.2, area.cross, category = c("MG", "BMDM"),
-                             lty = rep("blank", 2), fill = c("blue", "red"), alpha = rep(0.5, 2)
-)
+
+plotVenn.2 <- function(dat1, dat2, category) {
+  area.1 <- nrow(dat1$table)
+  area.2 <- nrow(dat2$table)
+  area.cross <- length(intersect(rownames(dat1), rownames(dat2)))
+  grid.newpage()
+  venn <- draw.pairwise.venn(
+    area.1, area.2, area.cross, category = category,
+    lty = rep("blank", 2), fill = c("blue", "red"), alpha = rep(0.5, 2)
+  )
+}
+
+plotVenn.2(gemm_mg.vs.h_mg, gl261_mg.vs.h_mg, c("GEMM MG", "GL261 MG"))
+plotVenn.2(gemm_mono.vs.h_mono, gl261_mono.vs.h_mono, c("GEMM BMDM", "GL261 BMDM"))
+
+
 ```
 
 For my own records: this is _exactly_ the same as using interaction variables (`cell_type:disease`) and carrying out the fitting on that instead.
@@ -365,64 +395,162 @@ if (length(setdiff(mtor_genes, genes))) {
   mtor_genes <- intersect(mtor_genes, genes)
 }
 
-g.bmdm <- rownames(ta_bmdm.vs.h_bmdm)
-g.mg <- rownames(ta_mg.vs.h_mg)
-g.bmdm.only <- setdiff(g.bmdm, g.mg)
-g.mg.only <- setdiff(g.mg, g.bmdm)
-g.both <- intersect(g.mg, g.bmdm)
-g.all <- union(g.mg, g.bmdm)
+g.gemm_bmdm <- rownames(gemm_mono.vs.h_mono)
+g.gl261_bmdm <- rownames(gl261_mono.vs.h_mono)
+g.both_bmdm <- intersect(g.gemm_bmdm, g.gl261_bmdm)
 
+g.gemm_mg <- rownames(gemm_mg.vs.h_mg)
+g.gl261_mg <- rownames(gl261_mg.vs.h_mg)
+g.both_mg <- intersect(g.gemm_mg, g.gl261_mg)
+
+g.bmdm.only <- setdiff(g.both_bmdm, g.both_mg)
+g.mg.only <- setdiff(g.both_mg, g.both_bmdm)
+g.both <- intersect(g.both_mg, g.both_bmdm)
+g.all <- union(g.both_mg, g.both_bmdm)
+
+t <- intersect(g.gemm_mg, mtor_genes)
 print(sprintf(
-  "Number mTOR genes DE in MG (tumour vs healthy): %i", length(intersect(g.mg.only, mtor_genes))
+  "Number mTOR genes DE in GEMM MG model (tumour vs healthy): %i", length(t)
 ))
-if (length(intersect(g.mg.only, mtor_genes))) {
-  print(ta_mg.vs.h_mg[intersect(g.mg.only, mtor_genes),])
+if (length(t)) {
+  print(gemm_mg.vs.h_mg[t,])
 }
 print("****************")
+
+t <- intersect(setdiff(g.gemm_mg, g.gemm_bmdm), mtor_genes)
 print(sprintf(
-  "Number mTOR genes DE in BMDM (tumour vs healthy): %i", length(intersect(g.bmdm.only, mtor_genes))
+  "Number mTOR genes DE in GEMM MG model (tumour vs healthy) and not in GEMM monocytes: %i", length(t)
 ))
-if (length(intersect(g.bmdm.only, mtor_genes))) {
-  print(ta_bmdm.vs.h_bmdm[intersect(g.bmdm.only, mtor_genes),])
+if (length(t)) {
+  print(gemm_mg.vs.h_mg[t,])
 }
 print("****************")
+
+t <- intersect(g.gl261_mg, mtor_genes)
 print(sprintf(
-  "Number mTOR genes DE in BMDM and MG (tumour vs healthy): %i", length(intersect(g.both, mtor_genes))
+  "Number mTOR genes DE in GL261 MG model (tumour vs healthy): %i", length(t)
 ))
-if (length(intersect(g.both, mtor_genes))) {
-  print(ta_mg.vs.h_mg[intersect(g.both, mtor_genes),])
-  print(ta_bmdm.vs.h_bmdm[intersect(g.both, mtor_genes),])
+if (length(t)) {
+  print(gl261_mg.vs.h_mg[t,])
 }
+print("****************")
+
+t <- intersect(setdiff(g.gl261_mg, g.gl261_bmdm), mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in GL261 MG model (tumour vs healthy) and not in GL261 monocytes: %i", length(t)
+))
+if (length(t)) {
+  print(gl261_mg.vs.h_mg[t,])
+}
+print("****************")
+
+
+t <- intersect(g.mg.only, mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in both MG models (tumour vs healthy) and not in monocytes: %i", length(t)
+))
+if (length(t)) {
+  print(gemm_mg.vs.h_mg[t,])
+  print(gl261_mg.vs.h_mg[t,])
+}
+print("****************")
+print("****************")
+print("****************")
+
+
+t <- intersect(g.gemm_bmdm, mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in GEMM macrophage model (tumour vs healthy): %i", length(t)
+))
+if (length(t)) {
+  print(gemm_mono.vs.h_mono[t,])
+}
+print("****************")
+
+t <- intersect(setdiff(g.gemm_bmdm, g.gemm_mg), mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in GEMM macrophage model (tumour vs healthy) and not in GEMM MG: %i", length(t)
+))
+if (length(t)) {
+  print(gemm_mono.vs.h_mono[t,])
+}
+print("****************")
+
+t <- intersect(g.gl261_bmdm, mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in GL261 macrophage model (tumour vs healthy): %i", length(t)
+))
+if (length(t)) {
+  print(gl261_mono.vs.h_mono[t,])
+}
+print("****************")
+
+t <- intersect(setdiff(g.gl261_bmdm, g.gl261_mg), mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in GL261 macrophage model (tumour vs healthy) and not in GL261 MG: %i", length(t)
+))
+if (length(t)) {
+  print(gl261_mono.vs.h_mono[t,])
+}
+print("****************")
+
+t <- intersect(g.bmdm.only, mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in both macrophage models (tumour vs healthy) and not in MG: %i", length(t)
+))
+if (length(t)) {
+  print(gemm_mono.vs.h_mono[t,])
+  print(gl261_mono.vs.h_mono[t,])
+}
+print("****************")
+
+t <- intersect(g.both, mtor_genes)
+print(sprintf(
+  "Number mTOR genes DE in both monocyte models AND both MG models (tumour vs healthy): %i", length(t)
+))
+if (length(t)) {
+  print(gemm_mg.vs.h_mg[t,])
+  print(gl261_mg.vs.h_mg[t,])
+  print(gemm_mono.vs.h_mono[t,])
+  print(gl261_mono.vs.h_mono[t,])
+}
+print("****************")
 
 ```
  
- Let's also generate a few boxplots for these genes, to visualise the actual difference in counts.
+This demonstrates that the GL261 model has a great deal more DE genes overlapping with the mTOR signature that are present in MG but not BMDM. Most of these are upregulated, including all the Rps genes.
+
+Let's also generate a few boxplots for these genes, to visualise the actual difference in counts. We'll generate separate outputs for the two models.
  
-```{r}
+```{r, fig.width=12}
 # reformat so that each row is an observation
-mtor_data <- as.data.frame(t(data.bowman[mtor_genes, rownames(meta.bowman)]))
-mtor_data$group <- factor(meta.bowman$group, levels=c("monocyte_healthy", "bmdm_tumour", "mg_healthy", "mg_tumour"))
+mtor_meta <- meta[meta$model %in% c('healthy', 'gemm'),]
+mtor_data <- as.data.frame(t(data[mtor_genes, rownames(mtor_meta)]))
+mtor_data$group <- factor(paste(mtor_meta$cell_type, mtor_meta$disease, sep='_'))
 meltData <- melt(mtor_data)
 p <- ggplot(meltData, aes(x = group, y = value, fill = group))
 p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.2, stroke=0), width = 0.3, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
 p <- p + theme(axis.text.x = element_blank()) + labs(y="Gene counts")
-p + facet_wrap(~variable, scale="free")
+p + facet_wrap(~variable, scale="free") + ggtitle("GEMM model")
+
+# grid.newpage()
+
+mtor_meta <- meta[meta$model %in% c('healthy', 'gl261'),]
+mtor_data <- as.data.frame(t(data[mtor_genes, rownames(mtor_meta)]))
+mtor_data$group <- factor(paste(mtor_meta$cell_type, mtor_meta$disease, sep='_'))
+meltData <- melt(mtor_data)
+p <- ggplot(meltData, aes(x = group, y = value, fill = group))
+p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.2, stroke=0), width = 0.3, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
+p <- p + theme(axis.text.x = element_blank()) + labs(y="Gene counts")
+p + facet_wrap(~variable, scale="free") + ggtitle("GL261 model")
 
 ```
 
-Interesting. The scatterplot shows several genes that we might expect to be tagged as DE in _both_ groups, but which only show up in one (or neither). This must be due to the estimation of dispersion? *TO DO*: check this.
+This further demonstrates that the effects are more clearly observed in the GL261 model. We can see several genes that we might expect to be tagged as DE in _both_ groups, but which only show up in one (or neither), for example Rps25 in the GEMM model appears to show a strong upregulation in both MG and BMDM. This must be due to the estimation of dispersion - the large number of comparisons being made means that effects need to be very strong to be picked out as significant.
 
  
- Finally, we output the DE gene lists to text files.
+Finally, we output the DE gene lists to text files.
  
 ```{r}
 out.dir <- getOutputDir('mtor')
-write.csv(ta_bmdm.vs.h_bmdm, file=file.path(out.dir, "ta_bmdm_vs_h_monocyte.csv"))
-write.csv(ta_mg.vs.h_mg, file=file.path(out.dir, "ta_mg_vs_h_mg.csv"))
 ```
-
-
-
-## `DESeq2`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
-
-TODO?
