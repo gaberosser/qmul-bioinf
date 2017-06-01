@@ -20,7 +20,60 @@ def strip_extension(s, file_ext):
     return re.sub(r'%s$' % regex, '', s)
 
 
-class CountDatasetLoader(object):
+class CountDataMixin(object):
+
+    def process(self):
+        """
+        Get processed data from raw
+        The default use case involves no processing
+        """
+        return self.data
+
+    def annotate(self, data, annotate_by=None, annotation_type=None):
+        data = data if data is not None else self.data
+        annotate_by = annotate_by or self.annotate_by
+        annotation_type = annotation_type or self.annotation_type
+        if annotate_by == 'Ensembl Gene ID':
+            # this is the default indexing anyway
+            annotate_by = None
+        return annotate(
+            data,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type
+        )
+
+    @property
+    def data_by_symbol(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Approved Symbol', annotation_type='protein_coding')
+
+    @property
+    def data_by_ensembl(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Ensembl Gene ID', annotation_type='protein_coding')
+
+    @property
+    def data_by_entrez(self):
+        data = self.process()
+        return self.annotate(data=data, annotate_by='Entrez Gene ID', annotation_type='protein_coding')
+
+    def get_counts(self):
+        return self.data
+
+    def get_fpkm(self):
+        raise NotImplementedError
+
+    def get_tpm(self):
+        raise NotImplementedError
+
+    def get_normed(self):
+        if self.annotate_by == 'all':
+            raise AttributeError("Cannot normalise data if annotation columns are present.")
+        k = self.data.sum(axis=0)
+        return self.data.divide(k, axis=1)
+
+
+class CountDatasetLoader(CountDataMixin):
     cols_to_drop = tuple()
     default_file_ext = ''
 
@@ -120,49 +173,6 @@ class CountDatasetLoader(object):
             data.columns = col_idx
         return data
 
-    def annotate(self, data, annotate_by=None, annotation_type=None):
-        data = data if data is not None else self.data
-        annotate_by = annotate_by or self.annotate_by
-        annotation_type = annotation_type or self.annotation_type
-        if annotate_by == 'Ensembl Gene ID':
-            # this is the default indexing anyway
-            annotate_by = None
-        return annotate(
-            data,
-            annotate_by=annotate_by,
-            annotation_type=annotation_type
-        )
-
-    @property
-    def data_by_symbol(self):
-        data = self.process()
-        return self.annotate(data=data, annotate_by='Approved Symbol', annotation_type='protein_coding')
-
-    @property
-    def data_by_ensembl(self):
-        data = self.process()
-        return self.annotate(data=data, annotate_by='Ensembl Gene ID', annotation_type='protein_coding')
-
-    @property
-    def data_by_entrez(self):
-        data = self.process()
-        return self.annotate(data=data, annotate_by='Entrez Gene ID', annotation_type='protein_coding')
-
-    def get_counts(self):
-        return self.data
-
-    def get_fpkm(self):
-        raise NotImplementedError
-
-    def get_tpm(self):
-        raise NotImplementedError
-
-    def get_normed(self):
-        if self.annotate_by == 'all':
-            raise AttributeError("Cannot normalise data if annotation columns are present.")
-        k = self.data.sum(axis=0)
-        return self.data.divide(k, axis=1)
-
 
 class FeatureCountLoader(CountDatasetLoader):
     default_file_ext = '.bam'
@@ -200,7 +210,6 @@ class FeatureCountLoader(CountDatasetLoader):
     def get_tpm(self):
         rpk = self.data.divide(self.transcript_lengths, axis=0)
         return rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
-
 
 
 class MultipleFileCountLoader(CountDatasetLoader):
@@ -289,12 +298,16 @@ class MultipleLaneCountDatasetLoader(object):
     def __init__(
             self,
             meta_fns=None,
+            annotate_by='all',
+            annotation_type='protein_coding',
             *args,
             **kwargs
     ):
         self.meta_fns = meta_fns
         self.loaders = None
-        self.load_lanes(*args, **kwargs)
+        self.annotate_by = annotate_by
+        self.annotation_type = annotation_type
+        self.load_lanes(annotate_by=annotate_by, annotation_type=annotation_type, *args, **kwargs)
         self.data = self.combine_counts()
         self.meta = self.combine_metas()
 
@@ -447,6 +460,73 @@ class MultipleLaneStarCountLoader(MultipleLaneCountDatasetLoader):
                 self.loaders.append(self.loader_class(count_dir=dfn, meta_fn=mfn, *args, **kwargs))
             else:
                 self.loaders.append(self.loader_class(count_file=dfn, meta_fn=mfn, *args, **kwargs))
+
+
+class MultipleBatchLoader(CountDataMixin):
+    def __init__(self, loaders, intersection_only=True):
+        """
+        Class to combine multiple loader objects.
+        Each loader represents a separate batch. Inputs can include multiple lane loaders.
+        :param loaders: Iterable of loader objects.
+        :param intersection_only: If True (default), reduce counts to the indices (genes) that are present in all loaders.
+        """
+        if len(loaders) < 2:
+            raise ValueError("Must supply 2 or more loaders to use a MultipleBatchLoader.")
+        idx = loaders[0].data.index
+        samples = loaders[0].meta.loc[:, 'sample'].tolist()
+        meta_cols = set(loaders[0].meta.columns)
+
+        for l in loaders[1:]:
+            samples.extend(l.meta.loc[:, 'sample'].values)
+            meta_cols.update(l.meta.columns)
+
+            if intersection_only:
+                idx = idx.intersection(l.data.index)
+            else:
+                idx = idx.union(l.data.index)
+
+        # we need to add a batch column to meta
+        # however, we should first check it doesn't clash
+        batch_colname = 'batch'
+        if batch_colname in meta_cols:
+            i = 0
+            while True:
+                batch_colname = 'batch_%d' % i
+                i += 1
+                if batch_colname in meta_cols:
+                    continue
+                else:
+                    break
+        self.batch_column = batch_colname
+        meta_cols = list(meta_cols) + [batch_colname]
+
+        add_anno = False
+        if any([l.annotate_by == 'all' for l in loaders]):
+            add_anno = True
+            ann_fields = [t for t in INDEX_FIELDS if t != 'Ensembl Gene ID']
+            ann_data = pd.DataFrame(index=idx, columns=ann_fields)
+
+        self.data = pd.DataFrame(index=idx, columns=samples)
+        self.meta = pd.DataFrame(index=samples, columns=meta_cols)
+        for i, l in enumerate(loaders):
+            this_samples = l.meta.loc[:, 'sample'].values
+            this_index = l.data.index
+            this_meta_cols = l.meta.columns
+
+            self.data.loc[this_index, this_samples] = l.data
+            self.meta.loc[this_samples, this_meta_cols] = l.meta
+            # add batch column data
+            self.meta.loc[this_samples, self.batch_column] = i + 1
+
+        if add_anno:
+            # add annotation columns back in
+            for i, l in enumerate(loaders):
+                this_index = l.data.index
+                try:
+                    ann_data.loc[this_index, ann_fields] = l.data.loc[this_index, ann_fields]
+                except KeyError:
+                    logger.error("No annotation data in loader %d. Skipping.")
+            self.data = pd.concat((self.data, ann_data), axis=1)
 
 
 def annotate(
@@ -786,15 +866,20 @@ def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotatio
     return obj
 
 
-def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
-    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
-    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
+def all_samples_multilane_loader(countdirs, metafiles, source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Load the full dataset from a multiple lane run
+    :param lanedirs: The paths to the fastq files. It is expected that a subdirectory called star_alignment etc. exists
+    here.
+    :param metafiles: Paths to the metafiles
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
     if source == 'star':
-        count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
         obj = MultipleLaneStarCountLoader(
-            count_dirs=count_dirs,
+            count_dirs=countdirs,
             meta_fns=metafiles,
             annotate_by=annotate_by,
             annotation_type=annotation_type,
@@ -803,7 +888,7 @@ def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_
     elif source == 'htseq-count':
         raise NotImplementedError
     elif source == 'featurecounts':
-        count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+        count_files = [os.path.join(d, 'counts.txt') for d in countdirs]
         obj = MultipleLaneFeatureCountLoader(
             count_files=count_files,
             meta_fns=metafiles,
@@ -813,6 +898,42 @@ def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_
     else:
         raise ValueError("Unrecognised source.")
     return obj
+
+
+def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    ## TODO: remove mouse samples?
+    loaders = []
+
+    # expt 1
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lanedirs = [
+        os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
+        os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type
+        )
+    )
+
+    # expt 2
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+    lanedirs = [
+        os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
+        os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
+        os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_3')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type
+        )
+    )
+
+    return MultipleBatchLoader(loaders)
 
 
 
