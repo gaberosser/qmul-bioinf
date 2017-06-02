@@ -315,6 +315,7 @@ class MultipleLaneCountDatasetLoader(object):
         raise NotImplementedError
 
     def combine_counts(self):
+        ## FIXME: this results in us concatenating the gene symbol and summing the Entrez ID?
         data = self.loaders[0].data.copy()
         for l in self.loaders[1:]:
             data += l.data
@@ -513,8 +514,8 @@ class MultipleBatchLoader(CountDataMixin):
             this_index = l.data.index
             this_meta_cols = l.meta.columns
 
-            self.data.loc[this_index, this_samples] = l.data
-            self.meta.loc[this_samples, this_meta_cols] = l.meta
+            self.data.loc[this_index, this_samples] = l.data.loc[this_index, this_samples].values
+            self.meta.loc[this_samples, this_meta_cols] = l.meta.values
             # add batch column data
             self.meta.loc[this_samples, self.batch_column] = i + 1
 
@@ -866,7 +867,15 @@ def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotatio
     return obj
 
 
-def all_samples_multilane_loader(countdirs, metafiles, source='star', annotate_by='all', annotation_type='protein_coding'):
+def all_samples_multilane_loader(
+        countdirs,
+        metafiles,
+        samples=None,
+        source='star',
+        annotate_by='all',
+        annotation_type='protein_coding',
+        strandedness='r',
+):
     """
     Load the full dataset from a multiple lane run
     :param lanedirs: The paths to the fastq files. It is expected that a subdirectory called star_alignment etc. exists
@@ -883,7 +892,8 @@ def all_samples_multilane_loader(countdirs, metafiles, source='star', annotate_b
             meta_fns=metafiles,
             annotate_by=annotate_by,
             annotation_type=annotation_type,
-            strandedness='r',
+            strandedness=strandedness,
+            samples=samples,
         )
     elif source == 'htseq-count':
         raise NotImplementedError
@@ -894,17 +904,29 @@ def all_samples_multilane_loader(countdirs, metafiles, source='star', annotate_b
             meta_fns=metafiles,
             annotate_by=annotate_by,
             annotation_type=annotation_type,
+            samples=samples,
         )
     else:
         raise ValueError("Unrecognised source.")
     return obj
 
 
-def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
-    ## TODO: remove mouse samples?
+def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
     loaders = []
 
     # expt 1
+    samples = (
+        'GBM018',
+        'GBM019',
+        'GBM024',
+        'GBM026',
+        'GBM031',
+        'DURA018N2_NSC',
+        'DURA019N8C_NSC',
+        'DURA024N28_NSC',
+        'DURA026N31D_NSC',
+        'DURA031N44B_NSC',
+    )
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lanedirs = [
         os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
@@ -914,11 +936,24 @@ def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_
     countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
     loaders.append(
         all_samples_multilane_loader(
-            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type, samples=samples
         )
     )
 
     # expt 2
+    samples = (
+        "NH16_2383_P2",
+        "GBM044_P4",
+        "GBM026_P3_P4",
+        "GBM018_P12",
+        "GBM044_P8",
+        "DURA044N8NSCP2",
+        "GIBCONSC_P4",
+        "DURA044N17_NSC_P3",
+        "DURA018N4_NSC_P4",
+        "GBM030_P5",
+        "DURA030N16B6_NSC_P1",
+    )
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
     lanedirs = [
         os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
@@ -929,7 +964,7 @@ def all_wtchg_loader(source='star', annotate_by='all', annotation_type='protein_
     countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
     loaders.append(
         all_samples_multilane_loader(
-            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type, samples=samples
         )
     )
 
