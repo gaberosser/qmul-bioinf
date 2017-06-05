@@ -48,7 +48,7 @@ def generate_colour_map_dict(
     if colname is None:
         attr = meta.index
         if label is None:
-            label = meta.name
+            label = attr.name
     else:
         attr = meta.loc[:, colname]
         if label is None:
@@ -200,11 +200,12 @@ def dendrogram_with_colours(
 
     # now we need to change right coords to keep legend on the screen
     leg = dend_ax.get_legend()
-    bb = leg.get_window_extent()  # bbox in window coordinates
-    bb_ax = bb.transformed(leg.axes.transAxes.inverted())  # bbox in ax coordinates
+    if leg is not None:
+        bb = leg.get_window_extent()  # bbox in window coordinates
+        bb_ax = bb.transformed(leg.axes.transAxes.inverted())  # bbox in ax coordinates
 
-    # update the rightmost coordinates
-    gs.update(right=(1 - bb_ax.width))
+        # update the rightmost coordinates
+        gs.update(right=(1 - bb_ax.width))
 
     return {
         'fig': fig,

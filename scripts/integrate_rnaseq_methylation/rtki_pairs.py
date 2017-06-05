@@ -43,8 +43,8 @@ def plot_n_region_heatmap(dat, n_arr, d_arr, ax=None, **kwargs):
 
 if __name__ == '__main__':
     outdir = unique_output_dir("rtk1_de_dmr", reuse_empty=True)
-    d_max = 200
-    n_min = 4
+    d_max = 400
+    n_min = 6
     dm_min = 1.4  # minimum median delta M required to declare a cluster relevant
     alpha = 0.05
 
@@ -579,7 +579,7 @@ if __name__ == '__main__':
     # data
     m1 = m.loc[:, 'Dura018']
     m2 = m.loc[:, 'GBM018']
-    this_cluster = all_results_relevant[(200, 4)]['018']['1']['gene'].values()[0]
+    this_cluster = all_results_relevant[(d_max, n_min)]['018']['1']['gene'].values()[0]
     probes = this_cluster['probes']
     n_perm = 10000
 
