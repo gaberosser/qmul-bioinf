@@ -53,6 +53,7 @@ logFC <- 1  # FC = 2
 
 source('io/output.R')
 source('_settings.R')
+output.dir <- getOutputDir('mtor')
 
 in.file <- file.path(data.dir.raid, "rnaseq", "GSE86573", "GSE86573_raw_counts.csv")
 data.bowman <- read.csv(in.file, row.names = 1)
@@ -163,7 +164,7 @@ plotPCA(vsd, intgroup = c("cell_type", "disease", "model"))
 
 Yes - now the first dimension separates the two models and endogenous samples and the second dimension separates MG and BMDM.
 
-Have toyed with removing monocytes, but leave them in for now. They may be used as the control for the BMDM population.
+Have toyed with removing monocytes, but leave them in for now. They are used as the control for the BMDM population.
 
 ```{r, eval=F, echo=F}
 data <- data[, samples]
@@ -290,12 +291,21 @@ for (g in expctd_in_g123) {
 
 ## `edgeR`: Which genes respond differently in TA-MG vs healthy MG? Which genes respond differently in TA-BMDM vs healthy monocytes?
 
-Now we can analyse DE in `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.
+Now we can analyse DE in `edgeR`. The most crucial part is defining the _design matrix_ and _contrasts_, which together encode the comparisons we want to make.  Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
 
-Here we only include the combined terms: TA-MG, TA-BMDM, H-MG, H-BMDM.
+Before we fit the data with a statistical model, we can improve the sensitivity of the approach by filtering out genes with low read counts. We require that >2 samples have a read count of >5.
 
 ```{r}
-dgel <- DGEList(counts = data, samples = meta)
+keep <- rowSums(data > 5) > 2
+data.filt <- data[keep,]
+sprintf(
+  "Number of genes in data: %i. Number after filtering: %i. %.02f %% retained.",
+  length(keep),
+  sum(keep),
+  sum(keep) / length(keep) * 100.
+)
+
+dgel <- DGEList(counts = data.filt, samples = meta)
 design <- model.matrix(~0 + group, data = meta)
 dgel <- estimateDisp(dgel, design)
 fit <- glmFit(dgel, design)
@@ -352,9 +362,10 @@ plotVenn.2(gemm_mono.vs.h_mono, gl261_mono.vs.h_mono, c("GEMM BMDM", "GL261 BMDM
 
 For my own records: this is _exactly_ the same as using interaction variables (`cell_type:disease`) and carrying out the fitting on that instead.
 
-Look at the DE gene list for suggestion of enrichment in the mTOR pathway. We need to check each of the segments in the Venn diagram.
+Look at the DE gene list for suggestion of enrichment in the mTOR pathway. We need to check each of the segments in the Venn diagram. We can test these for statistical significance using the hypergeometric distribution (this is how g:Profiler works 'under the bonnet').
 
 ```{r}
+genes <- rownames(data.filt)
 mtor_genes <- c(
 "Eif3h",
 "Eif4ebp1",
@@ -395,6 +406,26 @@ if (length(setdiff(mtor_genes, genes))) {
   mtor_genes <- intersect(mtor_genes, genes)
 }
 
+# parameters for hypergeometric distribution
+N <- length(genes)
+m <- length(mtor_genes)
+n <- N - m
+
+announce.pval <- function(gene_list) {
+  t <- intersect(gene_list, mtor_genes)
+  pval <- dhyper(length(t), m, n, length(gene_list))
+  if (pval < 0.001) {
+    fmt <- "%.3e"
+  } else {
+    fmt <- "%.3f"
+  }
+  ss <- paste0("p = ", fmt)
+  print(sprintf(
+  ss, pval
+))
+  return(pval)
+}
+
 g.gemm_bmdm <- rownames(gemm_mono.vs.h_mono)
 g.gl261_bmdm <- rownames(gl261_mono.vs.h_mono)
 g.both_bmdm <- intersect(g.gemm_bmdm, g.gl261_bmdm)
@@ -412,6 +443,7 @@ t <- intersect(g.gemm_mg, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GEMM MG model (tumour vs healthy): %i", length(t)
 ))
+announce.pval(g.gemm_mg)
 if (length(t)) {
   print(gemm_mg.vs.h_mg[t,])
 }
@@ -421,6 +453,7 @@ t <- intersect(setdiff(g.gemm_mg, g.gemm_bmdm), mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GEMM MG model (tumour vs healthy) and not in GEMM monocytes: %i", length(t)
 ))
+announce.pval(setdiff(g.gemm_mg, g.gemm_bmdm))
 if (length(t)) {
   print(gemm_mg.vs.h_mg[t,])
 }
@@ -430,6 +463,7 @@ t <- intersect(g.gl261_mg, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GL261 MG model (tumour vs healthy): %i", length(t)
 ))
+announce.pval(g.gl261_mg)
 if (length(t)) {
   print(gl261_mg.vs.h_mg[t,])
 }
@@ -439,6 +473,7 @@ t <- intersect(setdiff(g.gl261_mg, g.gl261_bmdm), mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GL261 MG model (tumour vs healthy) and not in GL261 monocytes: %i", length(t)
 ))
+announce.pval(setdiff(g.gl261_mg, g.gl261_bmdm))
 if (length(t)) {
   print(gl261_mg.vs.h_mg[t,])
 }
@@ -449,6 +484,7 @@ t <- intersect(g.mg.only, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in both MG models (tumour vs healthy) and not in monocytes: %i", length(t)
 ))
+announce.pval(g.mg.only)
 if (length(t)) {
   print(gemm_mg.vs.h_mg[t,])
   print(gl261_mg.vs.h_mg[t,])
@@ -462,6 +498,7 @@ t <- intersect(g.gemm_bmdm, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GEMM macrophage model (tumour vs healthy): %i", length(t)
 ))
+announce.pval(g.gemm_bmdm)
 if (length(t)) {
   print(gemm_mono.vs.h_mono[t,])
 }
@@ -471,6 +508,7 @@ t <- intersect(setdiff(g.gemm_bmdm, g.gemm_mg), mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GEMM macrophage model (tumour vs healthy) and not in GEMM MG: %i", length(t)
 ))
+announce.pval(setdiff(g.gemm_bmdm, g.gemm_mg))
 if (length(t)) {
   print(gemm_mono.vs.h_mono[t,])
 }
@@ -480,6 +518,7 @@ t <- intersect(g.gl261_bmdm, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GL261 macrophage model (tumour vs healthy): %i", length(t)
 ))
+announce.pval(g.gl261_bmdm)
 if (length(t)) {
   print(gl261_mono.vs.h_mono[t,])
 }
@@ -489,6 +528,7 @@ t <- intersect(setdiff(g.gl261_bmdm, g.gl261_mg), mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in GL261 macrophage model (tumour vs healthy) and not in GL261 MG: %i", length(t)
 ))
+announce.pval(setdiff(g.gl261_bmdm, g.gl261_mg))
 if (length(t)) {
   print(gl261_mono.vs.h_mono[t,])
 }
@@ -498,6 +538,7 @@ t <- intersect(g.bmdm.only, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in both macrophage models (tumour vs healthy) and not in MG: %i", length(t)
 ))
+announce.pval(g.bmdm.only)
 if (length(t)) {
   print(gemm_mono.vs.h_mono[t,])
   print(gl261_mono.vs.h_mono[t,])
@@ -508,6 +549,7 @@ t <- intersect(g.both, mtor_genes)
 print(sprintf(
   "Number mTOR genes DE in both monocyte models AND both MG models (tumour vs healthy): %i", length(t)
 ))
+announce.pval(g.both)
 if (length(t)) {
   print(gemm_mg.vs.h_mg[t,])
   print(gl261_mg.vs.h_mg[t,])
@@ -533,16 +575,32 @@ p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.2, stroke=0), width 
 p <- p + theme(axis.text.x = element_blank()) + labs(y="Gene counts")
 p + facet_wrap(~variable, scale="free") + ggtitle("GEMM model")
 
-# grid.newpage()
-
 mtor_meta <- meta[meta$model %in% c('healthy', 'gl261'),]
 mtor_data <- as.data.frame(t(data[mtor_genes, rownames(mtor_meta)]))
 mtor_data$group <- factor(paste(mtor_meta$cell_type, mtor_meta$disease, sep='_'))
 meltData <- melt(mtor_data)
 p <- ggplot(meltData, aes(x = group, y = value, fill = group))
-p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.2, stroke=0), width = 0.3, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
+p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.8, stroke=0), width = 0.3, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
 p <- p + theme(axis.text.x = element_blank()) + labs(y="Gene counts")
 p + facet_wrap(~variable, scale="free") + ggtitle("GL261 model")
+
+# generate the individual plots, saving directly to disk
+plot_one <- function(gene, model, w=12) {
+  mtor_meta <- meta[meta$model %in% c('healthy', model),]
+  mtor_data <- as.data.frame(t(data[gene, rownames(mtor_meta)]))
+  mtor_data$group <- factor(paste(mtor_meta$cell_type, mtor_meta$disease, sep='_'))
+  meltData <- melt(mtor_data)
+  p <- ggplot(meltData, aes(x = group, y = value, fill = group)) + guides(fill=FALSE)
+  p <- p + geom_boxplot() + geom_jitter(mapping = aes(alpha=0.8, stroke=0, size=1.5), width = 0.1, show.legend = F) + scale_fill_manual(values=c("#ff9999", "#ff1a1a", "#80dfff", "#1a1aff"))
+    p <- p + labs(y="Gene counts") + theme(axis.title.x = element_blank(), axis.text = element_text(size=12), axis.text.x = element_text(angle=45, hjust=1, vjust=1))
+  ggsave(file.path(output.dir, paste0(paste(c(gene, model), collapse = '_'), '.png')), plot = p, width=w, units='cm')
+  
+}
+
+for (g in mtor_genes) {
+  plot_one(g, "gemm")
+  plot_one(g, "gl261")
+}
 
 ```
 
@@ -552,5 +610,26 @@ This further demonstrates that the effects are more clearly observed in the GL26
 Finally, we output the DE gene lists to text files.
  
 ```{r}
-out.dir <- getOutputDir('mtor')
+
+write.table(g.gemm_bmdm, file=file.path(output.dir, "gemm_bmdm_vs_healthy_monocyte.txt"), quote=F, row.names=F, col.names=F)
+write.csv(gemm_mono.vs.h_mono, file=file.path(output.dir, "gemm_bmdm_vs_healthy_monocyte.csv"), quote=F)
+
+write.table(g.gl261_bmdm, file=file.path(output.dir, "gl261_bmdm_vs_healthy_monocyte.txt"), quote=F, row.names=F, col.names=F)
+write.csv(gl261_mono.vs.h_mono, file=file.path(output.dir, "gl261_bmdm_vs_healthy_monocyte.csv"), quote=F)
+
+write.table(g.both_bmdm, file=file.path(output.dir, "both_models_bmdm_vs_healthy_monocyte.txt"), quote=F, row.names=F, col.names=F)
+
+write.table(g.gemm_mg, file=file.path(output.dir, "gemm_mg_vs_healthy_mg.txt"), quote=F, row.names=F, col.names=F)
+write.csv(gemm_mg.vs.h_mg, file=file.path(output.dir, "gemm_mg_vs_healthy_mg.csv"), quote=F)
+
+write.table(g.gl261_mg, file=file.path(output.dir, "gl261_mg_vs_healthy_mg.txt"), quote=F, row.names=F, col.names=F)
+write.csv(gl261_mg.vs.h_mg, file=file.path(output.dir, "gl261_mg_vs_healthy_mg.csv"), quote=F)
+
+write.table(g.both_mg, file=file.path(output.dir, "both_models_mg_vs_healthy_mg.txt"), quote=F, row.names=F, col.names=F)
+
+write.table(g.bmdm.only, file=file.path(output.dir, "both_models_bmdm_not_mg.txt"), quote=F, row.names=F, col.names=F)
+write.table(g.mg.only, file=file.path(output.dir, "both_models_mg_not_bmdm.txt"), quote=F, row.names=F, col.names=F)
+write.table(g.both, file=file.path(output.dir, "both_models_mg_and_bmdm.txt"), quote=F, row.names=F, col.names=F)
+write.table(g.all, file=file.path(output.dir, "both_models_either_cell_type.txt"), quote=F, row.names=F, col.names=F)
+
 ```
