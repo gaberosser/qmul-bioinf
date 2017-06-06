@@ -55,6 +55,7 @@ if __name__ == "__main__":
 
     idx = gene_idx & ((obj.data > 10).sum(axis=1) > 10)
     data = obj.data.loc[idx]
+    mad = process.median_absolute_deviation(data).sort_values(ascending=False)
     logdata = np.log(data + 1)
 
     # start with a dendrogram
@@ -65,10 +66,20 @@ if __name__ == "__main__":
         label='Patient',
         non_matching='gray'
     )
-    out = clustering.dendrogram_with_colours(logdata, col_colours=col_colours)
-    out['dendrogram_ax'].axhline(0.22, ls='--', c='gray')
-    out['fig'].savefig(os.path.join(outdir, "dendrogram.png"), dpi=200)
-    out['fig'].savefig(os.path.join(outdir, "dendrogram.pdf"))
+    out = clustering.dendrogram_with_colours(logdata, col_colours=col_colours, vertical=False)
+    dist = clustering.dendrogram_threshold_by_nclust(out['linkage'], 3)
+    out['dendrogram_ax'].axvline(dist, ls='--', c='gray')
+    out['fig'].savefig(os.path.join(outdir, "dendrogram_all_genes.png"), dpi=200)
+    out['fig'].savefig(os.path.join(outdir, "dendrogram_all_genes.pdf"))
+
+    # repeat but now only use N genes (by MAD)
+    # tested and the result is unchanged for most values in the region [500, 5000]
+    n_gene = 1500
+    out = clustering.dendrogram_with_colours(logdata.loc[mad.index[:n_gene]], col_colours=col_colours, vertical=False)
+    dist = clustering.dendrogram_threshold_by_nclust(out['linkage'], 3)
+    out['dendrogram_ax'].axvline(dist, ls='--', c='gray')
+    out['fig'].savefig(os.path.join(outdir, "dendrogram_top_%d_by_mad.png" % n_gene), dpi=200)
+    out['fig'].savefig(os.path.join(outdir, "dendrogram_top_%d_by_mad.pdf" % n_gene))
 
     # scatterplot showing mean vs MAD before and after
     mad_all = process.median_absolute_deviation(np.log10(obj.data.loc[gene_idx] + 1), axis=1)

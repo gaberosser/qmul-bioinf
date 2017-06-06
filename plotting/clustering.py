@@ -103,6 +103,7 @@ def dendrogram_with_colours(
     distance_threshold=None,
     fig_kws=None,
     legend_labels=None,
+    vertical=True,
 ):
     """
     IMPORTANT: it is assumed that samples are in COLUMNS. If not, this routine might crash due to memory overflow!
@@ -119,6 +120,8 @@ def dendrogram_with_colours(
     to the same colours given in col_colours.
     If multiple columns are found in col_colours, this is a dict with keys matching the column names and values
     dictionaries as above for each separate legend block
+    :param vertical: If True (default), the root is at the top and descendants travel downwards. Otherwise, the root
+    is at the left and descendants travel right.
     :return:
     """
     if distance_threshold is None:
@@ -135,25 +138,29 @@ def dendrogram_with_colours(
     ngroup = col_colours.shape[1]
 
     fig = plt.figure(**fig_kws)
-    if legend_labels is not None:
-        # gs = plt.GridSpec(2, 2, height_ratios=(12, 1), width_ratios=(5, 1), hspace=0.01, wspace=0.)
+    if vertical:
+        orientation = 'top'
+        leg_loc = 'upper left'
         gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
         dend_ax = fig.add_subplot(gs[0, 0])
         cc_ax = fig.add_subplot(gs[1, 0])
-        # leg_ax = fig.add_subplot(gs[:, 1])
+    else:
+        orientation = 'left'
+        leg_loc = 'upper right'
+        gs = plt.GridSpec(1, 2, width_ratios=(12, 1), wspace=0.01)
+        dend_ax = fig.add_subplot(gs[0, 0])
+        cc_ax = fig.add_subplot(gs[0, 1])
+
+    if legend_labels is not None:
         if ngroup == 1 and len(legend_labels) != 1:
             legend_labels = {col_colours.columns[0]: legend_labels}
-    else:
-        gs = plt.GridSpec(2, 1, height_ratios=(12, 1), hspace=0.01)
-        dend_ax = fig.add_subplot(gs[0, 0])
-        cc_ax = fig.add_subplot(gs[1, 0])
-        leg_ax = None
 
-    # cc_ax.yaxis.set_visible(False)
     cc_ax.set_axis_bgcolor(fig.get_facecolor())
+
 
     # plot dendrogram
     # labels will be added manually afterwards
+
     r = hc.dendrogram(
         z,
         ax=dend_ax,
@@ -161,37 +168,62 @@ def dendrogram_with_colours(
         above_threshold_color='k',
         color_threshold=distance_threshold,
         no_labels=True,
+        orientation=orientation
     )
+
+    if not vertical:
+        plt.setp(dend_ax.xaxis.get_ticklabels(), rotation=90)
 
     # get all colours and convert to unique integer
     unique_cols = np.unique(col_colours.values.flatten())
 
     # generate matrix and cmap for colour bar
-    mat = np.ones_like(col_colours)
+    mat = np.ones((nsample, ngroup))
     cmap_colours = []
     for i, c in enumerate(unique_cols):
         cmap_colours.append(colors.colorConverter.to_rgb(c))
         mat[(col_colours == c).values] = i
-    mat = mat.transpose().astype(int)
 
-    # reorder based on dendrogram
-    mat = mat[:, r['leaves']]
+    # reshape and reorder based on dendrogram
+    if vertical:
+        mat = mat.transpose().astype(int)
+        mat = mat[:, r['leaves']]
+    else:
+        mat = mat[r['leaves']][::-1]
 
     # plot coloured bar using heatmap
     sns.heatmap(mat, cmap=colors.ListedColormap(cmap_colours), ax=cc_ax, cbar=False)
-    cc_ax.xaxis.set_ticks(np.arange(nsample) + 0.5)
-    cc_ax.xaxis.set_ticklabels(r['ivl'], rotation=90)
-    cc_ax.yaxis.set_ticks(np.arange(ngroup) + 0.5)
-    cc_ax.yaxis.set_ticklabels(col_colours.columns, rotation=0)
+
+    if vertical:
+        xax = cc_ax.xaxis
+        yax = cc_ax.yaxis
+        xrot = 90
+        yrot = 0
+    else:
+        xax = cc_ax.yaxis
+        xax.tick_right()
+        yax = cc_ax.xaxis
+        xrot = 0
+        yrot = 90
+
+    xax.set_ticks(np.arange(nsample) + 0.5)
+    xax.set_ticklabels(r['ivl'], rotation=xrot)
+    yax.set_ticks(np.arange(ngroup) + 0.5)
+    yax.set_ticklabels(col_colours.columns, rotation=yrot)
 
     if legend_labels is not None:
+        # draw legend outside of the main axis
         handles = []
         for grp, d in legend_labels.items():
             for ttl, c in d.items():
                 handles.append(patches.Patch(color=colors.colorConverter.to_rgb(c), label=ttl))
             handles.append(patches.Patch(color='w', alpha=0., label=''))
         handles.pop()
-        dend_ax.legend(handles=handles, loc='upper left', borderaxespad=0., bbox_to_anchor=(1., 1.01))
+
+        if vertical:
+            dend_ax.legend(handles=handles, loc=leg_loc, borderaxespad=0., bbox_to_anchor=(1., 1.01))
+        else:
+            dend_ax.legend(handles=handles, loc=leg_loc, borderaxespad=0., bbox_to_anchor=(-0.02, 1.01))
 
     gs.tight_layout(fig, h_pad=0., w_pad=0.)
 
@@ -203,9 +235,14 @@ def dendrogram_with_colours(
     if leg is not None:
         bb = leg.get_window_extent()  # bbox in window coordinates
         bb_ax = bb.transformed(leg.axes.transAxes.inverted())  # bbox in ax coordinates
-
-        # update the rightmost coordinates
-        gs.update(right=(1 - bb_ax.width))
+        # import ipdb; ipdb.set_trace()
+        if vertical:
+            # update the rightmost coordinates
+            gs.update(right=(1 - bb_ax.width))
+        else:
+            # update the leftmost coordinates
+            new_left = bb.width / fig.get_window_extent().width
+            gs.update(left=new_left + 0.01)
 
     return {
         'fig': fig,
@@ -333,34 +370,26 @@ def show_dendrogram_cut_by_distance(clustermap, dist, axis=1):
         )
 
 
-def show_dendrogram_cut_by_nclust(clustermap, nclust, axis=1, sample_subset_idx=None):
+def dendrogram_threshold_by_nclust(linkage, nclust, sample_subset_idx=None):
     """
-    Add a dashed line to the specified dendrogram showing the cutoff point.
-    The line is specified by the desired final number of clusters
-    :param clustermap: ClusterMap instance from the seaborn `clustermap` function
-    :param nclust: The final number of clusters required. The distance is computed using this.
-    :param axis: 0 (row) or 1 (column)
+    Find the cut point that would split the dendrogram into nclust clusters, optionally
+    :param linkage:
+    :param nclust:
     :param sample_subset_idx: If supplied, this is a list of indices pointing to the samples that we should use. In this
     case, the distance is computed at the point where _only those leaf nodes_ have formed nclust clusters.
-    :return: None
+    :return:
     """
-    if axis == 0:
-        dend = clustermap.dendrogram_row
-    else:
-        dend = clustermap.dendrogram_col
-    z = dend.linkage
-
     if sample_subset_idx is None:
         # take the mean distance between the nclust-1 and nclust levels
-        dist = z[-nclust:(2 - nclust), 2].mean()
+        dist = linkage[-nclust:(2 - nclust), 2].mean()
     else:
         # call the distance based on a fixed number of clusters DEFINED FOR A SUBSET OF NODES
         node_ids = set(sample_subset_idx)
-        n = len(z) + 1
+        n = len(linkage) + 1
         cutoff_idx0 = None
         cutoff_idx1 = None
         # loop through linkage rows, keeping track of the specified leaf nodes
-        for i, (l0, l1) in enumerate(z[:, :2]):
+        for i, (l0, l1) in enumerate(linkage[:, :2]):
             l0 = int(l0)
             l1 = int(l1)
             if l0 in node_ids:
@@ -377,8 +406,27 @@ def show_dendrogram_cut_by_nclust(clustermap, nclust, axis=1, sample_subset_idx=
                 break
         if cutoff_idx0 is None or cutoff_idx1 is None:
             raise ValueError("Failed to compute the requested cluster distance")
-        dist = z[[cutoff_idx0, cutoff_idx1], 2].mean()
+        dist = linkage[[cutoff_idx0, cutoff_idx1], 2].mean()
+    return dist
 
+
+def show_dendrogram_cut_by_nclust(clustermap, nclust, axis=1, sample_subset_idx=None):
+    """
+    Add a dashed line to the specified dendrogram showing the cutoff point.
+    The line is specified by the desired final number of clusters
+    :param clustermap: ClusterMap instance from the seaborn `clustermap` function
+    :param nclust: The final number of clusters required. The distance is computed using this.
+    :param axis: 0 (row) or 1 (column)
+    :param sample_subset_idx: If supplied, this is a list of indices pointing to the samples that we should use. In this
+    case, the distance is computed at the point where _only those leaf nodes_ have formed nclust clusters.
+    :return: None
+    """
+    if axis == 0:
+        dend = clustermap.dendrogram_row
+    else:
+        dend = clustermap.dendrogram_col
+    z = dend.linkage
+    dist = dendrogram_threshold_by_nclust(z, nclust, sample_subset_idx=sample_subset_idx)
     show_dendrogram_cut_by_distance(clustermap, dist, axis=axis)
 
     return dist
