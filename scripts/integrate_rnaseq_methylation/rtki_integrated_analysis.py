@@ -104,7 +104,7 @@ if __name__ == '__main__':
     ## compute DMR
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
-    b = methylation_array.gbm_nsc_methylationepic('swan')
+    b, me_meta = methylation_array.gbm_rtk1_and_paired_nsc(norm_method='swan')
     m = process.m_from_beta(b)
 
     # reduce anno and data down to common probes

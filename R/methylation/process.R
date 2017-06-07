@@ -21,7 +21,13 @@ get_idat_basenames <- function(idat.dir) {
 }
 
 
-process_and_save.EPIC <- function(idat.dir, meta.file, samples=NULL, output.dir=file.path(idat.dir, '..', 'beta')) {
+process_and_save.EPIC <- function(
+  idat.dir, 
+  meta.file, 
+  samples=NULL, 
+  output.dir=file.path(idat.dir, '..', 'beta'),
+  gzip=T
+  ) {
   # load meta
   meta <- read.csv(meta.file)
   # set the rownames as filenames
@@ -63,16 +69,24 @@ process_and_save.EPIC <- function(idat.dir, meta.file, samples=NULL, output.dir=
   beta.funnorm <- getBeta(grSet.funnorm)[rownames(beta.raw),]
 
   dir.create(output.dir, showWarnings = FALSE)
-  write.csv(beta.raw, file = file.path(output.dir, "beta_raw.csv"))
-  write.csv(beta.bmiq, file = file.path(output.dir, "beta_bmiq.csv"))
-  write.csv(beta.swan, file = file.path(output.dir, "beta_swan.csv"))
-  write.csv(beta.pbc, file = file.path(output.dir, "beta_pbc.csv"))
-  write.csv(beta.funnorm, file = file.path(output.dir, "beta_funnorm.csv"))
+  if (gzip) {
+    write.csv(beta.raw, file=gzfile(file.path(output.dir, "beta_raw.csv.gz")))
+    write.csv(beta.bmiq, file=gzfile(file.path(output.dir, "beta_bmiq.csv.gz")))
+    write.csv(beta.swan, file=gzfile(file.path(output.dir, "beta_swan.csv.gz")))
+    write.csv(beta.pbc, file=gzfile(file.path(output.dir, "beta_pbc.csv.gz")))
+    write.csv(beta.funnorm, file=gzfile(file.path(output.dir, "beta_funnorm.csv.gz")))
+  } else {
+    write.csv(beta.raw, file = file.path(output.dir, "beta_raw.csv"))
+    write.csv(beta.bmiq, file = file.path(output.dir, "beta_bmiq.csv"))
+    write.csv(beta.swan, file = file.path(output.dir, "beta_swan.csv"))
+    write.csv(beta.pbc, file = file.path(output.dir, "beta_pbc.csv"))
+    write.csv(beta.funnorm, file = file.path(output.dir, "beta_funnorm.csv"))
+  }
   
 }
 
 
-base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
+base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
 idat.dir <- file.path(base.dir, 'idat')
 meta.file <- file.path(base.dir, 'sources.csv')
 process_and_save.EPIC(idat.dir, meta.file)
