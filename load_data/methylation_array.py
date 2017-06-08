@@ -109,7 +109,6 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan'):
 
 
 def hgic_methylationepic(norm_method='swan'):
-    ## TODO: finish
     samples1 = (
         'GBM018',
         'GBM019',
