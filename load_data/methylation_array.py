@@ -39,6 +39,31 @@ def load_illumina_methylationepic_annotation():
     return dat
 
 
+def load_illumina_methylation450_annotation():
+    fn = os.path.join(DATA_DIR, 'annotation', 'methylation', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
+    usecols = [
+        'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
+        'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'
+    ]
+    dtype = dict(
+        Name=str,
+        CHR=str,
+        MAPINFO=str,  # should be int but there are some NA entries
+        Strand=str,
+        UCSC_RefGene_Name=str,
+        UCSC_RefGene_Group=str,
+        Relation_to_UCSC_CpG_Island=str
+    )
+    dat = pd.read_csv(
+        fn, skiprows=7, usecols=usecols, dtype=dtype, header=0, index_col=0
+    )
+    # remove calibration probes
+    dat = dat.loc[~dat.loc[:, 'MAPINFO'].isnull()]
+    dat.loc[:, 'MAPINFO'] = dat.loc[:, 'MAPINFO'].astype(int)
+
+    return dat
+
+
 def load_beta_values(indir, metafile=None, norm_method='swan', samples=None):
     """
     Load beta values. These are all generated in one pass in R using `methylation/process.R`
@@ -76,6 +101,22 @@ def load_beta_values(indir, metafile=None, norm_method='swan', samples=None):
         return (b, meta)
     else:
         return b
+
+
+def gse36278(dropna=True):
+    """
+    GBM dataset published by Sturm et al., supporting their study on classifying GBM subgroups.
+    The data were provided as average beta values per probe. Different normalisation methods are therefore not
+    available.
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE36278')
+    metafile = os.path.join(indir, 'sources.csv')
+    data, meta = load_beta_values(indir, metafile=metafile, norm_method='raw')
+    data.columns = meta.loc[data.columns, 'title']
+    if dropna:
+        data = data.dropna()
+    return data, meta
 
 
 def gbm_rtk1_and_paired_nsc(norm_method='swan'):
@@ -146,3 +187,4 @@ def hgic_methylationepic(norm_method='swan'):
     data = pd.concat((b1, b2), axis=1)
 
     return data, meta
+
