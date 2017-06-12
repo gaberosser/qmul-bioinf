@@ -113,7 +113,7 @@ def gse36278(dropna=True):
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE36278')
     metafile = os.path.join(indir, 'sources.csv')
     data, meta = load_beta_values(indir, metafile=metafile, norm_method='raw')
-    data.columns = meta.loc[data.columns, 'title']
+    # data.columns = meta.loc[data.columns, 'title']
     if dropna:
         data = data.dropna()
     return data, meta

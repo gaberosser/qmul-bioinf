@@ -1,5 +1,6 @@
 from load_data import methylation_array
 from plotting import clustering, pca
+from clustering import lda
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
@@ -9,6 +10,8 @@ import numpy as np
 
 
 if __name__ == "__main__":
+    REF_META_SUBGRP_LABEL = 'dna methylation subgroup'
+
     data, meta = methylation_array.hgic_methylationepic(norm_method='swan')
     # Don't know why, but some probes (~2000) are only present in one OR the other sample
     # Therefore, remove those
@@ -37,27 +40,50 @@ if __name__ == "__main__":
     )
 
     ref_data, ref_meta = methylation_array.gse36278()
-    n_train = 120
-    n_test = ref_data.shape[1] - n_train
-    ref_train = ref_data.iloc[:, :n_train]
-    ref_test = ref_data.iloc[:, n_train:]
-    grp_ids, grp_names = ref_meta.loc[:, 'dna methylation subgroup'].factorize()
-    grp_ids_train = grp_ids[:n_train]
-    grp_ids_test = grp_ids[n_train:]
-    n_grp = len(np.unique(grp_ids))
 
     # only keep intersecting probes
     probe_idx = ref_data.index.intersection(data.index)
 
+    sample_names = np.random.permutation(ref_data.columns)
+    n_train = 120
+    n_test = ref_data.shape[1] - n_train
+
+    ref_train = ref_data.loc[probe_idx, sample_names[:n_train]]
+    ref_test = ref_data.loc[probe_idx, sample_names[n_train:]]
+    ref_meta_train = ref_meta.loc[sample_names[:n_train]]
+    ref_meta_test = ref_meta.loc[sample_names[n_train:]]
+
+    grp_ids, grp_names = ref_meta.loc[sample_names, REF_META_SUBGRP_LABEL].factorize()
+    grp_ids_train = grp_ids[:n_train]
+    grp_ids_test = grp_ids[n_train:]
+    n_grp = len(np.unique(grp_ids))
+
     # construct a LDA classifier
+    # my simple implementation
+    deltas = np.concatenate((
+        np.linspace(0., 3., 30),
+        np.arange(3.5, 10.5, 0.5)
+    ))
+
+    ld = lda.NearestCentroidClassifier(ref_train.loc[probe_idx], ref_meta.loc[sample_names, REF_META_SUBGRP_LABEL])
+
+    nerr_train, nerr_test, clas = lda.run_validation(
+        deltas,
+        ref_train.loc[probe_idx],
+        ref_meta_train.loc[:, REF_META_SUBGRP_LABEL],
+        test_data=ref_test.loc[probe_idx],
+        test_labels=ref_meta_test.loc[:, REF_META_SUBGRP_LABEL],
+        flat_prior=True
+    )
+
     # shrinkage consumes too much memory
-    lda = LinearDiscriminantAnalysis()
-    lda = lda.fit(ref_train.loc[probe_idx].transpose(), grp_ids_train)
-    score_train = lda.score(ref_train.loc[probe_idx].transpose(), grp_ids_train)
-    score_test = lda.score(ref_test.loc[probe_idx].transpose(), grp_ids_test)
+    l = LinearDiscriminantAnalysis()
+    l = l.fit(ref_train.loc[probe_idx].transpose(), grp_ids_train)
+    score_train = l.score(ref_train.loc[probe_idx].transpose(), grp_ids_train)
+    score_test = l.score(ref_test.loc[probe_idx].transpose(), grp_ids_test)
 
     # can reduce dimensionality like this:
-    red_ref = lda.transform(ref_data.loc[probe_idx].transpose())  # 142 x 6
+    red_ref = l.transform(ref_data.loc[probe_idx].transpose())  # 142 x 6
     fig = plt.figure()
     ax = fig.add_subplot(111)
     cmap = plt.cm.get_cmap('Set1')
