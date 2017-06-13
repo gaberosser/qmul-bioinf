@@ -1,7 +1,10 @@
+import os
+from utils.output import unique_output_dir
 from load_data import methylation_array
 from plotting import clustering, pca
 from clustering import lda
 from sklearn.decomposition import PCA
+import pandas as pd
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from matplotlib import pyplot as plt
@@ -10,6 +13,7 @@ import numpy as np
 
 
 if __name__ == "__main__":
+    outdir = unique_output_dir('meth_classification_lda')
     REF_META_SUBGRP_LABEL = 'dna methylation subgroup'
 
     data, meta = methylation_array.hgic_methylationepic(norm_method='swan')
@@ -67,14 +71,27 @@ if __name__ == "__main__":
 
     ld = lda.NearestCentroidClassifier(ref_train.loc[probe_idx], ref_meta.loc[sample_names, REF_META_SUBGRP_LABEL])
 
-    nerr_train, nerr_test, clas = lda.run_validation(
+    nerr_train, nerr_test, clas, true_clas = lda.cross_validation(
         deltas,
-        ref_train.loc[probe_idx],
+        ref_train,
         ref_meta_train.loc[:, REF_META_SUBGRP_LABEL],
-        test_data=ref_test.loc[probe_idx],
-        test_labels=ref_meta_test.loc[:, REF_META_SUBGRP_LABEL],
-        flat_prior=True
+        n_core=10,
+        flat_prior=True,
     )
+    nerr_train.to_csv(os.path.join(outdir, 'nerr_train.csv'))
+    nerr_test.to_csv(os.path.join(outdir, 'nerr_test.csv'))
+    clas.to_csv(os.path.join(outdir, 'clas_test.csv'))
+
+    # create multiindexed dataframe for true class
+    idx = pd.MultiIndex.from_product((range(10), ['sample', 'class']))
+    true_class_df = pd.DataFrame(
+        reduce(lambda x, y: list(x) + list(y), [(t.index, t.values) for t in true_clas]),
+        index=idx
+    )
+    true_class_df.to_csv(os.path.join(outdir, 'clas_true.csv'))
+
+
+    raise StopIteration
 
     # shrinkage consumes too much memory
     l = LinearDiscriminantAnalysis()

@@ -78,6 +78,12 @@ if __name__ == '__main__':
     alpha = 0.05
 
     patient_ids = ['018', '019', '031']
+    patient_pairs = {
+        '018': ('GBM018', 'DURA018N2 NSC'),
+        '019': ('GBM019', 'DURA019N8C NSC'),
+        '031': ('GBM031', 'DURA031N44B NSC'),
+        # '030': ('GBM030_P5', 'DURA030N16B6NSC_P1'),
+    }
     # n_jobs = mp.cpu_count()
     n_jobs = 12
 
@@ -86,7 +92,7 @@ if __name__ == '__main__':
     indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9nsc')
     de = {}
 
-    for p in patient_ids + ['all']:
+    for p in patient_pairs.keys() + ['all']:
         fn = os.path.join(indir_de, 'gbm-insc-ensc-%s.csv' % p)
         this_de_insc_only = pd.read_csv(fn, header=0, index_col=None)
         in_insc = ~this_de_insc_only.iloc[:, 1].isnull()
@@ -105,6 +111,7 @@ if __name__ == '__main__':
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
     b, me_meta = methylation_array.gbm_rtk1_and_paired_nsc(norm_method='swan')
+    b.dropna(inplace=True)
     m = process.m_from_beta(b)
 
     # reduce anno and data down to common probes
@@ -124,8 +131,8 @@ if __name__ == '__main__':
     test_results = {}
     test_results_relevant = {}
     test_results_significant = {}
-    for sid in patient_ids:
-        samples = ('GBM%s' % sid, 'Dura%s' % sid)
+    for sid, samples in patient_pairs.items():
+        # samples = ('GBM%s' % sid, 'Dura%s' % sid)
         test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
         test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
         test_results_significant[sid] = dmr.filter_dictionary(

@@ -291,6 +291,7 @@ def cross_validation(deltas, data, labels, k=10, n_core=None, **kwargs):
 
     sample_names = np.random.permutation(data.columns)
     chunks = np.array_split(sample_names, indices_or_sections=k)
+    true_clas = [labels.loc[ch] for ch in chunks]
     if any([len(t) == 0 for t in chunks]):
         raise ValueError("One or more groups contains no entries")
     if any([len(t) < 4 for t in chunks]):
@@ -331,5 +332,4 @@ def cross_validation(deltas, data, labels, k=10, n_core=None, **kwargs):
             n_err_train.loc[j], n_err_test.loc[j], clas.loc[j] = jobs[j].get(1e6)
             logger.info("Complete xv run %d", j)
 
-    ## TODO: no point in returning clas unless we return the true labels in the k chunks
-    return n_err_train, n_err_test, clas
+    return n_err_train, n_err_test, clas, true_clas

@@ -272,3 +272,45 @@ def get_methylation_gene_expression_data(case_ids):
                 json.dump(d, f)
             num_meta += 1
     logger.info("Create %d meta files. Encountered %d errors.", num_meta, num_meta_errors)
+
+
+if __name__ == "__main__":
+    """
+    Temporary code to compare the previous paired sample approach and the new all sample approach
+    """
+    met_dir_new = '/home/gabriel/python_outputs/gdc-nih_all_methylation450/'
+    met_dir_pair = '/home/gabriel/data/methylation/tcga_gbm/idat/'
+    rna_dir_new = '/home/gabriel/python_outputs/gdc-nih_gene_expr.0/'
+    rna_dir_pair = '/home/gabriel/data/rnaseq/tcga_gbm/htseq_count/'
+
+    all_meth = os.listdir(met_dir_new)
+    pair_meth = os.listdir(met_dir_pair)
+    all_rna = [t for t in os.listdir(rna_dir_new) if len(t) > 20]  # filter out irrelevant directories
+    pair_rna = [t for t in os.listdir(rna_dir_pair) if len(t) > 20]  # filter out irrelevant directories
+
+    print "RNASeq"
+    print "Paired sample download found %d RNASeq samples." % len(pair_rna)
+    print "Of these, %d are in the total sample approach" % len(set(pair_rna).intersection(all_rna))
+    print "%d more are found that don't have a pair" % len(set(all_rna).difference(pair_rna))
+
+    print "DNA Methylation"
+    print "Paired sample download found %d methylation samples." % len(pair_meth)
+    print "Of these, %d are in the total sample approach" % len(set(pair_meth).intersection(all_meth))
+    print "%d more are found that don't have a pair" % len(set(all_meth).difference(pair_meth))
+
+    rna_with_methbeta = [
+        t for t in os.listdir(rna_dir_new)
+        if len(t) > 20
+        and 'methylation.txt' in os.listdir(os.path.join(rna_dir_new, t))
+    ]
+
+    print "RNASeq with methylation beta values"
+    print "Found %d methylation beta text files accompanying the RNASeq data" % len(rna_with_methbeta)
+
+    rna_with_methbeta_not_idat = set(rna_with_methbeta).difference(pair_meth)
+
+    print "Of these, %d are not in the paired (idat) downloads" % len(rna_with_methbeta_not_idat)
+    if len(rna_with_methbeta_not_idat):
+        print '\n'.join(rna_with_methbeta_not_idat)
+
+

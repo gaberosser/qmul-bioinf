@@ -24,7 +24,6 @@ if len(logger.handlers) == 0:
     logger.setLevel(logging.DEBUG)
 
 NORM_METHOD = 'swan'
-OUTDIR = unique_output_dir('dmr', reuse_empty=True)
 CLASSES = {
     'gene',
     'tss',
@@ -590,6 +589,7 @@ def cluster_confined_permutation_test(dat1, dat2, anno, probes=None, n_probe=Non
 
 
 if __name__ == "__main__":
+    OUTDIR = unique_output_dir('dmr', reuse_empty=True)
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
     b = methylation_array.gbm_nsc_methylationepic('swan')
