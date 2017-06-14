@@ -79,9 +79,9 @@ if __name__ == '__main__':
 
     patient_ids = ['018', '019', '031']
     patient_pairs = {
-        '018': ('GBM018', 'DURA018N2 NSC'),
-        '019': ('GBM019', 'DURA019N8C NSC'),
-        '031': ('GBM031', 'DURA031N44B NSC'),
+        '018': ('GBM018', 'DURA018_NSC_N2'),
+        '019': ('GBM019', 'DURA019_NSC_N8C'),
+        '031': ('GBM031', 'DURA031_NSC_N44B'),
         # '030': ('GBM030_P5', 'DURA030N16B6NSC_P1'),
     }
     # n_jobs = mp.cpu_count()

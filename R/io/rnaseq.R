@@ -10,6 +10,51 @@ bm_attributes.defaults = c(
 )
 
 
+cbind.outer <- function(...) {
+  dat <- NULL
+
+  for (t in list(...)) {
+    if (is.null(dat)) {
+      dat <- data.frame(t)
+    } else {
+      this <- data.frame(t)
+      if (
+        (length(rownames(t)) != length(rownames(dat))) | (length(intersect(rownames(t), rownames(dat))) != length(t))
+      ) {
+        # expand the list of rows
+        new_rows <- setdiff(rownames(this), rownames(dat))
+        dat[new_rows,] <- NA
+        new_rows <- setdiff(rownames(dat), rownames(this))
+        this[new_rows,] <- NA
+      }
+      dat <- cbind(dat, this)
+    }
+  }
+  dat
+}
+
+rbind.outer <- function(...) {
+  dat <- NULL
+  
+  for (t in list(...)) {
+    if (is.null(dat)) {
+      dat <- t
+    } else {
+      if (
+        (length(colnames(t)) != length(colnames(dat))) | (length(intersect(colnames(t), colnames(dat))) != length(t))
+      ) {
+        # expand the list of rows
+        new_cols <- setdiff(colnames(t), colnames(dat))
+        dat[, new_cols] <- NA
+        new_cols <- setdiff(colnames(dat), colnames(t))
+        t[, new_cols] <- NA
+        dat <- rbind(dat, t)
+      }
+    }
+  }
+  dat
+}
+
 get_dated_files <- function(indir) {
   flist <- list.files(indir, pattern='\\.csv')
   dates <- list()
@@ -174,8 +219,7 @@ star.load_all <- function(indir, metafile=NULL, annotation.col=NULL, stranded='u
 }
 
 star.combine_lanes <- function(indirs, metafiles=NULL, annotation.col=NULL, stranded='u') {
-  # combine multiple lanes
-  # TODO: test
+  # load data from multiple lanes, combining where sample names match
 
   if (!is.null(metafiles) & length(indirs) != length(metafiles)) {
     throw("Length of indirs doesn't match length of metafiles")
@@ -188,7 +232,7 @@ star.combine_lanes <- function(indirs, metafiles=NULL, annotation.col=NULL, stra
     for (i in 2:length(indirs)) {
       a <- star.load_all(indirs[i], metafiles[i], annotation.col = annotation.col, stranded = stranded)
       data <- data + a$data
-      if ('read_count' %in% a$meta) {
+      if ('read_count' %in% colnames(a$meta) & 'read_count' %in% colnames(meta)) {
         meta[,'read_count'] <- meta[,'read_count'] + a$meta[,'read_count']
       }
     }
@@ -267,56 +311,147 @@ htseq.load_all <- function(indir, metafile=NULL, annotation.col=NULL, file.patte
 
 paired_gbm_nsc_data <- function() {
   samples <- c(
-    'GBM018',
-    'GBM019',
-    'GBM026',
-    'GBM031',
-    'DURA018N2_NSC',
-    'DURA019N8C_NSC',
-    'DURA026N31D_NSC',
-    'DURA031N44B_NSC'
+    'GBM018_P10',
+    'GBM018_P12',
+    'GBM019_P4',
+    'GBM026_P8',
+    'GBM026_P3n4',
+    'GBM030_P5',
+    'GBM031_P4',
+    'GBM044_P4',
+    'GBM044_P8',
+    'DURA018_NSC_N4_P4',
+    'DURA018_NSC_N2_P6',
+    'DURA019_NSC_N8C_P2',
+    'DURA026_NSC_N31D_P5',
+    'DURA030_NSC_N16B6_P1',
+    'DURA031_NSC_N44B_P2',
+    'DURA044_NSC_N17_P3',
+    'DURA044_NSC_N8_P2',
+    'GIBCO_NSC_P4'
+  )
+  dir.1 <- file.path(
+    data.dir.raid, 
+    'rnaseq',
+    'wtchg_p160704'
+  )
+  dir.2 <- file.path(
+    data.dir.raid, 
+    'rnaseq',
+    'wtchg_p170218'
   )
   
-  in.dirs <- c(
+  in.dirs <- list()
+  meta.files <- list()
+  
+  in.dirs[[1]] <- c(
     file.path(
-      data.dir.raid, 
-      'rnaseq',
-      'wtchg_p160704',
+      dir.1,
       '161219_K00198_0151_BHGYHTBBXX',
       'star_alignment'
     ),
     file.path(
-      data.dir.raid, 
-      'rnaseq',
-      'wtchg_p160704',
+      dir.1,
       '161222_K00198_0152_AHGYG3BBXX',
       'star_alignment'
     )
   )
   
-  meta.files <- c(
+  in.dirs[[2]] <- c(
     file.path(
-      data.dir.raid, 
-      'rnaseq',
-      'wtchg_p160704',
+      dir.2,
+      '170509_K00150_0192_BHJKCLBBXX',
+      'human',
+      'star_alignment'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_2',
+      'human',
+      'star_alignment'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_3',
+      'human',
+      'star_alignment'
+    )
+  )
+  
+  meta.files[[1]] <- c(
+    file.path(
+      dir.1,
       '161219_K00198_0151_BHGYHTBBXX',
       'sources.csv'
     ),
     file.path(
-      data.dir.raid, 
-      'rnaseq',
-      'wtchg_p160704',
+      dir.1,
       '161222_K00198_0152_AHGYG3BBXX',
       'sources.csv'
     )
   )
   
-  loaded <- star.combine_lanes(in.dirs, metafiles = meta.files, stranded='r')
-  dat <- loaded$data[grep("ENSG", rownames(loaded$data)), samples]
-  meta <- loaded$meta[loaded$meta$sample %in% samples,]
+  meta.files[[2]] <- c(
+    file.path(
+      dir.2,
+      '170509_K00150_0192_BHJKCLBBXX',
+      'sources.csv'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_2',
+      'sources.csv'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_3',
+      'sources.csv'
+    )
+  )
   
+  dat <- list()
+  meta <- list()
+  
+  for (n in seq(1, length(in.dirs))) {
+    loaded <- star.combine_lanes(in.dirs[[n]], metafiles = meta.files[[n]], stranded='r')
+    dat[[n]] = loaded$data[grep("ENSG", rownames(loaded$data)), colnames(loaded$data) %in% samples]
+    meta[[n]] <- loaded$meta[loaded$meta$sample %in% samples,]
+  }
+  
+  dat <- do.call(cbind.outer, dat)
+  meta <- do.call(rbind.outer, meta)
+  
+  meta$filename <- rownames(meta)
+  rownames(meta) <- meta$sample
+  meta$sample <- NULL
+
   return(list(data=dat, meta=meta))
   
+}
+
+
+paired_rtki_data <- function() {
+  samples <- c(
+    'GBM018_P10',
+    'GBM018_P12',
+    'GBM019_P4',
+    'GBM030_P5',
+    'GBM031_P4',
+    'DURA018_NSC_N4_P4',
+    'DURA018_NSC_N2_P6',
+    'DURA019_NSC_N8C_P2',
+    'DURA030_NSC_N16B6_P1',
+    'DURA031_NSC_N44B_P2',
+    'GIBCO_NSC_P4'
+  )
+  loader <- paired_gbm_nsc_data()
+  
+  keep <- rownames(loader$meta[rownames(loader$meta) %in% samples,])
+  
+  data <- loader$data[,keep]
+  meta <- loader$meta[keep,]
+  
+  return(list(data=data, meta=meta))
 }
 
 

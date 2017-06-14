@@ -1,0 +1,39 @@
+---
+title: "PAM analysis"
+author: "Gabriel Rosser"
+date: "13 June 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require("knitr")
+opts_knit$set(root.dir = normalizePath('..'))
+
+library(pamr)
+```
+
+```{r, message=FALSE, warning=FALSE, results="hide"}
+source('io/output.R')
+source('_settings.R')
+source("utils.R")
+```
+
+```{r, fig.width=12}
+ref.dir <- file.path(data.dir.raid, "methylation", "GSE36278")
+meta.fn <- file.path(ref.dir, "sources.csv")
+data.fn <- file.path(ref.dir, "beta_raw.csv.gz")
+
+meta <- read.csv(meta.fn, row.names = 1)
+data <- read.csv(data.fn, row.names = 1)
+pam.data <- list(x = data.matrix(na.omit(data)), y = factor(meta$dna.methylation.subgroup), geneid=rownames(data))
+
+ref.train <- pamr.train(pam.data)
+ref.results <- pamr.cv(ref.train, pam.data)
+
+pamr.plotcv(ref.results)
+pamr.plotcvprob(ref.results, pam.data, threshold=3.)
+
+
+```
+
