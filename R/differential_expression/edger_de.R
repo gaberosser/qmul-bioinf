@@ -12,11 +12,23 @@ prepare_de_table <- function(lrt, fdr=0.05) {
   de
 }
 
+
 #' Get lists of DE genes for all possible Venn segments for an arbitrary number of comparisons.
 #' The input arguments are DGELRT objects or anything else that can be passed into prepare_de_table.
-venn_edger_de_lists <- function(..., fdr=0.05, id.key='ensembl') {
+#' If `background` is supplied, only features that are NOT included in the background are counted
+venn_edger_de_lists <- function(..., background=NULL, fdr=0.05, id.key='ensembl') {
 
-  de = lapply(list(...), function (x) {prepare_de_table(x, fdr=fdr)})
+  de <- lapply(list(...), function (x) {prepare_de_table(x, fdr=fdr)})
+  
+  if (!is.null(background)) {
+    print("BACKGROUND")
+    de.ref <- prepare_de_table(background, fdr=fdr)
+    de <- lapply(de, function(x) {
+      these.ids <- setdiff(x[[id.key]], de.ref[[id.key]])
+      x[x[[id.key]] %in% these.ids,]
+    }) 
+  } 
+  
   ids <- lapply(de, function(x){x[[id.key]]})
 
   blocks <- list()
@@ -44,16 +56,19 @@ venn_edger_de_lists <- function(..., fdr=0.05, id.key='ensembl') {
     blocks[[paste0(comb, collapse = '')]] <- do.call(cbind, de.in)
   }
   
+  # add comparison names
+  blocks$contrasts <- names(de)
   blocks
 }
 
-grouped_analysis <- function(data, groups, groups.lumped, contrasts, gene.symbols=NULL, output.dir=NULL) {
+grouped_analysis <- function(data, groups, groups.lumped, contrasts, gene.symbols=NULL, output.dir=NULL, fdr = 0.05) {
   #' contrasts: list of characters containing valid formulae based on design matrix ~0 + groups
 
-  groups <- as.factor(groups)
-  groups.lumped <- as.factor(groups.lumped)
+  groups <- factor(groups)
+  groups.lumped <- factor(groups.lumped)
   
   if (is.null(gene.symbols)) {
+    ens.map <- biomart_annotation(index.by='ensembl_gene_id')
     gene.symbols <- ens.map[rownames(data), "hgnc_symbol"]
   }
   

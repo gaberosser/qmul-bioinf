@@ -254,9 +254,10 @@ def dendrogram_with_colours(
     }
 
 
-def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average'):
+def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average', **kwargs):
     """
     :param n_gene: If supplied, this is the number of genes to use, ordered by descending MAD
+    :param kwargs: Passed to seaborn's `clustermap`
     """
     if n_gene is not None:
         # reduce data to the specified number using MAD
@@ -264,7 +265,15 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
         genes = mad.index[:n_gene]
         data = data.loc[genes]
     z = hc.linkage(data.transpose(), method=method, metric='correlation')
-    cg = sns.clustermap(data.corr(), cmap='RdBu_r', row_colors=row_colors, col_colors=row_colors, row_linkage=z, col_linkage=z)
+    cg = sns.clustermap(
+        data.corr(),
+        cmap='RdBu_r',
+        row_colors=row_colors,
+        col_colors=row_colors,
+        row_linkage=z,
+        col_linkage=z,
+        **kwargs
+    )
     plt.setp(cg.ax_heatmap.get_xticklabels(), rotation=90, fontsize=14)
     plt.setp(cg.ax_heatmap.get_yticklabels(), rotation=0, fontsize=14)
     # shift the margins a bit to fit axis tick labels
@@ -276,6 +285,7 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
 def plot_clustermap(
         dat,
         show_gene_labels=False,
+        rotate_xticklabels=True,
         **kwargs
 ):
     """
@@ -323,6 +333,9 @@ def plot_clustermap(
         )
     else:
         cg.ax_heatmap.yaxis.set_ticklabels([])
+
+    if rotate_xticklabels:
+        plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)
 
     return cg
 

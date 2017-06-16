@@ -4,7 +4,6 @@ library(dplyr)
 library(DESeq2)
 library('biomaRt')
 library(calibrate)
-library("pheatmap")
 library("edgeR")
 library("gridExtra")
 
@@ -40,18 +39,23 @@ meta <- rbind.outer(
 dat <- filter_genes(dat)
 
 #' Defining groups
-meta$groups <- as.vector(meta$disease_subgroup)
-meta['H9 NSC', 'groups'] <- 'control_h9'
-meta['GIBCO_NSC_P4', 'groups'] <- 'control_gibco'
+meta$groups.lumped <- as.vector(meta$type)
+meta['H9_NSC', 'groups.lumped'] <- 'control'
+meta['GIBCO_NSC_P4', 'groups.lumped'] <- 'control'
 
-meta$lumped_groups <- meta$type
+meta$groups <- rownames(meta)
 
 ## TODO
 contrasts = list(
-  
+  GBM.vs.iNSC="(GBM018_P10+GBM018_P12+GBM019_P4+GBM031_P4)/4-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6+DURA019_NSC_N8C_P2+DURA031_NSC_N44B_P2)/4",
+  GBM018A.vs.iNSC018A="GBM018_P10-DURA018_NSC_N4_P4",
+  GBM018B.vs.iNSC018B="GBM018_P12-DURA018_NSC_N2_P6",
+  GBM018A.vs.iNSC018B="GBM018_P10-DURA018_NSC_N2_P6",
+  GBM018B.vs.iNSC018A="GBM018_P12-DURA018_NSC_N4_P4",
+  GBM018.vs.iNSC018="(GBM018_P10+GBM018_P12)/2-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6)/2"
 )
 
-grouped_analysis(dat, groups, groups.lumped, contrasts, gene.symbols=NULL, output.dir=NULL)
+res <- grouped_analysis(dat, meta$groups, meta$groups.lumped, contrasts, gene.symbols=NULL, output.dir=NULL)
 
 #' 
 #' y <- DGEList(counts=dat.non_tcga)

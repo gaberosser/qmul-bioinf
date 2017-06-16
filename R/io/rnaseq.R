@@ -38,18 +38,19 @@ rbind.outer <- function(...) {
   
   for (t in list(...)) {
     if (is.null(dat)) {
-      dat <- t
+      dat <- data.frame(t)
     } else {
+      this <- data.frame(t)
       if (
         (length(colnames(t)) != length(colnames(dat))) | (length(intersect(colnames(t), colnames(dat))) != length(t))
       ) {
         # expand the list of rows
-        new_cols <- setdiff(colnames(t), colnames(dat))
-        dat[, new_cols] <- NA
-        new_cols <- setdiff(colnames(dat), colnames(t))
-        t[, new_cols] <- NA
-        dat <- rbind(dat, t)
+        new_rows <- setdiff(colnames(this), colnames(dat))
+        dat[,new_rows] <- NA
+        new_rows <- setdiff(colnames(dat), colnames(this))
+        this[,new_rows] <- NA
       }
+      dat <-rbind(dat, this)
     }
   }
   dat
@@ -528,8 +529,10 @@ duan_nsc_data <- function(collapse.replicates = T) {
   
   if (collapse.replicates) {
     vals <- rowSums(dat.h9)
-    dat.h9 <- data.frame(H9NSC=vals, row.names = names(vals))
-    meta.h9 <- data.frame(type='NSC', sample='H9 NSC', read_count=sum(meta.h9$read_count), row.names = 'H9 NSC')
+    df.data <- list()
+    df.data[['H9_NSC']] = vals
+    dat.h9 <- data.frame(df.data, row.names = names(vals), check.names = F)
+    meta.h9 <- data.frame(type='NSC', sample='H9_NSC', read_count=sum(meta.h9$read_count), row.names = 'H9_NSC')
   }
 
   return(list(data=dat.h9, meta=meta.h9))

@@ -720,31 +720,7 @@ def gse83696(index_by='Ensembl Gene ID'):
 
 
 def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
-    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
-    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
-    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
-    samples = (
-        'GBM018',
-        'GBM019',
-        'GBM024',
-        'GBM026',
-        'GBM031',
-        'DURA018N2_NSC',
-        'DURA019N8C_NSC',
-        'DURA024N28_NSC',
-        'DURA026N31D_NSC',
-        'DURA031N44B_NSC',
-    )
-
-    obj = MultipleLaneFeatureCountLoader(
-        count_files=count_files,
-        meta_fns=metafiles,
-        samples=samples,
-        annotate_by=annotate_by,
-        annotation_type=annotation_type
-    )
+    obj = gbm_paired_samples_loader(annotate_by=annotate_by, annotation_type=annotation_type)
 
     if units == 'counts':
         return obj.data
@@ -752,15 +728,8 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
         return obj.get_fpkm()
     elif units == 'tpm':
         return obj.get_tpm()
-
-    return featurecounts(
-        count_files,
-        metafiles,
-        samples=samples,
-        units=units,
-        annotate_by=annotate_by,
-        annotation_type=annotation_type
-    )
+    else:
+        raise AttributeError("Units not recognised")
 
 
 def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
@@ -916,17 +885,18 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
 
     # expt 1
     samples = (
-        'GBM018',
-        'GBM019',
-        'GBM024',
-        'GBM026',
-        'GBM031',
-        'DURA018N2_NSC',
-        'DURA019N8C_NSC',
-        'DURA024N28_NSC',
-        'DURA026N31D_NSC',
-        'DURA031N44B_NSC',
+        'GBM018_P10',
+        'GBM019_P4',
+        'GBM024_P9',
+        'GBM026_P8',
+        'GBM031_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA024_NSC_N28_P6',
+        'DURA026_NSC_N31D_P5',
+        'DURA031_NSC_N44B_P2',
     )
+
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lanedirs = [
         os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
@@ -942,17 +912,16 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
 
     # expt 2
     samples = (
-        "NH16_2383_P2",
-        "GBM044_P4",
-        "GBM026_P3_P4",
-        "GBM018_P12",
-        "GBM044_P8",
-        "DURA044N8NSCP2",
-        "GIBCONSC_P4",
-        "DURA044N17_NSC_P3",
-        "DURA018N4_NSC_P4",
-        "GBM030_P5",
-        "DURA030N16B6_NSC_P1",
+        'GBM044_P4',
+        'GBM026_P3n4',
+        'GBM018_P12',
+        'GBM044_P8',
+        'DURA044_NSC_N8_P2',
+        'GIBCO_NSC_P4',
+        'DURA044_NSC_N17_P3',
+        'DURA018_NSC_N4_P4',
+        'GBM030_P5',
+        'DURA030_NSC_N16B6_P1',
     )
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
     lanedirs = [
@@ -1086,10 +1055,11 @@ def gse73721(source='star', annotate_by='all', annotation_type='protein_coding')
     return obj
 
 
-def gse61794(source='star', annotate_by='all', annotation_type='protein_coding'):
+def gse61794(source='star', annotate_by='all', annotation_type='protein_coding', collapse_replicates=False):
     """
     2 samples similar to Gibbco NSC line.
     These may be technical replicates as they are very highly correlated.
+    :param collapse_replicates: If True, combine the counts to make one sample
     """
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
     metafn = os.path.join(indir, 'sources.csv')
@@ -1118,6 +1088,11 @@ def gse61794(source='star', annotate_by='all', annotation_type='protein_coding')
         )
     else:
         raise ValueError("Unrecognised source.")
+
+    if collapse_replicates:
+        ## TODO?
+        raise NotImplementedError("collapse_replicates")
+
     return obj
 
 
