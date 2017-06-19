@@ -371,9 +371,9 @@ qqplot_chisq_fit <- function(y, design, dispersion, outfile=NULL, title=NULL) {
 
 list.outdir <- getOutputDir(name = "paired_analysis_de_rtkI")
 
-qqplot_chisq_fit(y.lumped, design, dispersion.common.lumped, outfile=file.path(list.outdir, "qqplot_fit_common.png"), title="Common dispersion")
-qqplot_chisq_fit(y.lumped, design, dispersion.trended.lumped, outfile=file.path(list.outdir, "qqplot_fit_trended.png"), title="Trended dispersion")
-qqplot_chisq_fit(y.lumped, design, dispersion.tagwise.lumped, outfile=file.path(list.outdir, "qqplot_fit_tagwise.png"), title="Genewise dispersion")
+# qqplot_chisq_fit(y.lumped, design, dispersion.common.lumped, outfile=file.path(list.outdir, "qqplot_fit_common.png"), title="Common dispersion")
+# qqplot_chisq_fit(y.lumped, design, dispersion.trended.lumped, outfile=file.path(list.outdir, "qqplot_fit_trended.png"), title="Trended dispersion")
+# qqplot_chisq_fit(y.lumped, design, dispersion.tagwise.lumped, outfile=file.path(list.outdir, "qqplot_fit_tagwise.png"), title="Genewise dispersion")
 
 #' Experiment 1
 #' GBM, paired iNSC and reference eNSC data

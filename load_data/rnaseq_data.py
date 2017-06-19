@@ -738,16 +738,16 @@ def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type=
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
     metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
     samples = (
-        'GBM018',
-        'GBM019',
-        'GBM024',
-        'GBM026',
-        'GBM031',
-        'DURA018N2_NSC',
-        'DURA019N8C_NSC',
-        'DURA024N28_NSC',
-        'DURA026N31D_NSC',
-        'DURA031N44B_NSC',
+        'GBM018_P10',
+        'GBM019_P4',
+        'GBM024_P9',
+        'GBM026_P8',
+        'GBM031_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA024_NSC_N28_P6',
+        'DURA026_NSC_N31D_P5',
+        'DURA031_NSC_N44B_P2',
     )
 
     if source == 'star':
