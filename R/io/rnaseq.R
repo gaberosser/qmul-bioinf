@@ -455,6 +455,61 @@ paired_rtki_data <- function() {
   return(list(data=data, meta=meta))
 }
 
+gibco_nsc_data <- function() {
+  samples = c('GIBCO_NSC_P4')
+  dir.2 <- file.path(
+    data.dir.raid, 
+    'rnaseq',
+    'wtchg_p170218'
+  )
+  in.dirs <- c(
+    file.path(
+      dir.2,
+      '170509_K00150_0192_BHJKCLBBXX',
+      'human',
+      'star_alignment'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_2',
+      'human',
+      'star_alignment'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_3',
+      'human',
+      'star_alignment'
+    )
+  )
+  meta.files <- c(
+    file.path(
+      dir.2,
+      '170509_K00150_0192_BHJKCLBBXX',
+      'sources.csv'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_2',
+      'sources.csv'
+    ),
+    file.path(
+      dir.2,
+      '170515_K00150_0196_BHJKC5BBXX_lane_3',
+      'sources.csv'
+    )
+  )
+  loaded <- star.combine_lanes(in.dirs, metafiles = meta.files, stranded='r')
+  dat = loaded$data[grep("ENSG", rownames(loaded$data)), colnames(loaded$data) %in% samples, drop=F]
+  meta <- loaded$meta[loaded$meta$sample %in% samples, , drop=F]
+  
+  meta$filename <- rownames(meta)
+  rownames(meta) <- meta$sample
+  meta$sample <- NULL
+  
+  return(list(data=dat, meta=meta))
+}
+
 
 tcga_gbm_data <- function(modify.subgroup.names=T) {
   in.dir.tcga = file.path(

@@ -30,8 +30,29 @@ if __name__ == "__main__":
     data = pd.concat((loader_hgic.data.loc[genes], h9_data), axis=1)
     meta = pd.concat((loader_hgic.meta, pd.DataFrame(h9_meta).transpose()), axis=0)
 
+    matches = (
+        '018',
+        '019',
+        '024',
+        '026',
+        '030',
+        '031',
+        '044',
+        'GIBCO',
+        'H9'
+    )
+
+    col_colours = clustering.generate_colour_map_dict(
+        meta,
+        'sample',
+        matches,
+        label='Patient',
+        non_matching='gray'
+    )
+
     # filter
     data = filter.filter_by_cpm(data, min_cpm=1, min_n_samples=3, unless_cpm_gt=10)
+    # data = filter.filter_by_cpm(data, min_cpm=1, min_n_samples=3, unless_cpm_gt=None)
 
     # normalise by read count
     cpm = (data + 1).divide((data + 1).sum(axis=0), axis=1) *  1e6
@@ -43,11 +64,30 @@ if __name__ == "__main__":
     mad_vst_srt = median_absolute_deviation(vst_data).sort_values(ascending=False)
 
     for NGENE in [500, 1000, 1500, 2000, 2500]:
+        out = clustering.dendrogram_with_colours(
+            log_data.loc[mad_log_srt.index[:NGENE]],
+            col_colours=col_colours,
+            vertical=False,
+            metric='correlation',
+            method='average',
+        )
+        out['fig'].savefig(os.path.join(outdir, "gbm_nsc_correlation_dendrogram_logtransform_top%d.png" % NGENE), dpi=200)
+        out['fig'].savefig(os.path.join(outdir, "gbm_nsc_correlation_dendrogram_logtransform_top%d.pdf" % NGENE))
 
         cg = clustering.plot_correlation_clustermap(log_data.loc[mad_log_srt.index[:NGENE]], vmin=0., vmax=1., metric='correlation')
         cg.gs.update(bottom=0.3, right=0.7)
         cg.fig.savefig(os.path.join(outdir, "gbm_nsc_correlation_clustermap_logtransform_top%d.png" % NGENE), dpi=200)
         cg.fig.savefig(os.path.join(outdir, "gbm_nsc_correlation_clustermap_logtransform_top%d.pdf" % NGENE))
+
+        out = clustering.dendrogram_with_colours(
+            vst_data.loc[mad_vst_srt.index[:NGENE]],
+            col_colours=col_colours,
+            vertical=False,
+            metric='correlation',
+            method='average',
+        )
+        out['fig'].savefig(os.path.join(outdir, "gbm_nsc_correlation_dendrogram_vsttransform_top%d.png" % NGENE), dpi=200)
+        out['fig'].savefig(os.path.join(outdir, "gbm_nsc_correlation_dendrogram_vsttransform_top%d.pdf" % NGENE))
 
         cg = clustering.plot_correlation_clustermap(vst_data.loc[mad_vst_srt.index[:NGENE]], vmin=0., vmax=1., metric='correlation')
         cg.gs.update(bottom=0.3, right=0.7)
@@ -59,12 +99,41 @@ if __name__ == "__main__":
     mad_log_nsc_srt = median_absolute_deviation(log_nsc_data).sort_values(ascending=False)
     mad_vst_nsc_srt = median_absolute_deviation(vst_nsc_data).sort_values(ascending=False)
 
+    col_colours_nsc = clustering.generate_colour_map_dict(
+        meta.loc[meta.index.str.contains('NSC')],
+        'sample',
+        matches,
+        label='Patient',
+        non_matching='gray'
+    )
+
     for NGENE in [500, 1000, 1500, 2000, 2500]:
+        out = clustering.dendrogram_with_colours(
+            log_nsc_data.loc[mad_log_nsc_srt.index[:NGENE]],
+            col_colours=col_colours_nsc,
+            vertical=False,
+            metric='correlation',
+            method='average',
+        )
+        out['fig'].savefig(os.path.join(outdir, "nsc_correlation_dendrogram_logtransform_top%d.png" % NGENE), dpi=200)
+        out['fig'].savefig(os.path.join(outdir, "nsc_correlation_dendrogram_logtransform_top%d.pdf" % NGENE))
+
         cg = clustering.plot_correlation_clustermap(log_nsc_data.loc[mad_log_nsc_srt.index[:NGENE]], vmin=0., vmax=1., metric='correlation')
         cg.gs.update(bottom=0.3, right=0.7)
         cg.fig.savefig(os.path.join(outdir, "nsc_correlation_clustermap_logtransform_top%d.png" % NGENE), dpi=200)
         cg.fig.savefig(os.path.join(outdir, "nsc_correlation_clustermap_logtransform_top%d.pdf" % NGENE))
         cg = clustering.plot_correlation_clustermap(vst_nsc_data.loc[mad_vst_nsc_srt.index[:NGENE]], vmin=0., vmax=1., metric='correlation')
+
+        out = clustering.dendrogram_with_colours(
+            vst_nsc_data.loc[mad_vst_nsc_srt.index[:NGENE]],
+            col_colours=col_colours_nsc,
+            vertical=False,
+            metric='correlation',
+            method='average',
+        )
+        out['fig'].savefig(os.path.join(outdir, "nsc_correlation_dendrogram_vsttransform_top%d.png" % NGENE), dpi=200)
+        out['fig'].savefig(os.path.join(outdir, "nsc_correlation_dendrogram_vsttransform_top%d.pdf" % NGENE))
+
         cg.gs.update(bottom=0.3, right=0.7)
         cg.fig.savefig(os.path.join(outdir, "nsc_correlation_clustermap_vsttransform_top%d.png" % NGENE), dpi=200)
         cg.fig.savefig(os.path.join(outdir, "nsc_correlation_clustermap_vsttransform_top%d.pdf" % NGENE))
