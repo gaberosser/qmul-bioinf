@@ -127,6 +127,9 @@ almost_core_ens <- as.vector(unlist(
   )
 ))
 
+ens.map <- biomart_annotation(index.by='ensembl_gene_id')
+writeLines(as.vector(ens.map[core_ens, 'hgnc_symbol']))
+writeLines(as.vector(ens.map[c(core_ens, almost_core_ens), 'hgnc_symbol']))
 
 #' #' Run GO (and KEGG) analysis
 #' #' This will highlight the pathways that are enriched in the gene lists. Indexing is by Entrez ID
