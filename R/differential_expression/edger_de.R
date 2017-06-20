@@ -4,8 +4,11 @@ source('io/rnaseq.R')
 
 #' Prepare a table of DE genes with the given FDR cutoff.
 #' lrt: must be compatible with topTags, for example the output of glmLRT
-prepare_de_table <- function(lrt, fdr=0.05) {
+prepare_de_table <- function(lrt, fdr = 0.05, log2FC.min = NULL) {
   de <- as.data.frame(topTags(lrt, p.value = fdr, n = Inf))
+  if (!is.null(log2FC.min)) {
+    de <- de[abs(de$logFC) >= log2FC.min,]
+  }
   de$ensembl <- rownames(lrt$table)[as.integer(rownames(de))]
   de$direction <- ifelse(de$logFC > 0, 'U', 'D')
   de <- de[, c("genes", "logFC", "ensembl", "direction", "FDR", "logCPM")]
@@ -16,9 +19,9 @@ prepare_de_table <- function(lrt, fdr=0.05) {
 #' Get lists of DE genes for all possible Venn segments for an arbitrary number of comparisons.
 #' The input arguments are DGELRT objects or anything else that can be passed into prepare_de_table.
 #' If `background` is supplied, only features that are NOT included in the background are counted
-venn_edger_de_lists <- function(..., background=NULL, fdr=0.05, id.key='ensembl') {
+venn_edger_de_lists <- function(..., background=NULL, fdr=0.05, log2FC.min = NULL, id.key='ensembl') {
 
-  de <- lapply(list(...), function (x) {prepare_de_table(x, fdr=fdr)})
+  de <- lapply(list(...), function (x) {prepare_de_table(x, fdr=fdr, log2FC.min = log2FC.min)})
   
   if (!is.null(background)) {
     print("BACKGROUND")
@@ -30,33 +33,27 @@ venn_edger_de_lists <- function(..., background=NULL, fdr=0.05, id.key='ensembl'
   } 
   
   ids <- lapply(de, function(x){x[[id.key]]})
-
-  blocks <- list()
   
-  nbit <- length(ids)
-  n <- 2 ** nbit - 1
+  blocks.ids <- do.call(venn_sets, ids)
   
-  
-  for (i in seq(1, n)) {
-    comb <- as.integer(intToBits(i))[1:nbit]
-    idx.in <- which(comb == 1)
-    idx.out <- which(comb == 0)
-    
-    ids.in <- Reduce(intersect, lapply(idx.in, function(x){ ids[[x]] }))
-    ids.out <- Reduce(union, lapply(idx.out, function(x){ ids[[x]] }))
-    ids.this <- setdiff(ids.in, ids.out)
-    
-    get_de <- function(x) {
-      tmp <- de[[x]][ids[[x]] %in% ids.this,]
-      tmp <- tmp[order(tmp[[id.key]]),]
-    }
-    
-    de.in <- lapply(idx.in, get_de)
-    
-    blocks[[paste0(comb, collapse = '')]] <- do.call(cbind, de.in)
+  #' Function to get the original topTags data corresponding to each Venn block
+  #' The input is a string representing the binary index, e.g. '0011' and a list of the ids
+  get_de <- function(bin) {
+    these.ids <- blocks.ids[[bin]]
+    idx.in <- which(strsplit(bin, "")[[1]] == 1)
+    tmp <- lapply(
+      idx.in, 
+      function (x) {
+        aa <- de[[x]][de[[x]][[id.key]] %in% these.ids,]
+        aa[order(aa[, 'FDR']),]
+      }
+    )
+    do.call(cbind, tmp)
   }
   
-  # add comparison names
+  blocks <- lapply(names(blocks.ids), get_de)
+  names(blocks) <- names(blocks.ids)
+
   blocks$contrasts <- names(de)
   blocks
 }
@@ -116,14 +113,64 @@ grouped_analysis <- function(data, groups, groups.lumped, contrasts, gene.symbol
   
 }
 
-
-filter_genes <- function(data, cpm.min = 1, nsamples.min = 3) {
+filter_genes <- function(data, cpm.min = 1, nsamples.min = 3, unless.cpm.gte = NULL) {
   #' Filter the genes (rows in data) based on prevalence, in order to remove genes with consistently low expression. 
   #' cpm.min: The minimum CPM required to 'pass'
   #' nsamples.min: The minimum number of samples that must pass in order to keep this gene
+  #' unless.cpm.gte: If supplied, this acts as an override; if any single CPM value is >= this value, the gene is retained, even if
+  #' it would otherwise be earmarked for removal.
   #' Returns a reduced data frame
   
   y <- DGEList(counts=data)
   keep <- rowSums(cpm(y) > cpm.min) >= nsamples.min
+  if (!is.null(unless.cpm.gte)) {
+    keep <- keep | (rowSums(cpm(y) >= unless.cpm.gte) > 0)
+  }
   data <- data[keep,]
+}
+
+export_de_list <- function(blocks, outfile) {
+  #' work out the number of comparisons being made
+  idx <- names(blocks)[grep('^[01]+$', names(blocks))]
+  idx <- idx[order(idx, decreasing = T)]
+  ns <- sapply(idx, nchar)
+  if (!all(ns == ns[1])) {
+    stop("Unequal block names. Expecting them to have the same format, e.g. `011`.")
+  }
+  n <- ns[[1]]
+  message(sprintf("Exporting %i way DE comparison to %s.", n, outfile))
+  csv.data <- data.frame(blocks[[idx[1]]])
+  if (ncol(csv.data) %% n != 0) {
+    stop(sprintf("Unequal number of rows detected (%i / %i)", ncol(csv.data), n))
+  } else {
+    csv.ncol <- as.integer(ncol(csv.data) / n)
+    message(sprintf("Detected %i columns per block.", csv.ncol))
+  }
+  block.colnames <- colnames(csv.data)[1:csv.ncol]
+
+  for (i in seq(2, 2^n - 1)) {
+    # build this block
+    this.data <- blocks[[idx[i]]]
+    this.nrow <- nrow(this.data)
+    this.block <- list()
+    k <- 1
+    l <- 1
+    for (j in strsplit(idx[i], "")[[1]]) {
+      if (j == '1') {
+        this.block[[k]] <- this.data[, (csv.ncol * (l - 1) + 1):(csv.ncol * l)]
+        l <- l + 1
+      } else {
+        this.block[[k]] <- data.frame(rep.col(rep.row("", this.nrow), csv.ncol))
+        colnames(this.block[[k]]) <- block.colnames
+      }
+      k <- k + 1
+    }
+    this.csvdata <- do.call(cbind, c(this.block, list(deparse.level=0)))
+    csv.data <- rbind(csv.data, this.csvdata)
+  }
+  
+  write.csv(csv.data, file = outfile)
+  
+  
+  
 }

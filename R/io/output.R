@@ -14,6 +14,6 @@ getOutputDir <- function(name) {
     ff <- file.path(out.dir, sub('{n}', i, name.num, fixed=T))
   }
   dir.create(ff)
-  print(paste0("Created output directory ", ff))
+  message(paste0("Created output directory ", ff))
   return(ff)
 }

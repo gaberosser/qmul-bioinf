@@ -9,53 +9,6 @@ bm_attributes.defaults = c(
   "entrezgene"
 )
 
-
-cbind.outer <- function(...) {
-  dat <- NULL
-
-  for (t in list(...)) {
-    if (is.null(dat)) {
-      dat <- data.frame(t)
-    } else {
-      this <- data.frame(t)
-      if (
-        (length(rownames(t)) != length(rownames(dat))) | (length(intersect(rownames(t), rownames(dat))) != length(t))
-      ) {
-        # expand the list of rows
-        new_rows <- setdiff(rownames(this), rownames(dat))
-        dat[new_rows,] <- NA
-        new_rows <- setdiff(rownames(dat), rownames(this))
-        this[new_rows,] <- NA
-      }
-      dat <- cbind(dat, this)
-    }
-  }
-  dat
-}
-
-rbind.outer <- function(...) {
-  dat <- NULL
-  
-  for (t in list(...)) {
-    if (is.null(dat)) {
-      dat <- data.frame(t)
-    } else {
-      this <- data.frame(t)
-      if (
-        (length(colnames(t)) != length(colnames(dat))) | (length(intersect(colnames(t), colnames(dat))) != length(t))
-      ) {
-        # expand the list of rows
-        new_rows <- setdiff(colnames(this), colnames(dat))
-        dat[,new_rows] <- NA
-        new_rows <- setdiff(colnames(dat), colnames(this))
-        this[,new_rows] <- NA
-      }
-      dat <-rbind(dat, this)
-    }
-  }
-  dat
-}
-
 get_dated_files <- function(indir) {
   flist <- list.files(indir, pattern='\\.csv')
   dates <- list()
@@ -431,7 +384,7 @@ paired_gbm_nsc_data <- function() {
 }
 
 
-paired_rtki_data <- function() {
+paired_rtki_data <- function(include_control = T) {
   samples <- c(
     'GBM018_P10',
     'GBM018_P12',
@@ -442,9 +395,12 @@ paired_rtki_data <- function() {
     'DURA018_NSC_N2_P6',
     'DURA019_NSC_N8C_P2',
     'DURA030_NSC_N16B6_P1',
-    'DURA031_NSC_N44B_P2',
-    'GIBCO_NSC_P4'
+    'DURA031_NSC_N44B_P2'
   )
+  if (include_control) {
+    samples <- c(samples, 'GIBCO_NSC_P4')
+  }
+  
   loader <- paired_gbm_nsc_data()
   
   keep <- rownames(loader$meta[rownames(loader$meta) %in% samples,])

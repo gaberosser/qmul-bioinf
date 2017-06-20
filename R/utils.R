@@ -1,3 +1,53 @@
+#' Bind columns, adding additional rows if there is any mismatch.
+#' Missing values are filled with NA.
+cbind.outer <- function(...) {
+  dat <- NULL
+  
+  for (t in list(...)) {
+    if (is.null(dat)) {
+      dat <- data.frame(t)
+    } else {
+      this <- data.frame(t)
+      if (
+        (length(rownames(t)) != length(rownames(dat))) | (length(intersect(rownames(t), rownames(dat))) != length(t))
+      ) {
+        # expand the list of rows
+        new_rows <- setdiff(rownames(this), rownames(dat))
+        dat[new_rows,] <- NA
+        new_rows <- setdiff(rownames(dat), rownames(this))
+        this[new_rows,] <- NA
+      }
+      dat <- cbind(dat, this)
+    }
+  }
+  dat
+}
+
+#' Bind rows, adding additional columns if there is any mismatch.
+#' Missing values are filled with NA.
+rbind.outer <- function(...) {
+  dat <- NULL
+  
+  for (t in list(...)) {
+    if (is.null(dat)) {
+      dat <- data.frame(t)
+    } else {
+      this <- data.frame(t)
+      if (
+        (length(colnames(t)) != length(colnames(dat))) | (length(intersect(colnames(t), colnames(dat))) != length(t))
+      ) {
+        # expand the list of rows
+        new_rows <- setdiff(colnames(this), colnames(dat))
+        dat[,new_rows] <- NA
+        new_rows <- setdiff(colnames(dat), colnames(this))
+        this[,new_rows] <- NA
+      }
+      dat <-rbind(dat, this)
+    }
+  }
+  dat
+}
+
 #' Replicate a vector n times and stack as columns to form a matrix
 rep.col<-function(x,n){
   matrix(rep(x,each=n), ncol=n, byrow=TRUE)
@@ -95,4 +145,30 @@ max_by <- function(dat, xs) {
   rownames(dat) <- dat$agg_var
   dat[,agg_var:=NULL]
   return(dat)
+}
+
+#' Given a variable number of vector inputs, generate a list with names giving the boolean intersection of the inputs
+#' For example, out['101'] contains entries that are present in the first AND third input, but NOT the second
+#' The inputs are vectors or factors (?) that can be passed through intersection(). 
+venn_sets <- function(...) {
+  ids <- list(...)
+  blocks <- list()
+  
+  nbit <- length(ids)
+  n <- 2 ** nbit - 1
+  
+  
+  for (i in seq(1, n)) {
+    comb <- as.integer(intToBits(i))[1:nbit]
+    idx.in <- which(comb == 1)
+    idx.out <- which(comb == 0)
+    
+    ids.in <- Reduce(intersect, lapply(idx.in, function(x){ ids[[x]] }))
+    ids.out <- Reduce(union, lapply(idx.out, function(x){ ids[[x]] }))
+    ids.this <- setdiff(ids.in, ids.out)
+
+    blocks[[paste0(comb, collapse = '')]] <- ids.this
+  }
+  
+  blocks
 }

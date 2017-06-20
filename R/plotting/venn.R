@@ -13,17 +13,17 @@ get_venn_area <- function(counts, n) {
 }
 
 
-venn_diagram.from_blocks <- function(blocks, ...) {
+venn_diagram.from_blocks <- function(blocks, count_func=nrow, ...) {
   n = log2(length(blocks))
   if (n %% 1 != 0) {
     # TODO
-    return(NULL)
+    stop("Unexpected input length. We should have one entry for each possible Venn combination plus one called `contrasts`.")
   }
   if (n > 5) {
-    return(NULL)
+    stop(sprintf("Can't plot a Venn diagram with n>5 (supplied: %i)", n))
   }
   
-  counts <- lapply(blocks, nrow)
+  counts <- lapply(blocks, count_func)
   counts$contrasts <- NULL
   category = blocks$contrasts
   
