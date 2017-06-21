@@ -86,7 +86,8 @@ process_and_save.EPIC <- function(
 }
 
 
-base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
+base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
 idat.dir <- file.path(base.dir, 'idat')
 meta.file <- file.path(base.dir, 'sources.csv')
 process_and_save.EPIC(idat.dir, meta.file)

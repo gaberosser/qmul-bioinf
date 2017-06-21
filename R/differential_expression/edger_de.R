@@ -169,7 +169,7 @@ export_de_list <- function(blocks, outfile) {
     csv.data <- rbind(csv.data, this.csvdata)
   }
   
-  write.csv(csv.data, file = outfile)
+  write.csv(csv.data, file = outfile, row.names = F)
   
   
   

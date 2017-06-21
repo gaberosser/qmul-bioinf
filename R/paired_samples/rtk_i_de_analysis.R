@@ -93,7 +93,7 @@ res <- grouped_analysis(dat, meta[,GROUP_LBL], meta[,LUMPED_LBL], c(contrasts, c
 for (i in seq(1, length(res))) {
   this.name <- names(res)[i]
   this.de <- prepare_de_table(res[[i]], fdr = fdr, log2FC.min = log2FC.min)
-  write.csv(this.de, file.path(output.file, sprintf("%s.csv", this.name)))
+  write.csv(this.de, file.path(output.file, sprintf("%s.csv", this.name)), row.names = F)
 }
 
 #' For each contrast, compare with the matching reference contrast

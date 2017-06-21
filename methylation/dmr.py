@@ -157,6 +157,7 @@ def median_change(y1, y2):
 def test_cluster_data_values(y1, y2, min_median_change=1.4):
     """
     Runs tests for relevance (min median change) and significance (Mann Whitney U) for the two datasets.
+    Mann Whitney is equivalent to the Wilcoxon rank-sum test for independent samples.
     :param y1:
     :param y2:
     :param min_median_change: The minimum absolute median change required to call a change significant
@@ -197,7 +198,6 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1):
     increasing the power.
     :param dmr_probes: Output of identify regions
     :param samples: Iterable of length two, containing strings referencing the sample names.
-    :param use_data: String specifying which data to use for comparison,
     :return: Dict with same structure as dmr_probes. Each cluster has an associated dictionary:
         {'relevant': True/False, 'pval': None if not relevant, float if relevant}
     """
@@ -571,6 +571,47 @@ def cluster_confined_permutation_test(dat1, dat2, anno, probes=None, n_probe=Non
         return obs, np.array(sorted(medians))
     else:
         return np.array(sorted(medians))
+
+
+def paired_permutation_test(dat1, dat2, n_max=9999):
+    assert dat1.size == dat2.size, "Incompatible data sizes"
+
+    d_diff = dat1 - dat2
+
+    n = dat1.size
+    n_it = 2 ** n
+    b_sample = n_it > n_max
+    wsrt_stat = []
+    wsrt_pval = []
+    if b_sample:
+        n_it = n_max
+        print "Sampling strategy with %d iterations" % n_it
+        multipliers = stats.binom.rvs(1, 0.5, size=(n, n_it)) * -2 + 1
+        perm_d = np.tile(d_diff, (n_it, 1)).transpose() * multipliers
+        for i in range(n_it):
+            t = stats.wilcoxon(perm_d[:, i])
+            wsrt_stat.append(t.statistic)
+            wsrt_pval.append(t.pvalue)
+    else:
+        print "Exact strategy with %d iterations" % n_it
+        for i in range(n_it):
+            str_fmt = ("{0:0%db}" % n).format(i)
+            cc = (np.array(list(str_fmt)) == '1') * -2 + 1
+            t = stats.wilcoxon(d_diff * cc)
+            wsrt_stat.append(t.statistic)
+            wsrt_pval.append(t.pvalue)
+
+    t = stats.wilcoxon(dat1, dat2)
+    return (np.array(wsrt_pval) <= t.pvalue).sum() / float(n_it)
+
+    # return {
+    #     'this_wsrt_stat': t.statistic,
+    #     'perm_wsrt_stat': wsrt_stat,
+    #     'this_wsrt_pval': t.pvalue,
+    #     'perm_wsrt_pval': wsrt_pval
+    # }
+
+
 
 
 

@@ -23,7 +23,7 @@ def construct_contingency(x, y):
 def compute_joint_de_dmr(this_test_results, this_de):
     res = {}
 
-    for sid in patient_ids:
+    for sid in this_test_results:
         print sid
         res[sid] = {}
 
@@ -77,35 +77,48 @@ if __name__ == '__main__':
     dm_min = 1.4  # minimum median delta M required to declare a cluster relevant
     alpha = 0.05
 
-    patient_ids = ['018', '019', '031']
     patient_pairs = {
-        '018': ('GBM018', 'DURA018_NSC_N2'),
-        '019': ('GBM019', 'DURA019_NSC_N8C'),
-        '031': ('GBM031', 'DURA031_NSC_N44B'),
-        # '030': ('GBM030_P5', 'DURA030N16B6NSC_P1'),
+        # '018A': ('GBM018_P10', 'DURA018_NSC_N4_P4'),
+        # '018B': ('GBM018_P12', 'DURA018_NSC_N2_P6'),
+        '018': (
+            ('GBM018_P10', 'GBM018_P12'), ('DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6')
+        ),
+        '019': ('GBM019_P4', 'DURA019_NSC_N8C_P2'),
+        '030': ('GBM030_P5', 'DURA030_NSC_N16B6_P1'),
+        '031': ('GBM031_P4', 'DURA031_NSC_N44B_P2'),
     }
     # n_jobs = mp.cpu_count()
     n_jobs = 12
 
     ## load all DE gene lists
+    ncol_per_de_block = 6
 
-    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9nsc')
+    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
     de = {}
 
-    for p in patient_pairs.keys() + ['all']:
-        fn = os.path.join(indir_de, 'gbm-insc-ensc-%s.csv' % p)
+    # blank string corresponds to full set
+    for p in patient_pairs.keys() + ['']:
+        # label used in DE structure
+        if p == '':
+            lbl = 'all'
+        else:
+            lbl = p
+
+        # fn = os.path.join(indir_de, 'gbm-insc-ensc-%s.csv' % p)
+        fn = os.path.join(indir_de, 'GBM{0}.vs.iNSC{0}-GBM{0}.vs.refNSC.csv'.format(p))
         this_de_insc_only = pd.read_csv(fn, header=0, index_col=None)
         in_insc = ~this_de_insc_only.iloc[:, 1].isnull()
-        in_ensc = ~this_de_insc_only.iloc[:, 7].isnull()
+        in_ensc = ~this_de_insc_only.iloc[:, ncol_per_de_block + 1].isnull()
 
         # DE genes in iNSC comparison only
-        de[(p, 'insc_only')] = this_de_insc_only.loc[in_insc & ~in_ensc].iloc[:, :6]
+        de[(lbl, 'insc_only')] = this_de_insc_only.loc[in_insc & ~in_ensc].iloc[:, :ncol_per_de_block]
         # DE genes in both comparisons
         # here we use the logFC etc from the iNSC comparison, since this is what we're interested in
-        de[(p, 'insc_and_h9')] = this_de_insc_only.loc[in_insc & in_ensc].iloc[:, :6]
+        de[(lbl, 'insc_and_ref')] = this_de_insc_only.loc[in_insc & in_ensc].iloc[:, :ncol_per_de_block]
         # DE genes in H9 comparison only
-        de[(p, 'h9_only')] = this_de_insc_only.loc[~in_insc & in_ensc].iloc[:, 6:]
-        de[(p, 'h9_only')].columns = this_de_insc_only.columns[:6]
+        de[(lbl, 'ref_only')] = this_de_insc_only.loc[~in_insc & in_ensc].iloc[:, ncol_per_de_block:]
+        # replace column labels to avoid the .1 suffix introduced by R
+        de[(lbl, 'ref_only')].columns = this_de_insc_only.columns[:ncol_per_de_block]
 
     ## compute DMR
 
@@ -132,23 +145,42 @@ if __name__ == '__main__':
     test_results_relevant = {}
     test_results_significant = {}
     for sid, samples in patient_pairs.items():
-        # samples = ('GBM%s' % sid, 'Dura%s' % sid)
-        test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
-        test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
-        test_results_significant[sid] = dmr.filter_dictionary(
-            test_results_relevant[sid],
-            filt=lambda x: x['rej_h0'],
-            n_level=3
-        )
+        if isinstance(samples[0], str):
+            test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
+            test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
+            test_results_significant[sid] = dmr.filter_dictionary(
+                test_results_relevant[sid],
+                filt=lambda x: x['rej_h0'],
+                n_level=3
+            )
 
     # add list of annotated genes to all clusters
-    for sid in ['018', '019', '031']:
+    for sid in test_results:
         for (chr, cls, cid), attrs in dmr.dict_iterator(test_results[sid], n_level=3):
             pids = attrs['probes']
             genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
             geneset = reduce(lambda x, y: x.union(y), genes, set())
             attrs['genes'] = geneset
 
+
+    # TODO: this is a quick sandbox test of the statistical model
+    res019 = list(dmr.dict_iterator(test_results_relevant['019'], n_level=3))
+    samples = patient_pairs['019']
+    tmpdata = m.loc[:, samples]
+    cl019data = [tmpdata.loc[t[1]['probes']] for t in res019]
+    cl019_pval_mwu = [t[1]['pval'] for t in res019]
+    from stats.nht import wilcoxon_signed_rank_test
+    cl019_pval_wsrt = [wilcoxon_signed_rank_test(t.iloc[:, 0], t.iloc[:, 1]) for t in cl019data]
+    pool = mp.Pool(n_jobs)
+    jobs = []
+    for t in cl019data:
+        jobs.append(pool.apply_async(dmr.paired_permutation_test, args=(t.iloc[:, 0], t.iloc[:, 1])))
+    pool.close()
+    cl019_pval_perm = [j.get(1e6) for j in jobs]
+
+
+    # TODO: this is just a temporary stop point
+    raise StopIteration
 
     # create a table of the numbers of DMRs
     cols = (
@@ -166,11 +198,11 @@ if __name__ == '__main__':
         return len(the_genes)
 
     ncl = len(list(
-        dmr.dict_iterator(test_results[patient_ids[0]], n_level=3)
+        dmr.dict_iterator(test_results[patient_pairs.keys()[0]], n_level=3)
     ))
-    ng = count_genes(test_results, patient_ids[0])
+    ng = count_genes(test_results, patient_pairs.keys()[0])
 
-    for sid in ['018', '019', '031']:
+    for sid in patient_pairs:
         ncl_re = len(list(
             dmr.dict_iterator(test_results_relevant[sid], n_level=3)
         ))
@@ -193,8 +225,8 @@ if __name__ == '__main__':
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
 
-    this_de_insc_only = dict([(sid, de[(sid, 'insc_only')]) for sid in patient_ids])
-    this_de_insc_h9 = dict([(sid, de[(sid, 'insc_and_h9')]) for sid in patient_ids])
+    this_de_insc_only = dict([(sid, de[(sid, 'insc_only')]) for sid in patient_pairs])
+    this_de_insc_h9 = dict([(sid, de[(sid, 'insc_and_h9')]) for sid in patient_pairs])
     meth_de_joint_insc_only = compute_joint_de_dmr(test_results_significant, this_de_insc_only)
     meth_de_joint_insc_h9 = compute_joint_de_dmr(test_results_significant, this_de_insc_h9)
 
@@ -204,7 +236,7 @@ if __name__ == '__main__':
     the_cols += reduce(lambda x, y: x + y, [['%s' % t, '%s_unique' % t] for t in dmr.CLASSES], [])
     de_dmr_matches_insc_only = pd.DataFrame(
         columns=the_cols,
-        index=pd.Index(patient_ids, name='patient'),
+        index=pd.Index(patient_pairs, name='patient'),
     )
     de_dmr_matches_insc_h9 = pd.DataFrame.copy(de_dmr_matches_insc_only)
 
@@ -224,7 +256,7 @@ if __name__ == '__main__':
             this_datum.append(meth_de[sid][cls].me_genes.unique().shape[0])
         return this_datum
 
-    for sid in patient_ids:
+    for sid in patient_pairs:
         de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only, de[(sid, 'insc_only')])
         de_dmr_matches_insc_h9.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_h9, de[(sid, 'insc_and_h9')])
 
@@ -300,7 +332,7 @@ if __name__ == '__main__':
     def venn_diagram_and_core_genes(meth_de, text_file, fig_file):
         all_genes = reduce(
             lambda x, y: x.union(y),
-            (set(meth_de[sid]['all'].genes.unique()) for sid in patient_ids),
+            (set(meth_de[sid]['all'].genes.unique()) for sid in patient_pairs),
             set()
         )
 
@@ -320,13 +352,13 @@ if __name__ == '__main__':
                 for k in range(3):
                     if bn[k] == '1':
                         this_intersection = this_intersection.intersection(
-                            meth_de[patient_ids[k]][cls].genes.unique()
+                            meth_de[patient_pairs.keys()[k]][cls].genes.unique()
                         )
                 this_genecount[bn] = len(this_intersection)
                 this_geneset[bn] = list(this_intersection)
             venn_counts[cls] = this_genecount
             venn_sets[cls] = this_geneset
-            venn = venn3(subsets=venn_counts[cls], set_labels=patient_ids, ax=axs[i])
+            venn = venn3(subsets=venn_counts[cls], set_labels=patient_pairs.keys(), ax=axs[i])
             axs[i].set_title(cls)
             print "%s core genes: %s" % (cls, ', '.join(this_geneset['111']))
             f.write("%s core genes: %s\n" % (cls, ', '.join(this_geneset['111'])))

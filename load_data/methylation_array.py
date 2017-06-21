@@ -121,12 +121,12 @@ def gse36278(dropna=True):
 
 def gbm_rtk1_and_paired_nsc(norm_method='swan'):
     samples1 = (
-        'GBM018',
-        'GBM019',
-        'GBM031',
-        'DURA018N2 NSC',
-        'DURA019N8C NSC',
-        'DURA031N44B NSC',
+        'GBM018_P10',
+        'GBM019_P4',
+        'GBM031_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA031_NSC_N44B_P2',
     )
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'beta')
     metafile = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
@@ -135,8 +135,8 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan'):
     samples2 = (
         'GBM018_P12',
         'GBM030_P5',  # probably RTK I: find out
-        'DURA018N4NSC_P4',
-        'DURA030N16B6NSC_P1', # probably RTK I: find out
+        'DURA018_NSC_N4_P4',
+        'DURA030_NSC_N16B6_P1', # probably RTK I: find out
     )
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'beta')
     metafile = os.path.join(indir, '..', 'sources.csv')
@@ -144,23 +144,23 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan'):
 
     # combine
     meta = pd.concat((m1, m2), axis=0)
-    data = pd.concat((b1, b2), axis=1)
+    data = pd.concat((b1, b2), axis=1).dropna()
 
     return data, meta
 
 
 def hgic_methylationepic(norm_method='swan'):
     samples1 = (
-        'GBM018',
-        'GBM019',
-        'GBM024',
-        'GBM026',
-        'GBM031',
-        'DURA018N2 NSC',
-        'DURA019N8C NSC',
-        'DURA024N28 NSC',
-        'DURA026N31D NSC',
-        'DURA031N44B NSC',
+        'GBM018_P10',
+        'GBM019_P4',
+        'GBM024_P9',
+        'GBM026_P8',
+        'GBM031_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA024_NSC_N28_P6',
+        'DURA026_NSC_N31D_P5',
+        'DURA031_NSC_N44B_P2',
     )
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'beta')
     metafile = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
@@ -168,15 +168,15 @@ def hgic_methylationepic(norm_method='swan'):
 
     samples2 = (
         'GBM044_P4',
-        'GBM026_P3_P4',
+        'GBM026_P3n4',
         'GBM018_P12',
         'GBM044_P8',
-        'DURA044N8NSC_P2',
+        'DURA044_NSC_N8_P2',
         'GIBCONSC_P4',
-        'DURA044N17NSC_P3',
-        'DURA018N4NSC_P4',
+        'DURA044_NSC_N17_P3',
+        'DURA018_NSC_N4_P4',
         'GBM030_P5',
-        'DURA030N16B6NSC_P1',
+        'DURA030_NSC_N16B6_P1',
     )
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'beta')
     metafile = os.path.join(indir, '..', 'sources.csv')
@@ -184,7 +184,6 @@ def hgic_methylationepic(norm_method='swan'):
 
     # combine
     meta = pd.concat((m1, m2), axis=0)
-    data = pd.concat((b1, b2), axis=1)
+    data = pd.concat((b1, b2), axis=1).dropna()
 
     return data, meta
-
