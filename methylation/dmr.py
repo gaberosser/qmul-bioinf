@@ -24,10 +24,15 @@ if len(logger.handlers) == 0:
     logger.setLevel(logging.DEBUG)
 
 NORM_METHOD = 'swan'
+
 CLASSES = {
     'gene',
     'tss',
     'island'
+}
+
+TEST_METHODS = {
+    'mwu', 'mwu_permute', 'wsrt', 'wsrt_permute'
 }
 
 
@@ -154,28 +159,72 @@ def median_change(y1, y2):
     return np.abs(np.median(y1 - y2))
 
 
-def test_cluster_data_values(y1, y2, min_median_change=1.4):
+def reshape_data(dat):
+    if len(dat.shape) == 1:
+        dat = dat.reshape((dat.size, 1))
+    elif len(dat.shape) == 2:
+        pass
+    else:
+        raise ValueError("Invalid data supplied with %d dimensions (must be either 1D or 2D)" % len(dat.shape))
+    return dat
+
+
+def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute', test_kwargs=None):
     """
     Runs tests for relevance (min median change) and significance (Mann Whitney U) for the two datasets.
     Mann Whitney is equivalent to the Wilcoxon rank-sum test for independent samples.
-    :param y1:
-    :param y2:
+    :param y1: Data for group 1. If replicates are included, one column per replicate.
+    :param y2: Data for group 2.
     :param min_median_change: The minimum absolute median change required to call a change significant
+    :param method: The statistical test applied to determine significant results. Options are:
+        mwu: Mann-Whitney U statistic, non-parametric analogue to the t test. Supports replicates (fastest).
+        wsrt: Wilcoxon Signed Rank Test, non-parametric analogue to the paired t test. Only supports n=1 comparisons.
+        mwu_permute: Permutation test with the Mann-Whtiney U statistic. Supports replicates. (default)
+        wsrt_permute: Permutation test with the Wilcoxon Signed Rank T statistic. Only supports n=1 comparisons.
+    :param test_kwargs: If supplied, these kwargs are passed to the testing function.
     :return:
     """
+
+    if method not in TEST_METHODS:
+        raise AttributeError("Requested method %s not supported. Supported methods are %s" % (
+            method,
+            ', '.join(TEST_METHODS)
+        ))
+
+    if test_kwargs is None:
+        test_kwargs = {}
+
     if len(y1) != len(y2):
         raise ValueError("Data are not matched among the two groups")
 
     if len(y1) < 4:
         raise ValueError("Unable to compute statistics for <4 observations")
 
-    res = dict(
-        median_change=np.median(y1 - y2),
-        median_fc=np.nanmedian(y1 / y2),
-    )
+    y1 = reshape_data(y1)
+    n1 = y1.shape[1]
+    y2 = reshape_data(y2)
+    n2 = y2.shape[1]
+
+    if (n1 == 1) & (n2 == 1):
+        res = dict(
+            median_change=np.median(y1 - y2),
+            median_fc=np.nanmedian(y1 / y2),
+        )
+    else:
+        m1 = np.median(y1, axis=1)
+        m2 = np.median(y2, axis=2)
+        res = dict(
+            median_change=np.median(m1 - m2),
+            median_fc=np.nanmedian(m1 / m2),
+        )
 
     if np.abs(res['median_change']) > min_median_change:
-        res['pval'] = nht.mannwhitneyu_test(y1, y2)
+        if method == 'mwu':
+            res['pval'] = nht.mannwhitneyu_test(y1, y2, **test_kwargs)
+        elif method == 'wsrt':
+            res['pval'] = nht.wilcoxon_signed_rank_test(y1, y2, **test_kwargs)
+        elif method == 'mwu_permute':
+            res['pval'] = wilcoxon_rank_sum_permutation(y1, y2, **test_kwargs)
 
     return res
 
@@ -573,7 +622,7 @@ def cluster_confined_permutation_test(dat1, dat2, anno, probes=None, n_probe=Non
         return np.array(sorted(medians))
 
 
-def paired_permutation_test(dat1, dat2, n_max=9999):
+def wilcoxon_signed_rank_permutation(dat1, dat2, n_max=9999, return_stats=False):
     assert dat1.size == dat2.size, "Incompatible data sizes"
 
     d_diff = dat1 - dat2
@@ -581,38 +630,61 @@ def paired_permutation_test(dat1, dat2, n_max=9999):
     n = dat1.size
     n_it = 2 ** n
     b_sample = n_it > n_max
-    wsrt_stat = []
-    wsrt_pval = []
     if b_sample:
         n_it = n_max
+        stat = np.zeros(n_it)
         print "Sampling strategy with %d iterations" % n_it
         multipliers = stats.binom.rvs(1, 0.5, size=(n, n_it)) * -2 + 1
         perm_d = np.tile(d_diff, (n_it, 1)).transpose() * multipliers
         for i in range(n_it):
-            t = stats.wilcoxon(perm_d[:, i])
-            wsrt_stat.append(t.statistic)
-            wsrt_pval.append(t.pvalue)
+            stat[i] = nht.wilcoxon_signed_rank_statistic(perm_d[:, i])
     else:
+        stat = np.zeros(n_it)
         print "Exact strategy with %d iterations" % n_it
         for i in range(n_it):
             str_fmt = ("{0:0%db}" % n).format(i)
             cc = (np.array(list(str_fmt)) == '1') * -2 + 1
-            t = stats.wilcoxon(d_diff * cc)
-            wsrt_stat.append(t.statistic)
-            wsrt_pval.append(t.pvalue)
+            stat[i] = nht.wilcoxon_signed_rank_statistic(d_diff * cc)
 
     t = stats.wilcoxon(dat1, dat2)
-    return (np.array(wsrt_pval) <= t.pvalue).sum() / float(n_it)
-
-    # return {
-    #     'this_wsrt_stat': t.statistic,
-    #     'perm_wsrt_stat': wsrt_stat,
-    #     'this_wsrt_pval': t.pvalue,
-    #     'perm_wsrt_pval': wsrt_pval
-    # }
+    p = (stat <= t.statistic).sum() / float(n_it)
+    if return_stats:
+        return (p, stat)
+    return p
 
 
+def wilcoxon_rank_sum_permutation(x, y, n_it=1999, return_stats=False):
+    """
+    :param x, y: k x n array, DataFrame or similar, where k is the number of probes and n is the number of patients
+    """
+    x = reshape_data(np.asarray(x))
+    y = reshape_data(np.asarray(y))
 
+    nx = x.shape[1]
+    ny = y.shape[1]
+
+    k = x.shape[0]
+    # when we index into the flat data, the switchover point is the first of the y data points
+    switch_idx = nx * k
+
+    if k != y.shape[0]:
+        raise ValueError("The number of probes in the two samples does not match.")
+
+    flatdat = np.concatenate((x.flatten('F'), y.flatten('F')))
+
+    stat = np.zeros(n_it)
+    for i in range(n_it):
+        # NB: many of these permutations are equivalent in the eyes of the MWU calculation: only permutations
+        # *that switch data between the groups* have an effect. Still, it's as good a way as any to randomise?
+        # In particular, I can't think of a better method when nx != ny
+        this_dat = np.random.permutation(flatdat)
+        u = nht.mannwhitneyu_statistic(this_dat[:switch_idx], this_dat[switch_idx:])
+        stat[i] = u
+    u = nht.mannwhitneyu_statistic(x.flatten(), y.flatten())
+    p = (stat <= u).sum() / float(n_it)
+    if return_stats:
+        return (p, stat)
+    return p
 
 
 # slower way to assess clustering: but we might want to use this in future?

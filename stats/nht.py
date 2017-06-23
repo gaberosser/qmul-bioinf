@@ -1,5 +1,6 @@
-from scipy import stats
+from scipy import stats, asarray
 import numpy as np
+import warnings
 
 
 class RFunctionDeferred(object):
@@ -61,7 +62,6 @@ def mannwhitneyu_statistic(x, y):
 
     n1 = len(x)
     n2 = len(y)
-    N = n1 + n2
 
     ranked = stats.rankdata(np.concatenate((x, y)))
     rankx = ranked[0:n1]  # get the x-ranks
@@ -95,6 +95,46 @@ def mannwhitneyu_test(x, y, alternative='two-tailed'):
     return p
 
 
+def wilcoxon_signed_rank_statistic(x, y=None, zero_method="wilcox"):
+    """
+    Compute the T statistic required in the Wilcoxon Signed Rank Test for paired samples.
+    This is the same calculation used in scipy.stats.wilcoxon
+    See docs for that function for further explanation
+    """
+
+    if zero_method not in ["wilcox", "pratt", "zsplit"]:
+        raise ValueError("Zero method should be either 'wilcox' "
+                         "or 'pratt' or 'zsplit'")
+
+    if y is None:
+        d = asarray(x)
+    else:
+        x, y = map(asarray, (x, y))
+        if len(x) != len(y):
+            raise ValueError('Unequal N in wilcoxon.  Aborting.')
+        d = x - y
+
+    if zero_method == "wilcox":
+        # Keep all non-zero differences
+        d = np.compress(np.not_equal(d, 0), d, axis=-1)
+
+    count = len(d)
+    if count < 10:
+        warnings.warn("Warning: sample size too small for normal approximation.")
+
+    r = stats.rankdata(abs(d))
+    r_plus = np.sum((d > 0) * r, axis=0)
+    r_minus = np.sum((d < 0) * r, axis=0)
+
+    if zero_method == "zsplit":
+        r_zero = np.sum((d == 0) * r, axis=0)
+        r_plus += r_zero / 2.
+        r_minus += r_zero / 2.
+
+    T = min(r_plus, r_minus)
+    return T
+
+
 def wilcoxon_signed_rank_test(x, y):
     """
     Compute the Wilcoxon signed rank test for paired samples. We use an R package to make the computation exact.
@@ -105,3 +145,6 @@ def wilcoxon_signed_rank_test(x, y):
     if not RFUNCTIONS_PRESENT:
         raise r_absent_exc
     return wilcoxsign_test(x, y)
+
+
+
