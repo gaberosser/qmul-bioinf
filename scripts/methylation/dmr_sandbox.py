@@ -4,6 +4,8 @@ import numpy as np
 from scipy import stats
 from stats import nht
 from methylation import dmr
+from matplotlib import pyplot as plt
+import multiprocessing as mp
 
 
 def reshape_data(dat):
@@ -15,107 +17,6 @@ def reshape_data(dat):
         raise ValueError("Invalid data supplied with %d dimensions (must be either 1D or 2D)" % len(dat.shape))
     return dat
 
-
-def wilcoxon_rank_sum_permutation(x, y, n_it=1999, return_stats=False):
-    """
-    :param x, y: k x n array, DataFrame or similar, where k is the number of probes and n is the number of patients
-    """
-    x = reshape_data(np.asarray(x))
-    y = reshape_data(np.asarray(y))
-
-    nx = x.shape[1]
-    ny = y.shape[1]
-
-    k = x.shape[0]
-    # when we index into the flat data, the switchover point is the first of the y data points
-    switch_idx = nx * k
-
-    if k != y.shape[0]:
-        raise ValueError("The number of probes in the two samples does not match.")
-
-    flatdat = np.concatenate((x.flatten('F'), y.flatten('F')))
-
-    stat = np.zeros(n_it)
-    for i in range(n_it):
-        # NB: many of these permutations are equivalent in the eyes of the MWU calculation: only permutations
-        # *that switch data between the groups* have an effect. Still, it's as good a way as any to randomise?
-        # In particular, I can't think of a better method when nx != ny
-        this_dat = np.random.permutation(flatdat)
-        u = nht.mannwhitneyu_statistic(this_dat[:switch_idx], this_dat[switch_idx:])
-        stat[i] = u
-    u = nht.mannwhitneyu_statistic(x.flatten(), y.flatten())
-    p = (stat <= u).sum() / float(n_it)
-    if return_stats:
-        return (p, stat)
-    return p
-
-
-def wrs_exact_permutation(x, y, n_max=1999, return_stats=False):
-    """
-    :param n_max: The maximum number of iterations to run. If the exact test requires more than this, we revert to
-    sampling. Setting this to None, 0 or negative forces exact sampling, but this might be very slow and expensive.
-
-    This generates a strange result in some cases, e.g. the 1000th cluster of 018. The exact sampling approach generates
-    a very different distribution of statistics from the approximate sampling approach.
-    """
-    force_exact = (n_max is None) or (n_max <= 0)
-    x = reshape_data(np.asarray(x))
-    y = reshape_data(np.asarray(y))
-
-    nx = x.shape[1]
-    ny = y.shape[1]
-
-    k = x.shape[0]
-
-    if k != y.shape[0]:
-        raise ValueError("The number of probes in the two samples does not match.")
-
-    n_it1 = 2 ** k
-    n_it2 = nx * ny
-    n_it = n_it1 * n_it2
-
-    if not force_exact and n_it > n_max:
-        n_it = n_max
-        print "Sampling strategy (%d iterations)" % n_it
-        stat = np.zeros(n_it)
-
-        multipliers = stats.binom.rvs(1, 0.5, size=(k, n_it))
-        jxs = np.random.randint(nx, size=n_it)
-        jys = np.random.randint(ny, size=n_it)
-        for i in range(n_it):
-            perm_x = x.copy()
-            perm_y = y.copy()
-            idx1 = multipliers[:, i] == 1
-            jx = jxs[i]
-            jy = jys[i]
-            # perform the data swap
-            perm_x[idx1, jx] = y[idx1, jy]
-            perm_y[idx1, jy] = x[idx1, jx]
-            stat[i] = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
-
-    else:
-        print "Exact strategy (%d iterations)" % n_it
-        stat = np.zeros(n_it)
-        count = 0
-        for i in range(n_it1):
-            perm_x = x.copy()
-            perm_y = y.copy()
-            str_fmt = ("{0:0%db}" % k).format(i)
-            idx1 = np.array(list(str_fmt)) == '1'
-            for jx in range(nx):
-                for jy in range(ny):
-                    # perform the data swap
-                    perm_x[idx1, jx] = y[idx1, jy]
-                    perm_y[idx1, jy] = x[idx1, jx]
-                    stat[count] = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
-                    count += 1
-
-    u = nht.mannwhitneyu_statistic(x.flat, y.flat)
-    p = (stat <= u).sum() / float(n_it)
-
-    if return_stats:
-        return (p, stat)
-    return p
 
 if __name__ == "__main__":
     with open('clusters.pkl', 'rb') as f:
@@ -142,15 +43,123 @@ if __name__ == "__main__":
             copy=False
         )
 
+    # get new results
+    s = (('GBM018_P10', 'GBM018_P12'), ('DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6'))
+    new_results = dmr.test_clusters(clusters, m, s, n_jobs=4)
+
     # get values associated with 018 repeats
     n_it = 1999
     samples = ('GBM018_P10', 'GBM018_P12', 'DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6')
     tmp = m.loc[:, samples]
     data018 = [tmp.loc[t[1]['probes']] for t in dmr.dict_iterator(clusters, n_level=3)]
 
-    t = data018[0]
-    xy = t.values.flatten(order='F')
-    n_x = 2 * t.shape[0]
-    perm_xy = [np.random.permutation(xy) for i in range(n_it)]
-    u = nht.mannwhitneyu_statistic(xy[:n_x], xy[n_x:])
-    perm_u = [nht.mannwhitneyu_statistic(p[:n_x], p[n_x:]) for p in perm_xy]
+    # permutation Mann-Whitney U
+    pool = mp.Pool(4)
+    jobs = []
+    cl018_pval_mwu = []
+    for t in data018:
+        x = t.iloc[:, :2]
+        y = t.iloc[:, 2:]
+        jobs.append(pool.apply_async(dmr.wilcoxon_rank_sum_permutation, args=(x, y)))
+        cl018_pval_mwu.append(nht.mannwhitneyu_test(x.values.flat, y.values.flat))
+    pool.close()
+    cl018_pval_mwu_perm = [j.get(1e6) for j in jobs]
+
+    #
+    # p, stat = wilcoxon_rank_sum_permutation(x, y, n_max=1999, return_stats=True)
+    # p_exact, stat_exact = wilcoxon_rank_sum_permutation(x, y, n_max=None, return_stats=True)
+    # u_obs = nht.mannwhitneyu_statistic(x.values.flat, y.values.flat)
+    # res_obs = stats.mannwhitneyu(x.values.flat, y.values.flat)
+    # u_obs = res_obs.statistic
+    # p_obs = res_obs.pvalue
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # ax.hist(stat, 40, normed=True, label="Sampling strategy")
+    # ax.hist(stat_exact, 40, normed=True, alpha=0.5, label="Exhaustive strategy")
+    # ax.legend(loc='upper left')
+
+    # investigate discrepancy between distributions
+    t = data018[1000]
+    x = np.asarray(t.iloc[:, :2])
+    y = np.asarray(t.iloc[:, 2:])
+    k = x.shape[0]
+    nx = x.shape[1]
+    ny = y.shape[1]
+    n_it1 = 2 ** k
+
+    multipliers = stats.binom.rvs(1, 0.5, size=(k, n_it))
+    n_moved = multipliers.sum(axis=0)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist(n_moved, np.arange(-1, k + 1) + .5, normed=True, label="Sampling strategy")
+    # the distribution is itself binomial(k, 0.5)
+    theor_pmf = stats.binom.pmf(range(k + 1), k, 0.5)
+    ax.plot(np.arange(k + 1), theor_pmf, 'k-', label="Expected (binomial)")
+
+    n_moved_e = []
+    for i in range(n_it1):
+        str_fmt = ("{0:0%db}" % k).format(i)
+        n_moved_e.append((np.array(list(str_fmt)) == '1').sum())
+    # this has the SAME distribution
+    ax.hist(n_moved_e, np.arange(-1, k + 1) + .5, normed=True, alpha=0.5, label="Complete strategy")
+    ax.legend(loc='upper left')
+
+    # so, why are the U distributions so very different??
+    # think it's the jx and jy component
+    # try an approximate complete sampling (all idx covered, but random choice of jx, jy)
+    stat2 = np.zeros(n_it1)
+    high_scorers2 = []
+    all_params2 = []
+    count = 0
+    for i in range(n_it1):
+        perm_x = x.copy()
+        perm_y = y.copy()
+        str_fmt = ("{0:0%db}" % k).format(i)
+        idx1 = np.array(list(str_fmt)) == '1'
+        jx = np.random.randint(nx)
+        jy = np.random.randint(ny)
+        all_params2.append((i, jx, jy))
+        # perform the data swap
+        perm_x[idx1, jx] = y[idx1, jy]
+        perm_y[idx1, jy] = x[idx1, jx]
+        this_u = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
+        if this_u > 280:
+            high_scorers2.append((i, jx, jy))
+        stat2[count] = this_u
+        count += 1
+
+    # repeat the exhaustive (and exhausting!!) process
+    stat3 = np.zeros(n_it1 * nx * ny)
+    high_scorers3 = []
+    all_params3 = []
+    count = 0
+    for i in range(n_it1):
+        str_fmt = ("{0:0%db}" % k).format(i)
+        idx1 = np.array(list(str_fmt)) == '1'
+        for jx in range(nx):
+            for jy in range(ny):
+                perm_x = x.copy()
+                perm_y = y.copy()
+                all_params3.append((i, jx, jy))
+                # perform the data swap
+                perm_x[idx1, jx] = y[idx1, jy]
+                perm_y[idx1, jy] = x[idx1, jx]
+                this_u = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
+                if this_u > 280:
+                    high_scorers3.append((i, jx, jy))
+                stat3[count] = this_u
+                count += 1
+
+    stat4 = np.zeros(n_it1)
+    count = 0
+    for i in range(n_it1):
+        perm_x = x.copy()
+        perm_y = y.copy()
+        str_fmt = ("{0:0%db}" % k).format(i)
+        idx1 = np.array(list(str_fmt)) == '1'
+        # perform the data swap
+        perm_x[idx1] = y[idx1]
+        perm_y[idx1] = x[idx1]
+        stat4[count] = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
+        count += 1
+

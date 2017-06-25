@@ -76,10 +76,9 @@ if __name__ == '__main__':
     n_min = 6
     dm_min = 1.4  # minimum median delta M required to declare a cluster relevant
     alpha = 0.05
+    dmr_method = 'mwu'
 
     patient_pairs = {
-        # '018A': ('GBM018_P10', 'DURA018_NSC_N4_P4'),
-        # '018B': ('GBM018_P12', 'DURA018_NSC_N2_P6'),
         '018': (
             ('GBM018_P10', 'GBM018_P12'), ('DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6')
         ),
@@ -87,8 +86,8 @@ if __name__ == '__main__':
         '030': ('GBM030_P5', 'DURA030_NSC_N16B6_P1'),
         '031': ('GBM031_P4', 'DURA031_NSC_N44B_P2'),
     }
-    # n_jobs = mp.cpu_count()
-    n_jobs = 12
+    n_jobs = mp.cpu_count()
+    # n_jobs = 12
 
     ## load all DE gene lists
     ncol_per_de_block = 6
@@ -146,7 +145,14 @@ if __name__ == '__main__':
     test_results_significant = {}
     for sid, samples in patient_pairs.items():
         if isinstance(samples[0], str):
-            test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
+            test_results[sid] = dmr.test_clusters(
+                clusters,
+                m,
+                samples=samples,
+                min_median_change=dm_min,
+                n_jobs=n_jobs,
+                method=dmr_method
+            )
             test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
             test_results_significant[sid] = dmr.filter_dictionary(
                 test_results_relevant[sid],
@@ -161,26 +167,6 @@ if __name__ == '__main__':
             genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
             geneset = reduce(lambda x, y: x.union(y), genes, set())
             attrs['genes'] = geneset
-
-
-    # TODO: this is a quick sandbox test of the statistical model
-    res019 = list(dmr.dict_iterator(test_results_relevant['019'], n_level=3))
-    samples = patient_pairs['019']
-    tmpdata = m.loc[:, samples]
-    cl019data = [tmpdata.loc[t[1]['probes']] for t in res019]
-    cl019_pval_mwu = [t[1]['pval'] for t in res019]
-    from stats.nht import wilcoxon_signed_rank_test
-    cl019_pval_wsrt = [wilcoxon_signed_rank_test(t.iloc[:, 0], t.iloc[:, 1]) for t in cl019data]
-    pool = mp.Pool(n_jobs)
-    jobs = []
-    for t in cl019data:
-        jobs.append(pool.apply_async(dmr.paired_permutation_test, args=(t.iloc[:, 0], t.iloc[:, 1])))
-    pool.close()
-    cl019_pval_perm = [j.get(1e6) for j in jobs]
-
-
-    # TODO: this is just a temporary stop point
-    raise StopIteration
 
     # create a table of the numbers of DMRs
     cols = (
@@ -202,7 +188,7 @@ if __name__ == '__main__':
     ))
     ng = count_genes(test_results, patient_pairs.keys()[0])
 
-    for sid in patient_pairs:
+    for sid in test_results:
         ncl_re = len(list(
             dmr.dict_iterator(test_results_relevant[sid], n_level=3)
         ))
@@ -256,13 +242,13 @@ if __name__ == '__main__':
             this_datum.append(meth_de[sid][cls].me_genes.unique().shape[0])
         return this_datum
 
-    for sid in patient_pairs:
+    for sid in test_results:
         de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only, de[(sid, 'insc_only')])
         de_dmr_matches_insc_h9.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_h9, de[(sid, 'insc_and_h9')])
 
 
     def scatter_plot_dmr_de(meth_de, fig_filestem):
-        for sid in ['018', '019', '031']:
+        for sid in meth_de:
             fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True)
             for i, cls in enumerate(['all', 'tss', 'gene', 'island']):
                 ax = axs.flat[i]

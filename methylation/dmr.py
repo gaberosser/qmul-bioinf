@@ -32,7 +32,7 @@ CLASSES = {
 }
 
 TEST_METHODS = {
-    'mwu', 'mwu_permute', 'wsrt', 'wsrt_permute'
+    'none', 'mwu', 'mwu_permute', 'wsrt', 'wsrt_permute'
 }
 
 
@@ -177,6 +177,7 @@ def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute'
     :param y2: Data for group 2.
     :param min_median_change: The minimum absolute median change required to call a change significant
     :param method: The statistical test applied to determine significant results. Options are:
+        None: do not apply a statistical test (relevance check only)
         mwu: Mann-Whitney U statistic, non-parametric analogue to the t test. Supports replicates (fastest).
         wsrt: Wilcoxon Signed Rank Test, non-parametric analogue to the paired t test. Only supports n=1 comparisons.
         mwu_permute: Permutation test with the Mann-Whtiney U statistic. Supports replicates. (default)
@@ -185,7 +186,7 @@ def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute'
     :return:
     """
 
-    if method not in TEST_METHODS:
+    if method is not None and method not in TEST_METHODS:
         raise AttributeError("Requested method %s not supported. Supported methods are %s" % (
             method,
             ', '.join(TEST_METHODS)
@@ -200,31 +201,45 @@ def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute'
     if len(y1) < 4:
         raise ValueError("Unable to compute statistics for <4 observations")
 
-    y1 = reshape_data(y1)
+    y1 = reshape_data(np.asarray(y1))
     n1 = y1.shape[1]
-    y2 = reshape_data(y2)
+    y2 = reshape_data(np.asarray(y2))
     n2 = y2.shape[1]
 
-    if (n1 == 1) & (n2 == 1):
-        res = dict(
-            median_change=np.median(y1 - y2),
-            median_fc=np.nanmedian(y1 / y2),
-        )
-    else:
+    if n1 == 1:
+        m1 = y1
+    elif n1 > 1:
         m1 = np.median(y1, axis=1)
-        m2 = np.median(y2, axis=2)
-        res = dict(
-            median_change=np.median(m1 - m2),
-            median_fc=np.nanmedian(m1 / m2),
-        )
+    else:
+        raise ValueError("y1 has an empty dimension (no samples?)")
 
-    if np.abs(res['median_change']) > min_median_change:
-        if method == 'mwu':
-            res['pval'] = nht.mannwhitneyu_test(y1, y2, **test_kwargs)
-        elif method == 'wsrt':
-            res['pval'] = nht.wilcoxon_signed_rank_test(y1, y2, **test_kwargs)
-        elif method == 'mwu_permute':
-            res['pval'] = wilcoxon_rank_sum_permutation(y1, y2, **test_kwargs)
+    if n2 == 1:
+        m2 = y2
+    elif n2 > 1:
+        m2 = np.median(y2, axis=1)
+    else:
+        raise ValueError("y1 has an empty dimension (no samples?)")
+
+    res = dict(
+        median_change=np.median(m1 - m2),
+        # median_fc=np.nanmedian(m1 / m2),
+    )
+
+    if method is None or method == 'none':
+        # don't run the statistical test
+        pass
+    else:
+        if np.abs(res['median_change']) > min_median_change:
+            if method == 'mwu':
+                res['pval'] = nht.mannwhitneyu_test(y1.flat, y2.flat, **test_kwargs)
+            elif method == 'wsrt':
+                if (n1 > 1) or (n2 > 1):
+                    raise AttributeError("Wilcoxon signed rank test is not suitable for replicates.")
+                res['pval'] = nht.wilcoxon_signed_rank_test(y1, y2, **test_kwargs)
+            elif method == 'mwu_permute':
+                res['pval'] = wilcoxon_rank_sum_permutation(y1, y2, **test_kwargs)
+            elif method == 'wsrt_permute':
+                raise NotImplementedError
 
     return res
 
@@ -239,7 +254,7 @@ def test_cluster_data_values_parallel(probes, **kwargs):
     return test_cluster_data_values(y1, y2, **kwargs)
 
 
-def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1):
+def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kwargs):
     """
     Compare beta or M values between two samples.
     Each cluster is marked as either 'not of interest', 'relevant and non-significant', or
@@ -247,11 +262,15 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1):
     increasing the power.
     :param dmr_probes: Output of identify regions
     :param samples: Iterable of length two, containing strings referencing the sample names.
+    :param kwargs: Passed to test_cluster_data_values
     :return: Dict with same structure as dmr_probes. Each cluster has an associated dictionary:
         {'relevant': True/False, 'pval': None if not relevant, float if relevant}
     """
     if len(samples) != 2:
         raise AttributeError("samples must have length two and reference columns in the data")
+
+    test_kwargs = dict(kwargs)
+    test_kwargs.update({'min_median_change': min_median_change})
 
     res = {}
 
@@ -275,14 +294,14 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1):
                     jobs[(chr, typ, j)] = pool.apply_async(
                         test_cluster_data_values_parallel,
                         args=(probedict['probes'],),
-                        kwds={'min_median_change': min_median_change}
+                        kwds=test_kwargs
                     )
                 else:
                     try:
                         this_y1 = y1.loc[probedict['probes']].dropna()
                         this_y2 = y2.loc[probedict['probes']].dropna()
                         res[chr][typ][j].update(
-                            test_cluster_data_values(this_y1, this_y2, min_median_change=min_median_change)
+                            test_cluster_data_values(this_y1, this_y2, **test_kwargs)
                         )
                     except Exception:
                         logger.error("Failed on chr %s type %s number %s", chr, typ, j)
@@ -653,10 +672,15 @@ def wilcoxon_signed_rank_permutation(dat1, dat2, n_max=9999, return_stats=False)
     return p
 
 
-def wilcoxon_rank_sum_permutation(x, y, n_it=1999, return_stats=False):
+def wilcoxon_rank_sum_permutation(x, y, n_max=1999, return_stats=False):
     """
-    :param x, y: k x n array, DataFrame or similar, where k is the number of probes and n is the number of patients
+    :param n_max: The maximum number of iterations to run. If the exact test requires more than this, we revert to
+    sampling. Setting this to None, 0 or negative forces exact sampling, but this might be very slow and expensive.
+
+    This generates a strange result in some cases, e.g. the 1000th cluster of 018. The exact sampling approach generates
+    a very different distribution of statistics from the approximate sampling approach.
     """
+    force_exact = (n_max is None) or (n_max <= 0)
     x = reshape_data(np.asarray(x))
     y = reshape_data(np.asarray(y))
 
@@ -664,28 +688,54 @@ def wilcoxon_rank_sum_permutation(x, y, n_it=1999, return_stats=False):
     ny = y.shape[1]
 
     k = x.shape[0]
-    # when we index into the flat data, the switchover point is the first of the y data points
-    switch_idx = nx * k
 
     if k != y.shape[0]:
         raise ValueError("The number of probes in the two samples does not match.")
 
-    flatdat = np.concatenate((x.flatten('F'), y.flatten('F')))
+    n_it1 = 2 ** k
+    n_it2 = nx * ny
+    n_it = n_it1 * n_it2
 
-    stat = np.zeros(n_it)
-    for i in range(n_it):
-        # NB: many of these permutations are equivalent in the eyes of the MWU calculation: only permutations
-        # *that switch data between the groups* have an effect. Still, it's as good a way as any to randomise?
-        # In particular, I can't think of a better method when nx != ny
-        this_dat = np.random.permutation(flatdat)
-        u = nht.mannwhitneyu_statistic(this_dat[:switch_idx], this_dat[switch_idx:])
-        stat[i] = u
-    u = nht.mannwhitneyu_statistic(x.flatten(), y.flatten())
+    if not force_exact and n_it > n_max:
+        n_it = n_max
+        stat = np.zeros(n_it)
+
+        multipliers = stats.binom.rvs(1, 0.5, size=(k, n_it))
+        jxs = np.random.randint(nx, size=n_it)
+        jys = np.random.randint(ny, size=n_it)
+        for i in range(n_it):
+            perm_x = x.copy()
+            perm_y = y.copy()
+            idx1 = multipliers[:, i] == 1
+            jx = jxs[i]
+            jy = jys[i]
+            # perform the data swap
+            perm_x[idx1, jx] = y[idx1, jy]
+            perm_y[idx1, jy] = x[idx1, jx]
+            stat[i] = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
+
+    else:
+        stat = np.zeros(n_it)
+        count = 0
+        for i in range(n_it1):
+            str_fmt = ("{0:0%db}" % k).format(i)
+            idx1 = np.array(list(str_fmt)) == '1'
+            for jx in range(nx):
+                for jy in range(ny):
+                    perm_x = x.copy()
+                    perm_y = y.copy()
+                    # perform the data swap
+                    perm_x[idx1, jx] = y[idx1, jy]
+                    perm_y[idx1, jy] = x[idx1, jx]
+                    stat[count] = nht.mannwhitneyu_statistic(perm_x.flat, perm_y.flat)
+                    count += 1
+
+    u = nht.mannwhitneyu_statistic(x.flat, y.flat)
     p = (stat <= u).sum() / float(n_it)
+
     if return_stats:
         return (p, stat)
     return p
-
 
 # slower way to assess clustering: but we might want to use this in future?
 # from sklearn.cluster import DBSCAN
