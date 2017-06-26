@@ -2,7 +2,7 @@ from methylation import dmr, process, plots
 from load_data import methylation_array
 from settings import DATA_DIR
 from utils.output import unique_output_dir
-import operator
+import collections
 import os
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ from scipy import stats
 import multiprocessing as mp
 from matplotlib import pyplot as plt
 import seaborn as sns
-from matplotlib_venn import venn3, venn2
+from plotting import venn
 
 
 def construct_contingency(x, y):
@@ -28,7 +28,8 @@ def compute_joint_de_dmr(this_test_results, this_de):
         res[sid] = {}
 
         de_cols = ['genes', 'logFC', 'ensembl', 'direction', 'FDR', 'logCPM']
-        meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_medianfc', 'me_fdr']
+        meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_median1', 'me_median2', 'me_fdr']
+        meth_attrs = ['median_change', 'median1', 'median2']
 
         for (chr, cls, cid), attrs in dmr.dict_iterator(this_test_results[sid], n_level=3):
             res[sid].setdefault(cls, pd.DataFrame(columns=de_cols + meth_cols))
@@ -43,10 +44,9 @@ def compute_joint_de_dmr(this_test_results, this_de):
                 if de_match.shape[0] > 0:
                     # form the DMR data block
                     me_data = np.tile(
-                        [
-                            chr, cid, attrs['median_change'], attrs['median_fc'], attrs['padj']
-                        ],
-                        (de_match.shape[0], 1))
+                        [chr, cid] + [attrs[k] for k in meth_attrs] + [attrs['padj']],
+                        (de_match.shape[0], 1)
+                    )
                     me_data = np.concatenate(
                         (
                             np.reshape(de_match.genes.values, (de_match.shape[0], 1)),
@@ -61,7 +61,7 @@ def compute_joint_de_dmr(this_test_results, this_de):
                         (res[sid][cls], this_match), axis=0, ignore_index=True
                     )
             except Exception as exc:
-                print "Failed to add data (iNSC only): (%s, %s, %d)" % (chr, cls, cid)
+                print "Failed to add data: (%s, %s, %d)" % (chr, cls, cid)
                 print repr(exc)
                 continue
 
@@ -78,14 +78,14 @@ if __name__ == '__main__':
     alpha = 0.05
     dmr_method = 'mwu'
 
-    patient_pairs = {
-        '018': (
+    patient_pairs = collections.OrderedDict([
+        ('018', (
             ('GBM018_P10', 'GBM018_P12'), ('DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6')
-        ),
-        '019': ('GBM019_P4', 'DURA019_NSC_N8C_P2'),
-        '030': ('GBM030_P5', 'DURA030_NSC_N16B6_P1'),
-        '031': ('GBM031_P4', 'DURA031_NSC_N44B_P2'),
-    }
+        )),
+        ('019', ('GBM019_P4', 'DURA019_NSC_N8C_P2')),
+        ('030', ('GBM030_P5', 'DURA030_NSC_N16B6_P1')),
+        ('031', ('GBM031_P4', 'DURA031_NSC_N44B_P2')),
+    ])
     n_jobs = mp.cpu_count()
     # n_jobs = 12
 
@@ -144,21 +144,20 @@ if __name__ == '__main__':
     test_results_relevant = {}
     test_results_significant = {}
     for sid, samples in patient_pairs.items():
-        if isinstance(samples[0], str):
-            test_results[sid] = dmr.test_clusters(
-                clusters,
-                m,
-                samples=samples,
-                min_median_change=dm_min,
-                n_jobs=n_jobs,
-                method=dmr_method
-            )
-            test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
-            test_results_significant[sid] = dmr.filter_dictionary(
-                test_results_relevant[sid],
-                filt=lambda x: x['rej_h0'],
-                n_level=3
-            )
+        test_results[sid] = dmr.test_clusters(
+            clusters,
+            m,
+            samples=samples,
+            min_median_change=dm_min,
+            n_jobs=n_jobs,
+            method=dmr_method
+        )
+        test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
+        test_results_significant[sid] = dmr.filter_dictionary(
+            test_results_relevant[sid],
+            filt=lambda x: x['rej_h0'],
+            n_level=3
+        )
 
     # add list of annotated genes to all clusters
     for sid in test_results:
@@ -212,9 +211,9 @@ if __name__ == '__main__':
     # Get methylation level and DE fold change for linked genes (pairwise only)
 
     this_de_insc_only = dict([(sid, de[(sid, 'insc_only')]) for sid in patient_pairs])
-    this_de_insc_h9 = dict([(sid, de[(sid, 'insc_and_h9')]) for sid in patient_pairs])
+    this_de_insc_ref = dict([(sid, de[(sid, 'insc_and_ref')]) for sid in patient_pairs])
     meth_de_joint_insc_only = compute_joint_de_dmr(test_results_significant, this_de_insc_only)
-    meth_de_joint_insc_h9 = compute_joint_de_dmr(test_results_significant, this_de_insc_h9)
+    meth_de_joint_insc_ref = compute_joint_de_dmr(test_results_significant, this_de_insc_ref)
 
     # Generate table giving the number of overlaps in each patient and cluster class
     # this includes the number of absolute overlaps AND the number of unique overlaps
@@ -224,7 +223,7 @@ if __name__ == '__main__':
         columns=the_cols,
         index=pd.Index(patient_pairs, name='patient'),
     )
-    de_dmr_matches_insc_h9 = pd.DataFrame.copy(de_dmr_matches_insc_only)
+    de_dmr_matches_insc_ref = pd.DataFrame.copy(de_dmr_matches_insc_only)
 
     def n_overlap_datum(sid, meth_de, this_de):
         n_de = this_de.shape[0]
@@ -244,7 +243,7 @@ if __name__ == '__main__':
 
     for sid in test_results:
         de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only, de[(sid, 'insc_only')])
-        de_dmr_matches_insc_h9.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_h9, de[(sid, 'insc_and_h9')])
+        de_dmr_matches_insc_ref.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_ref, de[(sid, 'insc_and_ref')])
 
 
     def scatter_plot_dmr_de(meth_de, fig_filestem):
@@ -311,11 +310,14 @@ if __name__ == '__main__':
 
     print "*** Genes that match and are DE in GBM vs iNSC only ***"
     scatter_plot_dmr_de(meth_de_joint_insc_only, os.path.join(outdir, "de_vs_dmr_insc_only"))
-    print "*** Genes that match and are DE in GBM vs iNSC AND GBM vs H9 ***"
-    scatter_plot_dmr_de(meth_de_joint_insc_h9, os.path.join(outdir, "de_vs_dmr_insc_h9"))
+    print "*** Genes that match and are DE in GBM vs iNSC AND GBM vs REF ***"
+    scatter_plot_dmr_de(meth_de_joint_insc_ref, os.path.join(outdir, "de_vs_dmr_insc_ref"))
 
-    # 2: To what extent do the same genes appear in all RTK 1 samples?
+    # 2: Venn diagrams: to what extent do the same genes appear in all RTK 1 samples?
     def venn_diagram_and_core_genes(meth_de, text_file, fig_file):
+        n_sample = len(meth_de)
+        b_str = "{0:0%db}" % n_sample
+        all_str = ''.join(['1'] * n_sample)
         all_genes = reduce(
             lambda x, y: x.union(y),
             (set(meth_de[sid]['all'].genes.unique()) for sid in patient_pairs),
@@ -327,29 +329,23 @@ if __name__ == '__main__':
 
         venn_counts = {}
         venn_sets = {}
+        # one Venn diagram per class
+        # Venn components are patients
+        # we therefore build a structure containing patient-wise gene sets for each class
         for i, cls in enumerate(dmr.CLASSES):
-            this_genecount = {}
-            this_geneset = {}
-
-            # all
-            for j in range(1, 8):
-                bn = "{0:03b}".format(j)
-                this_intersection = set(all_genes)
-                for k in range(3):
-                    if bn[k] == '1':
-                        this_intersection = this_intersection.intersection(
-                            meth_de[patient_pairs.keys()[k]][cls].genes.unique()
-                        )
-                this_genecount[bn] = len(this_intersection)
-                this_geneset[bn] = list(this_intersection)
-            venn_counts[cls] = this_genecount
-            venn_sets[cls] = this_geneset
-            venn = venn3(subsets=venn_counts[cls], set_labels=patient_pairs.keys(), ax=axs[i])
+            # reordered dict by sublevel
+            tmp = dmr.dict_by_sublevel(meth_de, 2, cls)
+            gene_sets = [set(tmp[sid].genes) for sid in patient_pairs]
+            venn_res, venn_sets[cls], venn_counts[cls] = venn.venn_diagram(
+                *gene_sets,
+                set_labels=patient_pairs.keys(),
+                ax=axs[i]
+            )
             axs[i].set_title(cls)
-            print "%s core genes: %s" % (cls, ', '.join(this_geneset['111']))
-            f.write("%s core genes: %s\n" % (cls, ', '.join(this_geneset['111'])))
-        core_all = set(venn_sets['tss']['111']).intersection(venn_sets['gene']['111']).intersection(
-            venn_sets['island']['111'])
+            print "%s core genes: %s" % (cls, ', '.join(venn_sets[cls][all_str]))
+            f.write("%s core genes: %s\n" % (cls, ', '.join(venn_sets[cls][all_str])))
+        core_all = set(venn_sets['tss'][all_str]).intersection(venn_sets['gene'][all_str]).intersection(
+            venn_sets['island'][all_str])
         print "Core genes shared across all classes: %s" % ', '.join(list(core_all))
         f.write("Core genes shared across all classes: %s\n" % ', '.join(list(core_all)))
         f.close()
@@ -361,15 +357,15 @@ if __name__ == '__main__':
         return venn_sets
 
 
-    print "*** GBM vs iNSC and NOT GBM vs H9 Venn overlaps ***"
+    print "*** GBM vs iNSC and NOT GBM vs REF Venn overlaps ***"
     venn_insc_only = venn_diagram_and_core_genes(
         meth_de_joint_insc_only,
         os.path.join(outdir, "core_genes_de_dmr_insc_only.txt"),
         os.path.join(outdir, "dmr_and_de_overlap_insc_only")
     )
-    print "*** GBM vs iNSC and GBM vs H9 Venn overlaps ***"
-    venn_insc_h9 = venn_diagram_and_core_genes(
-        meth_de_joint_insc_h9,
-        os.path.join(outdir, "core_genes_de_dmr_insc_h9.txt"),
-        os.path.join(outdir, "dmr_and_de_overlap_insc_h9")
+    print "*** GBM vs iNSC and GBM vs REF Venn overlaps ***"
+    venn_insc_ref = venn_diagram_and_core_genes(
+        meth_de_joint_insc_ref,
+        os.path.join(outdir, "core_genes_de_dmr_insc_ref.txt"),
+        os.path.join(outdir, "dmr_and_de_overlap_insc_ref")
     )

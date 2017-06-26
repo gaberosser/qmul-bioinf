@@ -91,7 +91,6 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1):
         pool = mp.Pool(processes=n_jobs)
 
     for chr in pd.factorize(anno.CHR)[1]:
-        print chr
         p1 = {}
         dat = get_chr(anno, chr)
         for cl in CLASSES:
@@ -222,7 +221,8 @@ def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute'
 
     res = dict(
         median_change=np.median(m1 - m2),
-        # median_fc=np.nanmedian(m1 / m2),
+        median1=np.median(m1),
+        median2=np.median(m2),
     )
 
     if method is None or method == 'none':
@@ -283,7 +283,6 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kw
 
     for chr, d in clusters.iteritems():
         # chromosome loop
-        logger.info("Chromosome %s", chr)
         res[chr] = {}
         for typ, cldict in d.iteritems():
             # cluster type loop
@@ -438,7 +437,8 @@ def dict_by_sublevel(d, level, key, n_level=None):
     g = dict_iterator(d, n_level=n_level)
     res = {}
     for k, val in g:
-        if len(k) <= level:
+        # if len(k) <= level:
+        if len(k) < level:
             raise ValueError("Requested level is too low for this dictionary")
         if k[j] == key:
             remaining_keys = k[:j] + k[(j+1):]
