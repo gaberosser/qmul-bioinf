@@ -113,7 +113,7 @@ for (i in seq(1, length(contrasts))) {
 }
 
 ens.alsoinref <- lapply(output, function(x) {x$`11`$ensembl})
-venn_ens <- do.call(venn_sets, alsoinref)
+venn_ens <- do.call(venn_sets, ens.alsoinref)
 venn_ens$contrasts <- names(contrasts)
 png(
   filename = file.path(output.file, 'de_count_insc_ref.png'),
