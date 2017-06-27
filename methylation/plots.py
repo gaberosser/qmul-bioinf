@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 from matplotlib import patches, collections
-from plotting.utils import COLOUR_BREWERS
+from plotting.common import COLOUR_BREWERS
 import seaborn as sns
 
 

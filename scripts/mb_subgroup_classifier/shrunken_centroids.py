@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 
 from load_data import microarray_data
 from microarray import process
-from plotting import heatmap, utils
+from plotting import heatmap, common
 from scripts.mb_subgroup_classifier.load import load_xz_rnaseq, load_xiaonan_microarray
 from utils import log
 
@@ -590,7 +590,7 @@ if __name__ == '__main__':
     fig = ax.get_figure()
     quadmesh = ax.collections[-1]
     cax = fig.colorbar(quadmesh, pad=0.02)
-    utils.axis_border(cax.ax, c='0.3', lw=1)
+    common.axis_border(cax.ax, c='0.3', lw=1)
     ax.xaxis.label.set_visible(False)
     plt.tight_layout(pad=0.0, rect=[.01, 0, 1.1, .98])
 

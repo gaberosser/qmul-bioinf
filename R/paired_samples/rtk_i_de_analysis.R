@@ -12,13 +12,14 @@ source('differential_expression/edger_de.R')
 source('io/output.R')
 source('_settings.R')
 source("utils.R")
+source("plotting/venn.R")
 
 fdr <- 0.05
 log2FC.min <- 1.
 
 output.file <- getOutputDir('RTKI.de')
 
-REFERENCE <- 'gibco'
+REFERENCE <- 'h9'
 LUMPED_LBL <- 'groups.lumped'
 GROUP_LBL <- 'groups'
 
@@ -111,10 +112,27 @@ for (i in seq(1, length(contrasts))) {
   export_de_list(output[[this.name]], file.path(output.file, sprintf("%s.csv", this.name)))
 }
 
+ens.alsoinref <- lapply(output, function(x) {x$`11`$ensembl})
+venn_ens <- do.call(venn_sets, alsoinref)
+venn_ens$contrasts <- names(contrasts)
+png(
+  filename = file.path(output.file, 'de_count_insc_ref.png'),
+  width=600,
+  height=600
+)
+venn_diagram.from_blocks(venn_ens, count_func = length, margin=.2)
+dev.off()
+
 ens.notinref <- lapply(output, function(x) {x$`10`$ensembl})
 venn_ens <- do.call(venn_sets, ens.notinref)
 venn_ens$contrasts <- names(contrasts)
-venn_diagram.from_blocks(venn_ens, count_func = length)
+png(
+  filename = file.path(output.file, 'de_count_insc_not_ref.png'),
+  width=600,
+  height=600
+)
+venn_diagram.from_blocks(venn_ens, count_func = length, margin=.2)
+dev.off()
 
 #' Let's look at the core genes (shared by all, but not in the reference comparisons)
 core_ens <- venn_ens$`11111`
@@ -128,7 +146,9 @@ almost_core_ens <- as.vector(unlist(
 ))
 
 ens.map <- biomart_annotation(index.by='ensembl_gene_id')
+writeLines("*** Shared by all samples: ***")
 writeLines(as.vector(ens.map[core_ens, 'hgnc_symbol']))
+writeLines("*** Shared by 4/5 samples: ***")
 writeLines(as.vector(ens.map[c(core_ens, almost_core_ens), 'hgnc_symbol']))
 
 #' #' Run GO (and KEGG) analysis

@@ -1,4 +1,4 @@
-from plotting import utils, heatmap
+from plotting import common, heatmap
 import pandas as pd
 import os
 from settings import DATA_DIR

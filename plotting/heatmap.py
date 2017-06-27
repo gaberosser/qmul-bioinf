@@ -1,7 +1,7 @@
 from matplotlib import pyplot as plt, gridspec
 import seaborn as sns
 import numpy as np
-from plotting import utils
+from plotting import common
 
 
 def grouped_expression_heatmap(
@@ -157,16 +157,16 @@ def grouped_expression_heatmap(
     # align all xlabels
     fig.canvas.draw()
     if horiz:
-        utils.align_labels(axs, 'x')
+        common.align_labels(axs, 'x')
     else:
         # pass
-        utils.align_labels(axs, 'y')
+        common.align_labels(axs, 'y')
 
     # add axis borders
     for ax in axs:
-        utils.axis_border(ax, c='0.3')
+        common.axis_border(ax, c='0.3')
     if cbar:
-        utils.axis_border(cbar_ax, c='0.3')
+        common.axis_border(cbar_ax, c='0.3')
 
     return fig, axs, cbar_ax, gs
 
@@ -205,7 +205,7 @@ def single_heatmap(
     if cbar:
         quadmesh = ax.collections[-1]  # should only be one item in the array
         cax = fig.colorbar(quadmesh)
-        utils.axis_border(cax.ax, c='0.3', lw=1.)
+        common.axis_border(cax.ax, c='0.3', lw=1.)
     else:
         cax = None
 
@@ -214,5 +214,5 @@ def single_heatmap(
     for tick in ax.get_yticklabels():
         tick.set_rotation(0)
 
-    utils.axis_border(ax, c='0.3', lw=1.)
+    common.axis_border(ax, c='0.3', lw=1.)
     return ax, cax

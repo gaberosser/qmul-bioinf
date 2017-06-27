@@ -11,6 +11,7 @@ import multiprocessing as mp
 from matplotlib import pyplot as plt
 import seaborn as sns
 from plotting import venn
+from utils import setops
 
 
 def construct_contingency(x, y):
@@ -72,6 +73,8 @@ def compute_joint_de_dmr(this_test_results, this_de):
 
 if __name__ == '__main__':
     outdir = unique_output_dir("rtk1_de_dmr", reuse_empty=True)
+    # the number of samples that must confirm a DE/DMR pair before it is declared core
+    core_min_overlap = 3
     d_max = 400
     n_min = 6
     dm_min = 1.4  # minimum median delta M required to declare a cluster relevant
@@ -92,7 +95,8 @@ if __name__ == '__main__':
     ## load all DE gene lists
     ncol_per_de_block = 6
 
-    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
+    # indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
+    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9')
     de = {}
 
     # blank string corresponds to full set
@@ -314,21 +318,15 @@ if __name__ == '__main__':
     scatter_plot_dmr_de(meth_de_joint_insc_ref, os.path.join(outdir, "de_vs_dmr_insc_ref"))
 
     # 2: Venn diagrams: to what extent do the same genes appear in all RTK 1 samples?
-    def venn_diagram_and_core_genes(meth_de, text_file, fig_file):
+    def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4):
         n_sample = len(meth_de)
-        b_str = "{0:0%db}" % n_sample
-        all_str = ''.join(['1'] * n_sample)
-        all_genes = reduce(
-            lambda x, y: x.union(y),
-            (set(meth_de[sid]['all'].genes.unique()) for sid in patient_pairs),
-            set()
-        )
+        bns = list(setops.binary_combinations_sum_gte(n_sample, min_overlap))
 
         fig, axs = plt.subplots(ncols=3, figsize=(8, 3.2))
         f = open(text_file, 'wb')
-
         venn_counts = {}
         venn_sets = {}
+        core_sets = {}
         # one Venn diagram per class
         # Venn components are patients
         # we therefore build a structure containing patient-wise gene sets for each class
@@ -342,12 +340,18 @@ if __name__ == '__main__':
                 ax=axs[i]
             )
             axs[i].set_title(cls)
-            print "%s core genes: %s" % (cls, ', '.join(venn_sets[cls][all_str]))
-            f.write("%s core genes: %s\n" % (cls, ', '.join(venn_sets[cls][all_str])))
-        core_all = set(venn_sets['tss'][all_str]).intersection(venn_sets['gene'][all_str]).intersection(
-            venn_sets['island'][all_str])
-        print "Core genes shared across all classes: %s" % ', '.join(list(core_all))
-        f.write("Core genes shared across all classes: %s\n" % ', '.join(list(core_all)))
+
+            core_genes = set()
+            for bn in bns:
+                core_genes = core_genes.union(venn_sets[cls][bn])
+            core_sets[cls] = core_genes
+            core_genes = sorted(core_genes)
+            print "%s core genes [%d]: %s" % (cls, len(core_genes), ', '.join(core_genes))
+            f.write("%s core genes [%d]: %s\n" % (cls, len(core_genes), ', '.join(core_genes)))
+
+        core_all = sorted(reduce(set.intersection, core_sets.values()))
+        print "Core genes shared across all classes [%d]: %s" % (len(core_all), ', '.join(core_all))
+        f.write("Core genes shared across all classes [%d]: %s\n" % (len(core_all), ', '.join(core_all)))
         f.close()
 
         fig.tight_layout()
@@ -361,11 +365,76 @@ if __name__ == '__main__':
     venn_insc_only = venn_diagram_and_core_genes(
         meth_de_joint_insc_only,
         os.path.join(outdir, "core_genes_de_dmr_insc_only.txt"),
-        os.path.join(outdir, "dmr_and_de_overlap_insc_only")
+        os.path.join(outdir, "dmr_and_de_overlap_insc_only"),
+        min_overlap=core_min_overlap,
     )
     print "*** GBM vs iNSC and GBM vs REF Venn overlaps ***"
     venn_insc_ref = venn_diagram_and_core_genes(
         meth_de_joint_insc_ref,
         os.path.join(outdir, "core_genes_de_dmr_insc_ref.txt"),
-        os.path.join(outdir, "dmr_and_de_overlap_insc_ref")
+        os.path.join(outdir, "dmr_and_de_overlap_insc_ref"),
+        min_overlap=core_min_overlap,
     )
+
+    # check the direction of change in each sample - these must be consistent for the gene to be considered core
+    de_values = {}
+    dmr_values = {}
+    for i, cls in enumerate(dmr.CLASSES):
+        meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_ref, 2, cls)
+        # meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_only, 2, cls)
+
+        per_sample_de = dict([(k, set(x.genes)) for k, x in meth_de.items()])
+        all_genes = reduce(set.union, per_sample_de.values())
+        de_values[cls] = pd.DataFrame(index=sorted(all_genes), columns=patient_pairs.keys())
+
+        # Step 1: check each gene for DE compatibility
+        for g in all_genes:
+            this_row = []
+            for sid, this_dat in meth_de.items():
+                this_genes = this_dat.genes
+                if g in this_genes.values:
+                    de_values[cls].loc[g, sid] = this_dat.loc[this_genes == g, 'logFC'].values[0]
+
+        # find those genes shared by >1 sample
+        role_call = (~de_values[cls].isnull()).sum(axis=1)
+        shared_de = de_values[cls].loc[
+            role_call > 1
+        ].fillna(0)
+        obs = np.sign(shared_de).astype(int).sum(axis=1).abs()
+        expctd = shared_de.astype(bool).astype(int).sum(axis=1)
+        if not (obs == expctd).all():
+            to_remove = obs.loc[obs != expctd].index
+            print "Not all DE genes had the same direction change. Removing %s." % ', '.join(to_remove)
+            ## TODO: remove
+            raise NotImplementedError
+
+        # Step 2: check each matching DMR for compatibility
+        per_sample_dmr = dict(
+            [(k, set([tuple(t) for t in x.loc[:, ['chr', 'me_cid']].values])) for k, x in meth_de.items()]
+        )
+        all_dmr = reduce(set.union, per_sample_dmr.values())
+
+        dmr_values[cls] = pd.DataFrame(index=sorted(all_dmr), columns=patient_pairs.keys())
+        for chr, cid in all_dmr:
+            this_row = []
+            for sid, this_dat in meth_de.items():
+                idx = ((this_dat.loc[:, 'chr'] == chr) & (this_dat.loc[:, 'me_cid'] == cid))
+                if idx.any():
+                    dmr_values[cls].loc[(chr, cid), sid] = this_dat.loc[idx, 'me_mediandelta'].values[0]
+        role_call = (~dmr_values[cls].isnull()).sum(axis=1)
+        shared_dmr = dmr_values[cls].loc[
+            role_call > 1
+        ].fillna(0)
+        obs = np.sign(shared_dmr).astype(int).sum(axis=1).abs()
+        expctd = shared_dmr.astype(bool).astype(int).sum(axis=1)
+        if not (obs == expctd).all():
+            to_remove = obs.loc[obs != expctd].index
+            print "Not all DE genes had the same direction change. Removing %s." % ', '.join(to_remove)
+            ## TODO: remove
+            raise NotImplementedError
+
+    # OK!
+
+
+
+

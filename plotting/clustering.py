@@ -2,7 +2,7 @@ from microarray import process
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from plotting.utils import COLOUR_BREWERS
+from plotting.common import COLOUR_BREWERS
 from matplotlib import pyplot as plt, colors, patches
 from scipy.cluster import hierarchy as hc
 
