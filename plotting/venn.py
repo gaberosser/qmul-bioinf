@@ -9,7 +9,7 @@ def venn_diagram(*args, **kwargs):
     n = len(args)
     venn = None
     if n not in {2, 3, 4}:
-        raise NotImplementedError("At present, we only support 2 and 3 way Venn diagrams")
+        raise NotImplementedError("At present, we only support 2, 3 and 4 way Venn diagrams")
     venn_sets, venn_counts = setops.venn_from_arrays(*args, **kwargs)
     if n == 2:
         venn = venn2(subsets=venn_counts, ax=ax, **kwargs)

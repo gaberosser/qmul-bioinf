@@ -172,3 +172,35 @@ blocks.044a_044all <- do.call(venn_edger_de_lists, c(res.mes[c(4, 8)], list(fdr=
 png(file.path(output.dir, "replicate_de_venn_044AA.vs.044all.png"), width=800, height=500)
 venn_diagram.from_blocks(blocks.044a_044all, print.mode = c('raw', 'percent'))
 dev.off()
+
+
+#' If we compare 2 x GBM vs 1 x iNSC, how does that compare with 2 vs 2 and 1 vs 1?
+contrasts.2vs1 = list(
+  RTKI.vs.iNSC="(GBM018_P10+GBM018_P12+GBM019_P4+GBM031_P4)/4-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6+DURA019_NSC_N8C_P2+DURA031_NSC_N44B_P2)/4",
+  GBM018A.vs.iNSC018A="GBM018_P10-DURA018_NSC_N4_P4",
+  GBM018B.vs.iNSC018B="GBM018_P12-DURA018_NSC_N2_P6",
+  GBM018A.vs.iNSC018B="GBM018_P10-DURA018_NSC_N2_P6",
+  GBM018B.vs.iNSC018A="GBM018_P12-DURA018_NSC_N4_P4",
+  GBM018.vs.iNSC018="(GBM018_P10+GBM018_P12)/2-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6)/2",
+  GBM018.vs.iNSC018A="(GBM018_P10+GBM018_P12)/2-DURA018_NSC_N4_P4",
+  GBM018.vs.iNSC018B="(GBM018_P10+GBM018_P12)/2-DURA018_NSC_N2_P6",
+  GBM018A.vs.iNSC018="GBM018_P10-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6)/2",
+  GBM018B.vs.iNSC018="GBM018_P12-(DURA018_NSC_N4_P4+DURA018_NSC_N2_P6)/2"
+)
+
+res.2vs1 <- grouped_analysis(data, meta$groups, meta$groups.lumped, contrasts.2vs1, output.dir=output.dir)
+
+#' Compute Venn blocks based on overlaps of the 4 single sample pair comparisons
+blocks.2vs1.all <- do.call(venn_edger_de_lists, c(res.2vs1[6:8], list(fdr=fdr)))
+counts.2vs1.all <- lapply(blocks.2vs1.all, nrow)
+
+png(file.path(output.dir, "2GBM_1iNSC_018.all.png"), width=600, height=600)
+venn_diagram.from_blocks(blocks.2vs1.all, print.mode = c('raw', 'percent'), cex=1.2, cat.cex=1.2, margin=.11)
+dev.off()
+
+blocks.2vs1.all <- do.call(venn_edger_de_lists, c(res.2vs1[c(6, 9, 10)], list(fdr=fdr)))
+counts.2vs1.all <- lapply(blocks.2vs1.all, nrow)
+
+png(file.path(output.dir, "1GBM_2iNSC_018.all.png"), width=600, height=600)
+venn_diagram.from_blocks(blocks.2vs1.all, print.mode = c('raw', 'percent'), cex=1.2, cat.cex=1.2, margin=.11)
+dev.off()
