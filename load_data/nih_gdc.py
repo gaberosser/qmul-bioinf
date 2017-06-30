@@ -3,6 +3,7 @@ from urlparse import urljoin
 
 import requests
 import json
+import pandas as pd
 
 from utils.log import get_file_logger
 from utils.output import unique_output_dir
@@ -82,6 +83,21 @@ def download_data(file_id, outfile, legacy=False, create_dirs=True):
     with open(outfile, 'wb') as fout:
         for blk in response.iter_content(1024):
             fout.write(blk)
+
+
+def download_from_manifest(path_to_manifest, outdir=None, legacy=False):
+    """
+    Download all files from the provided manifest
+    :param path_to_manifest:
+    :param outdir: If None, create a unique output folder
+    :return:
+    """
+    if outdir is None:
+        outdir = unique_output_dir("nih_gdc_legacy")
+    mani = pd.read_csv(path_to_manifest, sep='\t', header=0, index_col=0)
+    for fid, row in mani.iterrows():
+        outfile = os.path.join(outdir, row.filename)
+        download_data(fid, outfile, legacy=legacy)
 
 
 def get_meth450_case_ids(project='TCGA-GBM', sample_type='Primary Tumor'):
