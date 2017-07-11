@@ -183,18 +183,14 @@ if __name__ == "__main__":
         )
         obj61794.data = pd.DataFrame(obj61794.data.sum(axis=1), columns=['H9 NSC'])
 
-
-    # GBM paired samples
-    objwtchg_paired = rnaseq_data.gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='Ensembl Gene ID')
-
     # WTCHG ALL samples
-    objwtchg_all = rnaseq_data.all_wtchg_loader(source='star', annotate_by='Ensembl Gene ID')
-    to_keepwtchg = (
-        objwtchg_all.data.columns.str.contains('NSC')
-        | objwtchg_all.data.columns.str.contains('ASTRO')
-    )
-    objwtchg_all.data = objwtchg_all.data.loc[:, to_keepwtchg]
-    objwtchg_all.meta = objwtchg_all.meta.loc[to_keepwtchg, :]
+    objwtchg_all = rnaseq_data.all_hgic_loader(annotate_by='Ensembl Gene ID', include_derived=True)
+    # to_keepwtchg = (
+    #     objwtchg_all.data.columns.str.contains('NSC')
+    #     | objwtchg_all.data.columns.str.contains('ASTRO')
+    # )
+    # objwtchg_all.data = objwtchg_all.data.loc[:, to_keepwtchg]
+    # objwtchg_all.meta = objwtchg_all.meta.loc[to_keepwtchg, :]
 
     # Pollard (NSC x 2)
     objpollard = rnaseq_data.pollard_nsc(source='star', annotate_by='Ensembl Gene ID')
@@ -206,27 +202,15 @@ if __name__ == "__main__":
     mt_ensg = set(gtf_reader.get_mitochondrial())
 
     # combine the data
-    if INCLUDE_ALL_NSC:
-        data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg_all.data, objpollard.data), axis=1)
+    data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg_all.data, objpollard.data), axis=1)
 
-        # combine the metadata
-        meta = pd.concat((
-            obj73721.meta.loc[to_keep73721],
-            obj61794.meta,
-            objwtchg_all.meta,
-            objpollard.meta
-        ), axis=0)
-
-    else:
-        data = pd.concat((obj73721.data.loc[:, to_keep73721], obj61794.data, objwtchg_paired.data, objpollard.data), axis=1)
-
-        # combine the metadata
-        meta = pd.concat((
-            obj73721.meta.loc[to_keep73721],
-            obj61794.meta,
-            objwtchg_paired.meta,
-            objpollard.meta
-        ), axis=0)
+    # combine the metadata
+    meta = pd.concat((
+        obj73721.meta.loc[to_keep73721],
+        obj61794.meta,
+        objwtchg_all.meta,
+        objpollard.meta
+    ), axis=0)
 
     data = data.loc[data.index.str.contains('ENSG')]
 
@@ -262,9 +246,13 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(OUTDIR, 'astro_markers_qpcr_abs_counts.png'), dpi=200)
 
     # plot relative fold change
+    nsc018 = data_markers.loc[:, data_markers.columns.str.contains('DURA018_NSC')].mean(axis=1)
+    nsc019 = data_markers.loc[:, data_markers.columns.str.contains('DURA019_NSC')].mean(axis=1)
+    astro018 = data_markers.loc[:, data_markers.columns.str.contains('DURA018_ASTRO')].mean(axis=1)
+    astro019 = data_markers.loc[:, data_markers.columns.str.contains('DURA019_ASTRO')].mean(axis=1)
 
-    relfc18 = data_markers.loc[:, 'DURA018N2_ASTRO_DAY12'] / data_markers.loc[:, 'DURA018N2_NSC']
-    relfc19 = data_markers.loc[:, 'DURA019N8C_ASTRO_DAY12'] / data_markers.loc[:, 'DURA019N8C_NSC']
+    relfc18 = astro018 / nsc018
+    relfc19 = astro019 / nsc019
     series = [
         pd.Series([1., relfc18.loc[g], relfc19.loc[g]], index=['NSC', 'ASTRO018', 'ASTRO019']) for g in relfc18.index
     ]
