@@ -36,7 +36,10 @@ process_and_save.EPIC <- function(
   basenames <- get_idat_basenames(idat.dir)
   rgSet <- read.metharray(basenames, extended = T)
   
-  rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+  print(rgSet@annotation)
+  
+  # rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+
   mset <- preprocessRaw(rgSet)
   detP <- detectionP(rgSet)
 
