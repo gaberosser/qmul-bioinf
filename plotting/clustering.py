@@ -254,7 +254,7 @@ def dendrogram_with_colours(
     }
 
 
-def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average', **kwargs):
+def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average', metric='correlation', **kwargs):
     """
     :param n_gene: If supplied, this is the number of genes to use, ordered by descending MAD
     :param kwargs: Passed to seaborn's `clustermap`
@@ -264,9 +264,13 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
         mad = process.median_absolute_deviation(data).sort_values(ascending=False)
         genes = mad.index[:n_gene]
         data = data.loc[genes]
-    z = hc.linkage(data.transpose(), method=method, metric='correlation')
+    z = hc.linkage(data.transpose(), method=method, metric=metric)
+    sq = hc.distance.squareform(
+        hc.distance.pdist(data.transpose(), metric=metric)
+    )
+    sq = max(sq.flat) - sq
     cg = sns.clustermap(
-        data.corr(),
+        sq,
         cmap='RdBu_r',
         row_colors=row_colors,
         col_colors=row_colors,
@@ -394,8 +398,15 @@ def dendrogram_threshold_by_nclust(linkage, nclust, sample_subset_idx=None):
     """
     if sample_subset_idx is None:
         # take the mean distance between the nclust-1 and nclust levels
-        dist = linkage[-nclust:(2 - nclust), 2].mean()
+        if nclust == 1:
+            dist = np.inf
+        elif nclust == 2:
+            dist = linkage[-2:, 2].mean()
+        else:
+            dist = linkage[-nclust:(2 - nclust), 2].mean()
     else:
+        ## FIXME: nclust == 2 special case?
+
         # call the distance based on a fixed number of clusters DEFINED FOR A SUBSET OF NODES
         node_ids = set(sample_subset_idx)
         n = len(linkage) + 1

@@ -21,12 +21,13 @@ get_idat_basenames <- function(idat.dir) {
 }
 
 
-process_and_save.EPIC <- function(
+process_and_save <- function(
   idat.dir, 
   meta.file, 
   samples=NULL, 
   output.dir=file.path(idat.dir, '..', 'beta'),
-  gzip=T
+  gzip=T,
+  arraytype='EPIC'
   ) {
   # load meta
   meta <- read.csv(meta.file)
@@ -36,12 +37,20 @@ process_and_save.EPIC <- function(
   basenames <- get_idat_basenames(idat.dir)
   rgSet <- read.metharray(basenames, extended = T)
   
-  rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+  if (arraytype == 'EPIC') {
+    rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+  }
+  
   mset <- preprocessRaw(rgSet)
   detP <- detectionP(rgSet)
 
   beta.raw <- getBeta(mset, "Illumina")
+  
+  # ensure that meta has the same order
+  meta <- meta[colnames(beta.raw),]
+  
   colnames(beta.raw) <- meta[colnames(beta.raw), 'Sample_Name']
+  colnames(detP) <- meta[colnames(detP), 'Sample_Name']
   
   if (!is.null(samples)) {
     keep <- meta$Sample_Name %in% samples
@@ -52,13 +61,13 @@ process_and_save.EPIC <- function(
     meta <- meta[keep,]
   }
   
-  champLoad <- champ.filter(beta.raw, detP = detP, pd = meta, arraytype = "EPIC")
+  champLoad <- champ.filter(beta.raw, detP = detP, pd = meta, arraytype = arraytype)
   
   beta.raw <- champLoad$beta
 
-  beta.bmiq <- champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = "EPIC", cores=4)
+  beta.bmiq <- champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = arraytype, cores=4)
 
-  beta.pbc <- champ.norm(beta = beta.raw, method = 'PBC', arraytype = "EPIC")
+  beta.pbc <- champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
 
   mset.swan <- preprocessSWAN(rgSet, mSet = mset)
   beta.swan <- getBeta(mset.swan)
@@ -87,7 +96,8 @@ process_and_save.EPIC <- function(
 
 
 # base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
-base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
+base.dir <- file.path(data.dir.raid, 'methylation', 'tcga_gbm')
 idat.dir <- file.path(base.dir, 'idat')
 meta.file <- file.path(base.dir, 'sources.csv')
-process_and_save.EPIC(idat.dir, meta.file)
+process_and_save(idat.dir, meta.file, arraytype = "450K")
