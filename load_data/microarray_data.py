@@ -1,6 +1,4 @@
 import os
-import re
-from gzip import GzipFile
 
 import numpy as np
 import pandas as pd
@@ -274,45 +272,3 @@ def load_annotated_thompson2006(aggr_field=None, aggr_method=None):
     """
     indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'thompson2006')
     return _annotated_microarray(indir, aggr_field=aggr_field, aggr_method=aggr_method)
-
-
-def load_metadata_from_series_matrix(infile):
-    """
-    Load metadata from the specified text matrix (available for many GEO datasets)
-    :param infile: .txt or .txt.gz series matrix
-    :return:
-    """
-    meta_map = {
-        'Sample_title': 'title',
-        'Sample_geo_accession': 'accession',
-        'Sample_source_name_ch1': 'description',
-    }
-    nested_headers = (
-        'Sample_characteristics_ch1',
-    )
-
-    if re.search(re.compile(r'\.gz$', re.IGNORECASE), infile):
-        opener = lambda x: GzipFile(filename=x, mode='rb')
-    else:
-        opener = lambda x: open(x, 'rb')
-
-    meta = pd.DataFrame()
-
-    with opener(infile) as f:
-        while True:
-            line = f.readline().strip('\n')
-            if len(line) == 0:
-                continue
-            header = re.match(r'^!(?P<hd>[^\t]*)', line).group('hd')
-            if header in nested_headers:
-                the_data = [t.strip('"') for t in line.split('\t')[1:]]
-                hdr = re.match(r'^(?P<hd>[^:]*)', the_data[0]).group('hd')
-                the_data = [re.sub(r'%s: ' % hdr, '', t) for t in the_data]
-                meta[hdr] = the_data
-            elif header in meta_map:
-                the_data = [t.strip('"') for t in line.split('\t')[1:]]
-                meta[meta_map[header]] = the_data
-            if line == '!series_matrix_table_begin':
-                break
-
-    return meta

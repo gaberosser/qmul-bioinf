@@ -676,9 +676,6 @@ def wilcoxon_rank_sum_permutation(x, y, n_max=1999, return_stats=False):
     """
     :param n_max: The maximum number of iterations to run. If the exact test requires more than this, we revert to
     sampling. Setting this to None, 0 or negative forces exact sampling, but this might be very slow and expensive.
-
-    This generates a strange result in some cases, e.g. the 1000th cluster of 018. The exact sampling approach generates
-    a very different distribution of statistics from the approximate sampling approach.
     """
     force_exact = (n_max is None) or (n_max <= 0)
     x = reshape_data(np.asarray(x))

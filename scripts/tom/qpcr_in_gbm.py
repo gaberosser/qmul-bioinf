@@ -158,15 +158,65 @@ if __name__ == "__main__":
     print "Identified %d candidates" % final_candidates.size
     print '\n'.join(final_candidates)
 
-    # now re-plot teh first figure but with a subset of these
-    new_hkg = ['ATP5B', 'PPIA', 'H3F3B']
+    # now re-plot the first figure but with a subset of these
+    new_hkg = ['GAPDH', 'ATP5B', 'ACTB', 'PPIA', 'H3F3B']
     new_hkg_ens = gene_symbol_to_ensembl(new_hkg)
 
     hkg_dat = dat_n.loc[new_hkg_ens, sorted(dat_n.columns)]
     hkg_dat.index = pd.Index(new_hkg, name='Housekeeping gene')
+
     hkg_dat_rel = hkg_dat.divide(hkg_dat.loc[:, ref], axis=0)
+    cols = [ref] + sorted(hkg_dat_rel.columns[hkg_dat_rel.columns != ref])
+    hkg_dat_rel = hkg_dat_rel.loc[:, cols]
+
     ax = hkg_dat_rel.transpose().plot.bar()
+    ax.axhline(1.0, ls='--', c='k')
     ax.set_ylim([0, 3.4])
     ax.legend(loc='upper left')
+
     plt.tight_layout()
-    ax.figure.savefig(os.path.join(outdir, 'housekeeping_levels2.png'), dpi=200)
+    leg = ax.get_legend()
+    fr = leg.get_frame()
+    leg.set_frame_on(True)
+    fr.set_color('w')
+    fr.set_alpha(0.4)
+    ax.figure.savefig(os.path.join(outdir, 'hkg_levels.png'), dpi=200)
+
+    # optionally add mean values
+    ax.plot(hkg_dat_rel.mean(axis=0).values, 'ko')
+    ax.figure.savefig(os.path.join(outdir, 'hkg_levels_with_mean.png'), dpi=200)
+
+    # new set of HKG
+    new_hkg = ['GAPDH', 'ATP5B', 'ACTB', 'PPIA', 'H3F3B']
+    new_hkg_ens = gene_symbol_to_ensembl(new_hkg)
+
+    hkg_dat = dat_n.loc[new_hkg_ens, sorted(dat_n.columns)]
+    hkg_dat.index = pd.Index(new_hkg, name='Housekeeping gene')
+
+
+
+
+    bmi_dat = dat_n.loc[gene_symbol_to_ensembl('BMI1')]
+
+    bmi_vs_hkg = 1. / hkg_dat.divide(bmi_dat, axis=1)
+    bmi_vs_hkg_rel = bmi_vs_hkg.divide(bmi_vs_hkg.loc[:, ref], axis=0)
+    # column order
+    cols = [ref] + sorted(bmi_vs_hkg_rel.columns[bmi_vs_hkg_rel.columns != ref])
+    bmi_vs_hkg_rel = bmi_vs_hkg_rel.loc[:, cols]
+
+    ax = bmi_vs_hkg_rel.transpose().plot.bar()
+    ax.axhline(1.0, ls='--', c='k')
+    ax.set_ylim([0, 2.5])
+    ax.legend(loc='upper left')
+    plt.tight_layout()
+    leg = ax.get_legend()
+    leg.set_title("BMI1 level, relative to")
+    leg.set_frame_on(True)
+    fr = leg.get_frame()
+    fr.set_color('w')
+    fr.set_alpha(0.4)
+    ax.figure.savefig(os.path.join(outdir, 'BMI1_vs_HKG.png'), dpi=200)
+
+    # optionally add mean values
+    ax.plot(bmi_vs_hkg_rel.mean(axis=0).values, 'ko')
+    ax.figure.savefig(os.path.join(outdir, 'BMI1_vs_HKG_with_mean.png'), dpi=200)

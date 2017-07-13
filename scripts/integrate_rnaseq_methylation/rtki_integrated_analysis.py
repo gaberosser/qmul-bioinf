@@ -90,7 +90,8 @@ if __name__ == '__main__':
         'n_min': 6,
         'delta_m_min': 1.4,
         'fdr': 0.05,
-        'dmr_test_method': 'mwu',  # 'mwu_permute'
+        'dmr_test_method': 'mwu_permute',  # 'mwu', 'mwu_permute'
+        'test_kwargs': {'n_max': 19999},
         'reference': 'gibco',  # 'h9'
     }
 
@@ -123,8 +124,10 @@ if __name__ == '__main__':
 
     if PARAMS['reference'] == 'gibco':
         indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
+        ref_name = 'GIBCONSC_P4'
     elif PARAMS['reference']== 'h9':
         indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9')
+        ref_name = None  # we do not have methylation data for this reference
     else:
         raise ValueError("Unrecognised reference %s" % PARAMS['reference'])
 
@@ -176,24 +179,48 @@ if __name__ == '__main__':
         anno.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
     clusters = dmr.identify_clusters(anno, n_min=PARAMS['n_min'], d_max=PARAMS['d_max'], n_jobs=n_jobs)
+
     test_results = {}
     test_results_relevant = {}
     test_results_significant = {}
     for sid, samples in patient_pairs.items():
-        test_results[sid] = dmr.test_clusters(
+
+        this_res = dmr.test_clusters(
             clusters,
             m,
             samples=samples,
             min_median_change=PARAMS['delta_m_min'],
             n_jobs=n_jobs,
-            method=PARAMS['dmr_test_method']
+            method=PARAMS['dmr_test_method'],
+            test_kwargs=PARAMS['test_kwargs']
         )
-        test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=PARAMS['fdr'])
-        test_results_significant[sid] = dmr.filter_dictionary(
-            test_results_relevant[sid],
-            filt=lambda x: x['rej_h0'],
-            n_level=3
-        )
+
+        if ref_name is not None:
+            test_results[sid] = {
+                'insc_only': this_res
+            }
+            # for insc and ref: use a replacement `samples`
+            samples_ref = (samples[0], (ref_name,))
+            this_res2 = dmr.test_clusters(
+                clusters,
+                m,
+                samples=samples_ref,
+                min_median_change=PARAMS['delta_m_min'],
+                n_jobs=n_jobs,
+                method=PARAMS['dmr_test_method'],
+                test_kwargs=PARAMS['test_kwargs']
+            )
+            test_results[sid]['insc_ref'] = this_res2
+        else:
+            test_results[sid] = this_res
+            test_results_relevant[sid]['insc_only'] = dmr.mht_correction(test_results[sid], alpha=PARAMS['fdr'])
+
+    test_results_significant[sid]['insc_only'] = dmr.filter_dictionary(
+        test_results_relevant[sid]['insc_only'],
+        filt=lambda x: x['rej_h0'],
+        n_level=3
+    )
+
 
     # add list of annotated genes to all clusters
     for sid in test_results:
@@ -247,6 +274,8 @@ if __name__ == '__main__':
             'genes_significant': ng_si
         })
         table_cluster_numbers = table_cluster_numbers.append(this_row, ignore_index=True)
+
+    table_cluster_numbers.to_csv(os.path.join(outdir, "cluster_numbers.csv"))
 
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
@@ -395,7 +424,6 @@ if __name__ == '__main__':
         core_all = sorted(reduce(set.intersection, core_sets.values()))
         print "Core genes shared across all classes [%d]: %s" % (len(core_all), ', '.join(core_all))
         f.write("Core genes shared across all classes [%d]: %s\n" % (len(core_all), ', '.join(core_all)))
-        f.close()
 
         # union of all
         core_union = sorted(reduce(set.union, core_sets.values()))
@@ -434,7 +462,7 @@ if __name__ == '__main__':
     core_sets = {}
     with open(os.path.join(outdir, "core_genes_de_dmr_insc_only.by_cohort.txt"), 'wb') as f:
         for i, cls in enumerate(dmr.CLASSES):
-            core_sets[cls] = sorted(meth_de_joint_insc_only['all'][cls].genes)
+            core_sets[cls] = sorted(set(meth_de_joint_insc_only['all'][cls].genes))
             print "%s core genes [%d]: %s" % (cls, len(core_sets[cls]), ', '.join(core_sets[cls]))
             f.write("%s core genes [%d]: %s\n" % (cls, len(core_sets[cls]), ', '.join(core_sets[cls])))
 
@@ -452,7 +480,7 @@ if __name__ == '__main__':
     core_sets = {}
     with open(os.path.join(outdir, "core_genes_de_dmr_insc_ref.by_cohort.txt"), 'wb') as f:
         for i, cls in enumerate(dmr.CLASSES):
-            core_sets[cls] = sorted(meth_de_joint_insc_ref['all'][cls].genes)
+            core_sets[cls] = sorted(set(meth_de_joint_insc_ref['all'][cls].genes))
             print "%s core genes [%d]: %s" % (cls, len(core_sets[cls]), ', '.join(core_sets[cls]))
             f.write("%s core genes [%d]: %s\n" % (cls, len(core_sets[cls]), ', '.join(core_sets[cls])))
 

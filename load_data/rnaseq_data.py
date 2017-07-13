@@ -808,7 +808,8 @@ def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotatio
         'DURA018N2_NSC',
         'DURA019N8C_NSC',
         'DURA018N2_ASTRO_DAY12',
-        'DURA019N8C_ASTRO_DAY12',    )
+        'DURA019N8C_ASTRO_DAY12',
+    )
 
     if source == 'star':
         count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
@@ -880,7 +881,7 @@ def all_samples_multilane_loader(
     return obj
 
 
-def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_coding', include_derived=False):
     loaders = []
 
     # expt 1
@@ -896,6 +897,8 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
         'DURA026_NSC_N31D_P5',
         'DURA031_NSC_N44B_P2',
     )
+    if include_derived:
+        samples += ('DURA018_ASTRO_N2_DAY12', 'DURA019_ASTRO_N8C_DAY12')
 
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lanedirs = [
