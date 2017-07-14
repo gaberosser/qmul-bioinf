@@ -55,8 +55,8 @@ if __name__ == '__main__':
     objwtchg_all = rnaseq_data.all_hgic_loader(annotate_by='Ensembl Gene ID', include_derived=True)
     to_keep_wtchg = (
         'GIBCO_NSC_P4',
-        'DURA018_NSC_N2_P6',
-        'DURA018_NSC_N4_P4',
+        # 'DURA018_NSC_N2_P6',
+        # 'DURA018_NSC_N4_P4',
         'DURA019_NSC_N8C_P2',
         'DURA030_NSC_N16B6_P1',
         'DURA031_NSC_N44B_P2'
