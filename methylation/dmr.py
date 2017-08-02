@@ -767,9 +767,9 @@ if __name__ == "__main__":
 
     fdr = 0.05
     dm = 1.4
-    n_min = 8
-    d_max = 200
-    n_jobs = 4
+    n_min = 6
+    d_max = 400
+    n_jobs = mp.cpu_count()
 
     clusters = identify_clusters(anno, n_min=n_min, d_max=d_max, n_jobs=n_jobs)
     n_clusters = len(list(

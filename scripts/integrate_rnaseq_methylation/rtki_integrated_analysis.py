@@ -90,8 +90,10 @@ if __name__ == '__main__':
         'n_min': 6,
         'delta_m_min': 1.4,
         'fdr': 0.05,
-        'dmr_test_method': 'mwu_permute',  # 'mwu', 'mwu_permute'
-        'test_kwargs': {'n_max': 19999},
+        # 'dmr_test_method': 'mwu_permute',  # 'mwu', 'mwu_permute'
+        'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
+        # 'test_kwargs': {'n_max': 1999},
+        'test_kwargs': {},
         'reference': 'gibco',  # 'h9'
     }
 
@@ -125,9 +127,11 @@ if __name__ == '__main__':
     if PARAMS['reference'] == 'gibco':
         indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
         ref_name = 'GIBCONSC_P4'
+        types = ['insc_only', 'insc_ref']
     elif PARAMS['reference']== 'h9':
         indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9')
         ref_name = None  # we do not have methylation data for this reference
+        types = ['insc_only']
     else:
         raise ValueError("Unrecognised reference %s" % PARAMS['reference'])
 
@@ -148,6 +152,8 @@ if __name__ == '__main__':
         in_insc = ~this_de_insc_only.iloc[:, 1].isnull()
         in_ensc = ~this_de_insc_only.iloc[:, ncol_per_de_block + 1].isnull()
 
+        # FIXME: we could use a nested dict here, like we do for DMR?
+
         # DE genes in iNSC comparison only
         de[(lbl, 'insc_only')] = this_de_insc_only.loc[in_insc & ~in_ensc].iloc[:, :ncol_per_de_block]
         # DE genes in both comparisons
@@ -161,7 +167,7 @@ if __name__ == '__main__':
     ## compute DMR
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
-    b, me_meta = methylation_array.gbm_rtk1_and_paired_nsc(norm_method='swan')
+    b, me_meta = methylation_array.gbm_rtk1_and_paired_nsc(norm_method='swan', ref=PARAMS['reference'])
     b.dropna(inplace=True)
     m = process.m_from_beta(b)
 
@@ -195,13 +201,26 @@ if __name__ == '__main__':
             test_kwargs=PARAMS['test_kwargs']
         )
 
+        test_results.setdefault(sid, {})
+        test_results_relevant.setdefault(sid, {})
+        test_results_significant.setdefault(sid, {})
+
+        test_results[sid]['insc_only'] = this_res
+        test_results_relevant[sid]['insc_only'] = dmr.mht_correction(
+            test_results[sid]['insc_only'],
+            alpha=PARAMS['fdr']
+        )
+        test_results_significant[sid]['insc_only'] = dmr.filter_dictionary(
+            test_results_relevant[sid]['insc_only'],
+            filt=lambda x: x['rej_h0'],
+            n_level=3
+        )
+
         if ref_name is not None:
-            test_results[sid] = {
-                'insc_only': this_res
-            }
+
             # for insc and ref: use a replacement `samples`
             samples_ref = (samples[0], (ref_name,))
-            this_res2 = dmr.test_clusters(
+            this_res = dmr.test_clusters(
                 clusters,
                 m,
                 samples=samples_ref,
@@ -210,21 +229,21 @@ if __name__ == '__main__':
                 method=PARAMS['dmr_test_method'],
                 test_kwargs=PARAMS['test_kwargs']
             )
-            test_results[sid]['insc_ref'] = this_res2
-        else:
-            test_results[sid] = this_res
-            test_results_relevant[sid]['insc_only'] = dmr.mht_correction(test_results[sid], alpha=PARAMS['fdr'])
-
-    test_results_significant[sid]['insc_only'] = dmr.filter_dictionary(
-        test_results_relevant[sid]['insc_only'],
-        filt=lambda x: x['rej_h0'],
-        n_level=3
-    )
-
+            test_results[sid]['insc_ref'] = this_res
+            test_results_relevant[sid]['insc_ref'] = dmr.mht_correction(
+                test_results[sid]['insc_ref'],
+                alpha=PARAMS['fdr']
+            )
+            test_results_significant[sid]['insc_ref'] = dmr.filter_dictionary(
+                test_results_relevant[sid]['insc_ref'],
+                filt=lambda x: x['rej_h0'],
+                n_level=3
+            )
 
     # add list of annotated genes to all clusters
+    # typ is insc_ref (if present) and insc_only
     for sid in test_results:
-        for (chr, cls, cid), attrs in dmr.dict_iterator(test_results[sid], n_level=3):
+        for (typ, chr, cls, cid), attrs in dmr.dict_iterator(test_results[sid], n_level=4):
             pids = attrs['probes']
             genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
             geneset = reduce(lambda x, y: x.union(y), genes, set())
@@ -240,50 +259,119 @@ if __name__ == '__main__':
         'sample', 'clusters_proposed', 'clusters_relevant', 'clusters_significant',
         'genes_proposed', 'genes_relevant', 'genes_significant'
     )
-    table_cluster_numbers = pd.DataFrame(columns=cols)
+    # table_cluster_numbers = pd.DataFrame(columns=cols)
+    table_cluster_numbers = {}
 
-    def count_genes(res, sid):
+    def count_genes(res):
         the_genes = reduce(
             lambda x, y: x.union(y),
-            [t[1]['genes'] for t in dmr.dict_iterator(res[sid], n_level=3)],
+            [t[1]['genes'] for t in dmr.dict_iterator(res, n_level=3)],
             set()
         )
         return len(the_genes)
 
+    # the number of proposed clusters and propsed genes is constant across all results, so just use the first
+    k0 = patient_pairs.keys()[0]
+    k1 = test_results.values()[0].keys()[0]
     ncl = len(list(
-        dmr.dict_iterator(test_results[patient_pairs.keys()[0]], n_level=3)
+        dmr.dict_iterator(test_results[k0][k1], n_level=3)
     ))
-    ng = count_genes(test_results, patient_pairs.keys()[0])
+    ng = count_genes(test_results[k0][k1])
 
     for sid in test_results:
-        ncl_re = len(list(
-            dmr.dict_iterator(test_results_relevant[sid], n_level=3)
-        ))
-        ncl_si = len(list(
-            dmr.dict_iterator(test_results_significant[sid], n_level=3)
-        ))
-        ng_re = count_genes(test_results_relevant, sid)
-        ng_si = count_genes(test_results_significant, sid)
-        this_row = pd.Series({
-            'sample': sid,
-            'clusters_proposed': ncl,
-            'clusters_relevant': ncl_re,
-            'clusters_significant': ncl_si,
-            'genes_proposed': ng,
-            'genes_relevant': ng_re,
-            'genes_significant': ng_si
-        })
-        table_cluster_numbers = table_cluster_numbers.append(this_row, ignore_index=True)
+        for typ in test_results[sid]:
+            table_cluster_numbers.setdefault(typ, pd.DataFrame(columns=cols))
+            ncl_re = len(list(
+                dmr.dict_iterator(test_results_relevant[sid][typ], n_level=3)
+            ))
+            ncl_si = len(list(
+                dmr.dict_iterator(test_results_significant[sid][typ], n_level=3)
+            ))
+            ng_re = count_genes(test_results_relevant[sid][typ])
+            ng_si = count_genes(test_results_significant[sid][typ])
+            this_row = pd.Series({
+                'sample': sid,
+                'clusters_proposed': ncl,
+                'clusters_relevant': ncl_re,
+                'clusters_significant': ncl_si,
+                'genes_proposed': ng,
+                'genes_relevant': ng_re,
+                'genes_significant': ng_si
+            })
+            table_cluster_numbers[typ] = table_cluster_numbers[typ].append(this_row, ignore_index=True)
 
-    table_cluster_numbers.to_csv(os.path.join(outdir, "cluster_numbers.csv"))
+    for typ in types:
+        table_cluster_numbers[typ].to_csv(os.path.join(outdir, "cluster_numbers.%s.csv" % typ))
+
+    # split into (insc not ref) and (insc and ref) groups, like DE
+    # this will fail if insc_ref group not defined
+    if ref_name is None:
+        raise NotImplementedError("We require a reference to proceed")
+
+    this_dmr_insc_only = {}
+    this_dmr_insc_ref = {}
+
+    insc_results = dmr.dict_by_sublevel(test_results_significant, 2, 'insc_only')
+    ref_results = dmr.dict_by_sublevel(test_results_significant, 2, 'insc_ref')
+
+    for sid in test_results_significant:
+
+        this_dmr_insc_only.setdefault(sid, {})
+        this_dmr_insc_ref.setdefault(sid, {})
+
+        for chr in insc_results[sid]:
+            this_dmr_insc_only[sid].setdefault(chr, {})
+            this_dmr_insc_ref[sid].setdefault(chr, {})
+            for cls in dmr.CLASSES:
+                this_dmr_insc_only[sid][chr].setdefault(cls, {})
+                this_dmr_insc_ref[sid][chr].setdefault(cls, {})
+
+                in_insc = set(insc_results[sid][chr][cls].keys())
+                in_ref = set(ref_results[sid][chr][cls].keys())
+                in_insc_only = in_insc.difference(in_ref)
+                in_insc_and_ref = in_insc.intersection(in_ref)
+
+                # use the iNSC results in both cases, as that is what we are interested in
+                this_dmr_insc_only[sid][chr][cls] = dict([
+                    (cid, insc_results[sid][chr][cls][cid]) for cid in in_insc_only
+                ])
+                this_dmr_insc_ref[sid][chr][cls] = dict([
+                    (cid, insc_results[sid][chr][cls][cid]) for cid in in_insc_and_ref
+                ])
+
+    # counts
+    cols += (
+        'clusters_significant_insc_only',
+        'genes_significant_insc_only',
+        'clusters_significant_insc_ref',
+        'genes_significant_insc_ref',
+    )
+    table_clusters_ref_insc = pd.DataFrame(columns=cols)
+
+    for sid in insc_results:
+        old_row = table_cluster_numbers['insc_only'].loc[
+            table_cluster_numbers['insc_only'].loc[:, 'sample'] == sid
+        ]
+        this_row = pd.Series(old_row.iloc[0], copy=True)
+        this_row.loc['clusters_significant_insc_only'] = len(list(
+            dmr.dict_iterator(this_dmr_insc_only[sid], n_level=3)
+        ))
+        this_row.loc['clusters_significant_insc_ref'] = len(list(
+            dmr.dict_iterator(this_dmr_insc_ref[sid], n_level=3)
+        ))
+        this_row.loc['genes_significant_insc_only'] = count_genes(this_dmr_insc_only[sid])
+        this_row.loc['genes_significant_insc_ref'] = count_genes(this_dmr_insc_ref[sid])
+    table_clusters_ref_insc.to_csv(os.path.join(outdir, "cluster_numbers_insc_ref.csv"))
 
     # 1: What is the joint distribution of methylation / mRNA fold change?
     # Get methylation level and DE fold change for linked genes (pairwise only)
 
     this_de_insc_only = dict([(sid, de[(sid, 'insc_only')]) for sid in patient_pairs])
     this_de_insc_ref = dict([(sid, de[(sid, 'insc_and_ref')]) for sid in patient_pairs])
-    meth_de_joint_insc_only = compute_joint_de_dmr(test_results_significant, this_de_insc_only)
-    meth_de_joint_insc_ref = compute_joint_de_dmr(test_results_significant, this_de_insc_ref)
+    # meth_de_joint_insc_only = compute_joint_de_dmr(test_results_significant, this_de_insc_only)
+    meth_de_joint_insc_only = compute_joint_de_dmr(this_dmr_insc_only, this_de_insc_only)
+    # meth_de_joint_insc_ref = compute_joint_de_dmr(test_results_significant, this_de_insc_ref)
+    meth_de_joint_insc_ref = compute_joint_de_dmr(this_dmr_insc_ref, this_de_insc_ref)
 
     # Generate table giving the number of overlaps in each patient and cluster class
     # this includes the number of absolute overlaps AND the number of unique overlaps
@@ -296,6 +384,7 @@ if __name__ == '__main__':
     de_dmr_matches_insc_ref = pd.DataFrame.copy(de_dmr_matches_insc_only)
 
     def n_overlap_datum(sid, meth_de, this_de):
+        ## FIXME: this needs updating for the new insc_only / insc_ref split
         n_de = this_de.shape[0]
         n_dmr = len(list(dmr.dict_iterator(test_results_significant[sid], n_level=3)))
         n_dmr_genes = len(

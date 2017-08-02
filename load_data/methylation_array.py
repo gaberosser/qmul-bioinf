@@ -119,7 +119,14 @@ def gse36278(dropna=True):
     return data, meta
 
 
-def gbm_rtk1_and_paired_nsc(norm_method='swan'):
+def gbm_rtk1_and_paired_nsc(norm_method='swan', ref=None):
+    """
+
+    :param norm_method:
+    :param ref: Default None means no reference is loaded. If provided, this argument is a string containing a supported
+     reference. Currently only 'gibco' is supported.
+    :return:
+    """
     samples1 = (
         'GBM018_P10',
         'GBM019_P4',
@@ -138,6 +145,13 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan'):
         'DURA018_NSC_N4_P4',
         'DURA030_NSC_N16B6_P1', # probably RTK I: find out
     )
+    if ref is not None:
+        if ref == 'gibco':
+            samples2 += ('GIBCONSC_P4', )
+        else:
+            raise NotImplementedError("Unrecognised reference %s" % ref)
+
+
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'beta')
     metafile = os.path.join(indir, '..', 'sources.csv')
     b2, m2 = load_beta_values(indir, metafile=metafile, norm_method=norm_method, samples=samples2)
