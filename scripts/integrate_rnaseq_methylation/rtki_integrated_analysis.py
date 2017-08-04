@@ -386,24 +386,56 @@ if __name__ == '__main__':
     def n_overlap_datum(sid, meth_de, this_de):
         ## FIXME: this needs updating for the new insc_only / insc_ref split
         n_de = this_de.shape[0]
-        n_dmr = len(list(dmr.dict_iterator(test_results_significant[sid], n_level=3)))
+        n_dmr = len(list(dmr.dict_iterator(insc_results[sid], n_level=3)))
         n_dmr_genes = len(
             reduce(
-                lambda x, y: x.union(y), [t[1]['genes'] for t in dmr.dict_iterator(test_results_significant[sid], n_level=3)], set()
+                lambda x, y: x.union(y), [t[1]['genes'] for t in dmr.dict_iterator(insc_results[sid], n_level=3)], set()
             )
         )
-        n_overlaps = meth_de[sid]['all'].shape[0]
-        n_overlaps_unique = meth_de[sid]['all'].me_genes.unique().shape[0]
+        n_overlaps = meth_de['all'].shape[0]
+        n_overlaps_unique = meth_de['all'].me_genes.unique().shape[0]
         this_datum = [n_de, n_dmr, n_dmr_genes, n_overlaps, n_overlaps_unique]
         for cls in dmr.CLASSES:
-            this_datum.append(meth_de[sid][cls].shape[0])
-            this_datum.append(meth_de[sid][cls].me_genes.unique().shape[0])
+            this_datum.append(meth_de[cls].shape[0])
+            this_datum.append(meth_de[cls].me_genes.unique().shape[0])
         return this_datum
 
     for sid in test_results:
-        de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only, de[(sid, 'insc_only')])
-        de_dmr_matches_insc_ref.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_ref, de[(sid, 'insc_and_ref')])
+        de_dmr_matches_insc_only.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_only[sid], de[(sid, 'insc_only')])
+        de_dmr_matches_insc_ref.loc[sid] = n_overlap_datum(sid, meth_de_joint_insc_ref[sid], de[(sid, 'insc_and_ref')])
 
+    """
+    Before we start working with Venn plots or anything, I want to check the overlap between DMR on individuals and
+    DMR on the pooled samples.
+    We use the chr, class and cluster ID as unique IDs here.
+    """
+    print "(iNSC vs GBM) AND NOT (iNSC vs reference)"
+    for cls in dmr.CLASSES:
+        a = set(map(','.join, meth_de_joint_insc_only['all'][cls].loc[:, ('chr', 'me_cid')].values))
+        bb = [
+            set(map(','.join, meth_de_joint_insc_only[sid][cls].loc[:, ('chr', 'me_cid')].values))
+            for sid in ['018', '019', '030', '031']
+        ]
+        b = reduce(lambda x, y: x.union(y), bb, set())
+        print "***"
+        print "Individual comparisons: %d DMRs in class %s" % (len(a), cls)
+        print "Lumped comparisons: %d DMRs in class %s" % (len(b), cls)
+        print "Intersection of those: %d DMRs in class %s" % (len(b.intersection(a)), cls)
+    print "***"
+
+    print "(iNSC vs GBM) AND (iNSC vs reference)"
+    for cls in dmr.CLASSES:
+        a = set(map(','.join, meth_de_joint_insc_ref['all'][cls].loc[:, ('chr', 'me_cid')].values))
+        bb = [
+            set(map(','.join, meth_de_joint_insc_ref[sid][cls].loc[:, ('chr', 'me_cid')].values))
+            for sid in ['018', '019', '030', '031']
+            ]
+        b = reduce(lambda x, y: x.union(y), bb, set())
+        print "***"
+        print "Individual comparisons: %d DMRs in class %s" % (len(a), cls)
+        print "Lumped comparisons: %d DMRs in class %s" % (len(b), cls)
+        print "Intersection of those: %d DMRs in class %s" % (len(b.intersection(a)), cls)
+    print "***"
 
     def scatter_plot_dmr_de(meth_de, fig_filestem):
         for sid in meth_de:
@@ -473,11 +505,15 @@ if __name__ == '__main__':
     scatter_plot_dmr_de(meth_de_joint_insc_ref, os.path.join(outdir, "de_vs_dmr_insc_ref"))
 
     # 2: Venn diagrams: to what extent do the same genes appear in all RTK 1 samples?
-    def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4):
+    def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4, fig_title=None):
         n_sample = len(meth_de)
         bns = list(setops.binary_combinations_sum_gte(n_sample, min_overlap))
 
-        fig, axs = plt.subplots(ncols=3, figsize=(8, 3.2))
+        fig_kws = {'figsize': (8, 3.2)}
+        if fig_title is not None:
+            fig_kws['num'] = fig_title
+        fig, axs = plt.subplots(ncols=3, **fig_kws)
+
         f = open(text_file, 'wb')
         venn_counts = {}
         venn_sets = {}
@@ -537,6 +573,7 @@ if __name__ == '__main__':
         os.path.join(outdir, "core_genes_de_dmr_insc_only.by_patient.txt"),
         os.path.join(outdir, "dmr_and_de_overlap_insc_only"),
         min_overlap=PARAMS['core_min_sample_overlap'],
+        fig_title='Individual comparison, iNSC and not ref'
     )
     print "*** GBM vs iNSC and GBM vs REF Venn overlaps - individual patient ***"
     this_de_dmr = dict(meth_de_joint_insc_ref)
@@ -546,6 +583,7 @@ if __name__ == '__main__':
         os.path.join(outdir, "core_genes_de_dmr_insc_ref.by_patient.txt"),
         os.path.join(outdir, "dmr_and_de_overlap_insc_ref"),
         min_overlap=PARAMS['core_min_sample_overlap'],
+        fig_title='Individual comparison, iNSC and ref'
     )
     print "*** GBM vs iNSC and NOT GBM vs REF Venn overlaps - whole cohort ***"
     core_sets = {}
@@ -587,8 +625,8 @@ if __name__ == '__main__':
     de_values = {}
     dmr_values = {}
     for i, cls in enumerate(dmr.CLASSES):
-        meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_ref, 2, cls)
-        # meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_only, 2, cls)
+        # meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_ref, 2, cls)
+        meth_de = dmr.dict_by_sublevel(meth_de_joint_insc_only, 2, cls)
 
         per_sample_de = dict([(k, set(x.genes)) for k, x in meth_de.items()])
         all_genes = reduce(set.union, per_sample_de.values())
