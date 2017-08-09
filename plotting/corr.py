@@ -9,6 +9,7 @@ def plot_correlation_coefficient_array(
         vmax=1,
         fmin=None,
         fmax=None,
+        ax=None,
         fig_kwargs=None,
         plot_kwargs=None,
 ):
@@ -47,12 +48,18 @@ def plot_correlation_coefficient_array(
     c.values[np.triu_indices_from(c, 1)] = np.nan
 
     # plot
-    fig = plt.figure(**fig_kwargs)
-    ax = fig.add_subplot(111)
+    if ax is None:
+        fig = plt.figure(**fig_kwargs)
+        ax = fig.add_subplot(111)
+    else:
+        fig = ax.figure
     h = ax.matshow(c, cmap=cmap, vmin=vmin, vmax=vmax, origin=origin, **plot_kwargs)
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
     ax.set_xticklabels(pd_arr.columns, rotation=30)
     ax.set_yticklabels(pd_arr.columns)
     fig.colorbar(h)
+
+    return ax
+
 
