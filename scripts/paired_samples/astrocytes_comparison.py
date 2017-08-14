@@ -9,6 +9,7 @@ import seaborn as sns
 from scipy.cluster import hierarchy
 
 from load_data import rnaseq_data
+from stats import transformations
 from microarray import process
 from utils.output import unique_output_dir
 from plotting import clustering, bar, heatmap
@@ -27,7 +28,7 @@ def plot_clustermap(data, yugene=False, n_genes=N_GENES, yugene_resolve_ties=Fal
 
     kwargs.setdefault('cmap', 'RdBu_r')
 
-    mad = process.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
+    mad = transformations.median_absolute_deviation(data, axis=1).sort_values(ascending=False)
     top_mad = mad.iloc[:n_genes].index
     z = hierarchy.linkage(data.loc[top_mad].transpose(), method='average', metric='correlation')
     cg = clustering.plot_clustermap(
@@ -666,7 +667,7 @@ if __name__ == "__main__":
     data_nsc_nz = np.log(data_nsc_nz + 1)
 
     # MAD - compute on normalised values
-    mad_nsc_nz = process.median_absolute_deviation(data_nsc_nz).sort_values(ascending=False)
+    mad_nsc_nz = transformations.median_absolute_deviation(data_nsc_nz).sort_values(ascending=False)
     top_idx = mad_nsc_nz.index[:N_GENES]
     rem_idx = mad_nsc_nz.index[N_GENES:]
 
@@ -682,7 +683,7 @@ if __name__ == "__main__":
     # pg = sns.pairplot(data_nsc_nz, hue='hue')
 
     # repeat on YuGene
-    mad_nsc_nz_yg = process.median_absolute_deviation(data_nsc_nz_yg).sort_values(ascending=False)
+    mad_nsc_nz_yg = transformations.median_absolute_deviation(data_nsc_nz_yg).sort_values(ascending=False)
     top_idx = mad_nsc_nz_yg.index[:N_GENES]
     rem_idx = mad_nsc_nz_yg.index[N_GENES:]
 

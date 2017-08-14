@@ -1,5 +1,6 @@
 from load_data import rnaseq_data
 from microarray import process
+from stats import transformations
 from utils.output import unique_output_dir
 import os
 import pandas as pd
@@ -38,7 +39,7 @@ def compute_pairwise_corr(cell_line_dat, tissue_dat, n_genes=None):
     :return:
     """
     if n_genes is not None:
-        mad = process.median_absolute_deviation(
+        mad = transformations.median_absolute_deviation(
             pd.concat((cell_line_dat, tissue_dat), axis=1)
         ).sort_values(ascending=False)
         g = mad.index[:n_genes]

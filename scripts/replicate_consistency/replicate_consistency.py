@@ -1,5 +1,6 @@
 from load_data import rnaseq_data
 from microarray import process
+from stats import transformations
 import pandas as pd
 from plotting import clustering, heatmap
 from matplotlib import pyplot as plt
@@ -55,7 +56,7 @@ if __name__ == "__main__":
 
     idx = gene_idx & ((obj.data > 10).sum(axis=1) > 10)
     data = obj.data.loc[idx]
-    mad = process.median_absolute_deviation(data).sort_values(ascending=False)
+    mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
     logdata = np.log(data + 1)
 
     # start with a dendrogram
@@ -82,9 +83,9 @@ if __name__ == "__main__":
     out['fig'].savefig(os.path.join(outdir, "dendrogram_top_%d_by_mad.pdf" % n_gene))
 
     # scatterplot showing mean vs MAD before and after
-    mad_all = process.median_absolute_deviation(np.log10(obj.data.loc[gene_idx] + 1), axis=1)
+    mad_all = transformations.median_absolute_deviation(np.log10(obj.data.loc[gene_idx] + 1), axis=1)
     mean_all = np.log10(obj.data.loc[gene_idx] + 1).mean(axis=1)
-    mad_filt = process.median_absolute_deviation(np.log10(obj.data.loc[idx] + 1), axis=1)
+    mad_filt = transformations.median_absolute_deviation(np.log10(obj.data.loc[idx] + 1), axis=1)
     mean_filt = np.log10(obj.data.loc[idx]).mean(axis=1)
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "top_genes_by_abundance.pdf"))
 
     # look at the identity of the most variable genes
-    mad = process.median_absolute_deviation(data, axis=1)
+    mad = transformations.median_absolute_deviation(data, axis=1)
     idx_sort_by_std = mad.sort_values(ascending=False).index
     top_data_sorted = rnaseq_data.annotate(data.loc[idx_sort_by_std[:30]], annotate_by='Approved Symbol')
     top_data_sorted_n = top_data_sorted.divide(count_sum, axis=1)

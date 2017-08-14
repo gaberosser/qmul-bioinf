@@ -216,7 +216,8 @@ if __name__ == '__main__':
 
     # load SB RNA-Seq count data
     # NB: have checked and using TPM rather than FPKM makes no difference, as expected
-    X_sb = load_sb_rnaseq(yugene=True, gene_symbols=X.columns).transpose()
+    obj_sb = rnaseq_data.zhao_mb_cultures(annotate_by='Approved Symbol')
+    X_sb = process.yugene_transform(obj_sb.data.loc[X.columns]).transpose()
     y_sb = pca.transform(X_sb)
 
     # extract samples and reshape to make sure they are 2D arrays

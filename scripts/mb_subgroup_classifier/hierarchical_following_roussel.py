@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 from scipy.cluster import hierarchy
 
 from load_data import microarray_data, rnaseq_data
+from stats import transformations
 from microarray import process
 from scripts.comparison_rnaseq_microarray import consts
 from scripts.mb_subgroup_classifier.load import load_xz_rnaseq
@@ -202,7 +203,7 @@ if __name__ == '__main__':
     # data, meta = microarray_data.load_annotated_microarray_gse37382(aggr_field='SYMBOL', aggr_method='max_std')
 
     # find top genes by MAD - all genes included
-    mad = process.median_absolute_deviation(data, axis=1)
+    mad = transformations.median_absolute_deviation(data, axis=1)
     top_genes = mad.sort_values(ascending=False).index[:n_genes]
     print "Selecting top %d genes by MAD from %s study..." % (n_genes, STUDY)
     print "%d / %d genes (nanostring)" % (len(top_genes.intersection(all_nstring)), len(all_nstring))
@@ -273,7 +274,7 @@ if __name__ == '__main__':
     )
 
     # find top genes by MAD of classifying dataset
-    mad = process.median_absolute_deviation(data.loc[common_genes, :], axis=1)
+    mad = transformations.median_absolute_deviation(data.loc[common_genes, :], axis=1)
     top_genes = mad.sort_values(ascending=False).index[:n_genes]
 
     # plot: key gene expression plus clustering

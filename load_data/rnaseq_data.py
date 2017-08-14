@@ -943,26 +943,82 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
     return MultipleBatchLoader(loaders)
 
 
+def atcc_cell_lines(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Two ATCC lines sequenced, but one is mouse contaminated
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    lane_dirs = [
+        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2'),
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lane_dirs]
+    samples = (
+        'CRL3021_PRIMARYMB_P3',
+    )
 
-def mb_zhao_cultures(units='counts', annotate_by='all', annotation_type='protein_coding'):
+    if source == 'star':
+        count_dirs = [os.path.join(d, 'human', 'star_alignment') for d in lane_dirs]
+        obj = MultipleLaneStarCountLoader(
+            count_dirs=count_dirs,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+            strandedness='r',
+        )
+    else:
+        raise NotImplementedError("Unrecognised source.")
+    return obj
+
+
+def zhao_mb_cultures(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    NB: ICb1078 and ICb1487 are both mouse contaminated, so the results do not have any real meaning
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
     metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
     samples = (
-        '1078',
-        '1595',
-        '1487'
+        'ICb1078',
+        'ICb1595',
+        'ICb1487'
     )
-    return featurecounts(
-        count_files,
-        metafiles,
-        samples=samples,
-        units=units,
-        annotate_by=annotate_by,
-        annotation_type=annotation_type
-    )
+
+    if source == 'star':
+        count_dirs = [os.path.join(d, 'star_alignment') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneStarCountLoader(
+            count_dirs=count_dirs,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+            strandedness='r',
+        )
+    elif source == 'htseq-count':
+        raise NotImplementedError
+    elif source == 'featurecounts':
+        count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
+        obj = MultipleLaneFeatureCountLoader(
+            count_files=count_files,
+            meta_fns=metafiles,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            samples=samples,
+        )
+    else:
+        raise ValueError("Unrecognised source.")
+    return obj
 
 
 def brainrnaseq_preprocessed():

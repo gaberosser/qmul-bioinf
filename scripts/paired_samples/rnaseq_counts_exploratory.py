@@ -1,5 +1,6 @@
 from load_data import rnaseq_data
 from scripts.comparison_rnaseq_microarray import consts
+from stats import transformations
 from microarray import process
 import pandas as pd
 import seaborn as sns
@@ -13,7 +14,7 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
     """
     if n_gene is not None:
         # reduce data to the specified number using MAD
-        mad = process.median_absolute_deviation(data).sort_values(ascending=False)
+        mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
         genes = mad.index[:n_gene]
         data = data.loc[genes]
     corr = 1. - data.corr()

@@ -1,4 +1,5 @@
 from microarray import process
+from stats import transformations
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -261,7 +262,7 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
     """
     if n_gene is not None:
         # reduce data to the specified number using MAD
-        mad = process.median_absolute_deviation(data).sort_values(ascending=False)
+        mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
         genes = mad.index[:n_gene]
         data = data.loc[genes]
     z = hc.linkage(data.transpose(), method=method, metric=metric)
