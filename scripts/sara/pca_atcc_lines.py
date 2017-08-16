@@ -1,5 +1,6 @@
 from load_data import microarray_data, allen_human_brain_atlas, rnaseq_data
 from plotting.pca import pca_plot_by_group_2d, pca_plot_by_group_3d, cluster_ellipsoid
+from plotting import clustering
 from scripts.comparison_rnaseq_microarray import consts
 from analysis import process
 from utils.output import unique_output_dir
@@ -8,9 +9,14 @@ from sklearn.decomposition import PCA
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
+import seaborn as sns
 import os
+import collections
+from scipy.cluster import hierarchy
 
 from scripts.mb_subgroup_classifier import load
+## TODO: rename this:
+from scripts.comparison_rnaseq_microarray import consts
 
 
 def combine_expr(*args):
@@ -38,7 +44,9 @@ def plot_2d(y, lbl, colour_map, marker_map, title=None, outdir=None, **additiona
         )
     axs[-1].legend(loc='upper right')
     plt.tight_layout(pad=0.2, rect=[.02, .02, 1, 1])
+
     if title and outdir:
+        plt.draw()
         fig.savefig(os.path.join(outdir, "%s.png" % title), dpi=300)
         fig.savefig(os.path.join(outdir, "%s.tiff" % title), dpi=200)
         fig.savefig(os.path.join(outdir, "%s.pdf" % title))
@@ -46,9 +54,51 @@ def plot_2d(y, lbl, colour_map, marker_map, title=None, outdir=None, **additiona
     return fig, axs
 
 
+def plot_clustermap(
+        dat,
+        show_gene_labels=False,
+        **kwargs
+):
+
+    cg = sns.clustermap(
+        dat,
+        **kwargs
+    )
+    # check whether x ticks were requested - if so, rotate and raise the bottom of the axes
+    if kwargs.get('xticklabels', False):
+        plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)
+        bottom = 0.1
+
+    else:
+        bottom = 0.02
+    # remove useless row dendrogram
+    cg.ax_row_dendrogram.set_visible(False)
+    # and remove the space created for it
+    wr = cg.gs.get_width_ratios()
+    wr[0] = 0.035
+    wr[1] = 0.02
+    cg.gs.set_width_ratios(wr)
+    # reduce whitespace
+    cg.gs.update(bottom=bottom, top=0.98, left=0.02)
+
+    cg.ax_heatmap.yaxis.label.set_visible(False)
+    cg.ax_heatmap.xaxis.label.set_visible(False)
+    if show_gene_labels:
+        plt.setp(
+            cg.ax_heatmap.yaxis.get_ticklabels(),
+            rotation=0,
+            fontsize=14
+        )
+    else:
+        cg.ax_heatmap.yaxis.set_ticklabels([])
+
+    return cg
+
+
 if __name__ == "__main__":
 
     N_PC = 3
+    geneset = consts.NORTHCOTT_GENES
     outdir = unique_output_dir("pca_atcc_lines")
 
     # it's useful to maintain a list of known upregulated genes
@@ -59,90 +109,111 @@ if __name__ == "__main__":
     nano_genes.remove('EGFL11')
     nano_genes.append('EYS')
 
+    all_nstring = []
+    [all_nstring.extend(t) for _, t in consts.NANOSTRING_GENES]
+    all_ncott = []
+    [all_ncott.extend(t) for _, t in consts.NORTHCOTT_GENES]
+
+
     # load Ncott data (285 non-WNT MB samples)
-    ncott, ncott_meta = microarray_data.load_annotated_microarray_gse37382(
-        aggr_field='SYMBOL',
-        aggr_method='max'
-    )
-    sort_idx = ncott_meta.subgroup.sort_values().index
-    ncott_meta = ncott_meta.loc[sort_idx]
-    ncott = ncott.loc[:, sort_idx]
-    ncott = process.yugene_transform(ncott)
-
-    # load Allen (healthy cerebellum)
-
-    he, he_meta = allen_human_brain_atlas.cerebellum_microarray_reference_data(agg_field='gene_symbol', agg_method='max')
-    he_meta.loc[:, 'subgroup'] = 'control'
+    # ncott, ncott_meta = microarray_data.load_annotated_microarray_gse37382(
+    #     aggr_field='SYMBOL',
+    #     aggr_method='max'
+    # )
+    # sort_idx = ncott_meta.subgroup.sort_values().index
+    # ncott_meta = ncott_meta.loc[sort_idx]
+    # ncott = ncott.loc[:, sort_idx]
 
     # load Kool dataset
-    kool, kool_meta = microarray_data.load_annotated_microarray_gse10327(
-        aggr_field='SYMBOL',
-        aggr_method='max',
-    )
-    sort_idx = kool_meta.subgroup.sort_values().index
-    kool_meta = kool_meta.loc[sort_idx]
-    kool = kool.loc[:, sort_idx]
-    kool_meta.loc[:, 'subgroup'] = (
-        kool_meta.loc[:, 'subgroup'].str
-            .replace('A', 'WNT')
-            .replace('B', 'SHH')
-            .replace('E', 'Group 3')
-            .replace('C', 'Group 4')
-            .replace('D', 'Group 4')
-    )
-    kool = process.yugene_transform(kool)
+    # kool, kool_meta = microarray_data.load_annotated_microarray_gse10327(
+    #     aggr_field='SYMBOL',
+    #     aggr_method='max',
+    # )
+    # sort_idx = kool_meta.subgroup.sort_values().index
+    # kool_meta = kool_meta.loc[sort_idx]
+    # kool = kool.loc[:, sort_idx]
+    # kool_meta.loc[:, 'subgroup'] = (
+    #     kool_meta.loc[:, 'subgroup'].str
+    #         .replace('A', 'WNT')
+    #         .replace('B', 'SHH')
+    #         .replace('E', 'Group 3')
+    #         .replace('C', 'Group 4')
+    #         .replace('D', 'Group 4')
+    # )
 
     # load Robinson dataset
-    robi, robi_meta = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
-    robi_meta = robi_meta.loc[~robi_meta.subgroup.isin(['U', 'SHH OUTLIER'])]
-    sort_idx = robi_meta.subgroup.sort_values().index
-    robi_meta = robi_meta.loc[sort_idx]
-    robi = robi.loc[:, sort_idx]
-    robi_meta.loc[:, 'subgroup'] = robi_meta.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
-    robi = process.yugene_transform(robi)
-
-    # combine them all - this ensures a common list of genes
-    combs = []
-    grps = []
-    # combs.append(he); grps.extend(he_meta.subgroup.values)
-    combs.append(ncott); grps.extend(ncott_meta.subgroup.values)
-    combs.append(kool); grps.extend(kool_meta.subgroup.values)
-    combs.append(robi); grps.extend(robi_meta.subgroup.values)
-
-    all_expr = combine_expr(*combs)
+    STUDY = 'Robinson'
+    dat_ref, meta_ref = microarray_data.load_annotated_microarray_gse37418(aggr_field='SYMBOL', aggr_method='max')
+    meta_ref = meta_ref.loc[~meta_ref.subgroup.isin(['U', 'SHH OUTLIER'])]
+    sort_idx = meta_ref.subgroup.sort_values().index
+    meta_ref = meta_ref.loc[sort_idx]
+    dat_ref = dat_ref.loc[:, sort_idx]
+    meta_ref.loc[:, 'subgroup'] = meta_ref.subgroup.str.replace('G3', 'Group 3').replace('G4', 'Group 4')
+    meta_ref.loc[:, 'study'] = STUDY
 
     # load XZ RNA-Seq count data
     ## TODO: replace with a newer loader
-    dat_xz = load.load_xz_rnaseq(kind='htseq', yugene=True)
-    # X_xz = load_xz_rnaseq(kind='cuff', yugene=True, gene_symbols=X.columns).transpose()
+    dat_xz = load.load_xz_rnaseq(kind='htseq', yugene=False)
+    dat_xz = dat_xz.loc[:, ['XZ1', 'XZ2']]
+    dat_xz.columns = ['Zhang 1299', 'Zhang 1299 (rpt)']
+    meta_xz = pd.DataFrame([['Group 4']] * 2, index=dat_xz.columns, columns=['subgroup'])
+    meta_xz.loc[:, 'study'] = 'Zhang'
 
     # load SB RNA-Seq count data
     # NB: have checked and using TPM rather than FPKM makes no difference, as expected
     obj_sb = rnaseq_data.zhao_mb_cultures(annotate_by='Approved Symbol')
-    dat_sb = process.yugene_transform(obj_sb.data.loc[:, ['ICb1595']])
+    dat_sb = obj_sb.data.loc[:, ['ICb1595']]
+    dat_sb.columns = ['Zhang 1595']
+    meta_sb = pd.DataFrame([['Group 3']], index=dat_sb.columns, columns=['subgroup'])
+    meta_sb.loc[:, 'study'] = 'Zhang'
 
     # load ATCC cell line data
     obj_atcc = rnaseq_data.atcc_cell_lines(annotate_by='Approved Symbol')
-    dat_atcc = process.yugene_transform(obj_atcc.data)
+    dat_atcc = obj_atcc.data
+    dat_atcc.columns = ['CRL3021']
+    meta_atcc = pd.DataFrame([['Group 4']], index=dat_atcc.columns, columns=['subgroup'])
+    meta_atcc.loc[:, 'study'] = 'Zhang'
 
-    all_data = combine_expr(*[all_expr, dat_xz, dat_sb, dat_atcc])
-
+    # load Xiao-Nan data
+    xnan_sample_names = (
+        'Pt1299',
+        'ICb1299-I',
+        'ICb1299-III',
+        'ICb1299-IV',
+        # 'ICb1487-I',
+        # 'ICb1487-III',
+        'Pt1595',
+        'ICb1595-I',
+        'ICb1595-III',
+    )
+    dat_xnan, meta_xnan = load.load_xiaonan_microarray(yugene=False, sample_names=xnan_sample_names)
+    meta_xnan = pd.DataFrame(
+        meta_xnan.loc[dat_xnan.columns, 'northcott classification'].replace('C', 'Group 3').replace('D', 'Group 4').values,
+        index=dat_xnan.columns,
+        columns=['subgroup']
+    )
+    meta_xnan.loc[:, 'study'] = 'Zhao'
 
     ###################################
     # extract only the desired samples
     # can switch classifier here.
     ###################################
+
     title = 'robi'
-    X = all_data.loc[:, robi_meta.index].transpose()
-    m = robi_meta.copy()
+    all_data = combine_expr(dat_ref, dat_xz, dat_sb, dat_atcc, dat_xnan)
 
-    # title = 'kool'
-    # X = all_expr.loc[:, kool_meta.index].transpose()
-    # m = kool_meta.copy()
+    xnan_sample_names1 = [
+        'ICb1299-III',
+        'ICb1299-IV',
+        'ICb1595-I',
+        'ICb1595-III',
+    ]
 
-    # title = 'northcott'
-    # X = all_expr.loc[:, ncott_meta.index].transpose()
-    # m = ncott_meta.copy()
+    all_data = combine_expr(dat_ref, dat_xz, dat_sb, dat_atcc, dat_xnan.loc[:, xnan_sample_names1])
+
+    all_data_yg = process.yugene_transform(all_data, resolve_ties=False)
+    X = all_data_yg.loc[:, meta_ref.index].transpose()
+    m = meta_ref.copy()
 
     # first fit the pca with lots of components to investigate the explained variance
     pca = PCA(n_components=10)
@@ -163,33 +234,21 @@ if __name__ == "__main__":
     pca.fit(X)
     y = pca.transform(X)
 
-    y_xz = pca.transform(all_data.loc[:, ['XZ1', 'XZ2']].transpose())  # only scramble
-    y_sb = pca.transform(all_data.loc[:, dat_sb.columns].transpose())  # 1595 only
-    y_atcc = pca.transform(all_data.loc[:, dat_atcc.columns].transpose())  # primary only
-
-    # load Xiao-Nan data
-    xnan_sample_names = (
-        'ICb1299-III',
-        'ICb1299-IV',
-        'ICb1487-I',
-        'ICb1487-III',
-        'ICb1595-I',
-        'ICb1595-III',
-    )
-    xnan, xnan_meta = load.load_xiaonan_microarray(yugene=True, gene_symbols=X.columns, sample_names=xnan_sample_names)
-    xnan = xnan.transpose()
-    y_xnan = pca.transform(xnan)
+    y_xz = pca.transform(all_data_yg.loc[:, dat_xz.columns].transpose())  # only scramble
+    y_sb = pca.transform(all_data_yg.loc[:, dat_sb.columns].transpose())  # 1595 only
+    y_atcc = pca.transform(all_data_yg.loc[:, dat_atcc.columns].transpose())  # primary only
+    y_xnan = pca.transform(all_data_yg.loc[:, xnan_sample_names1].transpose())
 
     y_1299 = y_xnan[0:2]
-    y_1487 = y_xnan[2:4]
-    y_1595 = y_xnan[4:]
+    y_1595 = y_xnan[2:]
 
     # get labels and plot by subgroup
     idx, labels = m.subgroup.factorize()
 
     # define colours and labels
-    lbl_1299_this = 'ICb1299 (XZ)'
-    lbl_1595_this = 'ICb1595 (SB)'
+    lbl_1299 = 'ICb1299 (Zhao et al.)'
+    lbl_1595 = 'ICb1595 (Zhao et al.)'
+    lbl_atcc = 'CRL3021'
 
     colour_map = {
         'Group 3': '#F2EA00',
@@ -197,22 +256,141 @@ if __name__ == "__main__":
         'WNT': '#2D438E',
         'SHH': '#E5161C',
         'control': 'gray',
-        lbl_1299_this: 'b',
-        lbl_1595_this: 'y',
-        'ATCC': 'k'
+        lbl_1299: 'c',
+        lbl_1595: 'k',
+        lbl_atcc: 'm'
     }
 
     marker_map = dict([(k, 'o') for k in colour_map])
-    marker_map[lbl_1299_this] = 's'
-    marker_map[lbl_1595_this] = 's'
-    marker_map['ATCC'] = 's'
+    marker_map[lbl_1299] = 's'
+    marker_map[lbl_1595] = '^'
+    marker_map[lbl_atcc] = 'D'
 
 
     # plots: PCA of classifier vs RNA-Seq
     ttl = ("pca_%s-rnaseq_2d" % title)
     ad = {
-        lbl_1299_this: y_xz,
-        lbl_1595_this: y_sb,
-        'ATCC': y_atcc,
+        lbl_1299: y_1299,
+        lbl_1595: y_1595,
+        lbl_atcc: y_atcc,
     }
-    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, **ad)
+    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, **ad)
+
+    # clusterplot
+
+    # we assume that 4 clusters have been found and distinguish by greyscale shade
+    cluster_colours = {
+        1: '#000000',
+        2: '#a5a5a5',
+        3: '#6d6d6d',
+        4: '#dbdbdb',
+    }
+
+    study_colours = {
+        STUDY: '#cccccc',
+        'Zhao': '#000000',
+        'Zhang': '#666666',
+    }
+
+    ###################################
+    # extract only the desired samples
+    # can switch classifier here.
+    ###################################
+
+    title = 'robi'
+
+    # prepare data
+
+    xnan_sample_names2 = [
+        'Pt1299',
+        'ICb1299-I',
+        'ICb1299-III',
+        'ICb1299-IV',
+        'Pt1595',
+        'ICb1595-I',
+        'ICb1595-III',
+    ]
+
+    xz_sample_names = ['Zhang 1299']
+
+    data_for_clustering = combine_expr(dat_ref, dat_xz.loc[:, xz_sample_names], dat_sb, dat_atcc, dat_xnan.loc[:, xnan_sample_names2])
+    meta_for_clustering = pd.concat((meta_ref, meta_xz.loc[xz_sample_names], meta_sb, meta_atcc, meta_xnan.loc[xnan_sample_names2]), axis=0)
+
+    if 'EYS' in data_for_clustering.index:
+        idx = data_for_clustering.index.str.replace('EYS', 'EGFL11')
+        data_for_clustering.index = idx
+
+
+    gene_class = {}
+    alternatives = {
+        'EGFL11': 'EYS'
+    }
+
+    g_nano = []
+    gcount_nano = collections.Counter()
+
+    # matching genes
+    for cls, gs in consts.NANOSTRING_GENES:
+        for gg in gs:
+            # if gg in data.index:
+            if gg in data_for_clustering.index:
+                g_nano.append(gg)
+                gcount_nano[cls] += 1
+            elif gg in alternatives and alternatives[gg] in data_for_clustering.index:
+                g_nano.append(alternatives[gg])
+                gcount_nano[cls] += 1
+
+    g_ncot = []
+
+    for cls, gs in consts.NORTHCOTT_GENES:
+        for gg in gs:
+            if cls == 'Group C':
+                cls = 'Group 3'
+            if cls == 'Group D':
+                cls = 'Group 4'
+            gene_class[gg] = cls
+            # if gg in data.index:
+            if gg in data_for_clustering.index:
+                g_ncot.append(gg)
+            elif gg in alternatives and alternatives[gg] in data_for_clustering.index:
+                g_ncot.append(alternatives[gg])
+
+    data_for_clustering_ncot = data_for_clustering.loc[g_ncot].dropna().astype(float)
+    data_for_clustering_ncot = np.log2(data_for_clustering_ncot + 1)
+    z_ncot = hierarchy.linkage(data_for_clustering_ncot.transpose(), method='average', metric='correlation')
+
+    row_colors_nano = pd.Series(dict([(k, gene_class[k]) for k in g_nano]), name='').apply(colour_map.get)
+    row_colors_ncot = pd.Series(gene_class, name='').apply(colour_map.get)
+
+    col_colors = pd.DataFrame(index=data_for_clustering_ncot.columns, columns=['study', 'subgroup'])
+    col_colors_subgroup = meta_for_clustering.subgroup.apply(colour_map.get)
+    col_colors.loc[col_colors_subgroup.index, 'subgroup'] = col_colors_subgroup
+    col_colors.loc[:, 'study'] = meta_for_clustering.study.apply(study_colours.get)
+    # col_colors.loc[:, 'inferred'] = pd.Series(
+    #     hierarchy.fcluster(z_ncot, 4, criterion='maxclust'),
+    #     index=data_for_clustering_ncot.columns
+    # ).apply(cluster_colours.get)
+
+    cg = plot_clustermap(
+        data_for_clustering_ncot,
+        cmap='RdBu_r',
+        show_gene_labels=True,
+        row_colors=row_colors_ncot,
+        col_colors=col_colors,
+        row_cluster=None,
+        col_linkage=z_ncot,
+        z_score=1,
+        xticklabels=True,
+    )
+    plt.setp(
+        cg.ax_heatmap.yaxis.get_ticklabels(),
+        rotation=0,
+        fontsize=8
+    )
+    # clustering.show_dendrogram_cut_by_nclust(cg, 3)
+    # clustering.show_dendrogram_cut_by_nclust(cg, 4)
+    # clustering.show_dendrogram_cut_by_nclust(cg, 5)
+    ttl = "%s_ncott_heatmap" % STUDY.lower()
+    cg.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    cg.savefig(os.path.join(outdir, "%s.pdf" % ttl))

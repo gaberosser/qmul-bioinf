@@ -243,8 +243,11 @@ if __name__ == '__main__':
     meta_zhao.loc[:, 'study'] = 'Zhao'
 
     # RNA-Seq count data (FPKM): 1595 late passage
-    data_sb, _ = rnaseq_data.mb_zhao_cultures(units='fpkm', annotate_by='Approved Symbol')
-    data_sb = data_sb.loc[:, ['1595']]
+    obj_sb = rnaseq_data.zhao_mb_cultures(annotate_by='Approved Symbol')
+    data_sb = obj_sb.data
+    # data_sb, _ = rnaseq_data.mb_zhao_culdata_sb = obj_sb.datatures(units='fpkm', annotate_by='Approved Symbol')
+    # data_sb = data_sb.loc[:, ['1595']]
+    data_sb = data_sb.loc[:, ['ICb1595']]
     data_sb.columns = ['Zhang 1595']
     data_sb = np.log2(data_sb + 1.)
     meta_sb = pd.DataFrame(data=[['Zhang', 'Group C']], index=['Zhang 1595'], columns=['study', 'subgroup'])
