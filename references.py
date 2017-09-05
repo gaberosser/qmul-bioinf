@@ -26,7 +26,7 @@ def conversion_table(type='protein_coding'):
     if type == 'protein_coding':
         in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
     elif type == 'all':
-        in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.03.tsv')
+        in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
     else:
         raise ValueError("Unsupported type option '%s'" % type)
     # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
