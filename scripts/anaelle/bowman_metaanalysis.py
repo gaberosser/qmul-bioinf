@@ -6,6 +6,8 @@ import datetime
 from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy as np
+from scipy import stats
+from utils.output import unique_output_dir
 
 
 def get_de_tissue_tumour():
@@ -100,8 +102,11 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
 
 if __name__ == "__main__":
 
+    outdir = unique_output_dir('bowman_meta')
+
     rnaseq_type = 'counts'
-    remove_idh1 = False
+    # remove_idh1 = False
+    remove_idh1 = True
 
     # cutoff for discarding genes
     fpkm_cutoff = 1.
@@ -152,6 +157,9 @@ if __name__ == "__main__":
         ax.set_xlabel('log10(CPM + 1)')
     ax.set_ylabel('Density')
     ax.axvline(np.log10(fpkm_cutoff + 1.), ls='--', c='k')
+
+    fig.savefig(os.path.join(outdir, 'rnaseq_threshold_cutoff.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'rnaseq_threshold_cutoff.pdf'))
 
     if rnaseq_dat.index.duplicated().any():
         print "Warning: some gene symbols are duplicated."
@@ -261,32 +269,35 @@ if __name__ == "__main__":
         sns.kdeplot(rna_z.loc[g_name], ax=ax)
     ax.set_xlabel("Normalised ssGSEA score")
     ax.set_ylabel("Density")
+    fig.savefig(os.path.join(outdir, 'rnaseq_ssgsea_score_tcga.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'rnaseq_ssgsea_score_tcga.pdf'))
 
     # repeat with the microarray data
-    marr_es = pd.DataFrame(index=s4_hu.keys(), columns=marr_dat.columns)
-    marr_ecdf_in = dict()
-    marr_ecdf_out = dict()
-    for s_name in marr_dat.columns:
-        marr_ecdf_in[s_name] = dict()
-        marr_ecdf_out[s_name] = dict()
+    if False:
+        marr_es = pd.DataFrame(index=s4_hu.keys(), columns=marr_dat.columns)
+        marr_ecdf_in = dict()
+        marr_ecdf_out = dict()
+        for s_name in marr_dat.columns:
+            marr_ecdf_in[s_name] = dict()
+            marr_ecdf_out[s_name] = dict()
+            for g_name in s4_hu:
+                marr_es.loc[g_name, s_name], marr_ecdf_in[s_name][g_name], marr_ecdf_out[s_name][g_name] = ssgsea(
+                    marr_dat.loc[:, s_name],
+                    marr_s4_hu[g_name],
+                    alpha=0.25,
+                    return_ecdf=True
+                )
+
+        # scale using the Z transform
+        # z = marr_es.subtract(marr_es.mean(axis=1), axis=0).divide(marr_es.std(axis=1), axis=0)
+        marr_z = (marr_es - marr_es.values.flatten().mean()) / marr_es.values.flatten().std()
+
+        fig = plt.figure(num="TCGA microarray")
+        ax = fig.add_subplot(111)
         for g_name in s4_hu:
-            marr_es.loc[g_name, s_name], marr_ecdf_in[s_name][g_name], marr_ecdf_out[s_name][g_name] = ssgsea(
-                marr_dat.loc[:, s_name],
-                marr_s4_hu[g_name],
-                alpha=0.25,
-                return_ecdf=True
-            )
-
-    # scale using the Z transform
-    # z = es.subtract(es.mean(axis=1), axis=0).divide(es.std(axis=1), axis=0)
-    marr_z = (marr_es - marr_es.values.flatten().mean()) / marr_es.values.flatten().std()
-
-    fig = plt.figure(num="TCGA microarray")
-    ax = fig.add_subplot(111)
-    for g_name in s4_hu:
-        sns.kdeplot(marr_z.loc[g_name], ax=ax)
-    ax.set_xlabel("Normalised ssGSEA score")
-    ax.set_ylabel("Density")
+            sns.kdeplot(marr_z.loc[g_name], ax=ax)
+        ax.set_xlabel("Normalised ssGSEA score")
+        ax.set_ylabel("Density")
 
     # now split by subgroup
     subgroups = rnaseq_meta.groupby('expression_subclass').groups
@@ -304,28 +315,82 @@ if __name__ == "__main__":
             bplot[g_name][sg] = rna_z.loc[g_name, subgroups[sg]].values
 
 
-    tmp = [list(t) for t in bplot['TAM BMDM'].values()]
+    lbl, tmp = zip(*bplot['TAM BMDM'].items())
+    tmp = [list(t) for t in tmp]
     plt.figure(num='TAM BMDM')
     plt.boxplot(tmp)
     ax = plt.gca()
-    ax.set_xticklabels(subgroups.keys(), rotation=45)
+    ax.set_xticklabels(lbl, rotation=45)
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_subgroup_tcga.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_subgroup_tcga.pdf'))
 
-    tmp = [list(t) for t in bplot['TAM MG'].values()]
+    lbl, tmp = zip(*bplot['TAM MG'].items())
+    tmp = [list(t) for t in tmp]
     plt.figure(num='TAM MG')
     plt.boxplot(tmp)
     ax = plt.gca()
-    ax.set_xticklabels(subgroups.keys(), rotation=45)
+    ax.set_xticklabels(lbl, rotation=45)
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_subgroup_tcga.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_subgroup_tcga.pdf'))
 
-    tmp = [list(t) for t in bplot['Core BMDM'].values()]
-    plt.figure(num='Core BMDM')
-    plt.boxplot(tmp)
-    ax = plt.gca()
-    ax.set_xticklabels(subgroups.keys(), rotation=45)
+    # tmp = [list(t) for t in bplot['Core BMDM'].values()]
+    # plt.figure(num='Core BMDM')
+    # plt.boxplot(tmp)
+    # ax = plt.gca()
+    # ax.set_xticklabels(subgroups.keys(), rotation=45)
 
-    tmp = [list(t) for t in bplot['Core MG'].values()]
-    plt.figure(num='Core MG')
-    plt.boxplot(tmp)
-    ax = plt.gca()
-    ax.set_xticklabels(subgroups.keys(), rotation=45)
+    # tmp = [list(t) for t in bplot['Core MG'].values()]
+    # plt.figure(num='Core MG')
+    # plt.boxplot(tmp)
+    # ax = plt.gca()
+    # ax.set_xticklabels(subgroups.keys(), rotation=45)
 
     plt.show()
+
+    # ITGA4, Tmem119 and P2ry12 markers vs ssGSEA score
+    # checked in orth that these are replaced by the capitalized version in humans
+
+    def signature_vs_gene(the_gene, geneset_name):
+        the_expr = rnaseq_dat.loc[the_gene]
+        the_signature = rna_z.loc[geneset_name, the_expr.index]
+        lr = stats.linregress(the_signature.astype(float), np.log2(the_expr + 1))
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.scatter(the_signature, np.log2(the_expr + 1))
+        ax.plot(the_signature, lr.intercept + lr.slope * the_signature.astype(float), 'k--')
+        ax.set_xlabel('Signature score')
+        ax.set_ylabel('log2(%s)' % the_gene)
+        return ax
+
+    ax = signature_vs_gene('ITGA4', 'TAM BMDM')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_ITGA4.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_ITGA4.pdf'))
+
+    ax = signature_vs_gene('ITGA4', 'TAM MG')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_ITGA4.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_ITGA4.pdf'))
+
+    ax = signature_vs_gene('TMEM119', 'TAM BMDM')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_TMEM119.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_TMEM119.pdf'))
+
+    ax = signature_vs_gene('TMEM119', 'TAM MG')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_TMEM119.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_TMEM119.pdf'))
+
+    ax = signature_vs_gene('P2RY12', 'TAM BMDM')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_P2RY12.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_vs_P2RY12.pdf'))
+
+    ax = signature_vs_gene('P2RY12', 'TAM MG')
+    fig = ax.figure
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_P2RY12.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_P2RY12.pdf'))

@@ -22,15 +22,21 @@ def known_genes(tax_id=9606, index_field=None):
     return df
 
 
-def conversion_table(type='protein_coding'):
-    if type == 'protein_coding':
-        in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
-    elif type == 'all':
-        in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
+def conversion_table(type='protein_coding', tax_id=9606):
+    if tax_id == 9606:
+        if type == 'protein_coding':
+            in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
+        elif type == 'all':
+            in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
+        else:
+            raise ValueError("Unsupported type option '%s'" % type)
+        # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
+        df = pd.read_csv(in_file, delimiter='\t')
+    elif tax_id == 10090:
+        in_file = os.path.join(DATA_DIR, 'biomart', 'mm10', 'mm10.csv')
+        df = pd.read_csv(in_file, header=0, index_col=None)
     else:
-        raise ValueError("Unsupported type option '%s'" % type)
-    # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
-    df = pd.read_csv(in_file, delimiter='\t')
+        raise NotImplementedError("Unknown taxonomy ID")
     return df
 
 
@@ -42,26 +48,26 @@ def translate(x, to_field, from_field):
     return cat.set_index(from_field).loc[x, to_field]
 
 
-def gene_symbol_to_entrez(g):
-    cat = conversion_table(type='all')
+def gene_symbol_to_entrez(g, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, g, 'Entrez Gene ID', 'Approved Symbol')
 
 
-def entrez_to_gene_symbol(e):
-    cat = conversion_table(type='all')
+def entrez_to_gene_symbol(e, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, e, 'Approved Symbol', 'Entrez Gene ID')
 
 
-def gene_symbol_to_ensembl(g):
-    cat = conversion_table(type='all')
+def gene_symbol_to_ensembl(g, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, g, 'Ensembl Gene ID', 'Approved Symbol')
 
 
-def ensembl_to_gene_symbol(e):
-    cat = conversion_table(type='all')
+def ensembl_to_gene_symbol(e, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, e, 'Approved Symbol', 'Ensembl Gene ID')
 
 
-def ensembl_to_name(e):
-    cat = conversion_table(type='all')
+def ensembl_to_name(e, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, e, 'Approved Name', 'Ensembl Gene ID')

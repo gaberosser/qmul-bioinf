@@ -78,8 +78,8 @@ def get_clusters_by_location(reg_coll, anno, chr, loc_from, loc_to):
     for cls, d in reg_coll[chr].iteritems():
         for k, prs in d.items():
             # check whether all probes are present in the selected region of the genome
-            if len(portion.index.intersection(prs) == len(prs)):
-                this_regs.setdefault(cls, {})[k] = prs
+            if len(portion.index.intersection(prs['probes'])) == len(prs['probes']):
+                this_regs.setdefault(cls, {})[k] = prs['probes']
     return this_regs
 
 
@@ -752,8 +752,19 @@ if __name__ == "__main__":
     OUTDIR = unique_output_dir('dmr', reuse_empty=True)
 
     anno = methylation_array.load_illumina_methylationepic_annotation()
-    b = methylation_array.gbm_nsc_methylationepic('swan')
+    b, meta = methylation_array.hgic_methylationepic('swan')
     m = m_from_beta(b)
+
+    gbm_sample_dict = {
+        '018': 'GBM018_P10',
+        '019': 'GBM019_P4',
+        '031': 'GBM031_P4',
+    }
+    dura_sample_dict = {
+        '018': 'DURA018_NSC_N2_P6',
+        '019': 'DURA019_NSC_N8C_P2',
+        '031': 'DURA031_NSC_N44B_P2',
+    }
 
     # reduce anno down to probes in the data
     anno = anno.loc[anno.index.intersection(b.index)]
@@ -780,7 +791,7 @@ if __name__ == "__main__":
     test_results_relevant = {}
     test_results_significant = {}
     for sid in ['018', '019', '031']:
-        samples = ('GBM%s' % sid, 'Dura%s' % sid)
+        samples = (gbm_sample_dict[sid], dura_sample_dict[sid])
         test_results[sid] = test_clusters(clusters, m, samples=samples, min_median_change=dm, n_jobs=n_jobs)
         test_results_relevant[sid] = mht_correction(test_results[sid], alpha=fdr)
 
@@ -838,7 +849,7 @@ if __name__ == "__main__":
             plots.illustrate_regions(anno, bounded_reg, CLASSES, ax=axs[0])
 
             portion = anno.loc[(anno.MAPINFO > loc_from) & (anno.MAPINFO < loc_to) & (anno.CHR == the_chr)]
-            samples = ['Dura%s' % sid, 'GBM%s' % sid]
+            samples = [dura_sample_dict[sid], gbm_sample_dict[sid]]
 
             the_data = m.loc[portion.index, samples]
             the_locs = portion.MAPINFO.values
