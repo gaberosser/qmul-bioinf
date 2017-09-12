@@ -269,7 +269,16 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
     sq = hc.distance.squareform(
         hc.distance.pdist(data.transpose(), metric=metric)
     )
-    sq = max(sq.flat) - sq
+    # invert distance so that closer samples have a larger number
+    if metric == 'correlation':
+        sq = 1 - sq
+    else:
+        # TODO: add specific versions for other metrics if required
+        sq = max(sq.flat) - sq
+
+    # make a dataframe for clustering so that the plot has correct labels
+    sq = pd.DataFrame(data=sq, index=data.columns, columns=data.columns)
+
     cg = sns.clustermap(
         sq,
         cmap='RdBu_r',

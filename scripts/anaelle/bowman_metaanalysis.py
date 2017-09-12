@@ -6,6 +6,7 @@ import datetime
 from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy as np
+import collections
 from scipy import stats
 from utils.output import unique_output_dir
 
@@ -66,10 +67,12 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
     """
     s = sample_data
 
-    # rank the sample in descending order (1 corresponds to highest expression)
-    rs = s.rank(method='average', ascending=False)  # ties resolved by averaging
+    # FIXME: CRUCIAL: which order do we rank in?
+    # rank the sample in ascending order (1 corresponds to lowest expression)
+    rs = s.rank(method='average', ascending=True)  # ties resolved by averaging
 
     # sort in decreasing order
+    # the most expressed genes come first in the list
     rs = rs.sort_values(ascending=False)
 
     # boolean vector for inclusion in gene set
@@ -97,7 +100,6 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
         return (es, ecdf_in, ecdf_out)
     else:
         return es
-
 
 
 if __name__ == "__main__":
@@ -300,19 +302,31 @@ if __name__ == "__main__":
         ax.set_ylabel("Density")
 
     # now split by subgroup
+    subgroup_order = [
+        'Classical',
+        'Mesenchymal',
+        'Neural',
+        'Proneural',
+    ]
     subgroups = rnaseq_meta.groupby('expression_subclass').groups
     if remove_idh1:
         try:
             subgroups.pop('G-CIMP')
         except Exception:
             pass
+    else:
+        subgroup_order += ['G-CIMP']
 
-    # boxplot
+    # boxplot by subgroup
+    # for this purpose we need to normalise by gene set, not globally
     bplot = {}
     for g_name in rna_s4_hu:
-        bplot[g_name] = {}
-        for sg in subgroups:
-            bplot[g_name][sg] = rna_z.loc[g_name, subgroups[sg]].values
+        the_data = rna_es.loc[g_name]
+        the_data = (the_data - the_data.mean()) / the_data.std()
+        bplot[g_name] = collections.OrderedDict()
+        for sg in subgroup_order:
+            # bplot[g_name][sg] = rna_z.loc[g_name, subgroups[sg]].values
+            bplot[g_name][sg] = the_data.loc[subgroups[sg]].values
 
 
     lbl, tmp = zip(*bplot['TAM BMDM'].items())
@@ -354,13 +368,19 @@ if __name__ == "__main__":
 
     def signature_vs_gene(the_gene, geneset_name):
         the_expr = rnaseq_dat.loc[the_gene]
-        the_signature = rna_z.loc[geneset_name, the_expr.index]
+        # Z transform the signature scores for this gene set
+        the_signature = rna_es.loc[geneset_name]
+        the_signature = (the_signature - the_signature.mean()) / the_signature.std()
+        # ensure the ordering is the same
+        the_signature = the_signature.loc[the_expr.index]
         lr = stats.linregress(the_signature.astype(float), np.log2(the_expr + 1))
+        x_lr = np.array([the_signature.min(), the_signature.max()])
+        y_lr = lr.intercept + lr.slope * x_lr
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.scatter(the_signature, np.log2(the_expr + 1))
-        ax.plot(the_signature, lr.intercept + lr.slope * the_signature.astype(float), 'k--')
+        ax.plot(x_lr, y_lr, 'k--')
         ax.set_xlabel('Signature score')
         ax.set_ylabel('log2(%s)' % the_gene)
         return ax

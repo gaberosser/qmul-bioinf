@@ -39,23 +39,36 @@ class CountDataMixin(object):
         return annotate(
             data,
             annotate_by=annotate_by,
-            annotation_type=annotation_type
+            annotation_type=annotation_type,
+            tax_id=self.tax_id
         )
 
     @property
     def data_by_symbol(self):
         data = self.process()
-        return self.annotate(data=data, annotate_by='Approved Symbol', annotation_type='protein_coding')
+        return self.annotate(
+            data=data,
+            annotate_by='Approved Symbol',
+            annotation_type='protein_coding',
+        )
 
     @property
     def data_by_ensembl(self):
         data = self.process()
-        return self.annotate(data=data, annotate_by='Ensembl Gene ID', annotation_type='protein_coding')
+        return self.annotate(
+            data=data,
+            annotate_by='Ensembl Gene ID',
+            annotation_type='protein_coding',
+        )
 
     @property
     def data_by_entrez(self):
         data = self.process()
-        return self.annotate(data=data, annotate_by='Entrez Gene ID', annotation_type='protein_coding')
+        return self.annotate(
+            data=data,
+            annotate_by='Entrez Gene ID',
+            annotation_type='protein_coding',
+        )
 
     def get_counts(self):
         return self.data
@@ -84,6 +97,7 @@ class CountDatasetLoader(CountDataMixin):
             annotate_by=None,
             annotation_type='protein_coding',
             file_ext=None,
+            tax_id=9606,
             *args,
             **kwargs):
 
@@ -99,6 +113,7 @@ class CountDatasetLoader(CountDataMixin):
         self.samples_to_keep = samples
         self.annotate_by = annotate_by
         self.annotation_type = annotation_type
+        self.tax_id = tax_id
 
         self.logger = get_console_logger(self.__class__.__name__)
 
@@ -300,6 +315,7 @@ class MultipleLaneCountDatasetLoader(object):
             meta_fns=None,
             annotate_by='all',
             annotation_type='protein_coding',
+            tax_id=9606,
             *args,
             **kwargs
     ):
@@ -307,7 +323,8 @@ class MultipleLaneCountDatasetLoader(object):
         self.loaders = None
         self.annotate_by = annotate_by
         self.annotation_type = annotation_type
-        self.load_lanes(annotate_by=annotate_by, annotation_type=annotation_type, *args, **kwargs)
+        self.tax_id = tax_id
+        self.load_lanes(annotate_by=annotate_by, annotation_type=annotation_type, tax_id=self.tax_id, *args, **kwargs)
         self.data = self.combine_counts()
         self.meta = self.combine_metas()
 
@@ -501,18 +518,32 @@ class MultipleBatchLoader(CountDataMixin):
         self.batch_column = batch_colname
         meta_cols = list(meta_cols) + [batch_colname]
 
-        add_anno = False
-        if any([l.annotate_by == 'all' for l in loaders]):
-            add_anno = True
-            ann_fields = [t for t in INDEX_FIELDS if t != 'Ensembl Gene ID']
-            ann_data = pd.DataFrame(index=idx, columns=ann_fields)
-
         self.data = pd.DataFrame(index=idx, columns=samples)
         self.meta = pd.DataFrame(index=samples, columns=meta_cols)
+        self.tax_id = None
+
+        add_anno = False
+        annot_fields = set()
         for i, l in enumerate(loaders):
             this_samples = l.meta.loc[:, 'sample'].values
             this_index = l.data.index
             this_meta_cols = l.meta.columns
+
+            # set taxonomy ID and check consistency between loaders
+            if self.tax_id is None:
+                self.tax_id = l.tax_id
+            else:
+                if self.tax_id != l.tax_id:
+                    raise NotImplementedError("Taxonomy IDs differ between loaders: %s, %s. They must match." % (
+                        str(self.tax_id),
+                        str(l.tax_id)
+                    ))
+
+            # check whether annotations are included
+            if l.annotate_by == 'all':
+                add_anno = True
+                this_annot_fields = l.data.drop(this_samples, axis=1).columns.intersection(INDEX_FIELDS)
+                annot_fields.update(this_annot_fields)
 
             self.data.loc[this_index, this_samples] = l.data.loc[this_index, this_samples].values
             self.meta.loc[this_samples, this_meta_cols] = l.meta.values
@@ -520,11 +551,19 @@ class MultipleBatchLoader(CountDataMixin):
             self.meta.loc[this_samples, self.batch_column] = i + 1
 
         if add_anno:
+            ann_data = pd.DataFrame(index=idx, columns=list(annot_fields))
             # add annotation columns back in
             for i, l in enumerate(loaders):
+                # only looking up the indices and columns in this loader
                 this_index = l.data.index
+                this_annot_fields = l.data.columns.intersection(annot_fields)
+
+                if len(this_annot_fields) == 0:
+                    logger.error("No annotation data in loader %d. Skipping.")
+                    continue
+
                 try:
-                    ann_data.loc[this_index, ann_fields] = l.data.loc[this_index, ann_fields]
+                    ann_data.loc[this_index, this_annot_fields] = l.data.loc[this_index, this_annot_fields]
                 except KeyError:
                     logger.error("No annotation data in loader %d. Skipping.")
             self.data = pd.concat((self.data, ann_data), axis=1)
@@ -534,6 +573,7 @@ def annotate(
     res,
     annotate_by='all',
     annotation_type='protein_coding',
+    tax_id=9606,
 ):
     """
     Annotate the supplied dataframe
@@ -542,14 +582,23 @@ def annotate(
     If 'all' add all supported annotations.
     If None, add no extra annotations.
     :param annotation_type: Passed on to the `type` variable of the conversion table loader
+    :param tax_id: Default to human (9606). Mouse is 10090.
     """
     if annotate_by is not None:
         # load genenames data for annotation
-        df = references.conversion_table(type=annotation_type)
+        df = references.conversion_table(type=annotation_type, tax_id=tax_id)
         df.set_index('Ensembl Gene ID', inplace=True)
+        # resolve duplicates (if present) by keeping the first
+        df = df.loc[~df.index.duplicated(keep='first')]
 
         if annotate_by == 'all':
-            annot = df.loc[res.index.intersection(df.index), ['Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs']]
+            # depending on the taxonomy and type, we may have different columns
+            # therefore, if we are including all annotations, we should only use those that actually exist
+            all_cols = [
+                'Approved Symbol', 'Entrez Gene ID', 'RefSeq IDs'
+            ]
+            cols_to_use = df.columns.intersection(all_cols)
+            annot = df.loc[res.index.intersection(df.index), cols_to_use]
         else:
             annot = df.loc[res.index.intersection(df.index), annotate_by]
 
@@ -776,29 +825,6 @@ def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type=
     return obj
 
 
-
-def gbm_astrocyte_nsc_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
-    lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
-    lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
-    count_files = [os.path.join(d, 'featureCounts', 'counts.txt') for d in (lane1dir, lane2dir)]
-    metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
-    samples = (
-        'DURA018N2_NSC',
-        'DURA019N8C_NSC',
-        'DURA018N2_ASTRO_DAY12',
-        'DURA019N8C_ASTRO_DAY12',
-    )
-    return featurecounts(
-        count_files,
-        metafiles,
-        samples=samples,
-        units=units,
-        annotate_by=annotate_by,
-        annotation_type=annotation_type
-    )
-
-
 def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
@@ -845,6 +871,7 @@ def all_samples_multilane_loader(
         annotate_by='all',
         annotation_type='protein_coding',
         strandedness='r',
+        tax_id=9606,
 ):
     """
     Load the full dataset from a multiple lane run
@@ -864,6 +891,7 @@ def all_samples_multilane_loader(
             annotation_type=annotation_type,
             strandedness=strandedness,
             samples=samples,
+            tax_id=tax_id
         )
     elif source == 'htseq-count':
         raise NotImplementedError
@@ -875,6 +903,7 @@ def all_samples_multilane_loader(
             annotate_by=annotate_by,
             annotation_type=annotation_type,
             samples=samples,
+            tax_id=tax_id
         )
     else:
         raise ValueError("Unrecognised source.")
@@ -1202,6 +1231,65 @@ def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_typ
         raise NotImplementedError
 
     return obj
+
+
+def mouse_nsc_validation_samples(source='star', annotate_by='all'):
+    """
+    3 mice, 4 conditions:
+    eNSC in endogenous media
+    eNSC in mouse induction media
+    iNSC mouse protocol
+    iNSC human protocol
+    Three of the samples were re-run following a facility mess up (CRL3034 contamination). Use the newest versions.
+    :param source:
+    :param annotate_by:
+    :return:
+    """
+    loaders = []
+
+    # expt 1: original data
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    lanedirs = [
+        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2')
+    ]
+
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'mouse', 'star_alignment') for d in lanedirs]
+    samples = ['eNSC%dmouse' % i for i in (3, 5, 6)] \
+    + ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] \
+    + ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
+
+    obj = all_samples_multilane_loader(
+        countdirs,
+        metafiles,
+        strandedness='r',
+        source=source,
+        annotate_by=annotate_by,
+        samples=samples,
+        tax_id=10090
+    )
+    loaders.append(obj)
+
+    # expt 2: 3 x replacement runs
+
+    samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506', '170829_K00150_0236_AHL5YHBBXX')
+    countdir = os.path.join(indir, 'mouse', 'star_alignment')
+    metafn = os.path.join(indir, 'sources.csv')
+    obj = StarCountLoader(
+        count_dir=countdir,
+        strandedness='r',
+        samples=samples,
+        meta_fn=metafn,
+        source=source,
+        annotate_by=annotate_by,
+        tax_id=10090
+    )
+    loaders.append(obj)
+
+    return MultipleBatchLoader(loaders)
 
 
 def gse77920_loader(source='star', annotate_by='all', annotation_type='protein_coding'):

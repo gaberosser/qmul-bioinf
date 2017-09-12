@@ -8,6 +8,7 @@ import seaborn as sns
 
 
 if __name__ == "__main__":
+    obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
 
     lanedirs = [
