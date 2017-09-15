@@ -1336,3 +1336,100 @@ def gse24399_merged_loader(source='star', annotate_by='all', annotation_type='pr
         raise ValueError("Unrecognised source")
 
     return obj
+
+
+def gse52564(source='star', annotate_by='all'):
+    """
+    Mouse reference data. Duplicates of: astrocyte, neuron, OPC, microglia.
+    Unstranded, based on looking at the gene counts
+    :param source:
+    :param annotate_by:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE52564')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='u',
+            tax_id=10090
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
+
+
+def gse43916(source='star', annotate_by='all'):
+    """
+    Mouse reference data. One astrocyte sample (poor quality), one NSC (good quality)
+    Reverse stranded single end, based on looking at the gene counts
+    :param source:
+    :param annotate_by:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE43916')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='r',
+            tax_id=10090
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
+
+
+
+def gse86248(source='star', annotate_by='all'):
+    """
+    Mouse reference data. 3 repeats of CL57/BL6 ESC cultured in LIF.
+    Reverse stranded single end, based on looking at the gene counts
+    :param source:
+    :param annotate_by:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86248')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='r',
+            tax_id=10090
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
+
+
+def gse36114(source='star', annotate_by='all'):
+    """
+    Mouse reference data. E14 commercial ESC line at day 0 and 4 days under Activin A differentiation.
+    Unstranded single end, based on looking at the gene counts
+    :param source:
+    :param annotate_by:
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE36114')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='u',
+            tax_id=10090
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj

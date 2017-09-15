@@ -107,8 +107,8 @@ if __name__ == "__main__":
     outdir = unique_output_dir('bowman_meta')
 
     rnaseq_type = 'counts'
-    # remove_idh1 = False
-    remove_idh1 = True
+    remove_idh1 = False
+    # remove_idh1 = True
 
     # cutoff for discarding genes
     fpkm_cutoff = 1.
@@ -198,10 +198,17 @@ if __name__ == "__main__":
     s1b = pd.read_csv(fn_s1b, header=0, index_col=None)
     s4 = pd.read_csv(fn_s4, header=0, index_col=None)
 
+    # mouse signature in dictionary form
+    s4_mo = {}
+    for c in s4.columns:
+        s4_mo[c] = s4.loc[:, c].dropna().values.tolist()
+
     # generate list of orthologs of the relevant gene signatures
     from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table as got
     orth = got.homologs(got.mouse_tid, got.human_tid)
     orth.set_index('gene_symbol_%d' % got.mouse_tid, inplace=True)
+    # convert to Series
+    orth = orth.iloc[:, 0]
 
     # use this to generate human gene lists
     all_genes_in_set = set()
@@ -209,7 +216,12 @@ if __name__ == "__main__":
     rna_s4_hu = {}
     marr_s4_hu = {}
     for c in s4.columns:
-        s4_hu[c] = orth.loc[s4.loc[:, c].dropna()].dropna().iloc[:, 0].values
+        l = orth.loc[s4_mo[c]]
+        n_matched = l.dropna().size
+        print "Geneset %s. Found %d orthologous genes in human from a mouse list of length %d. %d dropped." % (
+            c, n_matched, l.size, l.isnull().sum()
+        )
+        s4_hu[c] = l.dropna().values
 
     for c in s4_hu:
         this_geneset = set(s4_hu[c].tolist()).intersection(rnaseq_dat.index)
@@ -226,18 +238,18 @@ if __name__ == "__main__":
         rna_s4_hu[c] = list(this_geneset)
         all_genes_in_set.update(this_geneset)
 
-        this_geneset = set(s4_hu[c].tolist()).intersection(marr_dat.index)
-        removed = set(s4_hu[c].tolist()).difference(marr_dat.index)
-        if len(removed):
-            print "%d genes were removed from microarray geneset %s as they are not found in the expression data. " \
-                  "%d remaining of original %d.\n" % (
-                len(removed),
-                c,
-                len(this_geneset),
-                s4[c].dropna().size
-            )
-            # print ', '.join(list(removed))
-        marr_s4_hu[c] = list(this_geneset)
+        # this_geneset = set(s4_hu[c].tolist()).intersection(marr_dat.index)
+        # removed = set(s4_hu[c].tolist()).difference(marr_dat.index)
+        # if len(removed):
+        #     print "%d genes were removed from microarray geneset %s as they are not found in the expression data. " \
+        #           "%d remaining of original %d.\n" % (
+        #         len(removed),
+        #         c,
+        #         len(this_geneset),
+        #         s4[c].dropna().size
+        #     )
+        #     # print ', '.join(list(removed))
+        # marr_s4_hu[c] = list(this_geneset)
 
     # remove genes that have no appreciable expression level
     # >=10 samples must have FPKM >= 1
@@ -331,21 +343,25 @@ if __name__ == "__main__":
 
     lbl, tmp = zip(*bplot['TAM BMDM'].items())
     tmp = [list(t) for t in tmp]
-    plt.figure(num='TAM BMDM')
-    plt.boxplot(tmp)
-    ax = plt.gca()
+    fig = plt.figure(num='TAM BMDM')
+    ax = fig.add_subplot(111)
+    sns.boxplot(data=tmp, orient='v', ax=ax)
     ax.set_xticklabels(lbl, rotation=45)
+    ax.set_ylabel("Normalised ssGSEA score")
     fig = ax.figure
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_subgroup_tcga.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_subgroup_tcga.pdf'))
 
     lbl, tmp = zip(*bplot['TAM MG'].items())
     tmp = [list(t) for t in tmp]
-    plt.figure(num='TAM MG')
-    plt.boxplot(tmp)
-    ax = plt.gca()
+    fig = plt.figure(num='TAM MG')
+    ax = fig.add_subplot(111)
+    sns.boxplot(data=tmp, orient='v', ax=ax)
     ax.set_xticklabels(lbl, rotation=45)
+    ax.set_ylabel("Normalised ssGSEA score")
     fig = ax.figure
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_subgroup_tcga.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_subgroup_tcga.pdf'))
 
@@ -381,8 +397,9 @@ if __name__ == "__main__":
         ax = fig.add_subplot(111)
         ax.scatter(the_signature, np.log2(the_expr + 1))
         ax.plot(x_lr, y_lr, 'k--')
-        ax.set_xlabel('Signature score')
+        ax.set_xlabel('Normalised ssGSEA score')
         ax.set_ylabel('log2(%s)' % the_gene)
+        fig.tight_layout()
         return ax
 
     ax = signature_vs_gene('ITGA4', 'TAM BMDM')
@@ -414,3 +431,56 @@ if __name__ == "__main__":
     fig = ax.figure
     fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_P2RY12.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_vs_P2RY12.pdf'))
+
+    # if mutants are present, recreate Fig 5F: TAM BMDM signature by IDH1 status
+    if not remove_idh1:
+        lbl = ['Mutant', 'WT']
+        g_name = 'TAM BMDM'
+        the_data = rna_es.loc[g_name]
+        the_data = (the_data - the_data.mean()) / the_data.std()
+        idh1_wt = (~rnaseq_meta.idh1_status.isnull()) & (rnaseq_meta.idh1_status == 'WT')
+        tmp = [
+            the_data.loc[~idh1_wt.values].values.tolist(),
+            the_data.loc[idh1_wt.values].values.tolist(),
+        ]
+        fig = plt.figure(num="Fig 5F", figsize=(4.3, 6.7))
+        ax = fig.add_subplot(111)
+        ax.boxplot(tmp, widths=0.9)
+        ax.set_xticklabels(lbl, rotation=45)
+        ax.set_ylabel("Normalised ssGSEA score")
+        fig = ax.figure
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_idh1_tcga.png'), dpi=200)
+        fig.savefig(os.path.join(outdir, 'tam_bmdm_ssgsea_by_idh1_tcga.pdf'))
+
+        g_name = 'TAM MG'
+        the_data = rna_es.loc[g_name]
+        the_data = (the_data - the_data.mean()) / the_data.std()
+        idh1_wt = (~rnaseq_meta.idh1_status.isnull()) & (rnaseq_meta.idh1_status == 'WT')
+        tmp = [
+            the_data.loc[~idh1_wt.values].values.tolist(),
+            the_data.loc[idh1_wt.values].values.tolist(),
+        ]
+        fig = plt.figure(num="Fig S5G", figsize=(4.3, 6.7))
+        ax = fig.add_subplot(111)
+        ax.boxplot(tmp, widths=0.9)
+        ax.set_xticklabels(lbl, rotation=45)
+        ax.set_ylabel("Normalised ssGSEA score")
+        fig = ax.figure
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_idh1_tcga.png'), dpi=200)
+        fig.savefig(os.path.join(outdir, 'tam_mg_ssgsea_by_idh1_tcga.pdf'))
+
+
+    yy = np.log2(rnaseq_dat.loc['ITGA4'].values + 1)
+
+    fig = plt.figure(figsize=(3.4, 5.5))
+    ax = fig.add_subplot(111)
+    sns.boxplot(yy, orient='v', ax=ax)
+    sns.stripplot(yy, jitter=True, orient='v', ax=ax, color=".3")
+    ax.set_ylabel("log2(ITGA4 + 1)")
+    ax.set_xlim([-2, 2])
+    fig.savefig(os.path.join(outdir, 'tcga_itga4_boxplot.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'tcga_itga4_boxplot.pdf'))
+
+    sns.boxplot()
