@@ -12,23 +12,52 @@ import seaborn as sns
 if __name__ == "__main__":
     outdir = unique_output_dir('mouse_validation')
 
+    # load mouse data
+
     obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')
-    data = obj.data.loc[obj.data.index.str.contains('ENS')]
-    meta = obj.meta
 
     # reorder for plotting niceness
+
     samples = ['eNSC%dmed' % i for i in (3, 5, 6)] \
               + ['eNSC%dmouse' % i for i in (3, 5, 6)] \
               + ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] \
               + ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
 
-    meta = meta.loc[samples]
-    data = data.loc[:, meta.index]
+    obj.meta = obj.meta.loc[samples]
+    obj.data = obj.data.loc[:, obj.meta.index]
 
-    cpm = data.divide(meta.loc[:, 'read_count'].values, axis=1) * 1e6
-    keep = (cpm > .5).sum(axis=1) > 5
+    # load reference samples
 
-    the_dat = np.log2(data.loc[keep] + 1)
+    obj52564 = rnaseq_data.gse52564(
+        annotate_by='Ensembl Gene ID',
+        samples=[
+            'Astrocyte1',
+            'Astrocyte2',
+            'Neuron1',
+            'Neuron2',
+            'OPC1',
+            'OPC2',
+        ]
+    )
+    obj43916 = rnaseq_data.gse43916(annotate_by='Ensembl Gene ID', samples=['NSCs'])
+    obj86248 = rnaseq_data.gse86248(annotate_by='Ensembl Gene ID')
+    obj36114 = rnaseq_data.gse36114(annotate_by='Ensembl Gene ID')
+
+    obj_all = rnaseq_data.MultipleBatchLoader([
+        obj,
+        obj52564,
+        obj43916,
+        obj86248,
+        obj36114
+    ])
+
+    data_all = obj_all.data.loc[obj_all.data.index.str.contains('ENS')]
+    meta_all = obj_all.meta
+
+    cpm_all = data_all.divide(data_all.sum(axis=0), axis=1) * 1e6
+    keep = (cpm_all > .5).sum(axis=1) > 5
+
+    the_dat = np.log2(data_all.loc[keep] + 1)
 
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111)
@@ -42,12 +71,51 @@ if __name__ == "__main__":
     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes.png'), dpi=200)
     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes.pdf'))
 
-    for ng in [2500, 2000, 1500, 1000]:
-        cg = clustering.plot_correlation_clustermap(the_dat, n_gene=ng)
-        cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_%d_genes.png' % ng), dpi=200)
-        cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_%d_genes.pdf' % ng))
+    # for ng in [2500, 2000, 1500, 1000]:
+    #     cg = clustering.plot_correlation_clustermap(the_dat, n_gene=ng)
+    #     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_%d_genes.png' % ng), dpi=200)
+    #     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_%d_genes.pdf' % ng))#
+
+    # mean and stdev for mouse X vs reference NSC
+    groups = [
+        ['eNSCmed', samples[:3],],
+        ['eNSCmouse', samples[3:6],],
+        ['mDuramouse', samples[6:9],],
+        ['mDurahuman', samples[9:12],],
+    ]
+    lbl = [t[0] for t in groups]
+    aa = the_dat.corrwith(the_dat.loc[:, 'NSCs'])
+    val_dat = [aa.loc[t[1]] for t in groups]
+    val_mean = [aa.loc[t[1]].mean() for t in groups]
+    val_std = [aa.loc[t[1]].std() for t in groups]
+
+    fig = plt.figure(figsize=(3.4, 5.5))
+    ax = fig.add_subplot(111)
+    ax.bar(range(len(groups)), val_mean, 0.7)
+    for i, m in enumerate(val_mean):
+        ax.plot([i, i], [m - val_std[i], m + val_std[i]], 'k-')
+    ax.set_ylabel("Correlation with reference NSC")
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(lbl, rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'corr_with_reference_nsc.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'corr_with_reference_nsc.pdf'))
+
+    # can run a regular T test as follows
+    # from scipy import stats
+    # stats.ttest_rel(aa.loc[groups[2][1]].values, aa.loc[groups[3][1]].values)
 
     # compare within mice
+
+    data = obj.data.loc[obj.data.index.str.contains('ENS')]
+    meta = obj.meta
+
+    # cpm = data.divide(meta.loc[:, 'read_count'].values, axis=1) * 1e6
+    cpm = data.divide(data.sum(axis=0), axis=1) * 1e6
+    keep = (cpm > .5).sum(axis=1) > 5
+
+    the_dat_cv = np.log2(data.loc[keep] + 1)
+
     groups = [
         ['eNSC3med', 'eNSC3mouse', 'mDura3N1mouse', 'mDura3N1human'],
         ['eNSC5med', 'eNSC5mouse', 'mDura5N24Amouse', 'mDura5N24Ahuman'],
@@ -56,7 +124,7 @@ if __name__ == "__main__":
 
     # create a dataframe for bar plotting
     within_cols = ["mouse", "correlation", "comparison"]
-    the_corr = the_dat.corr()
+    the_corr = the_dat_cv.corr()
     within_dat = []
     for i, g in zip([3, 5, 6], groups):
         within_dat.append([i, the_corr.loc[g[0], g[1]], "eNSCmed - eNSCmouse"])
@@ -98,6 +166,6 @@ if __name__ == "__main__":
 
         return ax
 
-    ax = pwise_corr_boxplot(the_dat)
+    ax = pwise_corr_boxplot(the_dat_cv)
     ax.figure.savefig(os.path.join(outdir, "pairwise_correlation.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "pairwise_correlation.pdf"))

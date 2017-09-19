@@ -551,6 +551,8 @@ class MultipleBatchLoader(CountDataMixin):
             self.meta.loc[this_samples, self.batch_column] = i + 1
 
         if add_anno:
+            # maintain a record of the annotation status of this object, to allow further batching
+            self.annotate_by = 'all'
             ann_data = pd.DataFrame(index=idx, columns=list(annot_fields))
             # add annotation columns back in
             for i, l in enumerate(loaders):
@@ -567,6 +569,12 @@ class MultipleBatchLoader(CountDataMixin):
                 except KeyError:
                     logger.error("No annotation data in loader %d. Skipping.")
             self.data = pd.concat((self.data, ann_data), axis=1)
+        else:
+            abs = set([l.annotate_by for l in loaders])
+            if len(abs) > 1:
+                logger.error("The annotate_by variable differs between loaders: %s", ', '.join(list(abs)))
+                logger.error("Picking one arbitrarily, but expect this to be broken!")
+            self.annotate_by = loaders[0].annotate_by
 
 
 def annotate(
@@ -1209,7 +1217,7 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
 
 
 def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', '170328_K00150_0177_BHJ2C2BBXX')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero', '170328_K00150_0177_BHJ2C2BBXX')
     metafn = os.path.join(indir, 'sources.csv')
     samples = (
         'GBM018 FFPE',
@@ -1338,7 +1346,7 @@ def gse24399_merged_loader(source='star', annotate_by='all', annotation_type='pr
     return obj
 
 
-def gse52564(source='star', annotate_by='all'):
+def gse52564(source='star', annotate_by='all', **kwargs):
     """
     Mouse reference data. Duplicates of: astrocyte, neuron, OPC, microglia.
     Unstranded, based on looking at the gene counts
@@ -1354,7 +1362,8 @@ def gse52564(source='star', annotate_by='all'):
             meta_fn=metafn,
             annotate_by=annotate_by,
             strandedness='u',
-            tax_id=10090
+            tax_id=10090,
+            **kwargs
         )
     else:
         raise ValueError("Unrecognised source")
@@ -1362,7 +1371,7 @@ def gse52564(source='star', annotate_by='all'):
     return obj
 
 
-def gse43916(source='star', annotate_by='all'):
+def gse43916(source='star', annotate_by='all', **kwargs):
     """
     Mouse reference data. One astrocyte sample (poor quality), one NSC (good quality)
     Reverse stranded single end, based on looking at the gene counts
@@ -1378,7 +1387,8 @@ def gse43916(source='star', annotate_by='all'):
             meta_fn=metafn,
             annotate_by=annotate_by,
             strandedness='r',
-            tax_id=10090
+            tax_id=10090,
+            **kwargs
         )
     else:
         raise ValueError("Unrecognised source")
