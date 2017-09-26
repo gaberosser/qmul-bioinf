@@ -98,7 +98,8 @@ process_and_save <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'tcga_gbm')
-base.dir <- file.path(data.dir.raid, 'methylation', '2017-09-19')
+base.dir <- file.path(data.dir.raid, 'methylation', '2017-08-23')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2017-09-19')
 
 idat.dir <- file.path(base.dir, 'idat')
 meta.file <- file.path(base.dir, 'sources.csv')

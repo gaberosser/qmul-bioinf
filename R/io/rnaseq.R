@@ -2,6 +2,7 @@ source('_settings.R')
 library('biomaRt')
 library('Biobase')
 source('io/output.R')
+source('utils.R')
 
 bm_attributes.defaults = c(
   "hgnc_symbol",
@@ -549,3 +550,56 @@ duan_nsc_data <- function(collapse.replicates = T) {
   return(list(data=dat.h9, meta=meta.h9))
 }
 
+
+mouse_validation_data <- function() {
+  samples.1 = c('eNSC3med', 'eNSC5med', 'eNSC6med')
+  dir.1 <- file.path(
+    data.dir.raid, 
+    'rnaseq',
+    'wtchg_p170506'
+  )
+  in.dir <- file.path(
+      dir.1,
+      '170829_K00150_0236_AHL5YHBBXX',
+      'mouse',
+      'star_alignment'
+    )
+  meta.file <- file.path(
+      dir.1,
+      '170829_K00150_0236_AHL5YHBBXX',
+      'sources.csv'
+    )
+  loaded.1 <- star.load_all(in.dir, metafile = meta.file, stranded='r')
+  dat.1 = loaded.1$data[grep("ENS", rownames(loaded.1$data)), colnames(loaded.1$data) %in% samples.1, drop=F]
+  meta.1 <- loaded.1$meta[loaded.1$meta$sample %in% samples.1, , drop=F]
+  
+  meta.1$filename <- rownames(meta.1)
+  rownames(meta.1) <- meta.1$sample
+  meta.1$sample <- NULL
+  
+  dir.2 <- file.path(
+    data.dir.raid, 
+    'rnaseq',
+    'wtchg_p170390'
+  )
+  in.dirs <- c(
+    file.path(dir.2, '170727_K00198_0222_AHKWW5BBXX', 'mouse', 'star_alignment'),
+    file.path(dir.2, '170731_K00150_0226_AHL2CJBBXX_1', 'mouse', 'star_alignment'),
+    file.path(dir.2, '170731_K00150_0226_AHL2CJBBXX_2', 'mouse', 'star_alignment')
+  )
+  meta.files <- c(
+    file.path(dir.2, '170727_K00198_0222_AHKWW5BBXX', 'sources.csv'),
+    file.path(dir.2, '170731_K00150_0226_AHL2CJBBXX_1', 'sources.csv'),
+    file.path(dir.2, '170731_K00150_0226_AHL2CJBBXX_2', 'sources.csv')
+  )
+  samples.2 = c('eNSC3mouse', 'eNSC5mouse', 'eNSC6mouse', 'mDura3N1mouse', 'mDura5N24Amouse', 'mDura6N6mouse', 'mDura3N1human', 'mDura5N24Ahuman', 'mDura6N6human')
+  loaded.2 <- star.combine_lanes(in.dirs, metafiles = meta.files, stranded = 'r')
+  dat.2 <- loaded.2$data[grep("ENS", rownames(loaded.2$data)), colnames(loaded.2$data) %in% samples.2, drop=F]
+  meta.2 <- loaded.2$meta[loaded.2$meta$sample %in% samples.2, , drop=F]
+  
+  meta.2$filename <- rownames(meta.2)
+  rownames(meta.2) <- meta.2$sample
+  meta.2$sample <- NULL
+  
+  return(list(data=cbind.outer(dat.1, dat.2), meta=rbind.outer(meta.1, meta.2)))
+}

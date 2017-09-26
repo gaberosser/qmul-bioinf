@@ -78,9 +78,6 @@ def main(fq1, fq2, nseq=100000, seq_length=50, skip_first_N=1, verbose=True):
             seq_1 = the_block['seq_1'][:seq_length]
             seq_2 = the_block['seq_2'][:seq_length]
 
-            the_idx = []
-            the_N_count = 0
-
             the_seq = seq_1[skip_first_N:] + seq_2[skip_first_N:]
             the_N_count = len(the_seq) - len(the_seq.replace('N', ''))
 
