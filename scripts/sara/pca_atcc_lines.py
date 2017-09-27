@@ -1,7 +1,5 @@
 from load_data import microarray_data, allen_human_brain_atlas, rnaseq_data
 from plotting.pca import pca_plot_by_group_2d, pca_plot_by_group_3d, cluster_ellipsoid
-from plotting import clustering
-from scripts.comparison_rnaseq_microarray import consts
 from analysis import process
 from utils.output import unique_output_dir
 
@@ -31,7 +29,7 @@ def combine_expr(*args):
     return res
 
 
-def plot_2d(y, lbl, colour_map, marker_map, title=None, outdir=None, **additional_data):
+def plot_2d(y, lbl, colour_map, marker_map, title=None, outdir=None, additional_data=None):
     # plots: PCA of classifier vs RNA-Seq
     fig, axs = plt.subplots(nrows=1, ncols=3, sharex=False, sharey=False, figsize=(12, 5), num=title)
     for i, compo in enumerate([(0, 1), (1, 2), (0, 2)]):
@@ -40,7 +38,7 @@ def plot_2d(y, lbl, colour_map, marker_map, title=None, outdir=None, **additiona
             marker_map=marker_map,
             ax=axs[i],
             legend=False,
-            **additional_data
+            additional_data_dict=additional_data
         )
     axs[-1].legend(loc='upper right')
     plt.tight_layout(pad=0.2, rect=[.02, .02, 1, 1])
@@ -248,7 +246,9 @@ if __name__ == "__main__":
     # define colours and labels
     lbl_1299 = 'ICb1299 (Zhao et al.)'
     lbl_1595 = 'ICb1595 (Zhao et al.)'
-    lbl_atcc = 'CRL3021'
+    lbl_atcc = 'CHLA-01-Med'
+    lbl_xz1299 = 'ICb1299'
+    lbl_xz1595 = 'ICb1595'
 
     colour_map = {
         'Group 3': '#F2EA00',
@@ -257,24 +257,38 @@ if __name__ == "__main__":
         'SHH': '#E5161C',
         'control': 'gray',
         lbl_1299: 'c',
+        lbl_xz1299: 'c',
         lbl_1595: 'k',
+        lbl_xz1595: 'k',
         lbl_atcc: 'm'
     }
 
     marker_map = dict([(k, 'o') for k in colour_map])
     marker_map[lbl_1299] = 's'
+    marker_map[lbl_xz1299] = 's'
     marker_map[lbl_1595] = '^'
+    marker_map[lbl_xz1595] = '^'
     marker_map[lbl_atcc] = 'D'
+
 
 
     # plots: PCA of classifier vs RNA-Seq
     ttl = ("pca_%s-rnaseq_2d" % title)
-    ad = {
-        lbl_1299: y_1299,
-        lbl_1595: y_1595,
-        lbl_atcc: y_atcc,
-    }
-    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, **ad)
+    ad = collections.OrderedDict([
+        (lbl_1299, y_1299),
+        (lbl_1595, y_1595),
+        (lbl_atcc, y_atcc),
+    ])
+    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, additional_data=ad)
+
+    # version 2: switch out Zhao microarray data for Zhang RNA-Seq data
+    ttl = ("pca_%s-rnaseq-v2" % title)
+    ad = collections.OrderedDict([
+        (lbl_xz1299, y_xz),
+        (lbl_xz1595, y_sb),
+        (lbl_atcc, y_atcc),
+    ])
+    fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, additional_data=ad)
 
     # clusterplot
 
@@ -315,6 +329,13 @@ if __name__ == "__main__":
 
     data_for_clustering = combine_expr(dat_ref, dat_xz.loc[:, xz_sample_names], dat_sb, dat_atcc, dat_xnan.loc[:, xnan_sample_names2])
     meta_for_clustering = pd.concat((meta_ref, meta_xz.loc[xz_sample_names], meta_sb, meta_atcc, meta_xnan.loc[xnan_sample_names2]), axis=0)
+
+    # rename CRL3021 -> CHLA-01-Med
+    meta_for_clustering = meta_for_clustering.loc[data_for_clustering.columns]
+    data_col = data_for_clustering.columns.tolist()
+    data_col[data_col.index('CRL3021')] = 'Zhang CHLA-01-Med'
+    data_for_clustering.columns = data_col
+    meta_for_clustering.index = data_col
 
     if 'EYS' in data_for_clustering.index:
         idx = data_for_clustering.index.str.replace('EYS', 'EGFL11')

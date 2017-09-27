@@ -88,6 +88,7 @@ def pca_plot_by_group_2d(
         legend=True,
         auto_scale=True,
         markersize=40,
+        additional_data_dict=None,
         **additional_data
 ):
     """
@@ -102,11 +103,17 @@ def pca_plot_by_group_2d(
     :param ax: If supplied, plot here, else create a new figure and axes
     :param legend: If True, add a legend
     :param auto_scale: If True, automatically set axis scaling
-    :param additional_data: Dictionary containing optional addition data for the plot. If included, the key is the label
-    used for the legend and the value is the same format as pca_data. To specify the colour, include the key in the
-    colour_map, otherwise random colours will be selected
+    :param additional_data_dict, additional_data: Dictionary containing optional addition data for the plot.
+     Either specify as kwargs (**additional_data) or a single dict. Only one may be supplied.
+    If included, the key is the label used for the legend and the value is the same format as pca_data.
+    To specify the colour, include the key in the colour_map, otherwise random colours will be selected.
     :return:
     """
+    if additional_data_dict is not None:
+        if len(additional_data) > 0:
+            raise AttributeError("Must supply EITHER additional_data kwargs OR additional_data_dict, but not both.")
+        additional_data = additional_data_dict
+
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, aspect='equal')
