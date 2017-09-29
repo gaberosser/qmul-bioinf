@@ -4,11 +4,75 @@ import os
 import references
 import datetime
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import statsmodels.api as sm
+from statsmodels.sandbox.regression.predstd import wls_prediction_std
 import seaborn as sns
 import numpy as np
 import collections
 from scipy import stats
 from utils.output import unique_output_dir
+
+
+def ols_plot(y, x, add_intercept=True, alpha=0.05, xlim=None, ax=None):
+    """
+    Generate a scatter plot with OLS prediction plus confidence intervals
+    :param y:
+    :param x:
+    :param add_intercept:
+    :param alpha:
+    :param ax:
+    :return:
+    """
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    try:
+        x = x.astype(float)
+    except Exception:
+        pass
+
+    if add_intercept:
+        X = sm.add_constant(x)
+    else:
+        X = x
+
+    model = sm.OLS(y, X)
+    res = model.fit()
+
+    # plot data
+    ax.scatter(x, y, marker='o')
+    if xlim is None:
+        xlim = np.array(ax.get_xlim())
+
+    xx = np.linspace(xlim[0], xlim[1], 100)
+
+    # compute prediction and confidence intervals
+    if add_intercept:
+        b0, b1 = res.params
+        sdev, lower, upper = wls_prediction_std(res, sm.add_constant(xx), alpha=alpha)
+        # b0_min, b0_max = res.conf_int(alpha=alpha)[0]
+        # b1_min, b1_max = res.conf_int(alpha=alpha)[1]
+
+    else:
+        b1 = res.params[0]
+        b0 = 0.
+        sdev, lower, upper = wls_prediction_std(res, xx, alpha=alpha)
+        # b0 = b0_min = b0_max = 0.
+        # b1_min, b1_max = res.conf_int(alpha=alpha)[0]
+
+    ax.plot(xx, b0 + b1 * xx, 'k-', lw=1.5)
+    ax.fill_between(xx, lower, upper, edgecolor='b', facecolor='b', alpha=0.4)
+
+    # lower = b0_min + b1_min * xlim
+    # upper = b0_max + b1_max * xlim
+    # ax.fill_between(xlim, lower, upper, edgecolor='b', facecolor='b', alpha=0.4)
+
+    ax.set_xlim(xlim)
+    return res, ax
+
+
 
 
 def get_de_tissue_tumour():
@@ -108,8 +172,8 @@ if __name__ == "__main__":
 
     # rnaseq_type = 'counts'
     rnaseq_type = 'gliovis'
-    remove_idh1 = False
-    # remove_idh1 = True
+    # remove_idh1 = False
+    remove_idh1 = True
 
     # cutoff for discarding genes
     fpkm_cutoff = 1.
@@ -443,3 +507,205 @@ if __name__ == "__main__":
         'ULK1', 'PIK3R3', 'EIF4E2', 'ULK2', 'AKT3', 'PIK3R5', 'ULK3', 'RPS6KA6', 'CAB39', 'DDIT4', 'RPTOR', 'MLST8',
         'CAB39L', 'STRADA', 'RICTOR', 'EIF4E1B', 'TSC1'
     ]
+
+    # remove any genes not in the data and report
+    diff_ad = pd.Index(mtor_geneset_ad).difference(rnaseq_dat.index)
+    if len(diff_ad):
+        print "%d genes in the geneset mTOR (AD) are not in the data and will be removed: %s" % (
+            len(diff_ad),
+            ', '.join(diff_ad.tolist())
+        )
+        for t in diff_ad:
+            mtor_geneset_ad.remove(t)
+
+    diff_kegg = pd.Index(mtor_geneset_kegg).difference(rnaseq_dat.index)
+    if len(diff_kegg):
+        print "%d genes in the geneset mTOR (KEGG) are not in the data and will be removed: %s" % (
+            len(diff_kegg),
+            ', '.join(diff_kegg.tolist())
+        )
+        for t in diff_kegg:
+            mtor_geneset_kegg.remove(t)
+
+    # compute scores associated with each of these
+    mtor_ad_scores = pd.Series([
+        ssgsea(
+            rnaseq_dat.loc[:, s_name],
+            mtor_geneset_ad,
+            alpha=0.25,
+            return_ecdf=False
+        ) for s_name in rnaseq_dat.columns
+    ], index=rnaseq_dat.columns)
+
+    mtor_kegg_scores = pd.Series([
+        ssgsea(
+            rnaseq_dat.loc[:, s_name],
+            mtor_geneset_kegg,
+            alpha=0.25,
+            return_ecdf=False
+        ) for s_name in rnaseq_dat.columns
+    ], index=rnaseq_dat.columns)
+
+    # establish an index to maintain ordering (unnecessary?)
+    idx = rnaseq_dat.columns
+
+    # extract three relevant scores (for all TCGA data)
+    x = rna_es.loc[list_cols[0], idx]  # MG
+    y = rna_es.loc[list_cols[1], idx]  # BMDM
+    z = mtor_kegg_scores.loc[idx]
+
+    # standardise each
+    x = (x - x.mean()) / x.std()
+    y = (y - y.mean()) / y.std()
+    z = (z - z.mean()) / z.std()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    colours = ['b', 'r', 'g', 'k']
+    for sg, c in zip(subgroup_order, colours):
+        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        ax.scatter(x.loc[sg_idx], y.loc[sg_idx], z.loc[sg_idx], c=c, marker='o', label=sg)
+    ax.set_xlabel(list_cols[0])
+    ax.set_ylabel(list_cols[1])
+    ax.set_zlabel('mTOR KEGG')
+
+    # run linear regression
+
+    # is the correlation between MG / BMDM and mTOR higher in a given subgroup?
+    fig, axs = plt.subplots(2, int(np.ceil(len(subgroup_order) * 0.5)), sharex=True, sharey=True)
+    lr_mtor_mg = pd.DataFrame(index=subgroup_order, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
+    for i, sg in enumerate(subgroup_order):
+        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        lr_mtor_mg.loc[sg] = stats.linregress(x.loc[sg_idx].values.tolist(), z.loc[sg_idx].values.tolist())
+        ax = axs.flat[i]
+        ols_plot(z.loc[sg_idx].values, x.loc[sg_idx].values.astype(float), xlim=[-3.5, 3.5], ax=ax)
+        rsq = lr_mtor_mg.loc[sg].rvalue ** 2
+        sl = lr_mtor_mg.loc[sg].slope
+        pval = lr_mtor_mg.loc[sg].pvalue
+        if pval < 0.05:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+        else:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+        ax.text(
+            1.,
+            0.,
+            lbl,
+            bbox={'facecolor': 'w', 'alpha': 0.3},
+            verticalalignment='bottom',
+            horizontalalignment='right',
+            transform=ax.transAxes
+        )
+        ax.set_ylim([-4, 4])
+        ax.set_title(sg)
+
+    fig.savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup.pdf"))
+
+    # all
+    sg = 'all'
+    lr_mtor_mg.loc[sg] = stats.linregress(x.values.tolist(), z.values.tolist())
+    _, ax = ols_plot(z.values, x.values.astype(float), xlim=[-3.5, 3.5])
+    fig = ax.figure
+    rsq = lr_mtor_mg.loc[sg].rvalue ** 2
+    sl = lr_mtor_mg.loc[sg].slope
+    pval = lr_mtor_mg.loc[sg].pvalue
+    if pval < 0.05:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+    else:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+    ax.text(
+        1.,
+        0.,
+        lbl,
+        bbox={'facecolor': 'w', 'alpha': 0.3},
+        verticalalignment='bottom',
+        horizontalalignment='right',
+        transform=ax.transAxes
+    )
+    ax.set_ylim([-4, 4])
+    ax.set_title(sg)
+
+    fig.savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_all.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_all.pdf"))
+
+
+
+    fig, axs = plt.subplots(2, int(np.ceil(len(subgroup_order) * 0.5)), sharex=True)
+    lr_mtor_bmdm = pd.DataFrame(index=subgroup_order, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
+    for i, sg in enumerate(subgroup_order):
+        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        lr_mtor_bmdm.loc[sg] = stats.linregress(y.loc[sg_idx].values.tolist(), z.loc[sg_idx].values.tolist())
+        ax = axs.flat[i]
+        ols_plot(z.loc[sg_idx].values, y.loc[sg_idx].values.astype(float), xlim=[-3.5, 3.5], ax=ax)
+        rsq = lr_mtor_bmdm.loc[sg].rvalue ** 2
+        sl = lr_mtor_bmdm.loc[sg].slope
+        pval = lr_mtor_bmdm.loc[sg].pvalue
+        if pval < 0.05:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+        else:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+        ax.text(
+            1.,
+            0.,
+            lbl,
+            bbox={'facecolor': 'w', 'alpha': 0.3},
+            verticalalignment='bottom',
+            horizontalalignment='right',
+            transform=ax.transAxes
+        )
+        ax.set_ylim([-4, 4])
+        ax.set_title(sg)
+
+    fig.savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.pdf"))
+
+    # all
+    sg = 'all'
+    lr_mtor_bmdm.loc[sg] = stats.linregress(y.values.tolist(), z.values.tolist())
+    _, ax = ols_plot(z.values, y.values.astype(float), xlim=[-3.5, 3.5])
+    fig = ax.figure
+    rsq = lr_mtor_bmdm.loc[sg].rvalue ** 2
+    sl = lr_mtor_bmdm.loc[sg].slope
+    pval = lr_mtor_bmdm.loc[sg].pvalue
+    if pval < 0.05:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+    else:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+    ax.text(
+        1.,
+        0.,
+        lbl,
+        bbox={'facecolor': 'w', 'alpha': 0.3},
+        verticalalignment='bottom',
+        horizontalalignment='right',
+        transform=ax.transAxes
+    )
+    ax.set_ylim([-4, 4])
+    ax.set_title(sg)
+
+    fig.savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_all.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_all.pdf"))
+
+    # check for MG / BMDM correlation
+    _, ax = ols_plot(y.values.astype(float), x.values.astype(float), xlim=(-3, 3))
+    lr = stats.linregress(x.values.tolist(), y.values.tolist())
+    fig = ax.figure
+    rsq = lr.rvalue ** 2
+    sl = lr.slope
+    pval = lr.pvalue
+    if pval < 0.05:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+    else:
+        lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+    ax.text(
+        1.,
+        0.,
+        lbl,
+        bbox={'facecolor': 'w', 'alpha': 0.3},
+        verticalalignment='bottom',
+        horizontalalignment='right',
+        transform=ax.transAxes
+    )
+    ax.set_ylim([-4, 4])
+    fig.savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_all.png"), dpi=300)
+    fig.savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_all.pdf"))

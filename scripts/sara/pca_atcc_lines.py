@@ -273,7 +273,7 @@ if __name__ == "__main__":
 
 
     # plots: PCA of classifier vs RNA-Seq
-    ttl = ("pca_%s-rnaseq_2d" % title)
+    ttl = ("pca_%s_and_zhao" % title)
     ad = collections.OrderedDict([
         (lbl_1299, y_1299),
         (lbl_1595, y_1595),
@@ -282,13 +282,17 @@ if __name__ == "__main__":
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, additional_data=ad)
 
     # version 2: switch out Zhao microarray data for Zhang RNA-Seq data
-    ttl = ("pca_%s-rnaseq-v2" % title)
+    ttl = ("pca_%s_and_zhang" % title)
     ad = collections.OrderedDict([
         (lbl_xz1299, y_xz),
         (lbl_xz1595, y_sb),
         (lbl_atcc, y_atcc),
     ])
     fig, axs = plot_2d(y, m.subgroup, colour_map, marker_map, title=ttl, outdir=outdir, additional_data=ad)
+    axs[-1].legend(loc='upper left')
+    fig.savefig(os.path.join(outdir, "%s.png" % ttl), dpi=300)
+    fig.savefig(os.path.join(outdir, "%s.tiff" % ttl), dpi=200)
+    fig.savefig(os.path.join(outdir, "%s.pdf" % ttl))
 
     # clusterplot
 
