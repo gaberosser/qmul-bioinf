@@ -29,7 +29,11 @@ if __name__ == "__main__":
     obj.data = obj.data.loc[:, obj.meta.index]
 
     # load reference samples
-
+    obj64411 = rnaseq_data.gse64411(
+        annotate_by='Ensembl Gene ID',
+        trimmed=True,
+        samples=['ESC', 'EmbryonicNSC1', 'EmbryonicNSC2', 'Neuron1', 'Neuron2', 'Astrocyte1', 'Astrocyte2']
+    )
     obj52564 = rnaseq_data.gse52564(
         annotate_by='Ensembl Gene ID',
         samples=[
@@ -47,6 +51,7 @@ if __name__ == "__main__":
 
     obj_all = rnaseq_data.MultipleBatchLoader([
         obj,
+        obj64411,
         obj52564,
         obj43916,
         obj86248,

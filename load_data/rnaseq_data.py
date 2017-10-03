@@ -494,14 +494,36 @@ class MultipleBatchLoader(CountDataMixin):
         samples = loaders[0].meta.loc[:, 'sample'].tolist()
         meta_cols = set(loaders[0].meta.columns)
 
+        # we may need to append a number to sample names
+        sample_appendix = 1
+        sample_names_modified = [list(samples)]
+        sample_names_original = [list(samples)]
+
         for l in loaders[1:]:
-            samples.extend(l.meta.loc[:, 'sample'].values)
+            the_samples = l.meta.loc[:, 'sample'].values.tolist()
+            sample_names_original.append(list(the_samples))
+
+            # check for sample name clash
+            first_warn = True
+            renamed = False
+            while any([t in samples for t in the_samples]):
+                renamed = True
+                if first_warn:
+                    logger.warning("Found sample name clash. Modifying names to avoid errors.")
+                    first_warn = False
+                the_samples = ['%s_%d' % (t, sample_appendix) for t in l.meta.loc[:, 'sample'].values.tolist()]
+                sample_appendix += 1
+
+            # now we know the sample names are unique, append to the list
+            samples.extend(the_samples)
             meta_cols.update(l.meta.columns)
 
             if intersection_only:
                 idx = idx.intersection(l.data.index)
             else:
                 idx = idx.union(l.data.index)
+
+            sample_names_modified.append(the_samples)
 
         # we need to add a batch column to meta
         # however, we should first check it doesn't clash
@@ -525,7 +547,8 @@ class MultipleBatchLoader(CountDataMixin):
         add_anno = False
         annot_fields = set()
         for i, l in enumerate(loaders):
-            this_samples = l.meta.loc[:, 'sample'].values
+            this_samples_original = sample_names_original[i]
+            this_samples_modified = sample_names_modified[i]
             this_index = l.data.index
             this_meta_cols = l.meta.columns
 
@@ -542,13 +565,13 @@ class MultipleBatchLoader(CountDataMixin):
             # check whether annotations are included
             if l.annotate_by == 'all':
                 add_anno = True
-                this_annot_fields = l.data.drop(this_samples, axis=1).columns.intersection(INDEX_FIELDS)
+                this_annot_fields = l.data.drop(this_samples_original, axis=1).columns.intersection(INDEX_FIELDS)
                 annot_fields.update(this_annot_fields)
 
-            self.data.loc[this_index, this_samples] = l.data.loc[this_index, this_samples].values
-            self.meta.loc[this_samples, this_meta_cols] = l.meta.values
+            self.data.loc[this_index, this_samples_modified] = l.data.loc[this_index, this_samples_original].values
+            self.meta.loc[this_samples_modified, this_meta_cols] = l.meta.values
             # add batch column data
-            self.meta.loc[this_samples, self.batch_column] = i + 1
+            self.meta.loc[this_samples_modified, self.batch_column] = i + 1
 
         if add_anno:
             # maintain a record of the annotation status of this object, to allow further batching
@@ -1438,6 +1461,36 @@ def gse36114(source='star', annotate_by='all'):
             annotate_by=annotate_by,
             strandedness='u',
             tax_id=10090
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
+
+
+def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
+    """
+    Mouse reference data. ESC, neurons and astrocytes from C57BL/6.
+    Unstranded single end, based on looking at the gene counts.
+    :param source:
+    :param annotate_by:
+    :param trimmed: If True, use the data that was trimmed before alignment
+    :return:
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE64411')
+    metafn = os.path.join(indir, 'sources.csv')
+    if trimmed:
+        count_dir = os.path.join(indir, 'trimgalore', 'star_alignment')
+    else:
+        count_dir = os.path.join(indir, 'star_alignment')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=count_dir,
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='u',
+            tax_id=10090,
+            **kwargs
         )
     else:
         raise ValueError("Unrecognised source")
