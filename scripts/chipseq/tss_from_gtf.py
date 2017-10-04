@@ -51,8 +51,11 @@ if __name__ == "__main__":
                 attr['strand'] = strand
                 res.append(attr)
 
-                tss_minus = start - distance
-                tss_plus = start + distance
+                # BED format is 0-based
+                # GTF format is 1-based
+                # therefore subtract one from all base counts for the BED format
+                tss_minus = start - distance - 1
+                tss_plus = start + distance - 1
 
                 bed.append([chr, tss_minus, tss_plus, attr['transcript_name'].strip('"')])
 

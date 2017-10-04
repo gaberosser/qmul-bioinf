@@ -61,12 +61,19 @@ if __name__ == "__main__":
 
     # exclusion list of non-standard chroms
     excl_chroms = [t for t in sorted(set([t[0] for t in bed])) if t[0] in ('G', 'K')]
+    trace = {}
 
     for chrom, depth in coverage_reader(cov_fn=cov_fn, exclude=excl_chroms):
 
-        this_trace = np.zeros((2 * distance + 1, len(samples)))
+        # this_trace = np.zeros((2 * distance + 1, len(samples)))
+        this_trace = np.zeros((2 * distance, len(samples)))
+        this_n = 0.
         # get the coverage for each sample in each tss region
         for t in bed:
             if t[0] == chrom:
-                ix = t[1] <= depth[:, 0] <= t[2]
-                # this_trace +=
+                # ix = (t[1] <= depth[:, 0]) & (t[2] >= depth[:, 0])
+                ix = (t[1] <= depth[:, 0]) & (t[2] >= depth[:, 0])
+                this_trace += depth[ix, 1:]
+                this_n += 0.
+        trace[chrom] = this_trace / float(this_n)
+
