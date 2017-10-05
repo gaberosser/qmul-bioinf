@@ -136,8 +136,11 @@ if __name__ == "__main__":
         else:
             # split depth with overhangs
             n = depth.shape[0]
-            gap = int(depth.shape[0] / float(NCPU))
-            split_ind = range(0, n, gap) + [-1]
+            fracs = np.linspace(0, 1, NCPU + 1)
+            split_ind = [int(f * n) for f in fracs]
+            # gap = int(depth.shape[0] / float(NCPU))
+            # split_ind = range(0, n, gap) + [-1]
+
             splits = []
 
             jobs = []
@@ -147,11 +150,14 @@ if __name__ == "__main__":
                 # generate splits with overhang of length ONE LESS THAN the length of the fragment
                 ix0 = split_ind[i - 1]
                 coord0 = bp[ix0]
-                ix1 = split_ind[i]
-                coord1 = bp[ix1] + 2 * DISTANCE
-                # jump to the first index >= the upper coord, unless we're already at the end
-                if coord1 < bp.max():
-                    ix1 = np.where(bp >= coord1)[0][0]
+                if i == (len(split_ind) - 1):
+                    ix1 = -1
+                else:
+                    ix1 = split_ind[i]
+                    coord1 = bp[ix1] + 2 * DISTANCE
+                    # jump to the first index >= the upper coord, unless we're already at the end
+                    if coord1 < bp.max():
+                        ix1 = np.where(bp >= coord1)[0][0]
 
                 jobs.append(
                     pool.apply_async(depth_to_trace, args=(depth[ix0:ix1], this_bed), kwds={'distance': DISTANCE})
@@ -173,6 +179,9 @@ if __name__ == "__main__":
                 n_res = tt.shape[2]
                 this_traces[..., i:(i + n_res)] = tt
                 i += n_res
+            if i != n_trace:
+                print "WARNING: the number of traces returned (%d) is less than the number expected (%d)" % (i, n_trace)
+            this_traces = this_traces[..., :i]
 
         # dump this set of traces to disk
         with open(os.path.join(outdir, 'trace_%s.pkl') % chrom, 'wb') as f:
