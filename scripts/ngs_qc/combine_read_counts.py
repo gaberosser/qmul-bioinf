@@ -4,7 +4,7 @@ from settings import DATA_DIR_NON_GIT
 
 
 basedir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq')
-dirname = 'wtchg_p170389'
+dirname = 'wtchg_p170390'
 indir = os.path.join(basedir, dirname)
 
 flist = []

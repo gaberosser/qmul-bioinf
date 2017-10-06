@@ -8,11 +8,16 @@ from utils.output import unique_output_dir
 import pickle
 
 
-def coverage_reader(cov_fn, exclude=None):
+def coverage_reader(cov_fn, exclude=None, include=None):
     if isinstance(exclude, str):
         exclude = {exclude}
     elif exclude is not None:
         exclude = set(list(exclude))
+
+    if isinstance(include, str):
+        include = {include}
+    elif include is not None:
+        include = set(list(include))
 
     with gzip.GzipFile(cov_fn, 'rb') as f:
         c = csv.reader(f, delimiter='\t')
@@ -22,19 +27,23 @@ def coverage_reader(cov_fn, exclude=None):
         for line in c:
             if exclude is not None and line[0] in exclude:
                 continue
+            if include is not None and line[0] not in include:
+                continue
             if line[0] != current_ch:
                 if current_count > 0:
+                    print "Complete"
                     yield (current_ch, np.array(current_res).astype(np.uint32))
                 # new chromosome
                 current_ch = line[0]
                 current_count = 0
                 print "Start reading depth for chromosome %s" % current_ch
                 current_res = []
-            current_res.append(line[1:])  # ints are more space efficient and useful
+            current_res.append(line[1:])
             current_count += 1
             if (current_count % 1000000) == 0:
                 print "Line %d" % current_count
         # yield final result
+        print "Reached end of file"
         yield (current_ch, np.array(current_res).astype(np.uint32))
 
 
@@ -60,10 +69,9 @@ def depth_to_trace(depth, bed_regions, distance=2000):
         if i % 500 == 0:
             print i
         # account for 0-indexing of BED file
-        # only need to correct the start coord - the GTF file deliberately includes one extra base at the end
         start = t[1] + 1
-        end = start + distance * 2 + 1
-
+        # only need to correct the start coord - the GTF file deliberately includes one extra base at the end
+        end = t[2]
 
         # if any part of the region is not within the coordinates of the depth array, skip
         if (end > upper) or (start < lower):
@@ -93,6 +101,7 @@ if __name__ == "__main__":
 
     DISTANCE = 2000
     CHROMS = ['%d' % i for i in range(1, 24)]
+    # CHROMS = ['22']
     try:
         NCPU = mp.cpu_count()
     except Exception as exc:
@@ -100,7 +109,7 @@ if __name__ == "__main__":
         NCPU = 1
 
     # cov_fn = '/home/gabriel/Documents/qmul_data/samtools_depth_tss_pm_2000.cov.gz'
-    cov_fn = '/home/gabriel/Documents/samtools_depth_tss_pm_2000_new.cov.gz'
+    cov_fn = '/home/gabriel/Documents/samtools_depth_tss_pm_2000.cov.gz'
     # gene_bed_fn = '/home/gabriel/Documents/qmul_data/tss_pm_2000.bed'
     gene_bed_fn = '/home/gabriel/bioinf/tss_pm_2000.bed'
     samples = [
@@ -127,9 +136,10 @@ if __name__ == "__main__":
     excl_chroms = [t for t in sorted(set([t[0] for t in bed])) if t[0] not in set(CHROMS)]
     trace = {}
 
-    for chrom, depth in coverage_reader(cov_fn=cov_fn, exclude=excl_chroms):
+    for chrom, depth in coverage_reader(cov_fn=cov_fn, include=CHROMS):
         this_bed = [t for t in bed if t[0] == chrom]
         bp = depth[:, 0]
+        print "Getting traces for chromosome %s" % chrom
 
         if NCPU == 1:
             this_traces, features = depth_to_trace(depth, this_bed, distance=DISTANCE)
@@ -138,31 +148,29 @@ if __name__ == "__main__":
             n = depth.shape[0]
             fracs = np.linspace(0, 1, NCPU + 1)
             split_ind = [int(f * n) for f in fracs]
-            # gap = int(depth.shape[0] / float(NCPU))
-            # split_ind = range(0, n, gap) + [-1]
 
             splits = []
-
+            split_coords= []
             jobs = []
             pool = mp.Pool(processes=NCPU)
 
-            for i in range(1, len(split_ind)):
+            for i in range(len(split_ind) - 1):
                 # generate splits with overhang of length ONE LESS THAN the length of the fragment
-                ix0 = split_ind[i - 1]
+                ix0 = split_ind[i]
                 coord0 = bp[ix0]
-                if i == (len(split_ind) - 1):
-                    ix1 = -1
-                else:
-                    ix1 = split_ind[i]
-                    coord1 = bp[ix1] + 2 * DISTANCE
-                    # jump to the first index >= the upper coord, unless we're already at the end
-                    if coord1 < bp.max():
-                        ix1 = np.where(bp >= coord1)[0][0]
+                ix1 = split_ind[i + 1]
+                # if we aren't on the final interval, include an overhang if necessary
+                if i != (len(split_ind) - 2):
+                    coord1 = bp[ix1] + 2 * DISTANCE - 1
+                    # if the overhang is included in this run, we'll include it in full.
+                    # Otherwise we will just include enough of an overhang to guarantee no regions are missed.
+                    ix1 = np.where(bp <= coord1)[0][-1] + 1
 
                 jobs.append(
                     pool.apply_async(depth_to_trace, args=(depth[ix0:ix1], this_bed), kwds={'distance': DISTANCE})
                 )
                 splits.append((ix0, ix1))
+                split_coords.append((bp[ix0], bp[ix1 - 1]))  # this is INCLUSIVE
 
             pool.close()
             pool.join()
@@ -171,11 +179,11 @@ if __name__ == "__main__":
             n_sample = depth.shape[1] - 1
 
             this_traces = np.zeros((2 * DISTANCE + 1, n_sample, n_trace), dtype=np.uint32)
-            all_features = []
+            features = []
             i = 0
             for j in jobs:
-                tt, features = j.get()
-                all_features.append(features)
+                tt, ftr = j.get()
+                features.append(ftr)
                 n_res = tt.shape[2]
                 this_traces[..., i:(i + n_res)] = tt
                 i += n_res
@@ -185,7 +193,7 @@ if __name__ == "__main__":
 
         # dump this set of traces to disk
         with open(os.path.join(outdir, 'trace_%s.pkl') % chrom, 'wb') as f:
-            pickle.dump({'traces': this_traces, 'bed': this_bed, 'features': all_features}, f)
+            pickle.dump({'traces': this_traces, 'bed': this_bed, 'features': features}, f)
 
         trace[chrom] = this_traces.mean(axis=2)
 
