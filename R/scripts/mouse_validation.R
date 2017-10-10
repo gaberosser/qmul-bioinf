@@ -1,3 +1,4 @@
+# I think you only need edgeR here, plus anything else you use to load your data
 source('differential_expression/edger_de.R')
 source('io/rnaseq.R')
 source('io/output.R')
@@ -49,11 +50,15 @@ for (t in list(res.imouse_emed, res.emouse_emed, res.ihuman_imouse)) {
     ]
   
   # clustering the DE genes
+  
+  # here by correlation
   # c <- cor(t(sel_cpm))
   # fill in NA values
   # c[is.na(c)] <- 0.
   # a <- as.dist(1 - c)
   
+  # or here by Euclidean distance
+  # just comment this out if you don't care
   a <- dist(sel_cpm, method = 'euclidean')
   b <- hclust(a, method = "average")
   plot(b, labels=F, xlab = "", sub = "", ylab = "Euclidean distance", main = t$title)
