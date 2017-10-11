@@ -78,6 +78,51 @@ if __name__ == "__main__":
     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes.png'), dpi=200)
     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes.pdf'))
 
+    # correlation clustermap with only the CL57BL/6 samples
+    obj_all2 = rnaseq_data.MultipleBatchLoader([
+        obj,
+        obj64411,
+        obj43916,
+        obj86248,
+        obj36114
+    ])
+    # remove some samples
+    to_remove = ['eNSC%dmouse' % i for i in (3, 5, 6)] + \
+                ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] + \
+                ['E14_Day4_RNA-seq', 'EmbryonicNSC1', 'EmbryonicNSC2']
+    meta2 = obj_all2.meta.drop(
+        to_remove,
+        axis=0,
+    )
+    data2 = obj_all2.data.loc[:, meta2.index]
+
+    # relabel
+    snames = meta2.index
+    snames = snames.str.replace('esc_rep', 'ESC in LIF')
+    snames = snames.str.replace('E14_Day0_RNA-seq', 'E14 ESC')
+    snames = snames.str.replace('med', '')
+    snames = snames.str.replace('human', ' iNSC')
+    meta2.index = snames
+    data2.columns = snames
+
+    data2 = data2.loc[data2.index.str.contains('ENS')]
+    cpm2 = data2.divide(data2.sum(axis=0), axis=1) * 1e6
+    keep = (cpm2 > .5).sum(axis=1) > 5
+
+    the_dat2 = np.log2(data2.loc[keep] + 1)
+
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111)
+    ax = corr.plot_correlation_coefficient_array(the_dat2, vmin=0.4, ax=ax)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'corr_coeff_BL6.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'corr_coeff_BL6.pdf'))
+
+    cg = clustering.plot_correlation_clustermap(the_dat2)
+    cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes_BL6.png'), dpi=200)
+    cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_all_genes_BL6.pdf'))
+
     # for ng in [2500, 2000, 1500, 1000]:
     #     cg = clustering.plot_correlation_clustermap(the_dat, n_gene=ng)
     #     cg.fig.savefig(os.path.join(outdir, 'corr_clustermap_%d_genes.png' % ng), dpi=200)

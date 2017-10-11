@@ -111,17 +111,87 @@ The files to upload are found within the subdirs. It is assumed that each subdir
 
 if __name__ == '__main__':
     """
-    Need to test this approach (MNP account was blocked at time of creating the api module.
+    Automated upload of samples to the Heidelberg classifier site
     """
-    sample_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'samplesheet.csv')
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'idat')
-    chip_type = 'EPIC'
-    obj = api.HeidelbergClassifier(chiptype=chip_type)
+    inputs = [
+        # {'base_dir': '2016-06-10_brandner',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'FFPE DNA'},
+        # {'base_dir': '2016-09-21_dutt',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'FFPE DNA'},
+        # {'base_dir': '2016-12-19_ucl_genomics',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'KRYO DNA'},
+        # {'base_dir': '2017-01-17_brandner',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'FFPE DNA'},
+        # {'base_dir': '2017-02-09_brandner',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'FFPE DNA'},
+        # {'base_dir': '2017-05-12',
+        #  'chiptype': 'EPIC',
+        #  'sampletype': 'KRYO DNA'},
+        {'base_dir': '2017-08-23',
+         'chiptype': 'EPIC',
+         'sampletype': 'KRYO DNA'},
+        {'base_dir': '2017-09-19',
+         'chiptype': 'EPIC',
+         'sampletype': 'KRYO DNA'},
+    ]
+    n_retry = 3
+    wait_between_retries = 5  # seconds
 
-    samples = api.read_samplesheet(sample_fn)
-    for i, row in samples.iterrows():
-        name = row.Sample_Name
-        sample_id = row.Sample_Group
-        sample_pos = row.Sentrix_Position
-        file = os.path.join(indir, sample_id, "%s_%s_Grn.idat" % (sample_id, sample_pos))
-        obj.submit_sample(name, file)
+    api_objs = {}
+
+    for d in inputs:
+        base_dir = d.pop('base_dir')
+        print "Project %s" % base_dir
+        sample_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', base_dir, 'samplesheet.csv')
+        indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', base_dir, 'idat')
+        # remaining dictionary values are kwargs for the uploader API
+        obj = api.HeidelbergClassifier(**d)
+
+        samples = api.read_samplesheet(sample_fn)
+        print "Uploading %d samples" % len(samples)
+        for i, row in samples.iterrows():
+            n = 1
+            sample_id = str(int(row.Sentrix_ID))  # may be an int
+            name = "%s;%s;%s" % (base_dir, sample_id, row.Sample_Name)
+            sample_pos = row.Sentrix_Position
+            file = os.path.join(indir, sample_id, "%s_%s_Red.idat" % (sample_id, sample_pos))
+            success = False
+            while success is False:
+                try:
+                    # if this is a retry, log back in first
+                    if n > 1:
+                        obj.establish_session()
+                    obj.submit_sample(name, file)
+                    success = True
+                    print "Uploaded %s" % name
+                except Exception as exc:
+                    print "Failed to process sample %s: %s" % (name, repr(exc))
+                    if n < n_retry:
+                        n += 1
+                        print "Retrying (attempt %d) in %d seconds" % (n, wait_between_retries)
+                        sleep(wait_between_retries)
+
+            if not success:
+                raise AttributeError("Failed to upload sample %s after %d retries" % (name, n_retry))
+
+
+        api_objs[base_dir] = obj.submitted
+        print "Done"
+
+    # sample_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'samplesheet.csv')
+    # indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'idat')
+    # chip_type = 'EPIC'
+    # obj = api.HeidelbergClassifier(chiptype=chip_type)
+    #
+    # samples = api.read_samplesheet(sample_fn)
+    # for i, row in samples.iterrows():
+    #     name = row.Sample_Name
+    #     sample_id = str(row.Sample_Group)  # may be an int
+    #     sample_pos = row.Sentrix_Position
+    #     file = os.path.join(indir, sample_id, "%s_%s_Grn.idat" % (sample_id, sample_pos))
+    #     obj.submit_sample(name, file)

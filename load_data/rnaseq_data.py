@@ -1444,7 +1444,7 @@ def gse86248(source='star', annotate_by='all'):
     return obj
 
 
-def gse36114(source='star', annotate_by='all'):
+def gse36114(source='star', annotate_by='all', **kwargs):
     """
     Mouse reference data. E14 commercial ESC line at day 0 and 4 days under Activin A differentiation.
     Unstranded single end, based on looking at the gene counts
@@ -1460,7 +1460,8 @@ def gse36114(source='star', annotate_by='all'):
             meta_fn=metafn,
             annotate_by=annotate_by,
             strandedness='u',
-            tax_id=10090
+            tax_id=10090,
+            **kwargs
         )
     else:
         raise ValueError("Unrecognised source")

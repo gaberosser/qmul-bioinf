@@ -17,6 +17,8 @@ DEFAULT_PAYLOAD = {
     'gender': 'NA',
     'chipType': 'NA',
     'sampleType': 'KRYO DNA',
+    'confirmation': 'true',
+    'keepFiles': 'false',
 }
 
 
@@ -42,6 +44,7 @@ def paired_idat_file(one_file):
         raise IOError("Unable to find the input file %s" % one_file)
     patterns = (
         (r'_Grn\.idat', '_Red.idat'),
+        (r'_Red\.idat', '_Grn.idat'),
     )
     for patt, repl in patterns:
         other = re.sub(patt, repl, one_file)
@@ -93,15 +96,18 @@ class HeidelbergClassifier(object):
         :return: Response object
         """
         file2 = paired_idat_file(file)
-        files = {
-            'file1': file,
-            'file2': file2
-        }
-        payload = dict(payload_kwargs)
-        for f, v in self.default_payload.items():
-            payload.setdefault(f, v)
-        resp = self.session.post(self.SUBMISSION_URL, data=payload, files=files)
-        self.submitted.append({'payload': payload, 'response': resp, 'response_code': resp.status_code})
+
+        with open(file, 'rb') as f1, open(file2, 'rb') as f2:
+            files = {
+                'file1': f1,
+                'file2': f2
+            }
+            payload = dict(payload_kwargs)
+            payload['name'] = name
+            for f, v in self.default_payload.items():
+                payload.setdefault(f, v)
+            resp = self.session.post(self.SUBMISSION_URL, data=payload, files=files)
+        self.submitted.append({'payload': payload, 'files': files, 'response': resp, 'response_code': resp.status_code})
         if resp.status_code != 200:
             raise AttributeError("Upload failed for sample %s: %s" % (name, resp.content))
         return resp
