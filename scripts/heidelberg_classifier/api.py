@@ -216,12 +216,17 @@ class Heidelberg(object):
             return
 
         # create the output subdir if necessary
-        os.makedirs(os.path.join(self.outdir, batch))
+        out_subdir = os.path.join(self.outdir, batch)
+        if not os.path.isdir(out_subdir):
+            try:
+                os.makedirs(out_subdir)
+            except OSError as exc:
+                logger.error("Failed to create output directory %s", out_subdir)
+
 
         # try getting the pdf report
 
         the_url = self.REPORT_URL.format(sid=sample_id, rid=run_id)
-        logger.info("Downloading PDF file for sample %s", sample_id)
         resp = self.session.get(the_url)
         if resp.status_code == 200:
             # if this works, we know we're in situation (3)
@@ -234,6 +239,7 @@ class Heidelberg(object):
 
             # download the full analysis results
             the_url = self.ANALYSIS_RESULTS_URL.format(sid=sample_id, rid=run_id)
+            logger.info("Downloading zipped results file for sample %s", sample_id)
             resp = self.session.get(the_url)
 
             outfile = os.path.join(self.outdir, batch, "%s.zip" % sample_name)
