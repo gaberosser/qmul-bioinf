@@ -192,7 +192,12 @@ class Heidelberg(object):
         summary = self.get_summary_data(soup=soup)
         batch = summary['batch']
         if sample_name is None:
-            sample_name = summary['sample_name']
+            sample_name = summary['sample_name'].strip()
+        # ensure sample name is a valid identifier
+        sample_name = re.sub(r' +', '_', sample_name)
+        sample_name = sample_name.replace('/', '-')
+        sample_name = sample_name.replace('\\','-')
+
         if run_id is None:
             run_id = summary['run_id']
         created_at = summary['created_at']

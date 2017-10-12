@@ -39,11 +39,19 @@ if __name__ == "__main__":
     # sample_ids = range(6858, 6977)
     obj = api.Heidelberg()
     res = []
+    success = []
+    error = []
+    reset = []
     for sid in sample_ids:
         try:
-            res.append(obj.get_result(sid))
+            this_res = obj.get_result(sid)
+            res.append(this_res)
+            if this_res is None:
+                reset.append(sid)
+            success.append(sid)
         except Exception as exc:
             print "Failed to retrieve sample %d: %s" % (sid, repr(exc))
+            error.append(sid)
 
 
 
