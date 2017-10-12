@@ -31,24 +31,60 @@ BIOMARKER_TROUGH_AGE_COLS = ['Plt trough age']
 OUTCOME_COL = 'Outcome'
 
 
+def load_cleaned_data():
+    # fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
+    fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_sep_2017.csv')
+    return pd.read_csv(fn, header=0, na_values='-', index_col=0)
+
+
+def standardise(data, axis=0):
+    if axis == 0:
+        return data.subtract(data.mean(axis=0), axis=1).divide(data.std(axis=0), axis=1)
+    elif axis == 1:
+        return data.subtract(data.mean(axis=1), axis=0).divide(data.std(axis=1), axis=0)
+    else:
+        raise AttributeError("Axis must be 0 (norm by col) or 1 (norm by row)")
+
+
 if __name__ == "__main__":
     outdir = unique_output_dir("hie_results", reuse_empty=True)
 
-    fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
-    dat = pd.read_csv(fn, header=0, na_values='-', index_col=0)
+    dat = load_cleaned_data()
+    dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
     biomarkers = dat.loc[:, (
         BIOMARKER_PEAK_COLS
         + BIOMARKER_TROUGH_COLS
         + BIOMARKER_PEAK_AGE_COLS
         + BIOMARKER_TROUGH_AGE_COLS
-        + [OUTCOME_COL]
+        # + [OUTCOME_COL]
     )]
+    outcomes = dat.loc[:, OUTCOME_COL]
+
 
     # standardize - necessary when using array plots to keep the range the same
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
-    bm_peaks = peaks_dat.subtract(peaks_dat.mean(axis=0), axis=1).divide(peaks_dat.std(axis=0), axis=1)
-    bm_peaks = pd.concat((bm_peaks, dat.loc[:, OUTCOME_COL]), axis=1)
+    bm_peaks = standardise(peaks_dat)
+    # bm_peaks = peaks_dat.subtract(peaks_dat.mean(axis=0), axis=1).divide(peaks_dat.std(axis=0), axis=1)
+    bm_peaks = pd.concat((bm_peaks, outcomes), axis=1)
     bm_peaks.columns = bm_peaks.columns.str.replace(' peak', '')
+
+    # Look for batch effects using PCA on biomarker values
+    # this requires us to fill NA values with column mean
+    for col, colval in peaks_dat.iteritems():
+        if colval.isnull().any():
+            peaks_dat.loc[:, col] = colval.fillna(colval.mean())
+    pca = PCA(n_components=6)
+    pca.fit(peaks_dat)
+    pp = pca.transform(peaks_dat)
+    # scatter, shading by component
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    batches = dat.batch.factorize()
+    colours = ['r', 'b', 'g', 'y', 'k']
+    for i, bt in enumerate(batches[1]):
+        idx = batches[0] == i
+        ax.scatter(pp[idx, 0], pp[idx, 1], c=colours[i], label=bt)
 
     if False:
         # we need to set the range so that the hist function doesn't complain about NaNs
@@ -73,8 +109,8 @@ if __name__ == "__main__":
     bwu = []
     ttls = []
     for c in BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS:
-        bwf.append(dat.loc[dat.loc[:, OUTCOME_COL] == 'favourable', c].dropna())
-        bwu.append(dat.loc[dat.loc[:, OUTCOME_COL] == 'unfavourable', c].dropna())
+        bwf.append(dat.loc[dat.loc[:, OUTCOME_COL] == 2, c].dropna())  # favourable outcome
+        bwu.append(dat.loc[dat.loc[:, OUTCOME_COL] == 1, c].dropna())  # unfavourable outcome
         ttls.append(c.replace(' peak', ''))
 
     # set positions
@@ -138,11 +174,11 @@ if __name__ == "__main__":
         ttl = c.lower().replace(' ', '_')
         ax.cla()
 
-        fav = dat.loc[dat.Outcome == 'favourable', c].values
-        unfav = dat.loc[dat.Outcome == 'unfavourable', c].values
+        fav = dat.loc[dat.Outcome == 2, c].values
+        unfav = dat.loc[dat.Outcome == 1, c].values
 
-        fav_age = dat.loc[dat.Outcome == 'favourable', "%s age" % c].values
-        unfav_age = dat.loc[dat.Outcome == 'unfavourable', "%s age" % c].values
+        fav_age = dat.loc[dat.Outcome == 2, "%s age" % c].values
+        unfav_age = dat.loc[dat.Outcome == 1, "%s age" % c].values
 
         ax.scatter(fav_age, fav, c='b', label='Fav')
         ax.scatter(unfav_age, unfav, c='g', label='Unfav')
@@ -169,8 +205,8 @@ if __name__ == "__main__":
     pca.fit(X)
     y = pca.transform(X)
 
-    fav_idx = np.where(dat.Outcome=='favourable')[0]
-    unfav_idx = np.where(dat.Outcome=='unfavourable')[0]
+    fav_idx = np.where(dat.Outcome==2)[0]
+    unfav_idx = np.where(dat.Outcome==1)[0]
     fig = plt.figure()
     ax = fig.add_subplot(111)
 

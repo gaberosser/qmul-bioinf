@@ -2,6 +2,8 @@ import requests
 from utils.log import get_console_logger
 import os
 import re
+import datetime
+from utils.output import unique_output_dir
 from settings import HEIDELBERG_CLASSIFIER_CONFIG
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -64,7 +66,210 @@ def read_table(tbl):
     return res
 
 
-class HeidelbergClassifier(object):
+class Heidelberg(object):
+    LOGIN_URL = 'https://www.molecularneuropathology.org/mnp/authenticate'
+    SUBMISSION_URL = 'https://www.molecularneuropathology.org/mnp/sample/add'
+    SAMPLE_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}'
+    REPORT_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}/run/{rid}/report'
+    ANALYSIS_RESULTS_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}/run/{rid}/analysisData'
+    RESTART_ANALYSIS_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}/{rid}/'
+
+    def __init__(self):
+        self.session = None
+        self.establish_session()
+        self.submitted = []
+        self.outdir = None
+
+    def establish_session(self):
+        self.session = requests.Session()
+        resp = self.session.post(self.LOGIN_URL, data=HEIDELBERG_CLASSIFIER_CONFIG)
+        if resp.status_code != 200:
+            raise AttributeError("Login failed")
+
+    def submit_sample(self, name, file, **payload_kwargs):
+        """
+        Submit a sample for classification
+        :param name: Sample name
+        :param file: Path to either the red or the green file. The other file is inferred from this name.
+        :param payload_kwargs: Other payload kwargs. Defaults are used when these are missing - see DEFAULT_PAYLOAD.
+        :return: Response object
+        """
+        file2 = paired_idat_file(file)
+        payload = dict(DEFAULT_PAYLOAD)
+        payload.update(payload_kwargs)
+        payload['name'] = name
+
+        with open(file, 'rb') as f1, open(file2, 'rb') as f2:
+            files = {
+                'file1': f1,
+                'file2': f2
+            }
+            resp = self.session.post(self.SUBMISSION_URL, data=payload, files=files)
+        self.submitted.append(
+            {'payload': payload, 'files': files, 'response': resp, 'response_code': resp.status_code})
+        if resp.status_code != 200:
+            raise AttributeError("Upload failed for sample %s: %s" % (name, resp.content))
+        return resp
+
+    def get_result_soup(self, sample_id):
+        the_url = self.SAMPLE_URL.format(sid=sample_id)
+        resp = self.session.get(the_url)
+        if resp.status_code != 200:
+            raise AttributeError("Error %d accessing %s: %s" % (resp.status_code, the_url, resp.content))
+        return BeautifulSoup(resp.content, "html.parser")
+
+    def get_summary_data(self, sample_id=None, soup=None):
+        """
+        :param sample_id: If supplied, we use this to retrieve the relevant results page
+        :param soup: If supplied, sample_id is ignored and we use the BeautifulSoup data here to get our info.
+        """
+        if soup is None:
+            if sample_id is None:
+                raise AttributeError("Must supply either soup or sample_id")
+            soup = self.get_result_soup(sample_id)
+
+        # get the summary table (it's the 1st table)
+        tbl = soup.find('table')
+        if tbl is None:
+            raise ValueError("Unable to find any table elements")
+        tbl_cont = dict(read_table(tbl))
+        batch, sentrix_id, sname = tbl_cont['Sample identifier:'].split(';')
+
+        # get the most recent run number and creation time (it's in the 2nd table)
+        # FIXME: we're assuming that this table has only one row, will break otherwise
+        tbl = soup.findAll('table')[1]
+        tbl_cont = dict(zip(*read_table(tbl)))
+
+        run_id = int(tbl_cont['Run'])
+        created_at = datetime.datetime.strptime(tbl_cont['Created at '], "%Y-%m-%d %H:%M")
+
+        res = {
+            'batch': batch,
+            'run_id': run_id,
+            'sentrix_id': sentrix_id,
+            'sample_name': sname,
+            'created_at': created_at,
+        }
+        if sample_id is not None:
+            res['soup'] = soup
+
+        return res
+
+    def restart_analysis(self, sample_id, run_id=None, soup=None):
+        """
+        Restart a previously submitted analysis run.
+        This is required if it has stalled
+        """
+        # FIXME: POST request returns a 404 error - why?
+        if soup is None:
+            soup = self.get_result_soup(sample_id)
+
+        if run_id is None:
+            summary = self.get_summary_data(soup=soup)
+            run_id = summary['run_id']
+
+        the_url = self.RESTART_ANALYSIS_URL.format(sid=sample_id, rid=run_id)
+        resp = self.session.post(the_url)
+
+    def get_result(self, sample_id, outdir=None, sample_name=None, run_id=None):
+        """
+        Retrieve results relating to a sample and save to disk.
+        :param sample_name: If supplied, this overrides the submitted sample name
+        :param run_id: If supplied, this is used, otherwise the latest run is automatically determined
+        """
+
+        if self.outdir is None:
+            if outdir is None:
+                self.outdir = unique_output_dir('heidelberg_classifier', reuse_empty=True)
+            else:
+                self.outdir = outdir
+            print "Data will be downloaded to %s" % self.outdir
+
+        the_url = self.SAMPLE_URL.format(sid=sample_id)
+        resp = self.session.get(the_url)
+        soup = BeautifulSoup(resp.content, "html.parser")
+
+        summary = self.get_summary_data(soup=soup)
+        batch = summary['batch']
+        if sample_name is None:
+            sample_name = summary['sample_name']
+        if run_id is None:
+            run_id = summary['run_id']
+        created_at = summary['created_at']
+
+        logger.info("Sample %s, run ID %d, batch %s", sample_name, run_id, batch)
+
+        # one of three situations:
+        # 1) Classifier has not finished any modules. Probably needs restarting.
+        # 2) Classification has completed but full report not available. Retrieve classification scores.
+        # 3) Full report available. Download all data.
+
+        t = soup.findAll(text=re.compile(r'.*Classifier script not finished.*'))
+        if len(t) > 0:
+            # situation (1)
+            # get creation time
+            # this is fragile, but easier than trawlind through tables!
+            logger.info("Sample ID %d (%s). Classification script is not finished. Nothing to do.", sample_id, sample_name)
+            dt = (datetime.datetime.utcnow() - created_at).total_seconds()
+            if dt > 18000:
+                logger.warn("Submitted more than 5 hours ago. Consider restarting.")
+            return
+
+        # create the output subdir if necessary
+        os.makedirs(os.path.join(self.outdir, batch))
+
+        # try getting the pdf report
+
+        the_url = self.REPORT_URL.format(sid=sample_id, rid=run_id)
+        logger.info("Downloading PDF file for sample %s", sample_id)
+        resp = self.session.get(the_url)
+        if resp.status_code == 200:
+            # if this works, we know we're in situation (3)
+            outfile = os.path.join(self.outdir, batch, "%s.pdf" % sample_name)
+            if os.path.isfile(outfile):
+                logger.error("File already exists: %s", outfile)
+            logger.info("Saving PDF file to %s", outfile)
+            with open(outfile, 'wb') as f:
+                f.write(resp.content)
+
+            # download the full analysis results
+            the_url = self.ANALYSIS_RESULTS_URL.format(sid=sample_id, rid=run_id)
+            resp = self.session.get(the_url)
+
+            outfile = os.path.join(self.outdir, batch, "%s.zip" % sample_name)
+            if os.path.isfile(outfile):
+                logger.error("File already exists: %s", outfile)
+            logger.info("Saving zip file to %s", outfile)
+            with open(outfile, 'wb') as f:
+                f.write(resp.content)
+
+        # situation (2) OR (3)
+        # Either way, get the classifier results
+        raw_scores = read_table(soup.find(attrs={'id': 'rawScores'}))
+        cal_scores = read_table(soup.find(attrs={'id': 'calibratedScores'}))
+
+        raw_scores = self.save_scores(raw_scores, sample_name, batch, 'raw_scores')
+        cal_scores = self.save_scores(cal_scores, sample_name, batch, 'calibrated_scores')
+
+        return raw_scores, cal_scores
+
+    def save_scores(self, table, sample_name, batch, typ):
+        scores = pd.DataFrame(table)
+        scores.columns = scores.iloc[0].str.strip()
+        scores = scores.iloc[1:]
+        scores.sort_values('Score', ascending=False, inplace=True)
+        outfile = os.path.join(self.outdir, batch, "%s.%s.csv" % (sample_name, typ))
+
+        if os.path.isfile(outfile):
+            logger.error("File already exists: %s", outfile)
+
+        scores.to_csv(outfile, index=False)
+        print "Saved scores to %s" % outfile
+        return scores
+
+
+
+class HeidelbergUploader(object):
     LOGIN_URL = 'https://www.molecularneuropathology.org/mnp/authenticate'
     SUBMISSION_URL = 'https://www.molecularneuropathology.org/mnp/sample/add'
     SAMPLE_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}'
