@@ -59,7 +59,13 @@ venn_edger_de_lists <- function(..., background=NULL, fdr=0.05, log2FC.min = NUL
 }
 
 grouped_analysis <- function(data, groups, groups.lumped, contrasts, gene.symbols=NULL, output.dir=NULL, fdr = 0.05) {
-  #' contrasts: list of characters containing valid formulae based on design matrix ~0 + groups
+  #' Carry out analysis based on a paired study, where there are no replicates available, e.g. cancer vs healthy tissue in individual patients.
+  #' In this case, we need to 'lump' individuals together based on a simpler grouping (cancer vs healthy) to estimate dispersion, then transfer 
+  #' this estimate across for the purpose of computing differential expression whilst honouring the paired structure.
+  #' contrasts: list of characters containing valid formulae based on design matrix ~0 + groups. makeContrasts will be called on each element of the list.
+  #' data: Numeric matrix containing gene counts.
+  #' groups: vector or factor giving the group each sample belongs to.
+  #' groups.lumped: vector or factor giving the lumped groups for each sample.
 
   groups <- factor(groups)
   groups.lumped <- factor(groups.lumped)
@@ -130,15 +136,24 @@ filter_genes <- function(data, cpm.min = 1, nsamples.min = 3, unless.cpm.gte = N
 }
 
 export_de_list <- function(blocks, outfile) {
-  #' work out the number of comparisons being made
+  #' Generate a Venn-like DE CSV and write to disk
+  #' Blocks is a list with names as a binary representation of the Venn region, e.g. 1101 means "in groups 1, 2 and 4 but not 3".
+  #'
+  
+  # only keep names that are in binary format
   idx <- names(blocks)[grep('^[01]+$', names(blocks))]
   idx <- idx[order(idx, decreasing = T)]
+  
+  # check the format: all should have the same length
   ns <- sapply(idx, nchar)
   if (!all(ns == ns[1])) {
     stop("Unequal block names. Expecting them to have the same format, e.g. `011`.")
   }
+  
   n <- ns[[1]]
   message(sprintf("Exporting %i way DE comparison to %s.", n, outfile))
+  
+  
   csv.data <- data.frame(blocks[[idx[1]]])
   if (ncol(csv.data) %% n != 0) {
     stop(sprintf("Unequal number of rows detected (%i / %i)", ncol(csv.data), n))

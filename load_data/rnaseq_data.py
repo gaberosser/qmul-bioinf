@@ -800,6 +800,7 @@ def gse83696(index_by='Ensembl Gene ID'):
 
 
 def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='protein_coding'):
+    # TODO: obsolete, remove
     obj = gbm_paired_samples_loader(annotate_by=annotate_by, annotation_type=annotation_type)
 
     if units == 'counts':
@@ -813,6 +814,7 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
 
 
 def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
+    # TODO: replace or rename?
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
@@ -969,7 +971,8 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
     countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
     loaders.append(
         all_samples_multilane_loader(
-            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type, samples=samples
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
         )
     )
 
@@ -996,9 +999,242 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
     countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
     loaders.append(
         all_samples_multilane_loader(
-            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type, samples=samples
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
         )
     )
+
+    # expt 3
+    samples = (
+        'GBM030_P9n10',
+        'GBM031_P7',
+        'GBM019_P3n6',
+        'GBM017_P3',
+        'GBM017_P4',
+        'DURA017_NSC_P4_N3C5',
+    )
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    lanedirs = [
+        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    # expt 4
+    samples = (
+        'GBM049_P4',
+        'GBM049_P6',
+        'GBM050_P7',
+        'GBM050_P9',
+        'GBM054_P4',
+        'GBM054_P6',
+        'GBM061_P3',
+        'GBM061_P5',
+        'GBM052_P6n7',
+        'GBM052_P4n5',
+        'DURA049_NSC_N19_P4',
+        'DURA049_NSC_N5_P2',
+        'DURA050_NSC_N12_P3',
+        'DURA050_NSC_N16_P4',
+        'DURA054_NSC_N3C_P2',
+        'DURA054_NSC_N2E_P1',
+        'DURA061_N4_P2',
+        'DURA061_NSC_N6_P4',
+        'DURA052_NSC_N4_P3',
+        'DURA052_NSC_N5_P2',
+    )
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503')
+    lanedirs = [
+        os.path.join(indir, '170929_K00150_0250_BHLGNHBBXX'),
+        os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_1'),
+        os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_2')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    return MultipleBatchLoader(loaders)
+
+
+def rtki_hgic_loader(source='star', annotate_by='all', annotation_type='protein_coding', include_reference=True):
+    """
+    GBM018, GBM019, GBM030, GBM031
+    Includes GBM cultures, iNSC
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :param include_reference: if True (default), also include the Gibco reference sample
+    :return:
+    """
+
+    loaders = []
+
+    # expt 1
+    samples = (
+        'GBM018_P10',
+        'GBM019_P4',
+        'GBM031_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA031_NSC_N44B_P2',
+    )
+
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    lanedirs = [
+        os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
+        os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    # expt 2
+    samples = (
+        'GBM018_P12',
+        'DURA018_NSC_N4_P4',
+        'GBM030_P5',
+        'DURA030_NSC_N16B6_P1',
+    )
+
+    if include_reference:
+        samples += ('GIBCO_NSC_P4',)
+
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+    lanedirs = [
+        os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
+        os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
+        os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_3')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    # expt 3
+    samples = (
+        'GBM030_P9n10',
+        'GBM031_P7',
+        'GBM019_P3n6',
+    )
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    lanedirs = [
+        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    return MultipleBatchLoader(loaders)
+
+
+def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein_coding', include_reference=True):
+    """
+    GBM017, GBM050, GBM054, GBM061
+    Includes GBM cultures, iNSC
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :param include_reference: if True (default), also include the Gibco reference sample
+    :return:
+    """
+    loaders = []
+    # expt 1
+    samples = (
+        'GBM017_P3',
+        'GBM017_P4',
+        'DURA017_NSC_P4_N3C5',
+    )
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    lanedirs = [
+        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
+        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    # expt 2
+    samples = (
+        'GBM050_P7',
+        'GBM050_P9',
+        'GBM054_P4',
+        'GBM054_P6',
+        'GBM061_P3',
+        'GBM061_P5',
+        'DURA050_NSC_N12_P3',
+        'DURA050_NSC_N16_P4',
+        'DURA054_NSC_N3C_P2',
+        'DURA054_NSC_N2E_P1',
+        'DURA061_N4_P2',
+        'DURA061_NSC_N6_P4',
+    )
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503')
+    lanedirs = [
+        os.path.join(indir, '170929_K00150_0250_BHLGNHBBXX'),
+        os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_1'),
+        os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_2')
+    ]
+    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+    countdirs = [os.path.join(d, 'star_alignment') for d in lanedirs]
+    loaders.append(
+        all_samples_multilane_loader(
+            countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+            samples=samples, strandedness='r'
+        )
+    )
+
+    if include_reference:
+        samples = ('GIBCO_NSC_P4',)
+
+        indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+        lanedirs = [
+            os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
+            os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
+            os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_3')
+        ]
+        metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
+        countdirs = [os.path.join(d, 'human', 'star_alignment') for d in lanedirs]
+        loaders.append(
+            all_samples_multilane_loader(
+                countdirs, metafiles, source=source, annotate_by=annotate_by, annotation_type=annotation_type,
+                samples=samples, strandedness='r'
+            )
+        )
 
     return MultipleBatchLoader(loaders)
 
