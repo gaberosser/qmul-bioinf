@@ -14,6 +14,122 @@ INDEX_FIELDS = (
     'Ensembl Gene ID'
 )
 
+# batch variables
+class RnaSeqStarFileLocations(object):
+    def __init__(self, root_dir, lanes, alignment_subdir=None):
+        self.root_dir = root_dir
+        self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
+        self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
+        if alignment_subdir is None:
+            self.count_dirs = [os.path.join(d, 'star_alignment') for d in self.lane_dirs]
+        else:
+            self.count_dirs = [os.path.join(d, alignment_subdir, 'star_alignment') for d in self.lane_dirs]
+
+
+wtchg_p160704 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704'),
+    lanes=['161222_K00198_0152_AHGYG3BBXX', '161219_K00198_0151_BHGYHTBBXX'],
+)
+
+wtchg_p170218 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218'),
+    lanes=['170509_K00150_0192_BHJKCLBBXX', '170515_K00150_0196_BHJKC5BBXX_lane_2', '170515_K00150_0196_BHJKC5BBXX_lane_3'],
+    alignment_subdir='human'
+)
+
+wtchg_p170390 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390'),
+    lanes=[
+        '170727_K00198_0222_AHKWW5BBXX',
+        '170731_K00150_0226_AHL2CJBBXX_1',
+        '170731_K00150_0226_AHL2CJBBXX_2'
+    ],
+    alignment_subdir='human'
+)
+
+wtchg_p170503 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503'),
+    lanes=[
+        '170929_K00150_0250_BHLGNHBBXX',
+        '171003_K00198_0242_AHLGYVBBXX_1',
+        '171003_K00198_0242_AHLGYVBBXX_2'
+    ],
+)
+
+PATIENT_LOOKUP_STAR = {
+    '017': [
+        ('GBM017_P3', wtchg_p170390),
+        ('GBM017_P4', wtchg_p170390),
+        ('DURA017_NSC_P4_N3C5', wtchg_p170390),
+    ],
+    '018': [
+        ('GBM018_P12', wtchg_p170218),
+        ('GBM018_P10', wtchg_p160704),
+        ('DURA018_NSC_N4_P4', wtchg_p170218),
+        ('DURA018_NSC_N2_P6', wtchg_p160704),
+    ],
+    '019': [
+        ('GBM019_P4', wtchg_p160704),
+        ('GBM019_P3n6', wtchg_p170390),
+        ('DURA019_NSC_N8C_P2', wtchg_p160704),
+    ],
+    '024': [
+        ('GBM024_P9', wtchg_p160704),
+        ('DURA024_NSC_N28_P6', wtchg_p160704),
+    ],
+    '026': [
+        ('GBM026_P8', wtchg_p160704),
+        ('GBM026_P3n4', wtchg_p170218),
+        ('DURA026_NSC_N31D_P5', wtchg_p160704),
+    ],
+    '030': [
+        ('GBM030_P9n10', wtchg_p170390),
+        ('GBM030_P5', wtchg_p170218),
+        ('DURA030_NSC_N16B6_P1', wtchg_p170218),
+    ],
+    '031': [
+        ('GBM031_P7', wtchg_p170390),
+        ('GBM031_P4', wtchg_p160704),
+        ('DURA031_NSC_N44B_P2', wtchg_p160704),
+    ],
+    '044': [
+        ('GBM044_P4', wtchg_p170218),
+        ('GBM044_P8', wtchg_p170218),
+        ('DURA044_NSC_N17_P3', wtchg_p170218),
+        ('DURA044_NSC_N8_P2', wtchg_p170218),
+    ],
+    '049': [
+        ('GBM049_P4', wtchg_p170503),
+        ('GBM049_P6', wtchg_p170503),
+        ('DURA049_NSC_N19_P4', wtchg_p170503),
+        ('DURA049_NSC_N5_P2', wtchg_p170503),
+    ],
+    '050': [
+        ('GBM050_P7', wtchg_p170503),
+        ('GBM050_P9', wtchg_p170503),
+        ('DURA050_NSC_N12_P3', wtchg_p170503),
+        ('DURA050_NSC_N16_P4', wtchg_p170503),
+    ],
+    '052': [
+        ('GBM052_P6n7', wtchg_p170503),
+        ('GBM052_P4n5', wtchg_p170503),
+        ('DURA052_NSC_N4_P3', wtchg_p170503),
+        ('DURA052_NSC_N5_P2', wtchg_p170503),
+    ],
+    '054': [
+        ('GBM054_P4', wtchg_p170503),
+        ('GBM054_P6', wtchg_p170503),
+        ('DURA054_NSC_N3C_P2', wtchg_p170503),
+        ('DURA054_NSC_N2E_P1', wtchg_p170503),
+    ],
+    '061': [
+        ('GBM061_P3', wtchg_p170503),
+        ('GBM061_P5', wtchg_p170503),
+        ('DURA061_NSC_N4_P2', wtchg_p170503),
+        ('DURA061_NSC_N6_P4', wtchg_p170503),
+    ],
+}
+
 
 def strip_extension(s, file_ext):
     regex = file_ext.replace('.', '\.')
@@ -1237,6 +1353,27 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
         )
 
     return MultipleBatchLoader(loaders)
+
+
+def individual_patient_loader(patient_ids, source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Load all RNA-Seq count data associated with the patient ID(s) supplied
+    :param patient_ids: Iterable or single int or char
+    :param source:
+    :param annotate_by:
+    :param annotation_type:
+    :return:
+    """
+    if hasattr(patient_ids, '__iter__'):
+        patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
+    else:
+        if isinstance(patient_ids, str):
+            patient_ids = [patient_ids]
+        else:
+            patient_ids = ['%03d' % patient_ids]
+
+
+
 
 
 def atcc_cell_lines(source='star', annotate_by='all', annotation_type='protein_coding'):

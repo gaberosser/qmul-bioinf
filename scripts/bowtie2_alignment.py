@@ -23,7 +23,7 @@ SAMTOOLS_CMD = 'samtools'
 
 if __name__ == "__main__":
     """
-    Usage: hisat2_alignment.py path_to_reads path_to_bt2 path_to_output passed_to_hisat2
+    Usage: bowtie2_alignment.py path_to_reads path_to_bt2 path_to_output passed_to_hisat2
     """
 
     parser = argparse.ArgumentParser()
@@ -32,6 +32,7 @@ if __name__ == "__main__":
 
     optional.add_argument("--read_dir", help="Directory containing reads", default='./')
     optional.add_argument("-o", "--out_dir", help="Output directory")
+    optional.set_defaults(sort=True)
 
     required.add_argument("-x", "--reference", help="Bowtie2-compiled reference (stem, no extensions).", required=True)
 
@@ -114,6 +115,9 @@ if __name__ == "__main__":
                 st_proc.wait()
             except Exception as exc:
                 logger.exception("Alignment failed.")
+
         logger.info("Alignment complete")
+
+
 
     logger.info("All complete")
