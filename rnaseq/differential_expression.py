@@ -28,15 +28,30 @@ if __name__ == '__main__':
     ## TODO: move this to a separate script
     from load_data import rnaseq_data
     pids = ['017', '050', '054', '061']
+    obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
+
     de = {}
+    de_gibco = {}
 
     for pid in pids:
-        obj = rnaseq_data.load_by_patient(pid, annotate_by='Ensembl Gene ID')
-        data = filter_by_cpm(obj.data.loc[obj.data.index.str.contains('ENSG')], min_n_samples=1)
-
         the_idx = obj.meta.index.str.contains(pid)
-        the_data = data.loc[:, the_idx]
+        the_data = obj.data.loc[:, the_idx]
+
+        the_data = filter_by_cpm(the_data.loc[obj.data.index.str.contains('ENSG')], min_n_samples=1)
+        the_genes = the_data.index
+
         the_groups = obj.meta.loc[the_idx, 'type'].values
         the_contrast = "GBM - iNSC"
 
         de[pid] = edger(the_data, the_groups, the_contrast)
+
+        # repeat with gibco reference
+        # use the same genes, rather than filtering again
+        the_idx = (obj.meta.index.str.contains(pid) & (obj.meta.type == 'GBM')) | obj.meta.index.str.contains('GIBCO')
+        the_data = obj.data.loc[the_genes, the_idx]
+        the_groups = obj.meta.loc[the_idx, 'type'].values
+        the_contrast = "GBM - NSC"
+
+        de_gibco[pid] = edger(the_data, the_groups, the_contrast)
+
+
