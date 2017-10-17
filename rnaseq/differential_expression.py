@@ -40,21 +40,3 @@ if __name__ == '__main__':
         the_contrast = "GBM - iNSC"
 
         de[pid] = edger(the_data, the_groups, the_contrast)
-
-
-
-        # rdata = pandas2ri.py2ri(the_data)
-        # rgroups = robjects.FactorVector(the_groups)
-        # y = r("DGEList")(rdata)
-        # y = r("calcNormFactors")(y)
-        # formula = robjects.Formula("~0 + groups")
-        # formula.environment['groups'] = rgroups
-        # design = r("model.matrix")(formula)
-        # design.colnames = r('levels')(rgroups)
-        # y = r("estimateDisp")(y, design)
-        # rcontrast = r('makeContrasts')(robjects.StrVector([the_contrast]), levels=design)
-        # fit = r('glmQLFit')(y, design)
-        # lrt = r('glmTreat')(fit, contrast=rcontrast, lfc=1)
-        # toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': 0.01})
-        #
-        # de[pid] = pandas2ri.ri2py_dataframe(toptags[toptags.names.index('table')])
