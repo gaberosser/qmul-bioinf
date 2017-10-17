@@ -16,14 +16,24 @@ INDEX_FIELDS = (
 
 # batch variables
 class RnaSeqStarFileLocations(object):
-    def __init__(self, root_dir, lanes, alignment_subdir=None):
+    def __init__(self, root_dir, lanes, alignment_subdir=None, strandedness='r'):
         self.root_dir = root_dir
+        self.strandedness = strandedness
         self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
         self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
         if alignment_subdir is None:
             self.count_dirs = [os.path.join(d, 'star_alignment') for d in self.lane_dirs]
         else:
             self.count_dirs = [os.path.join(d, alignment_subdir, 'star_alignment') for d in self.lane_dirs]
+
+
+    @property
+    def loader_kwargs(self):
+        return {
+            'count_dirs': self.count_dirs,
+            'meta_fns': self.meta_files,
+            'strandedness': self.strandedness
+        }
 
 
 wtchg_p160704 = RnaSeqStarFileLocations(
@@ -128,6 +138,9 @@ PATIENT_LOOKUP_STAR = {
         ('DURA061_NSC_N4_P2', wtchg_p170503),
         ('DURA061_NSC_N6_P4', wtchg_p170503),
     ],
+    'GIBCO': [
+        ('GIBCO_NSC_P4', wtchg_p170218),
+    ]
 }
 
 
@@ -1355,15 +1368,23 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
     return MultipleBatchLoader(loaders)
 
 
-def individual_patient_loader(patient_ids, source='star', annotate_by='all', annotation_type='protein_coding'):
+def load_by_patient(
+        patient_ids,
+        source='star',
+        annotate_by='all',
+        annotation_type='protein_coding',
+        include_control=True
+):
     """
     Load all RNA-Seq count data associated with the patient ID(s) supplied
     :param patient_ids: Iterable or single int or char
     :param source:
     :param annotate_by:
     :param annotation_type:
+    :param include_control: If True (default) include Gibco reference NSC
     :return:
     """
+    # ensure patient IDs are in correct form
     if hasattr(patient_ids, '__iter__'):
         patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
     else:
@@ -1372,8 +1393,45 @@ def individual_patient_loader(patient_ids, source='star', annotate_by='all', ann
         else:
             patient_ids = ['%03d' % patient_ids]
 
+    if include_control:
+        patient_ids += ['GIBCO']
 
+    if source == 'star':
+        LOOKUP = PATIENT_LOOKUP_STAR
+    else:
+        raise NotImplementedError()
 
+    # precompute the loaders required to avoid reloading multiple times
+    # we'll also take a note of the order for later reordering
+    sample_order = []
+    by_loader = {}
+    for pid in patient_ids:
+        d = LOOKUP[pid]
+        for s, ldr in d:
+            by_loader.setdefault(ldr, []).append(s)
+            sample_order.append(s)
+
+    objs = []
+    for ldr, samples in by_loader.items():
+        objs.append(
+            MultipleLaneStarCountLoader(
+                annotate_by=annotate_by,
+                annotation_type=annotation_type,
+                samples=samples,
+                **ldr.loader_kwargs
+            )
+        )
+
+    if len(objs) > 1:
+        res = MultipleBatchLoader(objs)
+    else:
+        res = objs[0]
+
+    # apply original ordering
+    res.meta = res.meta.loc[sample_order]
+    res.data = res.data.loc[:, res.meta.index]
+
+    return res
 
 
 def atcc_cell_lines(source='star', annotate_by='all', annotation_type='protein_coding'):
