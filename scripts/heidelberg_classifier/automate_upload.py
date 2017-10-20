@@ -1,5 +1,6 @@
 import requests
-from utils.log import get_console_logger
+from utils.log import get_console_logger, get_file_logger
+from utils.output import unique_output_dir
 import os
 from settings import HEIDELBERG_CLASSIFIER_CONFIG, DATA_DIR_NON_GIT
 import pandas as pd
@@ -141,6 +142,8 @@ if __name__ == '__main__':
     ]
     n_retry = 3
     wait_between_retries = 5  # seconds
+    outdir = unique_output_dir('heidelberg_bulk_upload', reuse_empty=True)
+    flog = get_file_logger('heidelberg_bulk_upload', os.path.join(outdir, 'automated_upload.log'))
 
     api_objs = {}
     obj = api.Heidelberg()
@@ -153,6 +156,7 @@ if __name__ == '__main__':
 
         samples = api.read_samplesheet(sample_fn)
         print "Uploading %d samples" % len(samples)
+        flog.info("Project %s. %d samples.", base_dir, len(samples))
         for i, row in samples.iterrows():
             n = 1
             sample_id = str(int(row.Sentrix_ID))  # may be an int
@@ -168,15 +172,18 @@ if __name__ == '__main__':
                     obj.submit_sample(name, file, **d)
                     success = True
                     print "Uploaded %s" % name
+                    flog.info("Success: %s", name)
                 except Exception as exc:
                     print "Failed to process sample %s: %s" % (name, repr(exc))
                     if n < n_retry:
                         n += 1
                         print "Retrying (attempt %d) in %d seconds" % (n, wait_between_retries)
+                        flog.info("Retrying %s. Attempt %d.", name, n)
                         sleep(wait_between_retries)
 
             if not success:
-                raise AttributeError("Failed to upload sample %s after %d retries" % (name, n_retry))
+                flog.error("Upload failed: %s", name)
+                # raise AttributeError("Failed to upload sample %s after %d retries" % (name, n_retry))
 
         api_objs[base_dir] = obj.submitted
         print "Done"
