@@ -59,7 +59,7 @@ dat.wtchg <- loaded.wtchg$data[grep("ENSG", rownames(loaded.wtchg$data)), sample
 meta.wtchg <- loaded.wtchg$meta[loaded.wtchg$meta$sample %in% samples,]
 
 # filter
-dat.wtchg <- filter_genes(dat.wtchg, nsamples.min = 2)
+# dat.wtchg <- filter_genes(dat.wtchg, nsamples.min = 2)
 
 individual.comparison <- list()
 
@@ -67,6 +67,7 @@ individual.comparison <- list()
 for (pid in pids) {
   idx <- grep(pid, meta.wtchg$sample)
   the.data <- dat.wtchg[, idx]
+  the.data <- filter_genes(the.data, nsamples.min = 1)
   the.groups <- meta.wtchg[idx, 'type']
   y <- DGEList(counts=the.data, group=the.groups)
   y <- calcNormFactors(y)
@@ -83,9 +84,33 @@ for (pid in pids) {
   individual.comparison[[pid]] <- topTags(lrt, n=Inf, p.value=fdr)
 }
 
+#' there's something strange about 061 P4: the library normalisation constants are much lower than the other samples
+#' it also has the highest BCV
+#' so, let's look at the ECDFs
+ecdf <- list()
+cols <- rainbow(nrow(meta.wtchg))
+dev.new()
+plot(0, 0, ylim=c(0, 1), type='n', xlab='Normalised', ylab='CDF')
+for (i in seq(nrow(meta.wtchg))) {
+  sname <- as.character(meta.wtchg$sample[i])
+  the.data <- dat.wtchg[,sname, drop = F]
+  the.data <- filter_genes(the.data, nsamples.min = 1)
+  ord <- order(the.data)
+  xnorm <- the.data[ord] / sum(the.data)
+  # pct <- seq(length(the.data)) / length(the.data)
+  cdf <- cumsum(xnorm)
+  # ecdf[[sname]] = list(pct=pct, ecdf=cdf)
+  # lines(cdf, pct, col=cols[i])
+  lines(xnorm, cdf, col=cols[])
+}
+
+
 # group comparison
+
+dat.wtchg.filt <- filter_genes(dat.wtchg, nsamples.min = 2)
+
 the.groups <- as.factor(meta.wtchg[, 'type'])
-y <- DGEList(counts=dat.wtchg, group=the.groups)
+y <- DGEList(counts=dat.wtchg.filt, group=the.groups)
 y <- calcNormFactors(y)
 design <- model.matrix(~0+as.factor(the.groups))
 colnames(design) <- levels(the.groups)
@@ -106,7 +131,7 @@ individual_from_group.comparison <- list()
 
 the.pid <- as.factor(sub('[^0-9]*([0-9]{3})_.*', '\\1', meta.wtchg$sample))
 the.combined_groups <- as.factor(paste(meta.wtchg$type, the.pid, sep = '_'))
-y <- DGEList(counts=dat.wtchg)
+y <- DGEList(counts=dat.wtchg.filt)
 y <- calcNormFactors(y)
 design <- model.matrix(~0 + the.combined_groups)
 colnames(design) <- levels(the.combined_groups)

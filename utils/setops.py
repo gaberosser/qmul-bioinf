@@ -30,7 +30,8 @@ def binary_combinations_sum_gte(n, nmin, **kwargs):
 def venn_from_arrays(*args, **kwargs):
     """
     The input arguments *args contain a number of arrays. Each one is a list or similar, e.g. a list of strings
-     representing genes. The entries are analysed for intersections and used to create a Venn plot.
+     representing genes. The entries are analysed for intersections and used to create the relevant venn sets.
+     Counts are also computed for convenience
     :param args:
     :param kwargs:
     :return:

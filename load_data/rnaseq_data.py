@@ -14,7 +14,6 @@ INDEX_FIELDS = (
     'Ensembl Gene ID'
 )
 
-# batch variables
 class RnaSeqStarFileLocations(object):
     def __init__(self, root_dir, lanes, alignment_subdir=None, strandedness='r'):
         self.root_dir = root_dir
@@ -70,7 +69,7 @@ PATIENT_LOOKUP_STAR = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
         ('GBM017_P4', wtchg_p170390),
-        ('DURA017_NSC_P4_N3C5', wtchg_p170390),
+        ('DURA017_NSC_N3C5_P4', wtchg_p170390),
     ],
     '018': [
         ('GBM018_P12', wtchg_p170218),
@@ -115,7 +114,7 @@ PATIENT_LOOKUP_STAR = {
         ('DURA049_NSC_N5_P2', wtchg_p170503),
     ],
     '050': [
-        ('GBM050_P7', wtchg_p170503),
+        ('GBM050_P7n8', wtchg_p170503),
         ('GBM050_P9', wtchg_p170503),
         ('DURA050_NSC_N12_P3', wtchg_p170503),
         ('DURA050_NSC_N16_P4', wtchg_p170503),
@@ -1385,7 +1384,9 @@ def load_by_patient(
     :return:
     """
     # ensure patient IDs are in correct form
-    if hasattr(patient_ids, '__iter__'):
+    if patient_ids == 'all':
+        patient_ids = [t for t in PATIENT_LOOKUP_STAR.keys() if t != 'GIBCO']
+    elif hasattr(patient_ids, '__iter__'):
         patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
     else:
         if isinstance(patient_ids, str):

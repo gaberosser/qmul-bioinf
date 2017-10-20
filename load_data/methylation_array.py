@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 from settings import DATA_DIR, DATA_DIR_NON_GIT
+from utils.log import get_console_logger
+logger = get_console_logger(__name__)
 
 
 NORM_METHODS = {
@@ -11,6 +13,93 @@ NORM_METHODS = {
     'swan',
     'pbc',
     'funnorm'
+}
+
+
+project_dirs = {
+    "2016-06-10_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner'),
+    "2016-09-21_dutt": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-09-21_dutt'),
+    "2016-12-19_ucl_genomics": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics'),
+    "2017-01-17_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-01-17_brandner'),
+    "2017-02-09_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-02-09_brandner'),
+    "2017-05-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12'),
+    "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
+    "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
+}
+
+PATIENT_LOOKUP_FFPE = {}  # TODO?
+
+PATIENT_LOOKUP_CELL = {
+    '017': [
+        ('GBM017_P3', "2017-09-19"),
+        ('GBM017_P4', "2017-09-19"),
+        ('DURA017_NSC_N3C5_P4', "2017-09-19"),
+    ],
+    '018': [
+        ('GBM018_P12', '2017-05-12'),
+        ('GBM018_P10', '2017-05-12'),
+        ('DURA018_NSC_N4_P4', '2017-05-12'),
+        ('DURA018_NSC_N2_P6', '2016-12-19_ucl_genomics'),
+    ],
+    '019': [
+        ('GBM019_P4', '2016-12-19_ucl_genomics'),
+        ('GBM019_P3n6', "2017-09-19"),
+        ('DURA019_NSC_N8C_P2', '2016-12-19_ucl_genomics'),
+    ],
+    '026': [
+        ('GBM026_P8', '2016-12-19_ucl_genomics'),
+        ('GBM026_P3n4', '2017-05-12'),
+        ('DURA026_NSC_N31D_P5', '2016-12-19_ucl_genomics'),
+    ],
+    '030': [
+        ('GBM030_P9n10', "2017-09-19"),
+        ('GBM030_P5', '2017-05-12'),
+        ('DURA030_NSC_N16B6_P1', '2017-05-12'),
+    ],
+    '031': [
+        ('GBM031_P7', "2017-09-19"),
+        ('GBM031_P4', '2016-12-19_ucl_genomics'),
+        ('DURA031_NSC_N44B_P2', '2016-12-19_ucl_genomics'),
+    ],
+    '044': [
+        ('GBM044_P4', '2017-05-12'),
+        ('GBM044_P8', '2017-05-12'),
+        ('DURA044_NSC_N17_P3', '2017-05-12'),
+        ('DURA044_NSC_N8_P2', '2017-05-12'),
+    ],
+    '049': [
+        ('GBM049_P4', "2017-08-23"),
+        ('GBM049_P6', "2017-08-23"),
+        ('DURA049_NSC_N19_P4', "2017-08-23"),
+        ('DURA049_NSC_N5_P2', "2017-08-23"),
+    ],
+    '050': [
+        ('GBM050_P7n8', "2017-08-23"),
+        ('GBM050_P9', "2017-08-23"),
+        ('DURA050_NSC_N12_P3', "2017-08-23"),
+        ('DURA050_NSC_N16_P4', "2017-08-23"),
+    ],
+    '052': [
+        ('GBM052_P6n7', "2017-09-19"),
+        ('GBM052_P4n5', "2017-09-19"),
+        ('DURA052_NSC_N4_P3', "2017-09-19"),
+        ('DURA052_NSC_N5_P2', "2017-09-19"),
+    ],
+    '054': [
+        ('GBM054_P4', "2017-08-23"),
+        ('GBM054_P6', "2017-08-23"),
+        ('DURA054_NSC_N3C_P2', "2017-08-23"),
+        ('DURA054_NSC_N2E_P1', "2017-08-23"),
+    ],
+    '061': [
+        ('GBM061_P3', "2017-08-23"),
+        ('GBM061_P5', "2017-08-23"),
+        ('DURA061_NSC_N4_P2', "2017-08-23"),
+        ('DURA061_NSC_N6_P4', "2017-08-23"),
+    ],
+    'GIBCO': [
+        ('GIBCONSC_P4', '2017-05-12'),
+    ]
 }
 
 
@@ -101,6 +190,109 @@ def load_beta_values(indir, metafile=None, norm_method='swan', samples=None):
         return (b, meta)
     else:
         return b
+
+
+## TODO: unify the RNASeq batch combiner with this one?
+class IlluminaHumanMethylationLoader(object):
+    # for compatibility with RNASeq loader
+    annotate_by = None
+    def __init__(self, indir, meta_fn, norm_method='swan', samples=None):
+        self.indir = indir
+        self.meta_fn = meta_fn
+        self.norm_method = norm_method
+        self.samples = samples
+        self.data = None
+        self.meta = None
+        self.load_data()
+
+    def load_data(self):
+        if self.norm_method is None:
+            fn = os.path.join(self.indir, 'beta_raw.csv.gz')
+        elif self.norm_method.lower() in NORM_METHODS:
+            fn = os.path.join(self.indir, 'beta_%s.csv.gz' % self.norm_method.lower())
+        else:
+            raise AttributeError("Unrecognised norm_method %s. Options are (%s)." % (
+                self.norm_method,
+                ', '.join(str(t) for t in NORM_METHODS)
+            ))
+
+        self.data = pd.read_csv(fn, header=0, index_col=0)
+        if self.meta_fn is not None:
+            self.meta = pd.read_csv(self.meta_fn, header=0, index_col=0)
+
+        if self.samples is not None:
+            if len(self.data.columns.intersection(self.samples)) != len(self.samples):
+                missing = set(self.samples).difference(self.data.columns)
+                raise KeyError("Some samples were not found: %s" % ', '.join(missing))
+            self.data = self.data.loc[:, self.samples]
+            if self.meta is not None:
+                self.meta = self.meta.loc[self.samples, :]
+                # for compatibility with RNASeq batch loader need to duplicate sample names in a column called 'sample'
+                if 'sample' not in self.meta.columns:
+                    self.meta.insert(0, 'sample', self.meta.index)
+
+
+def load_by_patient(patient_ids, norm_method='swan', include_control=True):
+    """
+    Load data for one or more patients, specified by ID.
+    :param patient_ids: Iterable or single int or char
+    :param include_control: If True (default), alos load Gibco NSC control data.
+    """
+    # ensure patient IDs are in correct form
+    if patient_ids == 'all':
+        patient_ids = [t for t in PATIENT_LOOKUP_CELL.keys() if t != 'GIBCO']
+    elif hasattr(patient_ids, '__iter__'):
+        patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
+    else:
+        if isinstance(patient_ids, str):
+            patient_ids = [patient_ids]
+        else:
+            patient_ids = ['%03d' % patient_ids]
+
+    if include_control:
+        patient_ids += ['GIBCO']
+
+    # precompute the loaders required to avoid reloading multiple times
+    # we'll also take a note of the order for later reordering
+    sample_order = []
+    by_loader = {}
+    for pid in patient_ids:
+        d = PATIENT_LOOKUP_CELL[pid]
+        for s, ldr in d:
+            by_loader.setdefault(ldr, []).append(s)
+            sample_order.append(s)
+
+    # loaders = []
+
+    data = []
+    metas = []
+
+    for ldr, samples in by_loader.items():
+        indir = project_dirs[ldr]
+        beta_dir = os.path.join(indir, 'beta')
+        meta_fn = os.path.join(indir, 'sources.csv')
+        # loaders.append(IlluminaHumanMethylationLoader(beta_dir, meta_fn, norm_method=norm_method, samples=samples))
+        b, m = load_beta_values(beta_dir, metafile=meta_fn, norm_method=norm_method, samples=samples)
+        data.append(b)
+        metas.append(m)
+
+    # combine them, keeping only matching probes
+    probes = reduce(lambda x, y: x.intersection(y), [t.index for t in data])
+    # report dropped probes
+    dropped_probes = [t.index.difference(probes).size for t in data]
+    if any([t > 0 for t in dropped_probes]):
+        logger.warning(
+            "Dropped some probes when combining the data from different batches: %s",
+            ', '.join([str(t) for t in dropped_probes])
+        )
+    # TODO: handle sample name clash
+    beta = pd.concat((t.loc[probes] for t in data), axis=1)
+    meta_cols = reduce(lambda x, y: x.union(y), [t.columns for t in metas])
+    meta = pd.DataFrame(columns=meta_cols, index=sample_order)
+    for t in metas:
+        meta.loc[t.index, t.columns] = t
+
+    return beta, meta
 
 
 def gse36278(dropna=True):
