@@ -35,7 +35,7 @@ outdir = os.path.join(
 )
 
 if __name__ == "__main__":
-    sample_ids = range(6857, 6977)
+    sample_ids = range(7123, 7222)
     # sample_ids = range(6858, 6977)
     obj = api.Heidelberg()
     res = []
