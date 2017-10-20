@@ -135,8 +135,9 @@ def load_methylation_data(ref='gibco', norm_method='swan'):
     m = m.loc[common_probes]
 
     # split gene symbols and store as a set
-    anno.loc[:, 'UCSC_RefGene_Name'] = \
-        anno.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
+    # this should now be carried out at the point of loading
+    # anno.loc[:, 'UCSC_RefGene_Name'] = \
+    #     anno.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
     return b, m, anno
 

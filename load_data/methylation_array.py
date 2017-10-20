@@ -103,7 +103,13 @@ PATIENT_LOOKUP_CELL = {
 }
 
 
-def load_illumina_methylationepic_annotation():
+def load_illumina_methylationepic_annotation(split_genes=True):
+    """
+
+    :param split_genes: If True (default), the RefGene name column will be split into a set - useful for
+    many downstream applications
+    :return:
+    """
     fn = os.path.join(DATA_DIR, 'annotation', 'methylation', 'infinium-methylationepic-v1-0-b3-manifest-file-csv.zip')
     usecols = [
         'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
@@ -124,6 +130,10 @@ def load_illumina_methylationepic_annotation():
     # remove calibration probes
     dat = dat.loc[~dat.loc[:, 'MAPINFO'].isnull()]
     dat.loc[:, 'MAPINFO'] = dat.loc[:, 'MAPINFO'].astype(int)
+
+    if split_genes:
+        dat.loc[:, 'UCSC_RefGene_Name'] = \
+            dat.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
     return dat
 

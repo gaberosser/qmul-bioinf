@@ -2,6 +2,7 @@ try:
     from rpy2 import robjects
     from rpy2.robjects import FloatVector, Formula
     import rpy2.robjects.packages as rpackages
+    RFUNCTIONS_PRESENT = True
 except ImportError:
     RFUNCTIONS_PRESENT = False
 

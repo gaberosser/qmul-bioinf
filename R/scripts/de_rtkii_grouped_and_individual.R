@@ -39,7 +39,7 @@ alignment.dirs <- sapply(
 )
 
 samples <- c(
-  'GBM050_P7',
+  'GBM050_P7n8',
   'GBM050_P9',
   'GBM054_P4',
   'GBM054_P6',

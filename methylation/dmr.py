@@ -11,7 +11,7 @@ import itertools
 from functools import partial
 from collections import defaultdict
 import os
-import copy
+import json
 from utils.output import unique_output_dir
 import numpy as np
 import logging
@@ -83,7 +83,7 @@ def get_clusters_by_location(reg_coll, anno, chr, loc_from, loc_to):
     return this_regs
 
 
-def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1):
+def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1, **kwargs):
     clusters = {}
 
     if n_jobs > 1:
@@ -122,6 +122,7 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1):
         classes[chr] = t
 
     # reform the dictionary, but with meaningful cluster IDs and cluster classes added
+    #### TODO: add genes too?
     clusters_new = {}
     for chr, dat in clusters.items():
         track_multiples = {}
@@ -746,6 +747,77 @@ def wilcoxon_rank_sum_permutation(x, y, n_max=1999, return_stats=False):
 #     fit = d.fit(coords)
 #     lbl[cl] = fit.labels_
 #     n_lbl[cl] = len(set(fit.labels_).difference({-1}))
+
+
+def compute_dmr(
+        mvals,
+        clusters,
+        sample_name_tuples,
+        n_jobs=None,
+        min_median_change=1.4,
+        dmr_test_method="mwu",
+        fdr=0.05,
+        **test_kwargs
+):
+    """
+    Test DMR for the supplied data and clusters
+    :param mvals: A DataFrame of M values, with rows corresponding to probes and columns to samples
+    :param clusters: Computed using `identify_clusters`
+    :param sample_name_tuples: An iterable of 2 iterables giving the groups of samples to compare.
+    These must match the column names of `mvals`.
+    :param n_jobs: Number of parallel workers to use. Default: number available.
+    :param test_kwargs: Other test kwargs passed to test_clusters
+    :return:
+    """
+    if dmr_test_method not in TEST_METHODS:
+        raise AttributeError("DMR test method not recognised: %s" % dmr_test_method)
+    n_jobs = n_jobs or mp.cpu_count()
+
+    test_results = test_clusters(
+        clusters,
+        mvals,
+        samples=sample_name_tuples,
+        min_median_change=min_median_change,
+        n_jobs=n_jobs,
+        method=dmr_test_method,
+        **test_kwargs
+    )
+
+    test_results_relevant = mht_correction(
+        test_results,
+        alpha=fdr
+    )
+    test_results_significant = filter_dictionary(
+        test_results_relevant,
+        filt=lambda x: x['rej_h0'],
+        n_level=3
+    )
+
+    # add list of annotated genes
+    for (chr, cls, cid), attrs in dict_iterator(test_results, n_level=3):
+        genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
+        geneset = reduce(lambda x, y: x.union(y), genes, set())
+        attrs['genes'] = geneset
+
+    return {
+        'test_results': test_results,
+        'test_results_relevant': test_results_relevant,
+        'test_results_significant': test_results_significant,
+    }
+
+
+def count_dmr_genes(res):
+    """
+
+    :param res: test_results (or significant/relevant only) from compute_dmr
+    :return: The number of genes within this set of results
+    """
+    the_genes = reduce(
+        lambda x, y: x.union(y),
+        [t[1]['genes'] for t in dict_iterator(res, n_level=3)],
+        set()
+    )
+    return len(the_genes)
 
 
 if __name__ == "__main__":
