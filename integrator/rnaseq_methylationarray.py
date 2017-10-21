@@ -3,14 +3,19 @@ import numpy as np
 from methylation import dmr
 
 
-def compute_joint_de_dmr(dmr_results, de_results):
+def compute_joint_de_dmr(
+        dmr_results,
+        de_results,
+        de_gene_column='Gene Symbol',
+        de_cols=None
+):
     res = {}
 
     for sid in dmr_results:
-        print sid
         res[sid] = {}
 
-        de_cols = ['genes', 'logFC', 'ensembl', 'direction', 'FDR', 'logCPM']
+        if de_cols is None:
+            de_cols = de_results.values()[0].columns.tolist()
         meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_median1', 'me_median2', 'me_fdr']
         meth_attrs = ['median_change', 'median1', 'median2']
 
@@ -22,7 +27,7 @@ def compute_joint_de_dmr(dmr_results, de_results):
 
             try:
                 # matching entry in DE (by gene name)
-                de_match = de_results[sid].loc[de_results[sid].loc[:, 'genes'].isin(attrs['genes'])]
+                de_match = de_results[sid].loc[de_results[sid].loc[:, de_gene_column].isin(attrs['genes'])]
 
                 if de_match.shape[0] > 0:
                     # form the DMR data block by repeating the same row
@@ -32,7 +37,7 @@ def compute_joint_de_dmr(dmr_results, de_results):
                     )
                     me_data = np.concatenate(
                         (
-                            np.reshape(de_match.genes.values, (de_match.shape[0], 1)),
+                            np.reshape(de_match.loc[:, de_gene_column].values, (de_match.shape[0], 1)),
                             me_data
                         ),
                         axis=1

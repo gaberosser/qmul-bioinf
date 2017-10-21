@@ -3,6 +3,7 @@ from rnaseq.differential_expression import edger
 from rnaseq.filter import filter_by_cpm
 from methylation import process, dmr
 from integrator.rnaseq_methylationarray import compute_joint_de_dmr
+from integrator import plots
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -246,6 +247,9 @@ def dmr_venn_sets(test_results):
 
 
 if __name__ == "__main__":
+    # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
+    DMR_LOAD_DIR = None
+
     outdir = output.unique_output_dir("paired_rnaseq")
     ref_name = 'GIBCONSC_P4'
     pids = ['017', '050', '054', '061']
@@ -300,6 +304,7 @@ if __name__ == "__main__":
     me_data = me_data.loc[common_probes]
 
     # Compute DMR
+    ## TODO: load from JSON if specified
     dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
 
     test_results = dmr_res['results']
