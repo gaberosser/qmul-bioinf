@@ -35,6 +35,7 @@ def compute_joint_de_dmr(
                         [chr, cid] + [attrs[k] for k in meth_attrs] + [attrs['padj']],
                         (de_match.shape[0], 1)
                     )
+                    # attach the gene name (from the DE data, since this one is the matching gene)
                     me_data = np.concatenate(
                         (
                             np.reshape(de_match.loc[:, de_gene_column].values, (de_match.shape[0], 1)),
@@ -49,7 +50,8 @@ def compute_joint_de_dmr(
                         (res[sid][cls], this_match), axis=0, ignore_index=True
                     )
             except Exception as exc:
-                print "Failed to add data: (%s, %s, %d)" % (chr, cls, cid)
+                # cast to int reqd here in case we loaded from JSON (int keys become str)
+                print "Failed to add data: (%s, %s, %d)" % (chr, cls, int(cid))
                 print repr(exc)
                 continue
 

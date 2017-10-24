@@ -246,11 +246,110 @@ def dmr_venn_sets(test_results):
     }
 
 
+def n_overlap_datum(joint_dmr_de, this_de, this_dmr):
+    n_de = this_de.shape[0]
+    n_dmr = len(list(dmr.dict_iterator(this_dmr, n_level=3)))
+    n_dmr_genes = dmr.count_dmr_genes(this_dmr)
+    n_overlaps = joint_dmr_de['all'].shape[0]
+    n_overlaps_unique = joint_dmr_de['all'].me_genes.unique().shape[0]
+    this_datum = [n_de, n_dmr, n_dmr_genes, n_overlaps, n_overlaps_unique]
+    for cls in dmr.CLASSES:
+        this_datum.append(joint_dmr_de[cls].shape[0])
+        this_datum.append(joint_dmr_de[cls].me_genes.unique().shape[0])
+    return this_datum
+
+
+def joint_de_dmr_counts(joint_de_dmr_result, de_result, dmr_result):
+    the_cols = ['DE genes', 'DMR', 'DMR genes', 'overlaps', 'unique overlaps']
+    the_cols += reduce(lambda x, y: x + y, [['%s' % t, '%s_unique' % t] for t in dmr.CLASSES], [])
+    joint_count_table = pd.DataFrame(
+        columns=the_cols,
+        index=pd.Index(joint_de_dmr_result.keys(), name='patient'),
+    )
+    for pid in joint_de_dmr_result:
+        joint_count_table.loc[pid] = n_overlap_datum(joint_de_dmr_result[pid], de_result[pid], dmr_result[pid])
+    return joint_count_table
+
+
+def joint_de_dmr_table(joint_de_dmr_result):
+
+    de_cols = [
+        ('Gene Symbol', 'DE gene symbol'),
+        ('logFC', 'DE logFC'),
+        ('logCPM', 'DE logCPM'),
+        ('PValue', 'DE pvalue'),
+        ('FDR', 'DE FDR'),
+    ]
+
+    dmr_cols = [
+        'DMR clusterID',
+        'DMR class tss',
+        'DMR class gene',
+        'DMR class island',
+        'DMR chr',
+        'DMR median delta M',
+        'DMR padj',
+    ]
+
+    dmr_col_map = [
+        ('DMR clusterID', 'me_cid'),
+        ('DMR chr', 'chr'),
+        ('DMR median delta M', 'me_mediandelta'),
+        ('DMR padj', 'me_fdr'),
+    ]
+    dmr_class_series = pd.Series(0, index=['DMR class %s' % t for t in dmr.CLASSES])
+    direction_series = pd.Series('-', index=['DE direction, DMR direction'])
+
+    all_cols = [t[1] for t in de_cols] + dmr_cols + ['DE direction', 'DMR direction']
+
+    out = {}
+
+    for pid in joint_de_dmr_result:
+        df = pd.DataFrame(columns=all_cols)
+        row_lookup = {}
+        i = 0
+        for cls in dmr.CLASSES:
+            this_tbl = joint_de_dmr_result[pid][cls]
+            for _, row in this_tbl.iterrows():
+                hsh = (row.loc['Gene Symbol'], row.loc['chr'], row.loc['me_cid'])
+                if hsh in row_lookup:
+                    # already seen this precise DE / DMR combination
+                    # we only need to update the class types
+                    df.loc[row_lookup[hsh], 'DMR class %s' % cls] = 1
+                else:
+                    new_row_de = pd.Series(
+                        row.loc[list(zip(*de_cols)[0])].values,
+                        index=list(zip(*de_cols)[1])
+                    )
+
+                    new_row_dmr = pd.Series(
+                        row.loc[list(zip(*dmr_col_map)[1])].values,
+                        index=list(zip(*dmr_col_map)[0])
+                    )
+                    new_row_dmr = new_row_dmr.append(dmr_class_series)
+                    new_row_dmr.loc['DMR class %s' % cls] = 1
+
+                    new_row = pd.concat((new_row_de, new_row_dmr))
+                    new_row = new_row.append(direction_series)
+                    new_row.loc['DE direction'] = 'U' if float(row.loc['logFC']) >= 0 else 'D'
+                    new_row.loc['DMR direction'] = 'U' if float(row.loc['me_mediandelta']) >= 0 else 'D'
+                    df.loc[i] = new_row
+
+                    row_lookup[hsh] = i
+                    i += 1
+
+        # sort by abs DE logFC
+        idx = np.abs(df.loc[:, 'DE logFC']).sort_values(ascending=False).index
+        out[pid] = df.loc[idx]
+
+    return out
+
+
 if __name__ == "__main__":
     # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
-    DMR_LOAD_DIR = None
+    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
 
-    outdir = output.unique_output_dir("paired_rnaseq")
+    outdir = output.unique_output_dir("integrate_rnaseq_methylation")
     ref_name = 'GIBCONSC_P4'
     pids = ['017', '050', '054', '061']
 
@@ -305,17 +404,36 @@ if __name__ == "__main__":
 
     # Compute DMR
     ## TODO: load from JSON if specified
-    dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
+    loaded = False
+    if DMR_LOAD_DIR is not None:
+        fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.json')
+        if os.path.isfile(fn_in):
+            with open(fn_in, 'rb') as f:
+                test_results = json.load(f)
+            loaded = True
+        # recompute relevant and significant results
+        test_results_relevant = dmr.filter_dictionary(
+            test_results,
+            lambda x: 'pval' in x,
+            n_level=5,
+        )
+        test_results_significant = dmr.filter_dictionary(
+            test_results,
+            lambda x: 'pval' in x and x['rej_h0'],
+            n_level=5,
+        )
 
-    test_results = dmr_res['results']
-    test_results_relevant = dmr_res['relevant']
-    test_results_significant = dmr_res['significant']
+    if not loaded:
+        dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
+        test_results = dmr_res['results']
+        test_results_relevant = dmr_res['relevant']
+        test_results_significant = dmr_res['significant']
 
-    # Save DMR results to disk
-    fout = os.path.join(outdir, "dmr_results.json")
-    with open(fout, 'wb') as f:
-        json.dump(test_results, f, cls=TestResultEncoder)
-    print "Saved DMR results to %s" % fout
+        # Save DMR results to disk
+        fout = os.path.join(outdir, "dmr_results.json")
+        with open(fout, 'wb') as f:
+            json.dump(test_results, f, cls=TestResultEncoder)
+        print "Saved DMR results to %s" % fout
 
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']
@@ -341,10 +459,37 @@ if __name__ == "__main__":
     dmr_gibco_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
     dmr_intersection = dmr.dict_by_sublevel(test_results_inclusive, 2, 'matched')
 
-    ## FIXME: failed to add data error
-
     joint_de_dmr = {
-        ('matched', 'matched'): compute_joint_de_dmr(dmr_matched, de_matched),
-        ('matched_only', 'matched_only'): compute_joint_de_dmr(dmr_matched_only, de_matched_only),
-        ('insc_ref', 'insc_ref'): compute_joint_de_dmr(dmr_intersection, de_intersection),
+        'matched_all': compute_joint_de_dmr(dmr_matched, de_matched),
+        'matched_only': compute_joint_de_dmr(dmr_matched_only, de_matched_only),
+        'matched_and_ref': compute_joint_de_dmr(dmr_intersection, de_intersection),
     }
+
+    joint_de_dmr_counts = {
+        'matched_all': joint_de_dmr_counts(joint_de_dmr['matched_all'], de_matched, dmr_matched),
+        'matched_only': joint_de_dmr_counts(
+            joint_de_dmr['matched_only'],
+            de_matched_only,
+            dmr_matched_only
+        ),
+        'matched_and_ref': joint_de_dmr_counts(
+            joint_de_dmr['matched_and_ref'],
+            de_intersection,
+            dmr_intersection
+        ),
+    }
+
+    # export integrated results to lists
+    tmp_for_xl = {}
+
+    for k, v in joint_de_dmr.items():
+        this_tbl = joint_de_dmr_table(v)
+        for pid in this_tbl:
+            tmp_for_xl.setdefault(pid, {})[k] = this_tbl[pid]
+
+    xl_writer = pd.ExcelWriter(os.path.join(outdir, "individual_gene_lists_de_dmr.xlsx"))
+    for pid in tmp_for_xl:
+        for k in tmp_for_xl[pid]:
+            sheet_name = 'GBM%s_%s' % (pid, k)
+            tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
+    xl_writer.save()
