@@ -191,7 +191,18 @@ if __name__ == '__main__':
             idx_down_ref = de_gibco[pid].loc[de_gibco[pid].logFC < 0].index
             de_down[pid], de_counts_down[pid] = setops.venn_from_arrays(idx_down_match, idx_down_ref)
 
-            # write to files, one worksheet per list (i.e. 3 per individual)
+            # write to files, one worksheet per list (5 per individual)
+            # paired comparison (all)
+            block = de_matched[pid].sort_values('PValue')
+            add_gene_symbols(block)
+            add_fc_direction(block)
+            block.to_excel(xl_writer, 'GBM%s_pair_all' % pid)
+
+            # reference comparison (all)
+            block = de_gibco[pid].sort_values('PValue')
+            add_gene_symbols(block)
+            add_fc_direction(block)
+            block.to_excel(xl_writer, 'GBM%s_ref_all' % pid)
 
             # paired comparison only
             block = de_matched[pid].loc[de[pid]['10']].sort_values('PValue')

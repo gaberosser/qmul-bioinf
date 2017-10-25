@@ -2,6 +2,7 @@ from load_data import rnaseq_data, methylation_array
 from rnaseq.differential_expression import edger
 from rnaseq.filter import filter_by_cpm
 from methylation import process, dmr
+from methylation.plots import venn_dmr_counts, dmr_overlap
 from integrator.rnaseq_methylationarray import compute_joint_de_dmr
 from integrator import plots
 import pandas as pd
@@ -403,7 +404,6 @@ if __name__ == "__main__":
     me_data = me_data.loc[common_probes]
 
     # Compute DMR
-    ## TODO: load from JSON if specified
     loaded = False
     if DMR_LOAD_DIR is not None:
         fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.json')
@@ -449,59 +449,13 @@ if __name__ == "__main__":
         outdir=outdir
     )
 
-    ## TODO: move this elsewhere
-    from plotting import venn
-    set_labels = ['Isogenic', 'Reference']
-
-    # isogenic vs reference in each patient, all, hyper and hypomethylated
-
-    fig, axs = plt.subplots(3, len(pids), figsize=(11, 7))
-    for i, pid in enumerate(pids):
-        a = test_results_significant[pid]['matched']
-        b = test_results_significant[pid]['gibco']
-
-        a_all = set([
-            (t[0], t[2]) for t, _ in dmr.dict_iterator(a, n_level=3)
-        ])
-        b_all = set([
-            (t[0], t[2]) for t, _ in dmr.dict_iterator(b, n_level=3)
-        ])
-        venn.venn_diagram(a_all, b_all, set_labels=set_labels, ax=axs[0, i])
-        axs[0, i].set_title("GBM%s" % pid)
-
-        a_up = set([
-            (t[0], t[2]) for t, attr in dmr.dict_iterator(a, n_level=3) if attr['median_change'] > 0
-        ])
-        b_up = set([
-            (t[0], t[2]) for t, attr in dmr.dict_iterator(b, n_level=3) if attr['median_change'] > 0
-        ])
-        venn.venn_diagram(a_up, b_up, set_labels=set_labels, ax=axs[1, i])
-
-        a_down = set([
-            (t[0], t[2]) for t, attr in dmr.dict_iterator(a, n_level=3) if attr['median_change'] < 0
-        ])
-        b_down = set([
-            (t[0], t[2]) for t, attr in dmr.dict_iterator(b, n_level=3) if attr['median_change'] < 0
-        ])
-        venn.venn_diagram(a_down, b_down, set_labels=set_labels, ax=axs[2, i])
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_venn.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "dmr_venn.pdf"))
-
-    # overlap in all patients
-    a_all = []
-    b_all = []
-    for i, pid in enumerate(pids):
-        a = test_results_significant[pid]['matched']
-        b = test_results_significant[pid]['gibco']
-
-        a_all.append(set([(t[0], t[2]) for t, _ in dmr.dict_iterator(a, n_level=3)]))
-        b_all.append(set([(t[0], t[2]) for t, _ in dmr.dict_iterator(b, n_level=3)]))
-    fig = plt.figure(figsize=(7, 7))
-    ax = fig.add_subplot(111)
-    venn.venn_diagram(*a_all, set_labels=pids)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_matched_overlap.png"), dpi=200)
+    # plot the DMR counts, classified into hyper and hypomethylation
+    venn_dmr_counts(test_results_significant, outdir=outdir, figname="dmr_venn_all")
+    for cls in dmr.CLASSES:
+        venn_dmr_counts(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_venn_%s" % cls)
+    dmr_overlap(test_results_significant, outdir=outdir, figname="dmr_overlap_all")
+    for cls in dmr.CLASSES:
+        dmr_overlap(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_overlap_%s" % cls)
 
     # side story: check overlap between individuals and group
     # skip this for now but useful to know!
@@ -598,3 +552,153 @@ if __name__ == "__main__":
             sheet_name = 'GBM%s_%s' % (pid, k)
             tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
     xl_writer.save()
+
+
+    # def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4, fig_title=None, plot_genes=None):
+    #     """
+    #
+    #     :param meth_de:
+    #     :param text_file:
+    #     :param fig_file:
+    #     :param min_overlap:
+    #     :param fig_title:
+    #     :param plot_genes: None, 'scatter', 'colours'
+    #     :return:
+    #     """
+    #     n_sample = len(meth_de)
+    #     # one of the samples is 'all', which we ignore
+    #     bns = list(setops.binary_combinations_sum_gte(n_sample - 1, min_overlap))
+    #
+    #     fig_kws = {'figsize': (8, 3.2)}
+    #     # if fig_title is not None:
+    #     #     fig_kws['num'] = fig_title
+    #     fig, axs = plt.subplots(ncols=3, num=fig_title, **fig_kws)
+    #
+    #     f = open(text_file, 'wb')
+    #     venn_counts = {}
+    #     venn_sets = {}
+    #     core_sets = {}
+    #
+    #     if plot_genes:
+    #         fig_gene_scatter, axs_gene_scatter = plt.subplots(nrows=1, ncols=3, **fig_kws)
+    #         fig_gene_colours, axs_gene_colours = plt.subplots(nrows=1, ncols=3, figsize=(5, 8))
+    #         max_y = 0
+    #         max_de = 0.
+    #         max_dmr = 0.
+    #
+    #     # one Venn diagram per class
+    #     # Venn components are patients
+    #     # we therefore build a structure containing patient-wise gene sets for each class
+    #     for i, cls in enumerate(dmr.CLASSES):
+    #         ax = axs[i]
+    #         # reordered dict by sublevel
+    #         tmp = dmr.dict_by_sublevel(meth_de, 2, cls)
+    #         # build labels and gene lists to control the order (otherwise we're relying on dict iteration order)
+    #         # we skip over 'all' here
+    #         set_labels = []
+    #         gene_sets = []
+    #         for k, t in tmp.items():
+    #             if k != 'all':
+    #                 gene_sets.append(set(t.genes))
+    #                 set_labels.append(k)
+    #         venn_res, venn_sets[cls], venn_counts[cls] = venn.venn_diagram(
+    #             *gene_sets,
+    #             set_labels=set_labels,
+    #             ax=ax
+    #         )
+    #         ax.set_title(cls)
+    #
+    #         # Core genes are defined as those supported by min_overlap samples
+    #         core_genes = set()
+    #         for bn in bns:
+    #             core_genes = core_genes.union(venn_sets[cls][bn])
+    #         core_sets[cls] = core_genes
+    #         core_genes = sorted(core_genes)
+    #         print "%s core genes [%d]: %s" % (cls, len(core_genes), ', '.join(core_genes))
+    #         f.write("%s core genes [%d]: %s\n" % (cls, len(core_genes), ', '.join(core_genes)))
+    #
+    #         if plot_genes:
+    #             j = 0
+    #             de_vals = []
+    #             dmr_vals = []
+    #             for cg in core_genes:
+    #                 val_de = 0.
+    #                 val_dmr = 0.
+    #                 n = 0.
+    #                 # loop over patients
+    #                 for t in tmp.values():
+    #                     if (t.genes == cg).any():
+    #                         n += (t.genes == cg).sum()
+    #                         the_rows = t.loc[t.genes == cg]
+    #                         val_de += the_rows.logFC.astype(float).sum()
+    #                         val_dmr += the_rows.me_mediandelta.astype(float).sum()
+    #                 x = val_de / n
+    #                 y = val_dmr / n
+    #                 de_vals.append(x)
+    #                 dmr_vals.append(y)
+    #                 axs_gene_scatter[i].text(val_de / n, val_dmr / n, cg)
+    #
+    #                 if x > 0 and y > 0:
+    #                     cmap = plt.cm.Blues
+    #                 elif x < 0 and y < 0:
+    #                     cmap = plt.cm.Purples
+    #                 elif x > 0 and y < 0:
+    #                     cmap = plt.cm.Reds
+    #                 elif x < 0 and y > 0:
+    #                     cmap = plt.cm.Greens
+    #                 else:
+    #                     cmap = plt.cm.Greys
+    #
+    #                 # scaling
+    #                 ## FIXME: this would be better applied afterwards, like the axis scaling
+    #                 xn = x / 12.
+    #                 yn = y / 6.
+    #                 rn = (xn ** 2 + yn ** 2) ** .5
+    #                 rn = min(max(rn, 0.3), 0.9)
+    #                 c = cmap(rn)
+    #                 axs_gene_colours[i].text(0, j, cg, color=c)
+    #                 j += 1.
+    #                 axs_gene_colours[i].axis('off')
+    #                 axs_gene_colours[i].set_title(cls)
+    #
+    #             axs_gene_scatter[i].scatter(de_vals, dmr_vals)
+    #             axs_gene_scatter[i].axhline(0.)
+    #             axs_gene_scatter[i].axvline(0.)
+    #             axs_gene_scatter[i].set_xlabel('RNASeq DE logFC')
+    #             axs_gene_scatter[i].set_ylabel('EPIC DMR median delta M')
+    #
+    #             max_de = max(max_de, np.abs(de_vals).max())
+    #             max_dmr = max(max_dmr, np.abs(dmr_vals).max())
+    #             max_y = max(max_y, j)
+    #
+    #     if plot_genes:
+    #         for i in range(len(dmr.CLASSES)):
+    #             axs_gene_colours[i].set_ylim([0, max_y])
+    #             axs_gene_scatter[i].set_xlim([-max_de * 1.2, max_de * 1.2])
+    #             axs_gene_scatter[i].set_ylim([-max_dmr * 1.2, max_dmr * 1.2])
+    #
+    #     # intersection of all
+    #     core_all = sorted(reduce(set.intersection, core_sets.values()))
+    #     print "Core genes shared across all classes [%d]: %s" % (len(core_all), ', '.join(core_all))
+    #     f.write("Core genes shared across all classes [%d]: %s\n" % (len(core_all), ', '.join(core_all)))
+    #
+    #     # union of all
+    #     core_union = sorted(reduce(set.union, core_sets.values()))
+    #     print "Core genes in >=1 class [%d]: %s" % (len(core_union), ', '.join(core_union))
+    #     f.write("Core genes in >= 1 class [%d]: %s\n" % (len(core_union), ', '.join(core_union)))
+    #     f.close()
+    #
+    #     fig.tight_layout()
+    #     fig.savefig("%s.png" % fig_file, dpi=200)
+    #     fig.savefig("%s.pdf" % fig_file)
+    #
+    #     if plot_genes:
+    #         fig_gene_scatter.tight_layout()
+    #         fig_gene_scatter.savefig("%s_genescatter.png" % fig_file, dpi=200)
+    #         fig_gene_scatter.savefig("%s_genescatter.pdf" % fig_file)
+    #
+    #         fig_gene_colours.tight_layout()
+    #         fig_gene_colours.savefig("%s_genecolours.png" % fig_file, dpi=200)
+    #         fig_gene_colours.savefig("%s_genecolours.pdf" % fig_file)
+    #
+    #     return venn_sets

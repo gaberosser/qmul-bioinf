@@ -1,6 +1,9 @@
 from matplotlib import pyplot as plt
 from matplotlib import patches, collections
 from plotting.common import COLOUR_BREWERS
+from plotting import venn
+import dmr
+import os
 import seaborn as sns
 
 
@@ -124,3 +127,111 @@ def illustrate_regions(anno, regions, cls_list, cmap=None,
             )
             ax.add_collection(coll)
             print "Added collection of %d patches with colour %s" % (len(ptchs), c)
+
+
+def venn_dmr_counts(
+        dmr_results,
+        pids=None,
+        outdir=None,
+        figname='dmr_venn',
+        probe_class=None,
+        comparisons=('matched', 'gibco'),
+        set_labels=('Isogenic', 'Reference')
+):
+    """
+    For each supplied patient (top level of keys in the supplied results), generate 3 Venn diagrams
+    - all DMR count
+    - hypermethylated DMR counts
+    - hypomethylated DMR counts
+    In each case, splitting according to `comparisons`
+    :param dmr_results:
+    :param outdir:
+    :param probe_class: If supplied, limit the plotting to this class
+    :param comparisons: Iterable giving the comparisons to use.
+    :param set_labels: Iterable giving the set labels to use for the plot. Coresponds to comparisons.
+    :return:
+    """
+    if len(set_labels) != len(comparisons):
+        raise AttributeError("set_labels must be the same length as comparisons")
+    if pids is None:
+        pids = dmr_results.keys()
+
+    # isogenic vs reference in each patient, all, hyper and hypomethylated
+    fig, axs = plt.subplots(3, len(pids), figsize=(11, 7), num=figname)
+    for i, pid in enumerate(pids):
+        inputs = [
+            dmr_results[pid][k] for k in comparisons
+        ]
+        n_level = 3
+        if probe_class is not None:
+            inputs = [dmr.dict_by_sublevel(t, 2, probe_class) for t in inputs]
+            n_level = 2
+            hasher = lambda x: tuple(x)
+        else:
+            hasher = lambda x: (x[0], x[2])
+
+        inputs_all = [
+            set([
+                hasher(t) for t, _ in dmr.dict_iterator(x, n_level=n_level)
+            ]) for x in inputs
+        ]
+        inputs_up = [
+            set([
+                hasher(t) for t, attr in dmr.dict_iterator(x, n_level=n_level) if attr['median_change'] > 0
+            ]) for x in inputs
+        ]
+        inputs_down = [
+            set([
+                hasher(t) for t, attr in dmr.dict_iterator(x, n_level=n_level) if attr['median_change'] < 0
+            ]) for x in inputs
+        ]
+
+        venn.venn_diagram(set_labels=set_labels, ax=axs[0, i], *inputs_all)
+        axs[0, i].set_title("GBM%s" % pid)
+
+        venn.venn_diagram(set_labels=set_labels, ax=axs[1, i], *inputs_up)
+        venn.venn_diagram(set_labels=set_labels, ax=axs[2, i], *inputs_down)
+
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
+        fig.savefig(os.path.join(outdir, "%s_venn.pdf" % figname))
+
+
+def dmr_overlap(
+        dmr_results,
+        pids=None,
+        probe_class=None,
+        comparisons=('matched', 'gibco'),
+        comparison_titles=('Isogenic', 'Reference'),
+        outdir=None,
+        figname='dmr_individual_overlap'
+):
+    if len(comparisons) != len(comparison_titles):
+        raise AttributeError("Length of comparisons and comparison_titles must be equal.")
+    if pids is None:
+        pids = dmr_results.keys()
+    fig, axs = plt.subplots(1, len(comparisons), num=figname)
+
+    for i, cmp in enumerate(comparisons):
+        inputs = [
+            dmr_results[pid][cmp] for pid in pids
+        ]
+        n_level = 3
+        if probe_class is not None:
+            inputs = [dmr.dict_by_sublevel(t, 2, probe_class) for t in inputs]
+            n_level = 2
+            hasher = lambda x: tuple(x)
+        else:
+            hasher = lambda x: (x[0], x[2])
+
+        inputs = [
+            set([hasher(t) for t, _ in dmr.dict_iterator(x, n_level=n_level)]) for x in inputs
+        ]
+        venn.venn_diagram(set_labels=pids, ax=axs[i], *inputs)
+        axs[i].set_title(comparison_titles[i])
+
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
+        fig.savefig(os.path.join(outdir, "%s.pdf" % figname))
