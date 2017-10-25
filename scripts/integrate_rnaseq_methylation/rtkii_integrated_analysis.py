@@ -449,6 +449,60 @@ if __name__ == "__main__":
         outdir=outdir
     )
 
+    ## TODO: move this elsewhere
+    from plotting import venn
+    set_labels = ['Isogenic', 'Reference']
+
+    # isogenic vs reference in each patient, all, hyper and hypomethylated
+
+    fig, axs = plt.subplots(3, len(pids), figsize=(11, 7))
+    for i, pid in enumerate(pids):
+        a = test_results_significant[pid]['matched']
+        b = test_results_significant[pid]['gibco']
+
+        a_all = set([
+            (t[0], t[2]) for t, _ in dmr.dict_iterator(a, n_level=3)
+        ])
+        b_all = set([
+            (t[0], t[2]) for t, _ in dmr.dict_iterator(b, n_level=3)
+        ])
+        venn.venn_diagram(a_all, b_all, set_labels=set_labels, ax=axs[0, i])
+        axs[0, i].set_title("GBM%s" % pid)
+
+        a_up = set([
+            (t[0], t[2]) for t, attr in dmr.dict_iterator(a, n_level=3) if attr['median_change'] > 0
+        ])
+        b_up = set([
+            (t[0], t[2]) for t, attr in dmr.dict_iterator(b, n_level=3) if attr['median_change'] > 0
+        ])
+        venn.venn_diagram(a_up, b_up, set_labels=set_labels, ax=axs[1, i])
+
+        a_down = set([
+            (t[0], t[2]) for t, attr in dmr.dict_iterator(a, n_level=3) if attr['median_change'] < 0
+        ])
+        b_down = set([
+            (t[0], t[2]) for t, attr in dmr.dict_iterator(b, n_level=3) if attr['median_change'] < 0
+        ])
+        venn.venn_diagram(a_down, b_down, set_labels=set_labels, ax=axs[2, i])
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_venn.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_venn.pdf"))
+
+    # overlap in all patients
+    a_all = []
+    b_all = []
+    for i, pid in enumerate(pids):
+        a = test_results_significant[pid]['matched']
+        b = test_results_significant[pid]['gibco']
+
+        a_all.append(set([(t[0], t[2]) for t, _ in dmr.dict_iterator(a, n_level=3)]))
+        b_all.append(set([(t[0], t[2]) for t, _ in dmr.dict_iterator(b, n_level=3)]))
+    fig = plt.figure(figsize=(7, 7))
+    ax = fig.add_subplot(111)
+    venn.venn_diagram(*a_all, set_labels=pids)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_matched_overlap.png"), dpi=200)
+
     # side story: check overlap between individuals and group
     # skip this for now but useful to know!
 
@@ -478,6 +532,57 @@ if __name__ == "__main__":
             dmr_intersection
         ),
     }
+
+    ## TODO: move this elsewhere
+    aa = joint_de_dmr['matched_only']['054']['tss'].set_index('Gene Symbol')
+    x = aa.logFC
+    y = aa.me_mediandelta.astype(float)
+    r = (x ** 2 + y ** 2) ** .5
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    idx_ul = ((x < 0) & (y > 0))
+    ax.scatter(x.loc[idx_ul], y.loc[idx_ul], c='r')
+    idx_br = ((x > 0) & (y < 0))
+    ax.scatter(x.loc[idx_br], y.loc[idx_br], c='b')
+    idx_od = ((x > 0) & (y > 0)) | ((x < 0) & (y < 0))
+    ax.scatter(x.loc[idx_od], y.loc[idx_od], c='gray')
+
+    for i in np.where(idx_ul & (r > 8))[0]:
+        ax.text(x.iloc[i], y.iloc[i], x.index[i], color='r')
+    for i in np.where(idx_br & (r > 5))[0]:
+        ax.text(x.iloc[i], y.iloc[i], x.index[i], color='b')
+    ax.axhline(0, ls='--', c='k', alpha=0.4)
+    ax.axvline(0, ls='--', c='k', alpha=0.4)
+    ax.set_xlabel("DE logFC")
+    ax.set_ylabel("DMR median delta")
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_matched_only.png"), dpi=200)
+
+    aa = joint_de_dmr['matched_and_ref']['054']['tss'].set_index('Gene Symbol')
+    x = aa.logFC
+    y = aa.me_mediandelta.astype(float)
+    r = (x ** 2 + y ** 2) ** .5
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    idx_ul = ((x < 0) & (y > 0))
+    ax.scatter(x.loc[idx_ul], y.loc[idx_ul], c='r')
+    idx_br = ((x > 0) & (y < 0))
+    ax.scatter(x.loc[idx_br], y.loc[idx_br], c='b')
+    idx_od = ((x > 0) & (y > 0)) | ((x < 0) & (y < 0))
+    ax.scatter(x.loc[idx_od], y.loc[idx_od], c='gray')
+
+    for i in np.where(idx_ul & (r > 12))[0]:
+        ax.text(x.iloc[i], y.iloc[i], x.index[i], color='r')
+    for i in np.where(idx_br & (r > 8))[0]:
+        ax.text(x.iloc[i], y.iloc[i], x.index[i], color='b')
+    ax.axhline(0, ls='--', c='k', alpha=0.4)
+    ax.axvline(0, ls='--', c='k', alpha=0.4)
+    ax.set_xlabel("DE logFC")
+    ax.set_ylabel("DMR median delta")
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_matched_and_ref.png"), dpi=200)
 
     # export integrated results to lists
     tmp_for_xl = {}
