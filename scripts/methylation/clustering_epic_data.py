@@ -2,7 +2,7 @@ import os
 from utils.output import unique_output_dir
 from load_data import methylation_array
 from plotting import clustering, pca
-from clustering import lda
+from classification import lda
 from sklearn.decomposition import PCA
 import pandas as pd
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
