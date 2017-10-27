@@ -1,3 +1,37 @@
+import csv
+
+
+def data_to_gct(data, outfile):
+    nrow, ncol = data.shape
+    with open(outfile, 'wb') as f:
+        c = csv.writer(f, delimiter='\t')
+        # three header columns
+        c.writerow(["#1.2"])
+        c.writerow([nrow, ncol])
+        c.writerow(['NAME', 'Description'] + data.columns.tolist())
+        for name, vals in data.iterrows():
+            c.writerow([name, "NA"] + vals.values.tolist())
+
+
+def phenotypes_to_cls(groups, outfile):
+    """
+
+    :param groups: Iterable giving a group name (string) for each sample.
+    :param outfile:
+    :return:
+    """
+    nsample = len(groups)
+    classes = sorted(set(groups))
+    ncls = len(classes)
+    # factorise the classes
+    cls_map = dict([(t, i) for i, t in enumerate(classes)])
+    with open(outfile, 'wb') as f:
+        c = csv.writer(f, delimiter=' ')
+        c.writerow([nsample, ncls, 1])
+        c.writerow(['#'] + classes)
+        c.writerow([cls_map[t] for t in groups])
+
+
 def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ecdf=False):
     """
     Run single sample gene set enrichment analysis (ssGSEA) on the supplied data, following the details given in:
@@ -8,7 +42,7 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
 
     See R/stats/ssgsea.R for a further example (found online)
 
-    :param sample_data: Pandas dataframe, rows are genes and columns are samples
+    :param sample_data: Pandas Series
     :param gene_set: Dictionary. Each entry has a key giving the name of the gene set and value giving a list of genes.
     :param alpha: The weighting used to compute the ECDF. Default is 0.25 following Barbie et al. (2009)
     :param return_ecdf: If True, also return the two ECDFs being considered. Useful for plotting?
