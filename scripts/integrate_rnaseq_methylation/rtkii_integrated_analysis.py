@@ -1,5 +1,5 @@
 from load_data import rnaseq_data, methylation_array
-from rnaseq.differential_expression import edger
+from rnaseq import differential_expression
 from rnaseq.filter import filter_by_cpm
 from methylation import process, dmr
 from methylation.plots import venn_dmr_counts, dmr_overlap
@@ -10,6 +10,9 @@ import numpy as np
 from scipy import stats
 import references
 import os
+import itertools
+import csv
+import datetime
 import json
 from utils import output, setops
 from matplotlib import pyplot as plt
@@ -45,7 +48,9 @@ def add_fc_direction(df):
     df.insert(df.shape[1], 'Direction', direction)
 
 
-def compute_de(rnaseq_obj, pids):
+def compute_de(rnaseq_obj, pids, lfc=1, fdr=0.01, method='QLGLM'):
+    if method not in {'QLGLM', 'GLM', 'exact'}:
+        raise NotImplementedError("Unsupported method.")
     de_matched = {}
     de_gibco = {}
     de = {}
@@ -62,9 +67,17 @@ def compute_de(rnaseq_obj, pids):
 
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_contrast = "GBM - iNSC"
+            the_pair = ['iNSC', 'GBM']
 
-            de_matched[pid] = edger(the_data, the_groups, the_contrast)
+            if method == 'QLGLM':
+                de_matched[pid] = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+            elif method == 'GLM':
+                de_matched[pid] = differential_expression.edger_glmfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+            elif method == 'exact':
+                de_matched[pid] = differential_expression.edger_exacttest(the_data, the_groups, pair=the_pair, lfc=lfc, fdr=fdr)
+
             add_gene_symbols(de_matched[pid])
+            add_fc_direction(de_matched[pid])
 
             # repeat with gibco reference
             # use the same genes, rather than filtering again
@@ -72,9 +85,17 @@ def compute_de(rnaseq_obj, pids):
             the_data = rnaseq_obj.data.loc[the_genes, the_idx]
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_contrast = "GBM - NSC"
+            the_pair = ['NSC', 'GBM']
 
-            de_gibco[pid] = edger(the_data, the_groups, the_contrast)
+            if method == 'QLGLM':
+                de_gibco[pid] = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+            elif method == 'GLM':
+                de_gibco[pid] = differential_expression.edger_glmfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+            elif method == 'exact':
+                de_gibco[pid] = differential_expression.edger_exacttest(the_data, the_groups, pair=the_pair, lfc=lfc, fdr=fdr)
+
             add_gene_symbols(de_gibco[pid])
+            add_fc_direction(de_gibco[pid])
 
             # Separate into sets
             de[pid], _ = setops.venn_from_arrays(de_matched[pid].index, de_gibco[pid].index)
@@ -346,6 +367,46 @@ def joint_de_dmr_table(joint_de_dmr_result):
     return out
 
 
+def results_to_excel(blocks, fn):
+    """
+
+    :param blocks: Dictionary containing the different comparisons to save. Values are pandas dataframes.
+    :param fn: Output file
+    :return:
+    """
+    xl_writer = pd.ExcelWriter(outfile)
+    # sort the keys for a more sensible order
+    keys = sorted(blocks.keys())
+    for k in keys:
+        bl = blocks[k]
+        bl.to_excel(xl_writer, k)
+    xl_writer.save()
+
+
+def results_to_ipa_format(blocks, outdir, incl_cols=('logFC', 'FDR')):
+    incl_cols = list(incl_cols)
+
+    for k, bl in blocks.iteritems():
+        fn = os.path.join(outdir, "%s.txt" % k)
+        header = [
+            ['Key', 'Value'],
+            ['identifier_types', 'Ensembl'],
+            ['observation_name', k],
+            ['date_created', datetime.datetime.now().isoformat()]
+        ]
+        with open(fn, 'wb') as f:
+            c = csv.writer(f, delimiter='\t')
+            # meta header
+            c.writerows(header)
+            c.writerow(['Data_begins_here'])
+            # data column header
+            c.writerow(['ID'] + incl_cols)
+            # reduced block
+            reduced_block = bl.loc[:, incl_cols]
+            c.writerows(reduced_block.itertuples())
+
+
+
 if __name__ == "__main__":
     # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
@@ -354,12 +415,18 @@ if __name__ == "__main__":
     ref_name = 'GIBCONSC_P4'
     pids = ['017', '050', '054', '061']
 
+    de_params = {
+        'lfc': 1,
+        'fdr': 0.01,
+        'method': 'GLM'
+    }
+
     dmr_params = {
         'core_min_sample_overlap': 3,  # 3 / 4 samples must match
         'd_max': 400,
         'n_min': 6,
         'delta_m_min': 1.4,
-        'fdr': 0.05,
+        'fdr': 0.01,
         'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
         'test_kwargs': {},
         'n_jobs': 8,
@@ -373,23 +440,48 @@ if __name__ == "__main__":
     # this is only used in the group comparison - individual samples are filtered separately in batches
     # rnaseq_dat_filt = filter_by_cpm(rnaseq_obj.data, min_n_samples=2)
 
-    de_res = compute_de(rnaseq_obj, pids)
+    de_res = compute_de(rnaseq_obj, pids, **de_params)
     de = de_res['de']
     de_matched = de_res['de_matched']
-    de_gibco = de_res['de_gibco']
+    de_ref = de_res['de_gibco']
 
     # split results by Venn group
     de_matched_only = dict([
         (pid, de_matched[pid].loc[de[pid]['10']]) for pid in pids
     ])
-    de_gibco_only = dict([
-        (pid, de_gibco[pid].loc[de[pid]['01']]) for pid in pids
-    ])
+    de_ref_only = dict([
+                           (pid, de_ref[pid].loc[de[pid]['01']]) for pid in pids
+                           ])
     # DE intersection: use the matched comparison values
-    de_intersection = dict([
+    de_intersection_matched = dict([
         (pid, de_matched[pid].loc[de[pid]['11']]) for pid in pids
     ])
+    # DE intersection: use the ref comparison values
+    de_intersection_ref = dict([
+                                   (pid, de_ref[pid].loc[de[pid]['11']]) for pid in pids
+                                   ])
 
+    # write DE results to disk
+    blocks = {}
+    for pid in pids:
+        blocks['GBM%s_pair_all' % pid] = de_matched[pid]
+        blocks['GBM%s_pair_only' % pid] = de_matched[pid].loc[de[pid]['10']]
+        blocks['GBM%s_ref_all' % pid] = de_ref[pid]
+        blocks['GBM%s_ref_only' % pid] = de_ref[pid].loc[de[pid]['01']]
+        # intersection: both results
+        blocks['GBM%s_pair_and_ref' % pid] = de_matched[pid].loc[de[pid]['11']]
+        blocks['GBM%s_ref_and_pair' % pid] = de_ref[pid].loc[de[pid]['11']]
+
+    # single Excel workbook
+    outfile = os.path.join(outdir, 'individual_gene_lists_de.xlsx')
+    results_to_excel(blocks, outfile)
+
+    # IPA lists, one per file
+    ipa_outdir = os.path.join(outdir, 'ipa_de')
+    if not os.path.exists(ipa_outdir):
+        os.makedirs(ipa_outdir)
+
+    results_to_ipa_format(blocks, ipa_outdir)
 
     # Load DNA Methylation
     me_data, me_meta = methylation_array.load_by_patient(pids)
@@ -463,32 +555,95 @@ if __name__ == "__main__":
     # integrate the two results
     dmr_matched = dmr.dict_by_sublevel(test_results_significant, 2, 'matched')
     dmr_matched_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'matched')
-    dmr_gibco = dmr.dict_by_sublevel(test_results_significant, 2, 'gibco')
-    dmr_gibco_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
+    dmr_ref = dmr.dict_by_sublevel(test_results_significant, 2, 'gibco')
+    dmr_ref_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
     dmr_intersection = dmr.dict_by_sublevel(test_results_inclusive, 2, 'matched')
 
     joint_de_dmr = {
-        'matched_all': compute_joint_de_dmr(dmr_matched, de_matched),
-        'matched_only': compute_joint_de_dmr(dmr_matched_only, de_matched_only),
-        'matched_and_ref': compute_joint_de_dmr(dmr_intersection, de_intersection),
+        'pair_all': compute_joint_de_dmr(dmr_matched, de_matched),
+        'pair_only': compute_joint_de_dmr(dmr_matched_only, de_matched_only),
+        'pair_and_ref': compute_joint_de_dmr(dmr_intersection, de_intersection_matched),
+        'ref_and_pair': compute_joint_de_dmr(dmr_intersection, de_intersection_ref),
+        'ref_all': compute_joint_de_dmr(dmr_ref, de_ref),
+        'ref_only': compute_joint_de_dmr(dmr_ref_only, de_ref_only),
     }
 
     joint_de_dmr_counts = {
-        'matched_all': joint_de_dmr_counts(joint_de_dmr['matched_all'], de_matched, dmr_matched),
-        'matched_only': joint_de_dmr_counts(
-            joint_de_dmr['matched_only'],
+        'pair_all': joint_de_dmr_counts(joint_de_dmr['pair_all'], de_matched, dmr_matched),
+        'pair_only': joint_de_dmr_counts(
+            joint_de_dmr['pair_only'],
             de_matched_only,
             dmr_matched_only
         ),
-        'matched_and_ref': joint_de_dmr_counts(
-            joint_de_dmr['matched_and_ref'],
-            de_intersection,
+        'pair_and_ref': joint_de_dmr_counts(
+            joint_de_dmr['pair_and_ref'],
+            de_intersection_matched,
             dmr_intersection
         ),
     }
 
+
+    ############
+
+    # write DE / DMR results to disk
+    # 1. Excel (human-readable)
+    blocks = {}
+
+    for k, v in joint_de_dmr.items():
+        this_tbl = joint_de_dmr_table(v)
+        for pid in this_tbl:
+            blocks['GBM%s_%s' % (pid, k)] = this_tbl[pid]
+
+    outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
+    results_to_excel(blocks, outfile)
+
+    # 2. IPA format
+
+    blocks = {}
+    for pid in pids:
+        for k, v in joint_de_dmr.items():
+            for cls in v[pid]:
+                blocks["GBM%s_%s_%s" % (pid, k, cls)] = v[pid][cls]
+
+    # IPA lists, one per file
+    ipa_outdir = os.path.join(outdir, 'ipa_dmr')
+    if not os.path.exists(ipa_outdir):
+        os.makedirs(ipa_outdir)
+
+    incl_cols = ['logFC', 'FDR']
+
+    for k, bl in blocks.iteritems():
+        fn = os.path.join(outdir, "%s.txt" % k)
+        header = [
+            ['Key', 'Value'],
+            ['identifier_types', 'Ensembl'],
+            ['observation_name', k],
+            ['date_created', datetime.datetime.now().isoformat()]
+        ]
+        with open(fn, 'wb') as f:
+            c = csv.writer(f, delimiter='\t')
+            # meta header
+            c.writerows(header)
+            c.writerow(['Data_begins_here'])
+            # data column header
+            c.writerow(['ID'] + incl_cols)
+            # reduced block
+            reduced_block = bl.loc[:, incl_cols]
+            c.writerows(reduced_block.itertuples())
+
+
+
+
+
+    # results_to_ipa_format(blocks, ipa_outdir)
+
+    #################
+
+
+
+
     ## TODO: move this elsewhere
-    aa = joint_de_dmr['matched_only']['054']['tss'].set_index('Gene Symbol')
+    aa = joint_de_dmr['pair_only']['054']['tss'].set_index('Gene Symbol')
     x = aa.logFC
     y = aa.me_mediandelta.astype(float)
     r = (x ** 2 + y ** 2) ** .5
@@ -511,9 +666,9 @@ if __name__ == "__main__":
     ax.set_xlabel("DE logFC")
     ax.set_ylabel("DMR median delta")
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_matched_only.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_pair_only.png"), dpi=200)
 
-    aa = joint_de_dmr['matched_and_ref']['054']['tss'].set_index('Gene Symbol')
+    aa = joint_de_dmr['pair_and_ref']['054']['tss'].set_index('Gene Symbol')
     x = aa.logFC
     y = aa.me_mediandelta.astype(float)
     r = (x ** 2 + y ** 2) ** .5
@@ -536,22 +691,22 @@ if __name__ == "__main__":
     ax.set_xlabel("DE logFC")
     ax.set_ylabel("DMR median delta")
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_matched_and_ref.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_pair_and_ref.png"), dpi=200)
 
     # export integrated results to lists
-    tmp_for_xl = {}
-
-    for k, v in joint_de_dmr.items():
-        this_tbl = joint_de_dmr_table(v)
-        for pid in this_tbl:
-            tmp_for_xl.setdefault(pid, {})[k] = this_tbl[pid]
-
-    xl_writer = pd.ExcelWriter(os.path.join(outdir, "individual_gene_lists_de_dmr.xlsx"))
-    for pid in tmp_for_xl:
-        for k in tmp_for_xl[pid]:
-            sheet_name = 'GBM%s_%s' % (pid, k)
-            tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
-    xl_writer.save()
+    # tmp_for_xl = {}
+    #
+    # for k, v in joint_de_dmr.items():
+    #     this_tbl = joint_de_dmr_table(v)
+    #     for pid in this_tbl:
+    #         tmp_for_xl.setdefault(pid, {})[k] = this_tbl[pid]
+    #
+    # xl_writer = pd.ExcelWriter(os.path.join(outdir, "individual_gene_lists_de_dmr.xlsx"))
+    # for pid in tmp_for_xl:
+    #     for k in tmp_for_xl[pid]:
+    #         sheet_name = 'GBM%s_%s' % (pid, k)
+    #         tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
+    # xl_writer.save()
 
 
     # def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4, fig_title=None, plot_genes=None):

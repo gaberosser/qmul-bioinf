@@ -1,5 +1,5 @@
 from load_data import rnaseq_data
-from rnaseq.differential_expression import edger
+from rnaseq import differential_expression
 from rnaseq.filter import filter_by_cpm
 import pandas as pd
 import numpy as np
@@ -29,6 +29,8 @@ def add_fc_direction(df):
 
 
 if __name__ == '__main__':
+    lfc = 1
+    fdr = 0.01
     outdir = output.unique_output_dir("paired_rnaseq")
     # RTK II samples
     # pids = ['017', '050', '054', '061']
@@ -65,7 +67,16 @@ if __name__ == '__main__':
         the_groups = obj.meta.loc[the_idx, 'type'].values
         the_contrast = "GBM - iNSC"
 
-        de_matched[pid] = edger(the_data, the_groups, the_contrast)
+        # de_matched[pid] = differential_expression.edger_exacttest(
+        #     the_data,
+        #     the_groups,
+        #     pair=['iNSC', 'GBM'],
+        #     lfc=lfc,
+        #     fdr=fdr
+        # )
+        # de_matched[pid] = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast)
+        de_matched[pid] = differential_expression.edger_glmfit(the_data, the_groups, the_contrast)
+
 
         # repeat with gibco reference
         # use the same genes, rather than filtering again
@@ -74,7 +85,15 @@ if __name__ == '__main__':
         the_groups = obj.meta.loc[the_idx, 'type'].values
         the_contrast = "GBM - NSC"
 
-        de_gibco[pid] = edger(the_data, the_groups, the_contrast)
+        # de_gibco[pid] = differential_expression.edger_exacttest(
+        #     the_data,
+        #     the_groups,
+        #     pair=['NSC', 'GBM'],
+        #     lfc=lfc,
+        #     fdr=fdr
+        # )
+        # de_gibco[pid] = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast)
+        de_gibco[pid] = differential_expression.edger_glmfit(the_data, the_groups, the_contrast)
 
         # Separate into sets
         # all
@@ -127,10 +146,9 @@ if __name__ == '__main__':
         agree = (np.sign(block.logFC) == np.sign(block.logFC_REF))
         block.insert(block.shape[1], 'agreement', agree.astype(str))
 
-        if (~agree).any():
-            print "GBM%s: %d / %d match and ref DE genes have discordant direction" % (
-                pid, (~agree).sum(), block.shape[0]
-            )
+        print "GBM%s: %d / %d match and ref DE genes have discordant direction" % (
+            pid, (~agree).sum(), block.shape[0]
+        )
 
         add_gene_symbols(block)
         block.to_excel(xl_writer, 'GBM%s_pair_and_ref' % pid)

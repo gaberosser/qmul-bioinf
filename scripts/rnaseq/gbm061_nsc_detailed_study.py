@@ -1,5 +1,5 @@
 from load_data import rnaseq_data
-from rnaseq.differential_expression import edger
+from rnaseq.differential_expression import edger_glmqlfit
 from rnaseq.filter import filter_by_cpm
 import pandas as pd
 import numpy as np

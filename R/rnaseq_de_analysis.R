@@ -53,7 +53,6 @@ meta <- data.frame(condition = c(
   as.vector(matrix("control", 9)), as.vector(matrix("mb", 8))
 ), row.names = colnames(res))
 
-
 # DESeq2
 dds <- DESeqDataSetFromMatrix(countData = as.matrix(res), colData = meta, design=~condition)
 dds <- DESeq(dds)
