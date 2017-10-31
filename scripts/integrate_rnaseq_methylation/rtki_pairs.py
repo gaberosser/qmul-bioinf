@@ -1,6 +1,6 @@
 from methylation import dmr, process, plots
 from load_data import methylation_array
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
 import operator
 import os
@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     ## load all DE gene lists
 
-    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9nsc')
+    indir_de = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_h9nsc')
     de = {}
 
     for p in patient_ids + ['all']:

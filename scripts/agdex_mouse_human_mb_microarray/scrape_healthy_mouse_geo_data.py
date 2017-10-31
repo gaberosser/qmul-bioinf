@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from urllib2 import urlopen
 import urlparse
 import re
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import os
 
 GSM_LIST = {
@@ -36,7 +36,7 @@ GSM_LIST = {
 BASE_URL = 'https://www.ncbi.nlm.nih.gov'
 SERIES_URL = urlparse.urljoin(BASE_URL, 'geo/query/acc.cgi')
 TABLE_HEADER = ['ID_REF', 'VALUE']
-OUT_DIR = os.path.join(DATA_DIR, 'microarray_GSE54650')
+OUT_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE54650')
 
 if not os.path.exists(OUT_DIR):
     os.makedirs(OUT_DIR)

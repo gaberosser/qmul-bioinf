@@ -2,7 +2,7 @@ from plotting import common, heatmap
 from utils.output import unique_output_dir
 import pandas as pd
 import os
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from matplotlib import pyplot as plt
 
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     if SAVEFIG:
         outdir = unique_output_dir('sb_qpcr_heatmap')
 
-    infile = os.path.join(DATA_DIR, 'sara_b_qpcr', 'tumour_xenograft_vs_healthy2.csv')
+    infile = os.path.join(GIT_LFS_DATA_DIR, 'sara_b_qpcr', 'tumour_xenograft_vs_healthy2.csv')
     data = pd.read_csv(infile, header=0, index_col=0).transpose()
 
     ax, cax = fixed_plot_fun(data, cmap='RdBu')

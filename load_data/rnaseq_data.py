@@ -3,8 +3,9 @@ import re
 import os
 import glob
 import references
+from rnaseq import normalisation
 from utils.log import get_console_logger
-from settings import DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 logger = get_console_logger(__name__)
 
 INDEX_FIELDS = (
@@ -202,10 +203,37 @@ class CountDataMixin(object):
         return self.data
 
     def get_fpkm(self):
-        raise NotImplementedError
+        # if we already have FPKM computed, use these
+        if getattr(self, '_fpkm', None) is not None:
+            return self._fpkm
+        gene_lengths = normalisation.gene_length_by_tax_id(self.tax_id)
+        dat = self.data_by_ensembl
+        # discard rows NOT in the gene lengths library
+        # these are typically just those 4 rows added by the counter, e.g. 'N_unmapped'
+        to_discard = dat.index.difference(gene_lengths.index)
+        if len(to_discard):
+            logger.warn("Discarding %d rows that were not found in the gene lengths library.", len(to_discard))
+            dat = dat.drop(to_discard, axis=0)
+        N = dat.sum(axis=0)
+        self._fpkm = dat.divide(gene_lengths.iloc[:, 0], axis=0).divide(N, axis=1) * 1e9
+        return self._fpkm
 
     def get_tpm(self):
-        raise NotImplementedError
+        # if we already have TPM computed, use these
+        if getattr(self, '_tpm', None) is not None:
+            return self._tpm
+        gene_lengths = normalisation.gene_length_by_tax_id(self.tax_id)
+        dat = self.data_by_ensembl
+        # discard rows NOT in the gene lengths library
+        # these are typically just those 4 rows added by the counter, e.g. 'N_unmapped'
+        to_discard = dat.index.difference(gene_lengths.index)
+        if len(to_discard):
+            logger.warn("Discarding %d rows that were not found in the gene lengths library.", len(to_discard))
+            dat = dat.drop(to_discard, axis=0)
+        rpb = dat.divide(gene_lengths.iloc[:, 0], axis=0)
+        N = rpb.sum()
+        self._tpm = rpb / N * 1e6
+        return self._tpm
 
     def get_normed(self):
         if self.annotate_by == 'all':
@@ -903,7 +931,7 @@ def gse83696(index_by='Ensembl Gene ID'):
     :return:
     """
     # TODO: convert this into a generic loader for htseq-count outputs
-    indir = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'htseq-count')
+    indir = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_GSE83696', 'htseq-count')
     samples = [
         ('XZ1', 'XZ-1.count'),
         ('XZ2', 'XZ-2.count'),
@@ -1608,7 +1636,7 @@ def gse73721(source='star', annotate_by='all', annotation_type='protein_coding')
 
 def gse61794(source='star', annotate_by='all', annotation_type='protein_coding', collapse_replicates=False):
     """
-    2 samples similar to Gibbco NSC line.
+    2 samples similar to Gibco NSC line.
     These may be technical replicates as they are very highly correlated.
     :param collapse_replicates: If True, combine the counts to make one sample
     """

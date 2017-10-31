@@ -1,7 +1,7 @@
 from plotting import common, heatmap
 import pandas as pd
 import os
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from matplotlib import pyplot as plt
 
 SAVEFIG = True
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         print "Creating temp output dir %s" % OUTDIR
         os.makedirs(OUTDIR)
 
-    infile = os.path.join(DATA_DIR, 'sara_b_qpcr', 'tumour_xenograft_vs_healthy.csv')
+    infile = os.path.join(GIT_LFS_DATA_DIR, 'sara_b_qpcr', 'tumour_xenograft_vs_healthy.csv')
     data = pd.read_csv(infile, header=0, index_col=0).transpose()
 
     ax, cax = fixed_plot_fun(data, cmap='RdBu')

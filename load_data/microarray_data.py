@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from microarray import process
-from settings import DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
@@ -55,7 +55,7 @@ def load_from_r_processed(infile, sample_names, aggr_field=None, aggr_method=Non
 
 def load_gse28192_probeset():
     # load library and annotate
-    indir = os.path.join(DATA_DIR, 'microarray_GSE28192')
+    indir = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192')
     annot_fn = os.path.join(indir, 'probe_set', 'GPL6102-11574.txt')
     ann = pd.read_csv(annot_fn, sep='\t', comment='#', header=0, index_col=0)
     return ann
@@ -101,7 +101,7 @@ def load_annotated_gse28192(aggr_field=None, aggr_method=None, sample_names=None
     :return:
     """
 
-    indir = os.path.join(DATA_DIR, 'microarray_GSE28192')
+    indir = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')
     if sample_names is None:
@@ -142,7 +142,7 @@ def load_annotated_microarray_sb_data(aggr_field='ENTREZ', aggr_method='max'):
     :param index_field:
     :return:
     """
-    infile = os.path.join(DATA_DIR, 'sleeping_beauty_mouse_screen', 'data.ann.txt.gz')
+    infile = os.path.join(GIT_LFS_DATA_DIR, 'sleeping_beauty_mouse_screen', 'data.ann.txt.gz')
     sample_names = [
         "Wu050",
         "Wu053",

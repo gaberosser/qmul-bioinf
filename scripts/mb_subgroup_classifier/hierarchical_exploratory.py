@@ -7,7 +7,7 @@ from microarray import process
 from matplotlib import pyplot as plt, gridspec
 from matplotlib.colors import ListedColormap
 import seaborn as sns
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import numpy as np
 import os
 from scripts.comparison_rnaseq_microarray import consts

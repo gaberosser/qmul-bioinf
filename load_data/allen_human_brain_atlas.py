@@ -4,11 +4,11 @@ import os
 import pandas as pd
 
 from microarray.process import aggregate_by_probe_set
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
-BASE_DIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas')
+BASE_DIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas')
 
 # structure IDs
 CEREBELLUM_STRUCT_ID = 4696
@@ -164,7 +164,7 @@ def cerebellum_microarray_reference_data(agg_field=None, agg_method=None):
     if (agg_method is not None and agg_field is None) or (agg_method is None and agg_field is not None):
         raise ValueError("Must supply either both agg_field and agg_method, or neither.")
 
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
     infile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
 
     # form input filename for expression data
@@ -221,7 +221,7 @@ def load_rnaseq_reference_data(
         9861,
         10021
     ]
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/rnaseq')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
 
     if parent_struct_id is None:
         struct_ids = None

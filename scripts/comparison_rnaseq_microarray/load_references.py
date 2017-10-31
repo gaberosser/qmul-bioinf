@@ -1,4 +1,4 @@
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import os
 import dill
 import pandas as pd
@@ -54,7 +54,7 @@ def get_structure_ids_by_parent(ontol, parent_id):
 
 def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
 
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
     DONOR_NUMBERS = [
         9861,
         10021,
@@ -141,7 +141,7 @@ def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
 
 def load_cerebellum_microarray_reference_data():
 
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
     infile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
     infile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
 
@@ -164,7 +164,7 @@ def load_cerebellum_microarray_reference_data():
 
 
 def save_cerebellum_microarray_data_by_entrez_id(method='median'):
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/microarray')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
     expr, meta = load_cerebellum_microarray_reference_data()
     expr_eid = microarray_entrez_markers(expr, method=method)
     outfile = os.path.join(INDIR, 'cerebellum_expression.by_entrezid.csv.gz')
@@ -226,7 +226,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
         9861,
         10021
     ]
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/rnaseq')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
     PARENT_STRUCT_ID = 4696
 
     if outfile is None:
@@ -302,7 +302,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
 def load_cerebellum_rnaseq_reference_data():
 
-    INDIR = os.path.join(DATA_DIR, 'allen_human_brain_atlas/rnaseq')
+    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
     infile = os.path.join(INDIR, 'cerebellum_expression_dataframes.pkl')
     if not os.path.exists(infile):
         logger.info("Unable to find pre-prepared pickled file %s. Recomputing.", infile)

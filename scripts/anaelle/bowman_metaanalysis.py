@@ -1,6 +1,6 @@
 from rnaseq.gsea import ssgsea
 import pandas as pd
-from settings import DATA_DIR_NON_GIT, DATA_DIR
+from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
 import os
 import references
 import datetime
@@ -98,7 +98,7 @@ def get_de_tissue_tumour():
     bmdm = s1b.BMDM.dropna()
 
     # convert gene symbols to ENS ID
-    fn = os.path.join(DATA_DIR, 'ensembl', 'mouse', 'mart_export.txt.gz')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'ensembl', 'mouse', 'mart_export.txt.gz')
     ref = pd.read_csv(fn, sep='\t', index_col=None, header=0).set_index('Gene name')
 
     mg_ens = ref.loc[mg.values, 'Gene stable ID'].dropna().unique()

@@ -2,11 +2,11 @@ import os
 import numpy as np
 from microarray import illumina, process, annotation
 from load_data import microarray_data, allen_human_brain_atlas
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 
 
 def load_hkg_list():
-    fn = os.path.join(DATA_DIR, 'mouse_housekeeping/nature05453_supptable1.csv')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_housekeeping/nature05453_supptable1.csv')
     hkg_all = pd.read_csv(fn)
     hkg = hkg_all.loc[:, 'Near Ubiquitious']
     return hkg[hkg.notnull()].values

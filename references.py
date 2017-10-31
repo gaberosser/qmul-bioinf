@@ -1,7 +1,7 @@
 import os
 import csv
 import pandas as pd
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 
 
 def known_genes(tax_id=9606, index_field=None):
@@ -11,9 +11,9 @@ def known_genes(tax_id=9606, index_field=None):
     :param index_field: If supplied, reindex the dataframe by this field. Examples are 'Symbol', 'GeneID'
     """
     if tax_id == 9606:
-        fn = os.path.join(DATA_DIR, 'ncbi_gene', 'Homo_sapiens.gene_info.gz')
+        fn = os.path.join(GIT_LFS_DATA_DIR, 'ncbi_gene', 'Homo_sapiens.gene_info.gz')
     elif tax_id == 10090:
-        fn = os.path.join(DATA_DIR, 'ncbi_gene', 'Mus_musculus.gene_info.gz')
+        fn = os.path.join(GIT_LFS_DATA_DIR, 'ncbi_gene', 'Mus_musculus.gene_info.gz')
     else:
         raise ValueError("Unrecognised tax_id %d.", tax_id)
     df = pd.read_csv(fn, sep='\t')
@@ -25,15 +25,15 @@ def known_genes(tax_id=9606, index_field=None):
 def conversion_table(type='protein_coding', tax_id=9606):
     if tax_id == 9606:
         if type == 'protein_coding':
-            in_file = os.path.join(DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
+            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
         elif type == 'all':
-            in_file = os.path.join(DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
+            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
         else:
             raise ValueError("Unsupported type option '%s'" % type)
         # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
         df = pd.read_csv(in_file, delimiter='\t')
     elif tax_id == 10090:
-        in_file = os.path.join(DATA_DIR, 'biomart', 'mm10', 'mm10.csv')
+        in_file = os.path.join(GIT_LFS_DATA_DIR, 'biomart', 'mm10', 'mm10.csv')
         df = pd.read_csv(in_file, header=0, index_col=None)
     else:
         raise NotImplementedError("Unknown taxonomy ID")

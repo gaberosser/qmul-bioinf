@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 from scipy import stats
 
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
 
 BIOMARKERS = [
@@ -34,7 +34,7 @@ OUTCOME_COL = 'Outcome'
 
 def load_cleaned_data():
     # fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
-    fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_sep_2017.csv')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_sep_2017.csv')
     return pd.read_csv(fn, header=0, na_values='-', index_col=0)
 
 

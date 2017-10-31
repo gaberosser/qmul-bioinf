@@ -4,9 +4,9 @@ import HTSeq
 import dill
 import collections
 import pandas as pd
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 
-REF_DIR = os.path.join(DATA_DIR, 'ensemble_human_genome', 'gr37')
+REF_DIR = os.path.join(GIT_LFS_DATA_DIR, 'ensemble_human_genome', 'gr37')
 EXONS_PRECOMPUTED_FN = os.path.join(REF_DIR, 'exons.pkl')
 REF_FN = os.path.join(REF_DIR, 'Homo_sapiens.GRCh37.85.gtf.gz')
 

@@ -1,10 +1,10 @@
 import os
 import pandas as pd
 import numpy as np
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 
 
-homolog_file = os.path.join(DATA_DIR, 'homologene', 'homologeneb68.data')
+homolog_file = os.path.join(GIT_LFS_DATA_DIR, 'homologene', 'homologeneb68.data')
 homolog_header = [
     'hid',
     'taxonomy_id',

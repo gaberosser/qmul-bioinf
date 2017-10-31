@@ -1,6 +1,6 @@
 from methylation import dmr, process, plots
 from load_data import methylation_array
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
 import collections
 import os
@@ -145,7 +145,7 @@ def load_methylation_data(ref='gibco', norm_method='swan'):
 def load_de_data(indir_de=None):
     ncol_per_de_block = 6
     if indir_de is None:
-        indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
+        indir_de = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')
 
     de = {}
 
@@ -438,7 +438,7 @@ if __name__ == '__main__':
         "rtk1_de_dmr.%s.gibco_reference" % params['dmr_test_method'],
         reuse_empty=True
     )
-    indir_de = os.path.join(DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')  # can also use H9
+    indir_de = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_de', 'rtk1', 'insc_gibco')  # can also use H9
 
     # write params to a file
     with open(os.path.join(outdir, 'parameters.json'), 'wb') as f:

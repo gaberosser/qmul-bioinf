@@ -2,12 +2,12 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import os
 
 
 if __name__ == "__main__":
-    fn = os.path.join(DATA_DIR, 'ash_cpt', 'cpt.csv')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'ash_cpt', 'cpt.csv')
     # load data
     a = pd.read_csv(fn, header=0, index_col=0).dropna(how='all')
     arr = np.zeros((3, 3))

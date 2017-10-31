@@ -379,21 +379,27 @@ def results_to_excel(blocks, fn):
     keys = sorted(blocks.keys())
     for k in keys:
         bl = blocks[k]
-        bl.to_excel(xl_writer, k)
+        bl.to_excel(xl_writer, k)  # index=False??
     xl_writer.save()
 
 
-def results_to_ipa_format(blocks, outdir, incl_cols=('logFC', 'FDR')):
+def results_to_ipa_format(
+        blocks,
+        outdir,
+        incl_cols=('logFC', 'FDR'),
+        identifier='Ensembl',
+):
     incl_cols = list(incl_cols)
 
     for k, bl in blocks.iteritems():
         fn = os.path.join(outdir, "%s.txt" % k)
         header = [
             ['Key', 'Value'],
-            ['identifier_types', 'Ensembl'],
             ['observation_name', k],
             ['date_created', datetime.datetime.now().isoformat()]
         ]
+        if identifier is not None:
+            header += ['identifier_types', identifier]
         with open(fn, 'wb') as f:
             c = csv.writer(f, delimiter='\t')
             # meta header
@@ -406,14 +412,16 @@ def results_to_ipa_format(blocks, outdir, incl_cols=('logFC', 'FDR')):
             c.writerows(reduced_block.itertuples())
 
 
-
 if __name__ == "__main__":
     # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
 
     outdir = output.unique_output_dir("integrate_rnaseq_methylation")
     ref_name = 'GIBCONSC_P4'
-    pids = ['017', '050', '054', '061']
+    # RTK II
+    # pids = ['017', '050', '054', '061']
+    # all n=2 samples
+    pids = ['018', '044', '049', '050', '052', '054', '061']
 
     de_params = {
         'lfc': 1,
@@ -582,9 +590,6 @@ if __name__ == "__main__":
         ),
     }
 
-
-    ############
-
     # write DE / DMR results to disk
     # 1. Excel (human-readable)
     blocks = {}
@@ -598,48 +603,49 @@ if __name__ == "__main__":
     results_to_excel(blocks, outfile)
 
     # 2. IPA format
+    incl_cols = ['logFC', 'FDR']
 
-    blocks = {}
-    for pid in pids:
-        for k, v in joint_de_dmr.items():
-            for cls in v[pid]:
-                blocks["GBM%s_%s_%s" % (pid, k, cls)] = v[pid][cls]
-
-    # IPA lists, one per file
     ipa_outdir = os.path.join(outdir, 'ipa_dmr')
     if not os.path.exists(ipa_outdir):
         os.makedirs(ipa_outdir)
 
-    incl_cols = ['logFC', 'FDR']
+    # We want several different versions
+    def prepare_de_dmr_concordant_blocks(dat, key='all'):
+        blocks = {}
+        for k, v in dat.items():
+            for pid in v:
+                bl = v[pid][key]
+                # reduce to concordant results
+                dmr_sign = np.sign(bl.loc[:, 'me_mediandelta'].astype(float))
+                de_sign = np.sign(bl.loc[:, 'logFC'])
+                bl = bl.loc[dmr_sign != de_sign]
+                # only keep one row per gene
+                idx = ~pd.Index(bl.loc[:, 'Gene Symbol']).duplicated()
+                bl = bl.loc[idx].set_index('Gene Symbol')
+                bl = bl.loc[:, incl_cols]
+                blocks['GBM%s_%s' % (pid, k)] = bl
+        return blocks
 
-    for k, bl in blocks.iteritems():
-        fn = os.path.join(outdir, "%s.txt" % k)
-        header = [
-            ['Key', 'Value'],
-            ['identifier_types', 'Ensembl'],
-            ['observation_name', k],
-            ['date_created', datetime.datetime.now().isoformat()]
-        ]
-        with open(fn, 'wb') as f:
-            c = csv.writer(f, delimiter='\t')
-            # meta header
-            c.writerows(header)
-            c.writerow(['Data_begins_here'])
-            # data column header
-            c.writerow(['ID'] + incl_cols)
-            # reduced block
-            reduced_block = bl.loc[:, incl_cols]
-            c.writerows(reduced_block.itertuples())
+    # a) All probe classes, providing they are concordant
+    ipa_subdir = os.path.join(ipa_outdir, "all_concordant")
+    if not os.path.exists(ipa_subdir):
+        os.makedirs(ipa_subdir)
+    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='all')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
 
+    # b) TSS, providing they are concordant
+    ipa_subdir = os.path.join(ipa_outdir, "tss_concordant")
+    if not os.path.exists(ipa_subdir):
+        os.makedirs(ipa_subdir)
+    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='tss')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
 
-
-
-
-    # results_to_ipa_format(blocks, ipa_outdir)
-
-    #################
-
-
+    # c) CpG island, providing they are concordant
+    ipa_subdir = os.path.join(ipa_outdir, "island_concordant")
+    if not os.path.exists(ipa_subdir):
+        os.makedirs(ipa_subdir)
+    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='island')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
 
 
     ## TODO: move this elsewhere
@@ -692,21 +698,6 @@ if __name__ == "__main__":
     ax.set_ylabel("DMR median delta")
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_pair_and_ref.png"), dpi=200)
-
-    # export integrated results to lists
-    # tmp_for_xl = {}
-    #
-    # for k, v in joint_de_dmr.items():
-    #     this_tbl = joint_de_dmr_table(v)
-    #     for pid in this_tbl:
-    #         tmp_for_xl.setdefault(pid, {})[k] = this_tbl[pid]
-    #
-    # xl_writer = pd.ExcelWriter(os.path.join(outdir, "individual_gene_lists_de_dmr.xlsx"))
-    # for pid in tmp_for_xl:
-    #     for k in tmp_for_xl[pid]:
-    #         sheet_name = 'GBM%s_%s' % (pid, k)
-    #         tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
-    # xl_writer.save()
 
     # TODO: move to plots
     fig = plt.figure()

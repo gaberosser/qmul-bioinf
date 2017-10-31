@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from settings import DATA_DIR_NON_GIT, DATA_DIR
+from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
 from load_data import rnaseq_data
 import numpy as np
 from scipy import stats
@@ -8,7 +8,7 @@ from scipy import stats
 
 if __name__ == '__main__':
     # create a lookup between RefSeq and Ensembl
-    conv_fn = os.path.join(DATA_DIR, 'biomart', 'mm10', 'mm10_refseq_ensembl.txt')
+    conv_fn = os.path.join(GIT_LFS_DATA_DIR, 'biomart', 'mm10', 'mm10_refseq_ensembl.txt')
     conv = pd.read_csv(conv_fn, header=0).dropna()
     conv.set_index(conv.columns[-1], inplace=True)
     conv = conv.loc[:, 'Gene stable ID']

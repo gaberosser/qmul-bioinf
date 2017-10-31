@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
-from settings import DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 from utils.log import get_console_logger
 logger = get_console_logger(__name__)
 
@@ -37,7 +37,7 @@ PATIENT_LOOKUP_CELL = {
     ],
     '018': [
         ('GBM018_P12', '2017-05-12'),
-        ('GBM018_P10', '2017-05-12'),
+        ('GBM018_P10', '2016-12-19_ucl_genomics'),
         ('DURA018_NSC_N4_P4', '2017-05-12'),
         ('DURA018_NSC_N2_P6', '2016-12-19_ucl_genomics'),
     ],
@@ -110,7 +110,7 @@ def load_illumina_methylationepic_annotation(split_genes=True):
     many downstream applications
     :return:
     """
-    fn = os.path.join(DATA_DIR, 'annotation', 'methylation', 'infinium-methylationepic-v1-0-b3-manifest-file-csv.zip')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'infinium-methylationepic-v1-0-b3-manifest-file-csv.zip')
     usecols = [
         'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
         'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'
@@ -139,7 +139,7 @@ def load_illumina_methylationepic_annotation(split_genes=True):
 
 
 def load_illumina_methylation450_annotation():
-    fn = os.path.join(DATA_DIR, 'annotation', 'methylation', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
     usecols = [
         'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
         'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'

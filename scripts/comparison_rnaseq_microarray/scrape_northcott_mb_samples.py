@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from urllib2 import urlopen
 import urlparse
 import re
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import os
 import collections
 import csv
@@ -13,7 +13,7 @@ BASE_URL = 'https://www.ncbi.nlm.nih.gov'
 SERIES_URL = urlparse.urljoin(BASE_URL, 'geo/query/acc.cgi?acc=GSE37382')
 SAMPLE_URL = urlparse.urljoin(BASE_URL, '/geo/query/acc.cgi?acc=')
 TABLE_HEADER = ['ID_REF', 'VALUE']
-OUT_DIR = os.path.join(DATA_DIR, 'microarray_GSE37382')
+OUT_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE37382')
 
 TABLE_START_LINE = 22
 TABLE_END_LINE = -12

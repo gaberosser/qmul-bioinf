@@ -4,9 +4,9 @@ import collections
 import os
 import pickle
 import references
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 
-RNASEQ_GENE_COUNTS_DIR = os.path.join(DATA_DIR, 'rnaseq_GSE83696', 'cufflinks')
+RNASEQ_GENE_COUNTS_DIR = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_GSE83696', 'cufflinks')
 RNA_COUNT_FIELDS = [
     '_ambiguous',
     '_no_feature',

@@ -1,9 +1,9 @@
 import os
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 import pandas as pd
 import numpy as np
 
-ANNOTATION_DIR = os.path.join(DATA_DIR, 'microarray_annotation')
+ANNOTATION_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_annotation')
 
 
 def load_from_r_format(library):

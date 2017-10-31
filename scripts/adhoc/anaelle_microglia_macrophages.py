@@ -2,13 +2,13 @@ import os
 import pandas as pd
 from matplotlib import pyplot as plt
 from plotting import venn
-from settings import DATA_DIR
+from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
 
 
 if __name__ == '__main__':
     outdir = unique_output_dir("mg_bmdm_venn")
-    indir = os.path.join(DATA_DIR, 'GSE86573_bowman_de')
+    indir = os.path.join(GIT_LFS_DATA_DIR, 'GSE86573_bowman_de')
 
     gl261_mg = pd.read_csv(os.path.join(indir, 'gl261_mg_vs_healthy_mg.csv'), header=0, index_col=0)
     gl261_bmdm = pd.read_csv(os.path.join(indir, 'gl261_bmdm_vs_healthy_monocyte.csv'), header=0, index_col=0)
