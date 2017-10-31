@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
+from scipy import stats
 
 from settings import DATA_DIR
 from utils.output import unique_output_dir
@@ -86,6 +87,45 @@ if __name__ == "__main__":
         idx = batches[0] == i
         ax.scatter(pp[idx, 0], pp[idx, 1], c=colours[i], label=bt)
 
+    # does peak/trough value correlate with age?
+    val_age_corr = {
+        'all': {},
+        'fav': {},
+        'unfav': {}
+    }
+    p_threshold = 0.05
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    cols = BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS
+
+    for i, c in enumerate(cols):
+        age_col = "%s age" % c
+
+        all_values = dat.loc[:, [c, age_col]].dropna().values
+        fav = dat.loc[dat.Outcome == 2, [c, age_col]].dropna().values
+        unfav = dat.loc[dat.Outcome == 1, [c, age_col]].dropna().values
+
+        val_age_corr['all'][c] = stats.linregress(*all_values.transpose())
+        val_age_corr['fav'][c] = stats.linregress(*fav.transpose())
+        val_age_corr['unfav'][c] = stats.linregress(*unfav.transpose())
+
+        # plot values
+        colour = 'r' if val_age_corr['all'][c].pvalue < p_threshold else 'gray'
+        ax.plot(i, val_age_corr['all'][c].slope, ls='none', marker='o', c=colour, label='All' if i==0 else None)
+        colour = 'r' if val_age_corr['fav'][c].pvalue < p_threshold else 'gray'
+        ax.plot(i, val_age_corr['fav'][c].slope, ls='none', marker='s', c=colour, label='Favourable' if i==0 else None)
+        colour = 'r' if val_age_corr['unfav'][c].pvalue < p_threshold else 'gray'
+        ax.plot(i, val_age_corr['unfav'][c].slope, ls='none', marker='^', c=colour, label='Unfavourable' if i==0 else None)
+
+    ax.legend()
+    ax.set_ylabel("Regression slope")
+    ax.set_xticks(range(len(cols)))
+    ax.set_xticklabels(cols, rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'linregress_value_with_age.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'linregress_value_with_age.pdf'))
+
     if False:
         # we need to set the range so that the hist function doesn't complain about NaNs
         hist_kws = {'range': (-2, 6)}
@@ -134,37 +174,25 @@ if __name__ == "__main__":
     for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
         ax = axs[i]
 
-        # # extract data for scatterplot
-        # fav = dat.loc[dat.Outcome == 'favourable', c].values
-        # unfav = dat.loc[dat.Outcome == 'unfavourable', c].values
-        # scat = np.zeros((len(fav) + len(unfav), 3))
-        #
-        # # add peak age
-        # fav_age = dat.loc[dat.Outcome == 'favourable', "%s age" % c].values
-        # unfav_age = dat.loc[dat.Outcome == 'unfavourable', "%s age" % c].values
-        #
-        #
-        # scat[:len(fav), 0] = np.random.normal(scale=jitter, size=len(fav))
-        # scat[:len(fav), 1] = fav
-        # scat[:len(fav), 2] = fav_age
-        # scat[len(fav):, 0] = np.random.normal(loc=1, scale=jitter, size=len(unfav))
-        # scat[len(fav):, 1] = unfav
-        # scat[len(fav):, 2] = unfav_age
+        this_dat = dat.loc[:, [c, 'Outcome']]
+        this_dat.loc[this_dat.loc[:, 'Outcome'] == 1, 'Outcome'] = 'Unfavourable'
+        this_dat.loc[this_dat.loc[:, 'Outcome'] == 2, 'Outcome'] = 'Favourable'
 
-        sns.boxplot(data=dat.loc[:, [c, 'Outcome']], x='Outcome', y=c, ax=ax)
-        sns.swarmplot(data=dat.loc[:, [c, 'Outcome']], x='Outcome', y=c, ax=ax)
+        sns.boxplot(data=this_dat, x='Outcome', y=c, ax=ax)
+        sns.swarmplot(data=this_dat, x='Outcome', y=c, ax=ax)
 
         # ax.scatter(scat[:, 0], scat[:, 1], c=scat[:, 2], cmap='RdBu')
 
         ax.xaxis.label.set_visible(False)
         ax.yaxis.label.set_visible(False)
         ax.set_title(c)
-        ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
+        plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+        # ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
         ylim = list(ax.get_ylim())
         if ylim[0] < 0:
             ylim[0] = 0.
             ax.set_ylim(ylim)
-    fig.subplots_adjust(left=0.02, right=0.99, wspace=0.4)
+    fig.subplots_adjust(left=0.025, right=0.99, wspace=0.4, bottom=0.2)
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.pdf'))
 
@@ -214,8 +242,9 @@ if __name__ == "__main__":
     ax.scatter(y[unfav_idx, 0], y[unfav_idx, 1], c='g')
 
     from sklearn.linear_model import LogisticRegression
-    logistic = LogisticRegression(C=1e5)  # what is C?
+    logistic = LogisticRegression(C=1)  # what is C?
     inferred = []
+    true = []
 
     for i in range(1000):
 
@@ -232,3 +261,18 @@ if __name__ == "__main__":
         y_test_inf = logistic.predict(X_test)
 
         inferred.append(y_test_inf)
+        true.append(y_test)
+
+    # performance
+    fp = tp = fn = tn = 0
+    n = 0
+    for inf, tr in zip(inferred, true):
+        tn += ((inf == 2) & (tr == 2)).sum()
+        tp += ((inf == 1) & (tr == 1)).sum()
+        fn += ((inf == 2) & (tr == 1)).sum()
+        fp += ((inf == 1) & (tr == 2)).sum()
+    n = tn + tp + fn + fp
+
+    # now fit to the full dataset and analyse the coefficients
+    logistic.fit(X, dat.Outcome.values)
+    odds_coef = np.exp(pd.Series(logistic.coef_.flatten(), index=peaks_dat.columns))

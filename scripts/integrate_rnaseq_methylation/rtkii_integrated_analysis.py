@@ -708,6 +708,17 @@ if __name__ == "__main__":
     #         tmp_for_xl[pid][k].to_excel(xl_writer, sheet_name, index=False)
     # xl_writer.save()
 
+    # TODO: move to plots
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for pid in pids:
+        for i, cmp in enumerate(joint_de_dmr.keys()):
+            for j, cls in enumerate(joint_de_dmr[cmp][pid].keys()):
+                # iterate over genes, get quadrant, define colour, plot text
+                pass
+
+
+
 
     # def venn_diagram_and_core_genes(meth_de, text_file, fig_file, min_overlap=4, fig_title=None, plot_genes=None):
     #     """
