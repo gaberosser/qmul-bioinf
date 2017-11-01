@@ -2,7 +2,7 @@ from load_data import rnaseq_data, methylation_array
 from rnaseq import differential_expression
 from rnaseq.filter import filter_by_cpm
 from methylation import process, dmr
-from methylation.plots import venn_dmr_counts, dmr_overlap
+from methylation import plots as me_plots
 from integrator.rnaseq_methylationarray import compute_joint_de_dmr
 from integrator import plots
 import pandas as pd
@@ -511,17 +511,17 @@ if __name__ == "__main__":
             with open(fn_in, 'rb') as f:
                 test_results = json.load(f)
             loaded = True
-        # recompute relevant and significant results
-        test_results_relevant = dmr.filter_dictionary(
-            test_results,
-            lambda x: 'pval' in x,
-            n_level=5,
-        )
-        test_results_significant = dmr.filter_dictionary(
-            test_results,
-            lambda x: 'pval' in x and x['rej_h0'],
-            n_level=5,
-        )
+            # recompute relevant and significant results
+            test_results_relevant = dmr.filter_dictionary(
+                test_results,
+                lambda x: 'pval' in x,
+                n_level=5,
+            )
+            test_results_significant = dmr.filter_dictionary(
+                test_results,
+                lambda x: 'pval' in x and x['rej_h0'],
+                n_level=5,
+            )
 
     if not loaded:
         dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
@@ -534,6 +534,9 @@ if __name__ == "__main__":
         with open(fout, 'wb') as f:
             json.dump(test_results, f, cls=TestResultEncoder)
         print "Saved DMR results to %s" % fout
+
+    # Venn showing the distribution of robe classes amongst all regions (incl. not significantly DM)
+    me_plots.dmr_proposed_cluster_count_by_class(test_results.values()[0].values()[0], outdir=outdir)
 
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']
@@ -550,12 +553,17 @@ if __name__ == "__main__":
     )
 
     # plot the DMR counts, classified into hyper and hypomethylation
-    venn_dmr_counts(test_results_significant, outdir=outdir, figname="dmr_venn_all")
+    me_plots.venn_dmr_counts(test_results_significant, outdir=outdir, figname="dmr_venn_all")
     for cls in dmr.CLASSES:
-        venn_dmr_counts(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_venn_%s" % cls)
-    dmr_overlap(test_results_significant, outdir=outdir, figname="dmr_overlap_all")
-    for cls in dmr.CLASSES:
-        dmr_overlap(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_overlap_%s" % cls)
+        me_plots.venn_dmr_counts(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_venn_%s" % cls)
+
+    # these will fail if we have too many individuals (a limit of the Venn diagram)
+    try:
+        me_plots.dmr_overlap(test_results_significant, outdir=outdir, figname="dmr_overlap_all")
+        for cls in dmr.CLASSES:
+            me_plots.dmr_overlap(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_overlap_%s" % cls)
+    except Exception as exc:
+        print "Unable to produce DMR overlap plot: %s" % repr(exc)
 
     # side story: check overlap between individuals and group
     # skip this for now but useful to know!

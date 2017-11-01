@@ -207,6 +207,19 @@ def dmr_overlap(
         outdir=None,
         figname='dmr_individual_overlap'
 ):
+    """
+    Plot a Venn diagram showing the overlap of DMRs in the the individuals. One plot per comparison (default)
+    behaviour is to include two comparisons: isogenic and reference.
+    This can be limited to a single DMR probe class, or (default) include all.
+    :param dmr_results:
+    :param pids:
+    :param probe_class:
+    :param comparisons:
+    :param comparison_titles:
+    :param outdir:
+    :param figname:
+    :return:
+    """
     if len(comparisons) != len(comparison_titles):
         raise AttributeError("Length of comparisons and comparison_titles must be equal.")
     if pids is None:
@@ -235,3 +248,37 @@ def dmr_overlap(
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
         fig.savefig(os.path.join(outdir, "%s.pdf" % figname))
+
+
+def dmr_proposed_cluster_count_by_class(dmr_results, outdir=None, figname="dmr_cluster_count_by_class"):
+    """
+    Venn diagram showing the distribution of clusters amongst the classes for a single result.
+    :param dmr_results: Already selected for patient and comparison type. Expect three levels of dictionary
+    nesting: chr, cls, cluster ID.
+    :param outdir: If supplied, write plot to a file.
+    :param figname:
+    :return:
+    """
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    # get classes
+    all_classes = set()
+    for (chr, cls, cl), attr in dmr.dict_iterator(dmr_results, n_level=3):
+        all_classes.add(cls)
+
+    blocks = []
+    set_labels = []
+    for cls in all_classes:
+        d = dmr.dict_by_sublevel(dmr_results, 2, cls)
+        this_bl = [tuple(t) for t, _ in dmr.dict_iterator(d, n_level=2)]
+        blocks.append(this_bl)
+        set_labels.append(cls)
+
+    venn.venn_diagram(*blocks, ax=ax, set_labels=set_labels)
+
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
+        fig.savefig(os.path.join(outdir, "%s.pdf" % figname))
+    return ax
