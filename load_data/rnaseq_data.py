@@ -3,7 +3,7 @@ import re
 import os
 import glob
 import references
-from rnaseq import normalisation
+from rnaseq import normalisation, tcga
 from utils.log import get_console_logger
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 logger = get_console_logger(__name__)
@@ -66,7 +66,30 @@ wtchg_p170503 = RnaSeqStarFileLocations(
     ],
 )
 
-PATIENT_LOOKUP_STAR = {
+wtchg_p160704_ribozero = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero'),
+    lanes=[
+        '170328_K00150_0177_BHJ2C2BBXX',
+    ],
+)
+
+wtchg_p160704_ribozero2 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero_rerun'),
+    lanes=[
+        '170905_K00150_0238_BHLFMVBBXX',
+        '170907_K00150_0239_AHLFL2BBXX',
+    ],
+)
+
+wtchg_p170446 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170446'),
+    lanes=[
+        '170905_K00150_0238_BHLFMVBBXX',
+        '170907_K00150_0239_AHLFL2BBXX',
+    ],
+)
+
+PATIENT_LOOKUP_CC_STAR = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
         ('GBM017_P4', wtchg_p170390),
@@ -372,12 +395,14 @@ class FeatureCountLoader(CountDatasetLoader):
         self.transcript_lengths = self.raw_data.loc[:, 'Length']
         return super(FeatureCountLoader, self).process()
 
+    ## TODO: can we delete this and use the parent method?
     def get_fpkm(self):
         if 'read_count' not in self.meta.columns:
             raise AttributeError("Cannot convert to FPKM without 'read_count' column in metadata.")
         nreads = self.meta.loc[:, 'read_count']
         return self.data.divide(nreads, axis=1).divide(self.transcript_lengths, axis=0) * 1e9
 
+    ## TODO: can we delete this and use the parent method?
     def get_tpm(self):
         rpk = self.data.divide(self.transcript_lengths, axis=0)
         return rpk.divide(rpk.sum(axis=0), axis=1) * 1e6
@@ -463,7 +488,7 @@ class StarCountLoader(MultipleFileCountLoader):
                 self.raw_data.loc[:, sn] = dat.iloc[:, 2]
 
 
-class MultipleLaneCountDatasetLoader(object):
+class MultipleLaneCountDatasetLoader(CountDataMixin):
     loader_class = CountDatasetLoader
 
     def __init__(
@@ -556,11 +581,20 @@ class MultipleLaneCountDatasetLoader(object):
     def get_counts(self):
         return self.data
 
-    def get_fpkm(self):
-        raise NotImplementedError
+    # alternative approach to getting FPKM is to pass on to constituent loaders:
 
-    def get_tpm(self):
-        raise NotImplementedError
+    # def get_fpkm(self):
+    #     data = self.loaders[0].get_fpkm()
+    #     for l in self.loaders[1:]:
+    #         data += l.get_fpkm()
+    #     return data
+    #
+    # def get_tpm(self):
+    #     data = self.loaders[0].get_tpm()
+    #     for l in self.loaders[1:]:
+    #         data += l.get_tpm()
+    #     # need to renormalise this now (sum to 1e6)
+    #     return data
 
 
 class MultipleLaneFeatureCountLoader(MultipleLaneCountDatasetLoader):
@@ -1397,6 +1431,7 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
 
 def load_by_patient(
         patient_ids,
+        type='cell_culture',
         source='star',
         annotate_by='all',
         annotation_type='protein_coding',
@@ -1411,9 +1446,20 @@ def load_by_patient(
     :param include_control: If True (default) include Gibco reference NSC
     :return:
     """
+
+    if source == 'star':
+        if type == "cell_culture":
+            LOOKUP = PATIENT_LOOKUP_CC_STAR
+        elif type == "ffpe":
+            LOOKUP = PATIENT_LOOKUP_FFPE_STAR
+        else:
+            raise NotImplementedError()
+    else:
+        raise NotImplementedError()
+
     # ensure patient IDs are in correct form
     if patient_ids == 'all':
-        patient_ids = [t for t in PATIENT_LOOKUP_STAR.keys() if t != 'GIBCO']
+        patient_ids = [t for t in LOOKUP.keys() if t != 'GIBCO']
     elif hasattr(patient_ids, '__iter__'):
         patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
     else:
@@ -1422,13 +1468,8 @@ def load_by_patient(
         else:
             patient_ids = ['%03d' % patient_ids]
 
-    if include_control:
+    if include_control and type == 'cell_culture':
         patient_ids += ['GIBCO']
-
-    if source == 'star':
-        LOOKUP = PATIENT_LOOKUP_STAR
-    else:
-        raise NotImplementedError()
 
     # precompute the loaders required to avoid reloading multiple times
     # we'll also take a note of the order for later reordering
@@ -1455,9 +1496,12 @@ def load_by_patient(
         res = MultipleBatchLoader(objs)
     else:
         res = objs[0]
+        # make samples column the meta index
+        res.meta.set_index('sample', inplace=True)
 
     # apply original ordering
     res.meta = res.meta.loc[sample_order]
+    ## FIXME: maintain all annotation columns if preset
     res.data = res.data.loc[:, res.meta.index]
 
     return res
@@ -1556,48 +1600,57 @@ def brainrnaseq_preprocessed():
     return data, meta
 
 
-def nih_gdc_gbm_preprocessed(units='counts'):
+def nih_gdc_gbm_preprocessed(indir, meta_fn=None):
+    """
+    Load the preprocessed gene expression data downloaded from NIH genomic data commons
+    :param indir: Must be specified as different versions are available.
+    :param meta_fn: Optionally supply the path to the Brenna metadata. This should be set anyway, so no need.
+    :return: data, meta
+    """
+    infile = os.path.join(indir, 'data.csv')
+    sources_fn = os.path.join(indir, 'sources.csv')
+
+    if not os.path.exists(infile) or not os.path.exists(sources_fn):
+        logger.info("Unable to find collated data file %s. Calculating from individual files now.", infile)
+        dat, meta = tcga.prepare_data_and_meta(indir, meta_fn=meta_fn)
+
+        logger.info("Saving data from %d samples to %s.", dat.columns.size, infile)
+        dat.to_csv(infile)
+        logger.info("Saving metadata from to %s.", sources_fn)
+        meta.to_csv(sources_fn)
+    else:
+        dat = pd.read_csv(infile, header=0, index_col=0)
+        meta = pd.read_csv(sources_fn, header=0, index_col=0)
+
+    return dat, meta
+
+
+def tcga_primary_gbm(units='counts'):
     """
     Load the preprocessed gene expression data downloaded from NIH genomic data commons
     :param units: Either 'counts' or 'fpkm' are available.
     :return: data, meta
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm')
+    basedir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour')
+    meta_fn = os.path.join(basedir, 'brennan_s7.csv')
     if units == 'counts':
-        infile = os.path.join(indir, 'htseq_count', 'counts.csv')
+        indir = os.path.join(basedir, 'htseq-count')
     elif units == 'fpkm':
-        infile = os.path.join(indir, 'htseq_count', 'fpkm.csv')
+        indir = os.path.join(basedir, 'htseq-count_fpkm')
     else:
         raise ValueError("Unsupported units. Supported values are 'counts' and 'fpkm'.")
 
-    meta_fn = os.path.join(indir, 'sources.csv')
-    meta = pd.read_csv(meta_fn, header=0, index_col=0)
+    return nih_gdc_gbm_preprocessed(indir, meta_fn=meta_fn)
 
-    if not os.path.exists(infile):
-        logger.info("Unable to find summarised file %s. Calculating from individual files now.", infile)
-        dat = []
-        for cid in meta.index:
-            if units == 'counts':
-                this_infile = os.path.join(indir, 'htseq_count', 'counts', '%s.gz' % cid)
-            else:
-                this_infile = os.path.join(indir, 'htseq_count', 'fpkm', '%s.gz' % cid)
-            try:
-                this_dat = pd.read_csv(this_infile, header=None, index_col=0, sep='\t')
-                # amend Ensembl IDs (remove version number)
-                this_dat.index = this_dat.index.str.replace(r'\.[0-9]*$', '')
-                dat.append(this_dat)
-            except Exception:
-                logger.exception("Failed to read file %s", this_infile)
 
-        dat = pd.concat(dat, axis=1)
-        dat.columns = meta.loc[:, 'sample']
-        logger.info("Saving data from %d samples to %s.", dat.columns.size, infile)
-        dat.to_csv(infile)
-    else:
-        dat = pd.read_csv(infile, header=0, index_col=0)
-
-    meta.set_index('sample', inplace=True)
-    return dat, meta
+def tcga_methylation_assayed(units='counts'):
+    """
+    Load the preprocessed gene expression data downloaded from NIH genomic data commons
+    :param units: Either 'counts' or 'fpkm' are available.
+    :return: data, meta
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'paired_rnaseq_methylation_cohort')
+    return nih_gdc_gbm_preprocessed(indir, units=units)
 
 
 def gse73721(source='star', annotate_by='all', annotation_type='protein_coding'):

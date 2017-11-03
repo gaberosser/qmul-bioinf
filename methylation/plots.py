@@ -250,7 +250,13 @@ def dmr_overlap(
         fig.savefig(os.path.join(outdir, "%s.pdf" % figname))
 
 
-def dmr_proposed_cluster_count_by_class(dmr_results, outdir=None, figname="dmr_cluster_count_by_class"):
+def dmr_cluster_count_by_class(
+        dmr_results,
+        show_labels=True,
+        outdir=None,
+        figname="dmr_cluster_count_by_class",
+        ax=None
+):
     """
     Venn diagram showing the distribution of clusters amongst the classes for a single result.
     :param dmr_results: Already selected for patient and comparison type. Expect three levels of dictionary
@@ -259,8 +265,11 @@ def dmr_proposed_cluster_count_by_class(dmr_results, outdir=None, figname="dmr_c
     :param figname:
     :return:
     """
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+    created = False
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        created = True
 
     # get classes
     all_classes = set()
@@ -275,10 +284,63 @@ def dmr_proposed_cluster_count_by_class(dmr_results, outdir=None, figname="dmr_c
         blocks.append(this_bl)
         set_labels.append(cls)
 
+    if not show_labels:
+        set_labels = None
+
     venn.venn_diagram(*blocks, ax=ax, set_labels=set_labels)
 
-    fig.tight_layout()
+    if created:
+        fig.tight_layout()
+
+    if outdir is not None:
+        ax.figure.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
+        ax.figure.savefig(os.path.join(outdir, "%s.pdf" % figname))
+    return ax
+
+
+def dmr_cluster_count_array(
+        dmr_results,
+        comparisons=None,
+        comparison_labels=None,
+        outdir=None,
+        figname='dmr_sign_cluster_count_array',
+        figsize=None
+):
+    """
+    :param dmr_results: Full dictionary output by compute_dmr
+    :param comparisons: If supplied, limit comparisons to this/these.
+    """
+    n_pid = len(dmr_results)
+    if comparisons is not None:
+        if not hasattr(comparisons, '__iter__'):
+            comparisons = tuple([comparisons])
+    else:
+        comparisons = sorted(dmr_results.values()[0].keys())
+    n_cmp = len(comparisons)
+
+    if comparison_labels is not None and len(comparison_labels) != n_cmp:
+        raise AttributeError("Length of comparisons and comparison_labels must be equal.")
+    if comparison_labels is None:
+        comparison_labels = comparisons
+
+    if figsize is None:
+        figsize = (n_pid ** .9 * 2.4, n_cmp ** .9 * 2.7)
+    fig, axs = plt.subplots(n_cmp, n_pid, figsize = figsize)
+    show_labels = True
+    for j, pid in enumerate(sorted(dmr_results.keys())):
+        for i, cmp in enumerate(comparisons):
+            ax = axs[i, j]
+            dmr_cluster_count_by_class(dmr_results[pid][cmp], ax=ax, show_labels=show_labels)
+            show_labels = False
+
+    fig.tight_layout(rect=(0.03, 0.03, 1, 1), pad=0.)
+
+    # add text labels
+    for j, pid in enumerate(sorted(dmr_results.keys())):
+        fig.text((j + 1.) / (n_pid + 1.), 0.02, pid)
+    for i, cmp in enumerate(comparison_labels):
+        fig.text(0., (i + 1.) / (n_cmp + 1.), cmp)
+
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)
         fig.savefig(os.path.join(outdir, "%s.pdf" % figname))
-    return ax

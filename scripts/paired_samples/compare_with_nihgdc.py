@@ -18,7 +18,7 @@ outdir = unique_output_dir("nih_gdc_tcga-gbm", reuse_empty=True)
 rrna_ensg = set(gtf_reader.get_rrna())
 mt_ensg = set(gtf_reader.get_mitochondrial())
 
-data, meta = rnaseq_data.nih_gdc_gbm_preprocessed(units='counts')
+data, meta = rnaseq_data.tcga_primary_gbm(units='counts')
 data = data.loc[data.index.str.contains('ENSG')]
 
 # check rRNA quantity then remove

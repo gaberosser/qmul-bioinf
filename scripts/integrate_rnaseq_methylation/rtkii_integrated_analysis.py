@@ -535,8 +535,13 @@ if __name__ == "__main__":
             json.dump(test_results, f, cls=TestResultEncoder)
         print "Saved DMR results to %s" % fout
 
-    # Venn showing the distribution of robe classes amongst all regions (incl. not significantly DM)
-    me_plots.dmr_proposed_cluster_count_by_class(test_results.values()[0].values()[0], outdir=outdir)
+    # Venn showing the distribution of probe classes amongst all regions (incl. not significantly DM)
+    me_plots.dmr_cluster_count_by_class(test_results.values()[0].values()[0], outdir=outdir)
+
+    # Array of Venns showing the same distribution but of *significant* clusters in pair_all and ref_all
+    me_plots.dmr_cluster_count_array(test_results_significant, comparisons=('gibco', 'matched'),
+                                     comparison_labels=('Ref', 'Paired'), outdir=outdir)
+
 
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']

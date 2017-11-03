@@ -1,4 +1,13 @@
 import csv
+import pandas as pd
+from utils.log import get_console_logger
+logger = get_console_logger(__name__)
+
+
+def load_from_gct(infile):
+    dat = pd.read_csv(infile, header=0, index_col=0, skiprows=2, delimiter='\t')
+    dat = dat.drop('Description', axis=1)
+    return dat
 
 
 def data_to_gct(data, outfile):
@@ -11,6 +20,16 @@ def data_to_gct(data, outfile):
         c.writerow(['NAME', 'Description'] + data.columns.tolist())
         for name, vals in data.iterrows():
             c.writerow([name, "NA"] + vals.values.tolist())
+
+
+def combine_gct_files(*infiles):
+    all_dat = [load_from_gct(fn) for fn in infiles]
+    idx = reduce(lambda x, y: x.intersection(y), [t.index for t in all_dat])
+    n_lost_max = max([len(t.index.difference(idx)) for t in all_dat])
+    if n_lost_max > 0:
+        logger.warn("%d rows were discarded as they are not present in all samples.", n_lost_max)
+    dat = pd.concat(all_dat, axis=1).dropna()
+    return dat
 
 
 def phenotypes_to_cls(groups, outfile):
