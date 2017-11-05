@@ -367,19 +367,21 @@ def joint_de_dmr_table(joint_de_dmr_result):
     return out
 
 
-def results_to_excel(blocks, fn):
+def results_to_excel(blocks, fn, write_index=True):
     """
 
     :param blocks: Dictionary containing the different comparisons to save. Values are pandas dataframes.
     :param fn: Output file
+    :param write_index: If True (default) then the index is written as the first column. May wish to disable this if it
+    has no meaning.
     :return:
     """
-    xl_writer = pd.ExcelWriter(outfile)
+    xl_writer = pd.ExcelWriter(fn)
     # sort the keys for a more sensible order
     keys = sorted(blocks.keys())
     for k in keys:
         bl = blocks[k]
-        bl.to_excel(xl_writer, k)  # index=False??
+        bl.to_excel(xl_writer, k, index=write_index)
     xl_writer.save()
 
 
@@ -613,7 +615,7 @@ if __name__ == "__main__":
             blocks['GBM%s_%s' % (pid, k)] = this_tbl[pid]
 
     outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
-    results_to_excel(blocks, outfile)
+    results_to_excel(blocks, outfile, write_index=False)
 
     # 2. IPA format
     incl_cols = ['logFC', 'FDR']
