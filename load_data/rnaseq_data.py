@@ -166,6 +166,47 @@ PATIENT_LOOKUP_CC_STAR = {
     ]
 }
 
+PATIENT_LOOKUP_FFPE_STAR = {
+    '017': [
+        ('NH15_1661DEF2C', wtchg_p170446)
+    ],
+    '018': [
+        ('NH15_1877_SP1C', wtchg_p160704_ribozero)
+        # ('GBM018 FFPE', wtchg_p160704_ribozero)
+    ],
+    '019': [
+        ('NH15_2101_DEF1A', wtchg_p160704_ribozero)
+        # ('GBM019 FFPE', wtchg_p160704_ribozero)
+    ],
+    '026': [
+        ('NH16_270_DEF1A', wtchg_p160704_ribozero2)
+    ],
+    '030': [
+        ('NH16_616DEF1B', wtchg_p170446)
+    ],
+    '031': [
+        ('NH16_677_SP1A', wtchg_p160704_ribozero)
+    ],
+    '044': [
+        ('NH16_1574DEF1A', wtchg_p170446)
+    ],
+    '049': [
+        ('NH16_1976DEF2A', wtchg_p170446)
+    ],
+    '050': [
+        ('NH16_2063DEF1B1', wtchg_p170446)
+    ],
+    '052': [
+        ('NH16_2214DEF1A', wtchg_p170446)
+    ],
+    '054': [
+        ('NH16_2255DEF1B2', wtchg_p170446)
+    ],
+    '061': [
+        ('NH16_2806DEF3A1', wtchg_p170446)
+    ],
+}
+
 
 def strip_extension(s, file_ext):
     regex = file_ext.replace('.', '\.')
