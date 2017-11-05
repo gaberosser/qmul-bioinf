@@ -104,6 +104,13 @@ if __name__ == '__main__':
     pvals_ours = load_pvalue_results(fn)
     ss_ours = simplicity_score(pvals_ours)
     nm_ours = (pvals_ours < alpha).sum(axis=1)
+    cls_ours = pd.Series(index=pvals_ours.index)
+    min_idx = np.argmin(pvals_ours.values, axis=1)
+    cls_ours.loc[nm_ours == 1] = pvals_ours.columns[min_idx[nm_ours == 1]]
+    cls_ours.loc[nm_ours > 1] = 'Multi'
+
+    # easy to read table
+    our_summary = pd.concat((cls_ours, ss_ours, pvals_ours), axis=1).sort_index()
 
     # compare with methylation subtype
     heidelberg_subtype_ffpe = pd.Series({
@@ -166,7 +173,9 @@ if __name__ == '__main__':
             ctg_tcga.loc[ix, col] = this_ix.sum()
             ctg_ss_tcga.loc[ix, col] = ss_tcga.loc[this_ix.index[this_ix]].mean()
 
-    ax = sns.heatmap(ctg_ss_tcga.fillna(0), vmin=0, vmax=1, cmap='RdBu_r', annot=True, cbar=False)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sns.heatmap(ctg_ss_tcga.fillna(0), vmin=0, vmax=1, cmap='RdBu_r', annot=True, cbar=False, ax=ax)
     # turn the axis labels
     plt.setp(ax.get_yticklabels(), rotation=0)
     plt.setp(ax.get_xticklabels(), rotation=90)
@@ -174,7 +183,9 @@ if __name__ == '__main__':
     ax.figure.savefig(os.path.join(outdir, "simplicity_scores_tcga.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "simplicity_scores_tcga.pdf"))
 
-    ax = sns.heatmap(ctg_tcga.astype(float), cmap='RdBu_r', annot=True, cbar=False)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sns.heatmap(ctg_tcga.astype(float), cmap='RdBu_r', annot=True, cbar=False, ax=ax)
     # turn the axis labels
     plt.setp(ax.get_yticklabels(), rotation=0)
     plt.setp(ax.get_xticklabels(), rotation=90)
