@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from scripts.heidelberg_classifier import api
 from settings import DATA_DIR_NON_GIT, HEIDELBERG_CLASSIFIER_CONFIG
 from utils.log import get_console_logger
+from utils.output import unique_output_dir
 
 logger = get_console_logger(__name__)
 
@@ -35,6 +36,7 @@ outdir = os.path.join(
 )
 
 if __name__ == "__main__":
+    outdir = unique_output_dir("heidelberg_results")
     sample_ids = range(7123, 7222)
     # sample_ids = range(6858, 6977)
     obj = api.Heidelberg()
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     reset = []
     for sid in sample_ids:
         try:
-            this_res = obj.get_result(sid)
+            this_res = obj.get_result(sid, outdir=outdir)
             res.append(this_res)
             if this_res is None:
                 reset.append(sid)

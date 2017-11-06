@@ -5,7 +5,7 @@ import re
 
 
 if __name__ == '__main__':
-    indir = os.path.join(OUTPUT_DIR, 'heidelberg_classifier.0')
+    indir = os.path.join(OUTPUT_DIR, 'heidelberg_results.0')
 
     n = 4
     match_threshold = 0.3

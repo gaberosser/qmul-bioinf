@@ -93,6 +93,56 @@ def simplicity_score(pvals):
     return (adds - adns) * rng / float(n_cls - 1)
 
 
+def contingency_table(new, previous, vals=None, val_func=np.mean):
+    """
+    Previous values go on the INDEX, new values on the COLUMNS
+    :param new:
+    :param previous:
+    :param vals:
+    :return:
+    """
+    _, new_cls = new.factorize()
+    new_cls = set(new_cls).difference({'None', 'Multi'})
+
+    _, prev_cls = previous.factorize()
+    prev_cls = set(prev_cls).difference({'None', 'Multi'})
+
+    new_idx = list(new_cls) + ['Multi', 'None']
+    prev_idx = list(prev_cls) + ['Multi', 'None']
+
+    ctg = pd.DataFrame(
+        index=prev_idx,
+        columns=new_idx
+    )
+
+    for ix in ctg.index:
+
+        if ix == "None":
+            the_ids = previous.loc[previous.isnull()].index
+        else:
+            the_ids = previous.loc[previous == ix].index
+        if len(the_ids) == 0:
+            continue
+
+        for col in ctg.columns:
+            the_match = new.loc[the_ids]
+            if col == "None":
+                this_ix = the_match.isnull()
+            else:
+                this_ix = (the_match == col)
+            if vals is None:
+                # just count
+                ctg.loc[ix, col] = this_ix.sum()
+            else:
+                # store values
+                if val_func is None:
+                    ctg.loc[ix, col] = vals.loc[this_ix.index[this_ix]].tolist()
+                else:
+                    ctg.loc[ix, col] = val_func(vals.loc[this_ix.index[this_ix]])
+                
+    return ctg
+
+
 if __name__ == '__main__':
     alpha = 0.04
     outdir = unique_output_dir("wang_classification")
@@ -151,27 +201,14 @@ if __name__ == '__main__':
     tcga_meta = tcga_meta.loc[pvals_tcga.index].dropna(how='all')
 
     # contingency table and simplicity of each element
-    previous = tcga_meta.loc[:, 'expression_subclass']
-    new = cls_tcga
-    ctg_tcga = pd.DataFrame(
-        index=['Proneural', 'Mesenchymal', 'Classical', 'Neural', 'G-CIMP', 'None'],
-        columns=['Proneural', 'Mesenchymal', 'Classical', 'Multi', 'None']
-    )
-    ctg_ss_tcga = pd.DataFrame(ctg_tcga, copy=True)
+    idx = ['Proneural', 'Mesenchymal', 'Classical', 'Neural', 'G-CIMP', 'None']
+    cols = ['Proneural', 'Mesenchymal', 'Classical', 'Multi', 'None']
 
-    for ix in ctg_tcga.index:
-        if ix == "None":
-            the_ids = tcga_meta.loc[previous.isnull()].index
-        else:
-            the_ids = tcga_meta.loc[previous == ix].index
-        for col in ctg_tcga.columns:
-            the_match = new.loc[the_ids]
-            if col == "None":
-                this_ix = the_match.isnull()
-            else:
-                this_ix = (the_match == col)
-            ctg_tcga.loc[ix, col] = this_ix.sum()
-            ctg_ss_tcga.loc[ix, col] = ss_tcga.loc[this_ix.index[this_ix]].mean()
+    ctg_tcga = contingency_table(cls_tcga, tcga_meta.loc[:, 'expression_subclass'])
+    ctg_ss_tcga = contingency_table(cls_tcga, tcga_meta.loc[:, 'expression_subclass'], ss_tcga)
+
+    ctg_tcga = ctg_tcga.loc[idx, cols]
+    ctg_ss_tcga = ctg_ss_tcga.loc[idx, cols]
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -192,3 +229,23 @@ if __name__ == '__main__':
     ax.figure.tight_layout()
     ax.figure.savefig(os.path.join(outdir, "contingency_tcga.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "contingency_tcga.pdf"))
+
+    # how is the classification affected if we combine our data and TCGA data?
+    fn = os.path.join(indir, 'p_result_tcga_idh1_wt_and_gbm_cc_ffpe_fpkm.gct.txt')
+    pvals_both = load_pvalue_results(fn)
+    ss_both = simplicity_score(pvals_both)
+    nm_both = (pvals_both < alpha).sum(axis=1)
+    cls_both = pd.Series(index=pvals_both.index)
+    min_idx = np.argmin(pvals_both.values, axis=1)
+    cls_both.loc[nm_both== 1] = pvals_both.columns[min_idx[nm_both == 1]]
+    cls_both.loc[nm_both > 1] = 'Multi'
+
+    # our data contingency
+    previous = cls_ours
+    new = cls_both.loc[cls_ours.index]
+    cols = ['Proneural', 'Mesenchymal', 'Classical', 'Multi', 'None']
+    ctg_ours_both = contingency_table(new, previous).loc[cols, cols]
+
+    previous = cls_tcga
+    new = cls_both.loc[cls_tcga.index]
+    ctg_tcga_both = contingency_table(new, previous).loc[cols, cols]
