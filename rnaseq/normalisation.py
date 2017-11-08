@@ -9,7 +9,7 @@ logger = get_console_logger(__name__)
 gtf_dir_human = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'ensembl', 'GRCh38', 'gtf')
 gtf_fn_human = os.path.join(gtf_dir_human, 'Homo_sapiens.GRCh38.87.gtf')
 
-gtf_dir_mouse = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'mouse', 'ensembl', 'GRCm38.5', 'gtf')
+gtf_dir_mouse = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'mouse', 'ensembl', 'GRCm38.p5', 'gtf')
 
 # GTF input by taxonomy ID
 GTF_INPUTS_BY_TAX_ID = {
