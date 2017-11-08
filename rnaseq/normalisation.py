@@ -41,9 +41,11 @@ def gene_lengths(gtf_fn=gtf_fn_human, overwrite=False):
 
     gene_lengths.to_csv(out_fn)
     logger.info("Wrote gene lengths to %s.", out_fn)
+    ## FIXME: the first time we run this, "some bug" results in an Exception being raised
+    ## the "some bug" goes away on a re-run.
     return gene_lengths
 
 
 def gene_length_by_tax_id(tax_id, **kwargs):
     gtf_fn = GTF_INPUTS_BY_TAX_ID[tax_id]
-    return gene_lengths(gtf_fn, **kwargs)
+    return gene_lengths(gtf_fn=gtf_fn, **kwargs)
