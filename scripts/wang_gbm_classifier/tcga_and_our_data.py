@@ -144,7 +144,7 @@ def contingency_table(new, previous, vals=None, val_func=np.mean):
 
 
 if __name__ == '__main__':
-    alpha = 0.04
+    alpha = 0.05
     outdir = unique_output_dir("wang_classification")
 
     # our data
@@ -249,3 +249,80 @@ if __name__ == '__main__':
     previous = cls_tcga
     new = cls_both.loc[cls_tcga.index]
     ctg_tcga_both = contingency_table(new, previous).loc[cols, cols]
+
+    # display as a pie/bar-chart
+    pids = heidelberg_subtype_ffpe.sort_index().index
+    classes =  ['Proneural', 'Mesenchymal', 'Classical']
+    ind = np.arange(len(pids))
+
+    p_inv = 1. - pvals_ours
+
+    ffpe_vals = []
+    culture_p1_vals = []
+    culture_p2_vals = []
+
+    for p in pids:
+        this_ffpe = p_inv.loc["GBM%s_FFPE" % p, classes]
+        ffpe_vals.append(this_ffpe.values)
+        this_cc = np.where(p_inv.index.str.contains("GBM%s_P" % p))[0]
+        culture_p1_vals.append(p_inv.iloc[this_cc[0]].loc[classes].values)
+        if len(this_cc) > 1:
+            culture_p2_vals.append(p_inv.iloc[this_cc[1]].loc[classes].values)
+        else:
+            culture_p2_vals.append(np.zeros(len(classes)))
+
+    ffpe_vals = np.concatenate((np.zeros((len(pids), 1)), ffpe_vals), axis=1)
+    ccp1_vals = np.concatenate((np.zeros((len(pids), 1)), culture_p1_vals), axis=1)
+    ccp2_vals = np.concatenate((np.zeros((len(pids), 1)), culture_p2_vals), axis=1)
+
+    ffpe_cs = ffpe_vals.cumsum(axis=1)
+    ccp1_cs = ccp1_vals.cumsum(axis=1)
+    ccp2_cs = ccp2_vals.cumsum(axis=1)
+
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    width = .2
+    offset = 0.05
+    colours = {
+        'Proneural': '#7030A0',
+        'Mesenchymal': '#22D05E',
+        'Classical': '#F79646',
+    }
+
+    for i in range(len(classes)):
+        c = colours[classes[i]]
+        x_ffpe = ind
+        x_cc1 = ind + width + offset
+        x_cc2 = ind + 2 * (width + offset)
+
+        the_ffpe = ffpe_vals[:, i + 1]
+        the_ffpe_bottom = ffpe_cs[:, i]
+        ax.bar(x_ffpe, the_ffpe, width, bottom=the_ffpe_bottom, color=c, edgecolor=c, lw=1.5)
+
+        the_cc1 = ccp1_vals[:, i + 1]
+        the_cc1_bottom = ccp1_cs[:, i]
+        ax.bar(x_cc1, the_cc1, width, bottom=the_cc1_bottom, color=c, edgecolor=c, lw=1.5)
+
+        the_cc2 = ccp2_vals[:, i + 1]
+        the_cc2_bottom = ccp2_cs[:, i]
+        ax.bar(x_cc2, the_cc2, width, bottom=the_cc2_bottom, color=c, edgecolor=c, lw=1.5)
+
+        idx = the_ffpe > (1 - alpha)
+        ax.bar(x_ffpe[idx], the_ffpe[idx], 0.25, bottom=the_ffpe_bottom[idx],
+               color='none', edgecolor='k', lw=1.5, zorder=999)
+
+        idx = the_cc1 > (1 - alpha)
+        ax.bar(x_cc1[idx], the_cc1[idx], 0.25, bottom=the_cc1_bottom[idx],
+               color='none', edgecolor='k', lw=1.5, zorder=999)
+
+        idx = the_cc2 > (1 - alpha)
+        ax.bar(x_cc2[idx], the_cc2[idx], 0.25, bottom=the_cc2_bottom[idx],
+               color='none', edgecolor='k', lw=1.5, zorder=999)
+
+    ax.set_xticks(ind + 1.5 * (width + offset))
+    ax.set_xticklabels(pids, horizontalalignment='center')
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'wang_pvalues_chart.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'wang_pvalues_chart.pdf'))

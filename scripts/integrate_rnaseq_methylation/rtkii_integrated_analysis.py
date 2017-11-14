@@ -19,6 +19,10 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 
 
+class BasicLogicException(Exception):
+    pass
+
+
 class TestResultEncoder(json.JSONEncoder):
     """
     Handles saving results that may contain Bool or sets
@@ -273,11 +277,11 @@ def n_overlap_datum(joint_dmr_de, this_de, this_dmr):
     n_dmr = len(list(dmr.dict_iterator(this_dmr, n_level=3)))
     n_dmr_genes = dmr.count_dmr_genes(this_dmr)
     n_overlaps = joint_dmr_de['all'].shape[0]
-    n_overlaps_unique = joint_dmr_de['all'].me_genes.unique().shape[0]
+    n_overlaps_unique = joint_dmr_de['all'].loc[:, 'Gene Symbol'].unique().shape[0]
     this_datum = [n_de, n_dmr, n_dmr_genes, n_overlaps, n_overlaps_unique]
     for cls in dmr.CLASSES:
         this_datum.append(joint_dmr_de[cls].shape[0])
-        this_datum.append(joint_dmr_de[cls].me_genes.unique().shape[0])
+        this_datum.append(joint_dmr_de[cls].loc[:, 'Gene Symbol'].unique().shape[0])
     return this_datum
 
 
@@ -401,7 +405,7 @@ def results_to_ipa_format(
             ['date_created', datetime.datetime.now().isoformat()]
         ]
         if identifier is not None:
-            header += ['identifier_types', identifier]
+            header += [['identifier_types', identifier]]
         with open(fn, 'wb') as f:
             c = csv.writer(f, delimiter='\t')
             # meta header
@@ -421,8 +425,8 @@ if __name__ == "__main__":
     outdir = output.unique_output_dir("integrate_rnaseq_methylation")
     ref_name = 'GIBCONSC_P4'
     # RTK II
-    # pids = ['017', '050', '054', '061']
-    # all n=2 samples
+    rtkii_pids = ['017', '050', '054']
+    # all n=2 samples and RTK II samples
     pids = ['018', '044', '049', '050', '052', '054', '061']
 
     de_params = {
@@ -506,6 +510,8 @@ if __name__ == "__main__":
     me_data = me_data.loc[common_probes]
 
     # Compute DMR
+    # We load pre-computed results if a JSON file with the correct filename is found
+    # Otherwise this is written after computing the results
     loaded = False
     if DMR_LOAD_DIR is not None:
         fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.json')
@@ -544,7 +550,6 @@ if __name__ == "__main__":
     me_plots.dmr_cluster_count_array(test_results_significant, comparisons=('gibco', 'matched'),
                                      comparison_labels=('Ref', 'Paired'), outdir=outdir)
 
-
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']
     test_results_inclusive = tmp_venn_set['inclusive']
@@ -572,8 +577,130 @@ if __name__ == "__main__":
     except Exception as exc:
         print "Unable to produce DMR overlap plot: %s" % repr(exc)
 
-    # side story: check overlap between individuals and group
+    # side story: check DMR overlap between individuals and group
     # skip this for now but useful to know!
+
+    # integrate the two results
+    # We first look for overlap, then generate Venn sets
+    dmr_matched = dmr.dict_by_sublevel(test_results_significant, 2, 'matched')
+    dmr_ref = dmr.dict_by_sublevel(test_results_significant, 2, 'gibco')
+
+    # TODO: move to a function
+    # these are the two inputs and the output
+
+    de_dmr_matched = compute_joint_de_dmr(dmr_matched, de_matched)
+    de_dmr_ref = compute_joint_de_dmr(dmr_ref, de_ref)
+    joint_de_dmr_sets = {}
+
+    # now compute the intersections
+    # we do this separately for concordant and discordant DE / DMR matches
+
+    for pid in pids:
+        for cls in dmr.CLASSES:
+            joint_de_dmr_sets.setdefault(pid, {}).setdefault(cls, {})
+            x_pair = de_dmr_matched[pid][cls]
+            x_ref = de_dmr_ref[pid][cls]
+
+            # split into discordant and concordant (and add a column to the original data)
+            conc_pair = np.sign(x_pair.logFC) != np.sign(x_pair.me_mediandelta)
+            conc_ref = np.sign(x_ref.logFC) != np.sign(x_ref.me_mediandelta)
+            x_pair.loc[:, 'de_dmr_concordant'] = conc_pair
+            x_ref.loc[:, 'de_dmr_concordant'] = conc_ref
+
+            # define the minimum unique identifier
+            de_dmr_id_pair = x_pair.loc[:, ['Gene Symbol', 'chr', 'me_cid']].apply(tuple, axis=1)
+            de_dmr_id_ref = x_ref.loc[:, ['Gene Symbol', 'chr', 'me_cid']].apply(tuple, axis=1)
+
+            v_all, ct_all = setops.venn_from_arrays(
+                de_dmr_id_pair,
+                de_dmr_id_ref,
+            )
+
+            # sanity checks
+            if de_dmr_id_pair.isin(v_all['01']).any():
+                raise BasicLogicException("de_dmr_id_pair.isin(v_all['01']).any()")
+
+            if de_dmr_id_ref.isin(v_all['10']).any():
+                raise BasicLogicException("de_dmr_id_ref.isin(v_all['10']).any()")
+
+            if de_dmr_id_pair.isin(v_all['10']).sum() + de_dmr_id_pair.isin(v_all['11']).sum() != de_dmr_id_pair.size:
+                raise BasicLogicException("de_dmr_id_pair.isin(v_all['10']).sum() + de_dmr_id_pair.isin(v_all['11']).sum() != de_dmr_id_pair.size")
+
+            if de_dmr_id_ref.isin(v_all['01']).sum() + de_dmr_id_ref.isin(v_all['11']).sum() != de_dmr_id_ref.size:
+                raise BasicLogicException("de_dmr_id_ref.isin(v_all['01']).sum() + de_dmr_id_ref.isin(v_all['11']).sum() != de_dmr_id_ref.size")
+
+            # no need to reduce to unique results here because the venn operations use sets
+            # concordant
+            v_conc, ct_conc = setops.venn_from_arrays(
+                de_dmr_id_pair[conc_pair],
+                de_dmr_id_ref[conc_ref],
+            )
+
+            # discordant
+            disc_pair = ~conc_pair
+            disc_ref = ~conc_ref
+
+            v_disc, ct_disc = setops.venn_from_arrays(
+                de_dmr_id_pair[disc_pair],
+                de_dmr_id_ref[disc_ref],
+            )
+
+            # finally, mixed (two ways to achieve this)
+            v_mix = set(de_dmr_id_pair[conc_pair]).intersection(de_dmr_id_ref[disc_ref])
+            v_mix = v_mix.union(
+                set(de_dmr_id_pair[disc_pair]).intersection(de_dmr_id_ref[conc_ref])
+            )
+
+            # stitch tables back together
+            # include all rows for main output
+            # for IPA we will reduce to DE logFC only (because no other values needed)
+
+            joint_de_dmr_sets[pid][cls].setdefault('all', {})
+            joint_de_dmr_sets[pid][cls]['all']['pair_all'] = x_pair
+            joint_de_dmr_sets[pid][cls]['all']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_all['10'])]
+            joint_de_dmr_sets[pid][cls]['all']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_all['11'])]
+            joint_de_dmr_sets[pid][cls]['all']['ref_all'] = x_ref
+            joint_de_dmr_sets[pid][cls]['all']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_all['01'])]
+            joint_de_dmr_sets[pid][cls]['all']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_all['11'])]
+
+            de_dmr_id_pair_all_conc = v_conc['10'] + v_conc['11']
+            joint_de_dmr_sets[pid][cls].setdefault('concordant', {})
+            joint_de_dmr_sets[pid][cls]['concordant']['pair_all'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'] + v_conc['11'])]
+            joint_de_dmr_sets[pid][cls]['concordant']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'])]
+            joint_de_dmr_sets[pid][cls]['concordant']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['11'])]
+            joint_de_dmr_sets[pid][cls]['concordant']['ref_all'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'] + v_conc['11'])]
+            joint_de_dmr_sets[pid][cls]['concordant']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'])]
+            joint_de_dmr_sets[pid][cls]['concordant']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['11'])]
+
+            joint_de_dmr_sets[pid][cls].setdefault('discordant', {})
+            joint_de_dmr_sets[pid][cls]['discordant']['pair_all'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'] + v_disc['11'])]
+            joint_de_dmr_sets[pid][cls]['discordant']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'])]
+            joint_de_dmr_sets[pid][cls]['discordant']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['11'])]
+            joint_de_dmr_sets[pid][cls]['discordant']['ref_all'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'] + v_disc['11'])]
+            joint_de_dmr_sets[pid][cls]['discordant']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'])]
+            joint_de_dmr_sets[pid][cls]['discordant']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['11'])]
+
+            joint_de_dmr_sets[pid][cls].setdefault('mixed', {})
+            joint_de_dmr_sets[pid][cls]['mixed']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_mix)]
+            joint_de_dmr_sets[pid][cls]['mixed']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_mix)]
+
+            # sanity checks:
+            for k, v in joint_de_dmr_sets[pid][cls]['concordant'].items():
+                if not v.de_dmr_concordant.all():
+                    raise BasicLogicException("concordant %s: not v.de_dmr_concordant.all()" % k)
+            for k, v in joint_de_dmr_sets[pid][cls]['discordant'].items():
+                if v.de_dmr_concordant.any():
+                    raise BasicLogicException("discordant %s: v.de_dmr_concordant.any()" % k)
+
+            aa = set(joint_de_dmr_sets[pid][cls]['mixed']['ref_and_pair'].loc[:, 'Gene Symbol'])
+            bb = set(joint_de_dmr_sets[pid][cls]['mixed']['pair_and_ref'].loc[:, 'Gene Symbol'])
+            if aa != bb:
+                raise BasicLogicException("IDs in mixed ref / pair do not match")
+
+    ## TODO: write to files
+
+    import pdb
+    pdb.set_trace()
 
     # integrate the two results
     dmr_matched = dmr.dict_by_sublevel(test_results_significant, 2, 'matched')

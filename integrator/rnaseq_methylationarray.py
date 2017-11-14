@@ -16,7 +16,8 @@ def compute_joint_de_dmr(
 
         if de_cols is None:
             de_cols = de_results.values()[0].columns.tolist()
-        meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_median1', 'me_median2', 'me_fdr']
+        # meth_cols = ['me_genes', 'chr', 'me_cid', 'me_mediandelta', 'me_median1', 'me_median2', 'me_fdr']
+        meth_cols = ['chr', 'me_cid', 'me_mediandelta', 'me_median1', 'me_median2', 'me_fdr']
         meth_attrs = ['median_change', 'median1', 'median2']
 
         for (chr, cls, cid), attrs in dmr.dict_iterator(dmr_results[sid], n_level=3):
@@ -36,13 +37,13 @@ def compute_joint_de_dmr(
                         (de_match.shape[0], 1)
                     )
                     # attach the gene name (from the DE data, since this one is the matching gene)
-                    me_data = np.concatenate(
-                        (
-                            np.reshape(de_match.loc[:, de_gene_column].values, (de_match.shape[0], 1)),
-                            me_data
-                        ),
-                        axis=1
-                    )
+                    # me_data = np.concatenate(
+                    #     (
+                    #         np.reshape(de_match.loc[:, de_gene_column].values, (de_match.shape[0], 1)),
+                    #         me_data
+                    #     ),
+                    #     axis=1
+                    # )
                     me_match = pd.DataFrame(data=me_data, columns=meth_cols, index=de_match.index)
 
                     this_match = pd.concat((de_match, me_match), axis=1)

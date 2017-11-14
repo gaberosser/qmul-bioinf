@@ -1,5 +1,6 @@
 import references
 
+
 def top_genes(
         data,
         n=100,
@@ -9,13 +10,13 @@ def top_genes(
     """
     Retrieve the top n genes from the data
     :param data: Indexed by ensembl_ID
-    :param units: 
-    :param n: 
-    :return: 
+    :param units:
+    :param n:
+    :return:
     """
     if convert_to_symbols:
         # get gene symbols and drop all NaN
-        gs = references.ensembl_to_gene_symbol(data.index).dropna()
+        gs = references.ensembl_to_gene_symbol(data.index, tax_id=tax_id).dropna()
         gs = gs.loc[~gs.index.duplicated()]
         gs = gs.loc[~gs.duplicated()]
     res = {}
@@ -27,3 +28,4 @@ def top_genes(
             t.index = new_idx
         res[col] = set(t.index)
     return res
+
