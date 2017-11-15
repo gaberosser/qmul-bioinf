@@ -371,6 +371,162 @@ def joint_de_dmr_table(joint_de_dmr_result):
     return out
 
 
+def de_dmr_hash(dat, cols=('Gene Symbol', 'chr', 'me_cid')):
+    """
+    Generate a list of hash values from the supplied DataFrame
+    :param dat:
+    :param cols:
+    :return:
+    """
+    return list(dat.loc[:, cols].itertuples(index=False, name=None))
+
+
+def de_dmr_concordance_status(dat):
+    """
+    For each entry supplied, compute the concordance status (boolean)
+    :param dat:
+    :return:
+    """
+    return np.sign(dat.logFC.astype(float)) != np.sign(dat.me_mediandelta.astype(float))
+
+
+def joint_de_dmr_table2(joint_de_dmr_result, associated_result=None):
+    """
+    Second version. This includes a column marking the concordancy of DE and DMR
+    :param joint_de_dmr_result: Nested dictionary, as follows: PID -> DMR class -> concordancy_status
+    e.g. ['054']['island']['concordant']
+    This is achieved by extracting a Venn set before calling the function (e.g. 'pair_only').
+    In practice, we can skip over concordancy status and use the column de_dmr_concordant to summarise
+    :return: Dict of tables keyed by PID, all classes and concordancies summarised in columns
+    """
+
+    de_cols = [
+        ('Gene Symbol', 'DE gene symbol'),
+        ('logFC', 'DE logFC'),
+        ('logCPM', 'DE logCPM'),
+        ('PValue', 'DE pvalue'),
+        ('FDR', 'DE FDR'),
+    ]
+
+    de_dtypes = [
+        'object',
+        'float',
+        'float',
+        'float',
+        'float',
+    ]
+
+    dmr_cols = [
+        'DMR clusterID',
+        'DMR class tss',
+        'DMR class gene',
+        'DMR class island',
+        'DMR chr',
+        'DMR median delta M',
+        'DMR padj',
+    ]
+
+    dmr_dtypes = [
+        'uint16',
+        'uint8',
+        'uint8',
+        'uint8',
+        'object',
+        'float',
+        'float',
+    ]
+
+    dmr_col_map = [
+        ('DMR clusterID', 'me_cid'),
+        ('DMR chr', 'chr'),
+        ('DMR median delta M', 'me_mediandelta'),
+        ('DMR padj', 'me_fdr'),
+    ]
+
+    de_dmr_cols = [
+        'DE direction',
+        'DMR direction',
+        'DE DMR concordant',
+    ]
+
+    de_dmr_dtypes = [
+        'object',
+        'object',
+        'object',
+    ]
+
+    dmr_class_series = pd.Series(0, index=['DMR class %s' % t for t in dmr.CLASSES])
+    direction_series = pd.Series('-', index=['DE direction, DMR direction'])
+
+    all_cols = [t[1] for t in de_cols] + dmr_cols + de_dmr_cols
+    all_dtypes = de_dtypes + dmr_dtypes + de_dmr_dtypes
+
+    out = {}
+
+    for pid in joint_de_dmr_result:
+        df = pd.DataFrame(columns=all_cols)
+        df = df.astype(dict(zip(all_cols, all_dtypes)))
+        row_lookup = {}
+        i = 0
+        for cls in dmr.CLASSES:
+
+            if associated_result is not None:
+                assoc_tbl = associated_result[pid][cls]
+                assoc_hsh = de_dmr_hash(assoc_tbl)
+                assoc_status = [row.loc['de_dmr_concordant'] for _, row in assoc_tbl.iterrows()]
+                assoc_conc = dict(zip(assoc_hsh, assoc_status))
+
+            this_tbl = joint_de_dmr_result[pid][cls]
+            for _, row in this_tbl.iterrows():
+                hsh = (row.loc['Gene Symbol'], row.loc['chr'], row.loc['me_cid'])
+                if hsh in row_lookup:
+                    # already seen this precise DE / DMR combination
+                    # we only need to update the class types
+                    df.loc[row_lookup[hsh], 'DMR class %s' % cls] = 1
+                else:
+                    new_row_de = pd.Series(
+                        row.loc[list(zip(*de_cols)[0])].values,
+                        index=list(zip(*de_cols)[1])
+                    )
+
+                    new_row_dmr = pd.Series(
+                        row.loc[list(zip(*dmr_col_map)[1])].values,
+                        index=list(zip(*dmr_col_map)[0])
+                    )
+                    new_row_dmr = new_row_dmr.append(dmr_class_series)
+                    new_row_dmr.loc['DMR class %s' % cls] = 1
+
+                    new_row = pd.concat((new_row_de, new_row_dmr))
+                    new_row = new_row.append(direction_series)
+
+                    # direction
+                    new_row.loc['DE direction'] = 'U' if float(row.loc['logFC']) >= 0 else 'D'
+                    new_row.loc['DMR direction'] = 'U' if float(row.loc['me_mediandelta']) >= 0 else 'D'
+
+                    # concordance
+                    c = ['T' if row.loc['de_dmr_concordant'] else 'F']
+                    if associated_result is None:
+                        # assume no matching result (e.g. pair_only)
+                        pass
+                    else:
+                        # get the associated concordance (e.g. pair_and_ref)
+                        c += ['T' if assoc_conc[hsh] else 'F']
+
+                    new_row.loc['DE DMR concordant'] = ','.join(c)
+
+                    df.loc[i] = new_row
+
+                    row_lookup[hsh] = i
+                    i += 1
+
+        # sort by abs DE logFC
+        idx = np.abs(df.loc[:, 'DE logFC']).sort_values(ascending=False).index
+        out[pid] = df.loc[idx]
+
+    return out
+
+
+
 def results_to_excel(blocks, fn, write_index=True):
     """
 
@@ -592,12 +748,22 @@ if __name__ == "__main__":
     de_dmr_ref = compute_joint_de_dmr(dmr_ref, de_ref)
     joint_de_dmr_sets = {}
 
+    overlap_types = [
+        'pair_all',
+        'pair_only',
+        'pair_and_ref',
+        'ref_all',
+        'ref_only',
+        'ref_and_pair'
+    ]
+
     # now compute the intersections
     # we do this separately for concordant and discordant DE / DMR matches
 
     for pid in pids:
-        for cls in dmr.CLASSES:
-            joint_de_dmr_sets.setdefault(pid, {}).setdefault(cls, {})
+        for cls in ['all'] + list(dmr.CLASSES):
+            for ot in overlap_types:
+                joint_de_dmr_sets.setdefault(ot, {}).setdefault(pid, {}).setdefault(cls, {})
             x_pair = de_dmr_matched[pid][cls]
             x_ref = de_dmr_ref[pid][cls]
 
@@ -655,47 +821,116 @@ if __name__ == "__main__":
             # include all rows for main output
             # for IPA we will reduce to DE logFC only (because no other values needed)
 
-            joint_de_dmr_sets[pid][cls].setdefault('all', {})
-            joint_de_dmr_sets[pid][cls]['all']['pair_all'] = x_pair
-            joint_de_dmr_sets[pid][cls]['all']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_all['10'])]
-            joint_de_dmr_sets[pid][cls]['all']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_all['11'])]
-            joint_de_dmr_sets[pid][cls]['all']['ref_all'] = x_ref
-            joint_de_dmr_sets[pid][cls]['all']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_all['01'])]
-            joint_de_dmr_sets[pid][cls]['all']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_all['11'])]
+            joint_de_dmr_sets['pair_all'][pid][cls]['all'] = x_pair
+            joint_de_dmr_sets['pair_only'][pid][cls]['all'] = x_pair.loc[de_dmr_id_pair.isin(v_all['10'])]
+            joint_de_dmr_sets['pair_and_ref'][pid][cls]['all'] = x_pair.loc[de_dmr_id_pair.isin(v_all['11'])]
+            joint_de_dmr_sets['ref_all'][pid][cls]['all'] = x_ref
+            joint_de_dmr_sets['ref_only'][pid][cls]['all'] = x_ref.loc[de_dmr_id_ref.isin(v_all['01'])]
+            joint_de_dmr_sets['ref_and_pair'][pid][cls]['all'] = x_ref.loc[de_dmr_id_ref.isin(v_all['11'])]
 
             de_dmr_id_pair_all_conc = v_conc['10'] + v_conc['11']
-            joint_de_dmr_sets[pid][cls].setdefault('concordant', {})
-            joint_de_dmr_sets[pid][cls]['concordant']['pair_all'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'] + v_conc['11'])]
-            joint_de_dmr_sets[pid][cls]['concordant']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'])]
-            joint_de_dmr_sets[pid][cls]['concordant']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['11'])]
-            joint_de_dmr_sets[pid][cls]['concordant']['ref_all'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'] + v_conc['11'])]
-            joint_de_dmr_sets[pid][cls]['concordant']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'])]
-            joint_de_dmr_sets[pid][cls]['concordant']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['11'])]
+            joint_de_dmr_sets['pair_all'][pid][cls]['concordant'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'] + v_conc['11'])]
+            joint_de_dmr_sets['pair_only'][pid][cls]['concordant'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['10'])]
+            joint_de_dmr_sets['pair_and_ref'][pid][cls]['concordant'] = x_pair.loc[de_dmr_id_pair.isin(v_conc['11'])]
+            joint_de_dmr_sets['ref_all'][pid][cls]['concordant'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'] + v_conc['11'])]
+            joint_de_dmr_sets['ref_only'][pid][cls]['concordant'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['01'])]
+            joint_de_dmr_sets['ref_and_pair'][pid][cls]['concordant'] = x_ref.loc[de_dmr_id_ref.isin(v_conc['11'])]
 
-            joint_de_dmr_sets[pid][cls].setdefault('discordant', {})
-            joint_de_dmr_sets[pid][cls]['discordant']['pair_all'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'] + v_disc['11'])]
-            joint_de_dmr_sets[pid][cls]['discordant']['pair_only'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'])]
-            joint_de_dmr_sets[pid][cls]['discordant']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['11'])]
-            joint_de_dmr_sets[pid][cls]['discordant']['ref_all'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'] + v_disc['11'])]
-            joint_de_dmr_sets[pid][cls]['discordant']['ref_only'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'])]
-            joint_de_dmr_sets[pid][cls]['discordant']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['11'])]
+            joint_de_dmr_sets['pair_all'][pid][cls]['discordant'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'] + v_disc['11'])]
+            joint_de_dmr_sets['pair_only'][pid][cls]['discordant'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['10'])]
+            joint_de_dmr_sets['pair_and_ref'][pid][cls]['discordant'] = x_pair.loc[de_dmr_id_pair.isin(v_disc['11'])]
+            joint_de_dmr_sets['ref_all'][pid][cls]['discordant'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'] + v_disc['11'])]
+            joint_de_dmr_sets['ref_only'][pid][cls]['discordant'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['01'])]
+            joint_de_dmr_sets['ref_and_pair'][pid][cls]['discordant'] = x_ref.loc[de_dmr_id_ref.isin(v_disc['11'])]
 
-            joint_de_dmr_sets[pid][cls].setdefault('mixed', {})
-            joint_de_dmr_sets[pid][cls]['mixed']['pair_and_ref'] = x_pair.loc[de_dmr_id_pair.isin(v_mix)]
-            joint_de_dmr_sets[pid][cls]['mixed']['ref_and_pair'] = x_ref.loc[de_dmr_id_ref.isin(v_mix)]
+            joint_de_dmr_sets['pair_and_ref'][pid][cls]['mixed'] = x_pair.loc[de_dmr_id_pair.isin(v_mix)]
+            joint_de_dmr_sets['ref_and_pair'][pid][cls]['mixed'] = x_ref.loc[de_dmr_id_ref.isin(v_mix)]
 
             # sanity checks:
-            for k, v in joint_de_dmr_sets[pid][cls]['concordant'].items():
-                if not v.de_dmr_concordant.all():
+            for k, v in joint_de_dmr_sets.items():
+                if not v[pid][cls]['concordant'].de_dmr_concordant.all():
                     raise BasicLogicException("concordant %s: not v.de_dmr_concordant.all()" % k)
-            for k, v in joint_de_dmr_sets[pid][cls]['discordant'].items():
-                if v.de_dmr_concordant.any():
+                if v[pid][cls]['discordant'].de_dmr_concordant.any():
                     raise BasicLogicException("discordant %s: v.de_dmr_concordant.any()" % k)
 
-            aa = set(joint_de_dmr_sets[pid][cls]['mixed']['ref_and_pair'].loc[:, 'Gene Symbol'])
-            bb = set(joint_de_dmr_sets[pid][cls]['mixed']['pair_and_ref'].loc[:, 'Gene Symbol'])
+            aa = set(joint_de_dmr_sets['ref_and_pair'][pid][cls]['mixed'].loc[:, 'Gene Symbol'])
+            bb = set(joint_de_dmr_sets['pair_and_ref'][pid][cls]['mixed'].loc[:, 'Gene Symbol'])
             if aa != bb:
                 raise BasicLogicException("IDs in mixed ref / pair do not match")
+
+    # write DE / DMR results to disk
+    # 1. Excel (human-readable)
+    # For this, we ignore the concordance result and go through all results
+    blocks = {}
+    for typ in ['pair_all', 'pair_only', 'ref_all', 'ref_only']:
+        t = joint_de_dmr_table2(dmr.dict_by_sublevel(joint_de_dmr_sets[typ], 3, 'all'))
+        for pid in t:
+            blocks['GBM%s_%s' % (pid, typ)] = t[pid]
+
+    t = joint_de_dmr_table2(
+        dmr.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all'),
+        associated_result=dmr.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all')
+    )
+    for pid in t:
+        blocks['GBM%s_pair_and_ref' % pid] = t[pid]
+
+    t = joint_de_dmr_table2(
+        dmr.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all'),
+        associated_result=dmr.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all')
+    )
+    for pid in t:
+        blocks['GBM%s_ref_and_pair' % pid] = t[pid]
+
+    outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
+    results_to_excel(blocks, outfile, write_index=False)
+
+    # 2. IPA format
+    # Here, we reduce the output to genes.
+    # A gene is concordant if >=1 corresponding DE/DMR rows are concordant
+    ipa_outdir = os.path.join(outdir, 'ipa_dmr')
+    if not os.path.exists(ipa_outdir):
+        os.makedirs(ipa_outdir)
+
+    # We want several different versions
+    def prepare_de_dmr_concordant_blocks(dat, key='all'):
+        incl_cols = ['logFC', 'FDR']
+        blocks = {}
+        for k, v in dat.items():
+            for pid in v:
+                bl = v[pid][key]
+                # reduce to concordant results
+                dmr_sign = np.sign(bl.loc[:, 'me_mediandelta'].astype(float))
+                de_sign = np.sign(bl.loc[:, 'logFC'].astype(float))
+                bl = bl.loc[dmr_sign != de_sign]
+                # only keep one row per gene
+                idx = ~pd.Index(bl.loc[:, 'Gene Symbol']).duplicated()
+                bl = bl.loc[idx].set_index('Gene Symbol')
+                bl = bl.loc[:, incl_cols]
+                blocks['GBM%s_%s' % (pid, k)] = bl
+        return blocks
+
+    # a) All probe classes, providing they are concordant
+    ipa_subdir = os.path.join(ipa_outdir, "all_concordant")
+    if not os.path.exists(ipa_subdir):
+        os.makedirs(ipa_subdir)
+    blocks = prepare_de_dmr_concordant_blocks(dmr.dict_by_sublevel(joint_de_dmr_sets, 4, 'concordant'), key='all')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+
+    # # b) TSS, providing they are concordant
+    # ipa_subdir = os.path.join(ipa_outdir, "tss_concordant")
+    # if not os.path.exists(ipa_subdir):
+    #     os.makedirs(ipa_subdir)
+    # blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='tss')
+    # results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+    #
+    # # c) CpG island, providing they are concordant
+    # ipa_subdir = os.path.join(ipa_outdir, "island_concordant")
+    # if not os.path.exists(ipa_subdir):
+    #     os.makedirs(ipa_subdir)
+    # blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='island')
+    # results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+
+
 
     ## TODO: write to files
 
