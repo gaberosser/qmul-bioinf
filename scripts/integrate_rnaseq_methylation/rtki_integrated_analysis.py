@@ -215,6 +215,7 @@ def compute_dmr(mvals, anno, n_jobs=None, outdir=None, **params):
         )
 
         for typ in comparisons:
+            ## FIXME: the function  mht_correction now modifies in place; this will error
             test_results_relevant[sid][typ] = dmr.mht_correction(
                 test_results[sid][typ],
                 alpha=params['fdr']

@@ -3,6 +3,7 @@ from matplotlib import patches, collections
 from plotting.common import COLOUR_BREWERS
 from plotting import venn
 import dmr
+from utils import dictionary
 import os
 import seaborn as sns
 
@@ -162,35 +163,27 @@ def venn_dmr_counts(
         inputs = [
             dmr_results[pid][k] for k in comparisons
         ]
-        n_level = 3
         if probe_class is not None:
-            inputs = [dmr.dict_by_sublevel(t, 2, probe_class) for t in inputs]
-            n_level = 2
-            hasher = lambda x: tuple(x)
+            inputs = [t[probe_class] for t in inputs]
         else:
-            hasher = lambda x: (x[0], x[2])
+            inputs = [t['all'] for t in inputs]
 
-        inputs_all = [
-            set([
-                hasher(t) for t, _ in dmr.dict_iterator(x, n_level=n_level)
-            ]) for x in inputs
-        ]
-        inputs_up = [
-            set([
-                hasher(t) for t, attr in dmr.dict_iterator(x, n_level=n_level) if attr['median_change'] > 0
-            ]) for x in inputs
-        ]
-        inputs_down = [
-            set([
-                hasher(t) for t, attr in dmr.dict_iterator(x, n_level=n_level) if attr['median_change'] < 0
-            ]) for x in inputs
-        ]
+        inputs_all = [set(x.keys()) for x in inputs]
 
-        venn.venn_diagram(set_labels=set_labels, ax=axs[0, i], *inputs_all)
+        inputs_up = [set(
+            [k for k, v in x.items() if v['median_change'] > 0]
+        ) for x in inputs]
+        inputs_down = [set(
+            [k for k, v in x.items() if v['median_change'] < 0]
+        ) for x in inputs]
+
+        sl = set_labels if i == 0 else None
+
+        venn.venn_diagram(set_labels=sl, ax=axs[0, i], *inputs_all)
         axs[0, i].set_title("GBM%s" % pid)
 
-        venn.venn_diagram(set_labels=set_labels, ax=axs[1, i], *inputs_up)
-        venn.venn_diagram(set_labels=set_labels, ax=axs[2, i], *inputs_down)
+        venn.venn_diagram(set_labels=sl, ax=axs[1, i], *inputs_up)
+        venn.venn_diagram(set_labels=sl, ax=axs[2, i], *inputs_down)
 
     fig.tight_layout()
     if outdir is not None:
@@ -253,6 +246,7 @@ def dmr_overlap(
 def dmr_cluster_count_by_class(
         dmr_results,
         show_labels=True,
+        set_labels=None,
         outdir=None,
         figname="dmr_cluster_count_by_class",
         ax=None
@@ -272,17 +266,17 @@ def dmr_cluster_count_by_class(
         created = True
 
     # get classes
-    all_classes = set()
-    for (chr, cls, cl), attr in dmr.dict_iterator(dmr_results, n_level=3):
-        all_classes.add(cls)
+    all_classes = [k for k in dmr_results.keys() if k != 'all']
 
     blocks = []
-    set_labels = []
+    sl = []
     for cls in all_classes:
-        d = dmr.dict_by_sublevel(dmr_results, 2, cls)
-        this_bl = [tuple(t) for t, _ in dmr.dict_iterator(d, n_level=2)]
-        blocks.append(this_bl)
-        set_labels.append(cls)
+        d = dmr_results[cls]
+        blocks.append(d.keys())
+        sl.append(cls)
+
+    if set_labels is None:
+        set_labels = sl
 
     if not show_labels:
         set_labels = None
@@ -300,8 +294,8 @@ def dmr_cluster_count_by_class(
 
 def dmr_cluster_count_array(
         dmr_results,
-        comparisons=None,
-        comparison_labels=None,
+        comparisons=('matched', 'gibco'),
+        comparison_labels=True,
         outdir=None,
         figname='dmr_sign_cluster_count_array',
         figsize=None
@@ -311,16 +305,11 @@ def dmr_cluster_count_array(
     :param comparisons: If supplied, limit comparisons to this/these.
     """
     n_pid = len(dmr_results)
-    if comparisons is not None:
-        if not hasattr(comparisons, '__iter__'):
-            comparisons = tuple([comparisons])
-    else:
-        comparisons = sorted(dmr_results.values()[0].keys())
     n_cmp = len(comparisons)
 
-    if comparison_labels is not None and len(comparison_labels) != n_cmp:
+    if comparison_labels is not None and comparison_labels != True and len(comparison_labels) != n_cmp:
         raise AttributeError("Length of comparisons and comparison_labels must be equal.")
-    if comparison_labels is None:
+    elif comparison_labels is True:
         comparison_labels = comparisons
 
     if figsize is None:
@@ -330,7 +319,13 @@ def dmr_cluster_count_array(
     for j, pid in enumerate(sorted(dmr_results.keys())):
         for i, cmp in enumerate(comparisons):
             ax = axs[i, j]
-            dmr_cluster_count_by_class(dmr_results[pid][cmp], ax=ax, show_labels=show_labels)
+            dmr_cluster_count_by_class(
+                dmr_results[pid][cmp],
+                ax=ax,
+                show_labels=show_labels,
+            )
+            if comparison_labels and j == 0:
+                ax.text(0.1, 0.5, cmp, verticalalignment='center', horizontalalignment='right', transform=ax.transAxes)
             show_labels = False
 
     fig.tight_layout(rect=(0.03, 0.03, 1, 1), pad=0.)
@@ -338,8 +333,6 @@ def dmr_cluster_count_array(
     # add text labels
     for j, pid in enumerate(sorted(dmr_results.keys())):
         fig.text((j + 1.) / (n_pid + 1.), 0.02, pid)
-    for i, cmp in enumerate(comparison_labels):
-        fig.text(0., (i + 1.) / (n_cmp + 1.), cmp)
 
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "%s.png" % figname), dpi=200)

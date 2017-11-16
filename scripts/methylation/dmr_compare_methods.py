@@ -101,6 +101,8 @@ if __name__ == "__main__":
             this_test_results_relevant.setdefault(sid, {})
             this_test_results_significant.setdefault(sid, {})
 
+            ## FIXME: the function  mht_correction now modifies in place; this will error
+
             this_test_results[sid]['insc_only'] = this_res
             this_test_results_relevant[sid]['insc_only'] = dmr.mht_correction(
                 this_test_results[sid]['insc_only'],

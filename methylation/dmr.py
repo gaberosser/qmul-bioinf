@@ -17,6 +17,7 @@ import numpy as np
 import logging
 import multiprocessing as mp
 from statsmodels.sandbox.stats import multicomp
+from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary
 
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
@@ -34,6 +35,10 @@ CLASSES = {
 TEST_METHODS = {
     'none', 'mwu', 'mwu_permute', 'wsrt', 'wsrt_permute'
 }
+
+
+class BasicLogicException(Exception):
+    pass
 
 
 def get_chr(dat, chr, col='CHR'):
@@ -113,6 +118,7 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1, **kwargs):
 
     # run back over each chromosome
     # for each cluster, add a list of classes it belongs to
+    # we use a tuple list of probe IDs as the hash
     classes = {}
     for chr, dat in clusters.items():
         t = {}
@@ -122,37 +128,56 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1, **kwargs):
         classes[chr] = t
 
     # reform the dictionary, but with meaningful cluster IDs and cluster classes added
-    #### TODO: add genes too?
-    clusters_new = {}
+    # since each cluster may appear multiple times (once per class), keep track of what we've seen so we can
+    # skip multiples
+    res = []
+    clusters_seen = set()
+    # keep a running count of cluster ID
+    cl_id = 1
     for chr, dat in clusters.items():
-        track_multiples = {}
-        clusters_new[chr] = {}
-        j = 0
         for cl in CLASSES:
-            clusters_new[chr][cl] = {}
             for x in dat[cl].values():
                 probe_tup = tuple(x)
-                probe_classes = classes[chr][probe_tup]
-                if len(probe_classes) == 1:
-                    clusters_new[chr][cl][j] = {
-                        'probes': x,
-                        'classes': probe_classes,
-                    }
-                    j += 1
-                elif probe_tup in track_multiples:
-                    # we've already added this cluster under a different class, so we'll just reference it here
-                    cid, pr = track_multiples[probe_tup]
-                    clusters_new[chr][cl][cid] = pr
-                else:
-                    # we need to add this cluster and track it
-                    clusters_new[chr][cl][j] = {
-                        'probes': x,
-                        'classes': probe_classes,
-                    }
-                    track_multiples[probe_tup] = (j, clusters_new[chr][cl][j])
-                    j += 1
+                if probe_tup in clusters_seen:
+                    # nothing to do
+                    continue
+                res.append(ProbeCluster(
+                    probe_tup, anno, cls=classes[chr][probe_tup], chr=chr, cluster_id=cl_id
+                ))
+                cl_id += 1
+                clusters_seen.add(probe_tup)
 
-    return clusters_new
+    return res
+
+    # clusters_new = {}
+    # for chr, dat in clusters.items():
+    #     track_multiples = {}
+    #     clusters_new[chr] = {}
+    #     j = 0
+    #     for cl in CLASSES:
+    #         clusters_new[chr][cl] = {}
+    #         for x in dat[cl].values():
+    #             probe_tup = tuple(x)
+    #             probe_classes = classes[chr][probe_tup]
+    #             if len(probe_classes) == 1:
+    #                 clusters_new[chr][cl][j] = {
+    #                     'probes': x,
+    #                     'classes': probe_classes,
+    #                 }
+    #                 j += 1
+    #             elif probe_tup in track_multiples:
+    #                 # we've already added this cluster under a different class, so we'll just reference it here
+    #                 cid, pr = track_multiples[probe_tup]
+    #                 clusters_new[chr][cl][cid] = pr
+    #             else:
+    #                 # we need to add this cluster and track it
+    #                 clusters_new[chr][cl][j] = {
+    #                     'probes': x,
+    #                     'classes': probe_classes,
+    #                 }
+    #                 track_multiples[probe_tup] = (j, clusters_new[chr][cl][j])
+    #                 j += 1
+    # return clusters_new
 
 
 def median_change(y1, y2):
@@ -274,6 +299,7 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kw
     test_kwargs.update({'min_median_change': min_median_change})
 
     res = {}
+    res_all = {}
 
     y1 = data.loc[:, samples[0]]
     y2 = data.loc[:, samples[1]]
@@ -282,90 +308,222 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kw
         pool = mp.Pool(n_jobs, initializer=init_pool, initargs=((y1, y2),))
         jobs = {}
 
-    for chr, d in clusters.iteritems():
-        # chromosome loop
-        res[chr] = {}
-        for typ, cldict in d.iteritems():
-            # cluster type loop
-            res[chr][typ] = {}
-            for j, probedict in cldict.iteritems():
-                res[chr][typ][j] = dict(probedict)
-                if n_jobs > 1:
-                    jobs[(chr, typ, j)] = pool.apply_async(
-                        test_cluster_data_values_parallel,
-                        args=(probedict['probes'],),
-                        kwds=test_kwargs
-                    )
-                else:
-                    try:
-                        this_y1 = y1.loc[probedict['probes']].dropna()
-                        this_y2 = y2.loc[probedict['probes']].dropna()
-                        res[chr][typ][j].update(
-                            test_cluster_data_values(this_y1, this_y2, **test_kwargs)
-                        )
-                    except Exception:
-                        logger.error("Failed on chr %s type %s number %s", chr, typ, j)
+    for cl in clusters:
+        pids = cl.pids
+        if n_jobs > 1:
+            jobs[cl] = pool.apply_async(
+                test_cluster_data_values_parallel,
+                args=(pids,),
+                kwds=test_kwargs
+            )
+            res_all[cl.cluster_id] = cl.summary_dict
+        else:
+            try:
+                this_y1 = y1.loc[pids].dropna()
+                this_y2 = y2.loc[pids].dropna()
+                res_all[cl.cluster_id] = test_cluster_data_values(this_y1, this_y2, **test_kwargs)
+                res_all[cl.cluster_id].update(cl.summary_dict)
+            except Exception:
+                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
 
     if n_jobs > 1:
         # close pool and wait for execution to complete
-        for (chr, typ, j), task in jobs.iteritems():
+        pool.close()
+        for cl, task in jobs.iteritems():
             try:
-                res[chr][typ][j].update(task.get(1e3))
+                res_all[cl.cluster_id].update(task.get(1e3))
             except Exception:
-                logger.exception("Failed on chr %s type %s number %s", chr, typ, j)
+                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
     pool.close()
+
+    # for convenience, provide nested dictionaries allowing access to single class type
+    res['all'] = res_all
+    for cls in CLASSES:
+        res[cls] = dict([
+            (k, v) for k, v in res_all.iteritems() if cls in v['classes']
+        ])
+
     return res
 
 
-def mht_correction(test_results, alpha=0.05, method='fdr_bh', copy=False):
+def cluster_class_nests(res_all):
     """
+    Given the dictionary of DMR results, containing all classes, create a new nested structure that allows access to
+    all results (key: 'all') but also to nested dictionaries containing only a given class (key: 'island', etc.)
+    """
+    classes = set()
+    for x in res_all.values():
+        classes.update(x['classes'])
+
+    res = {'all': res_all}
+    for cls in classes:
+        res[cls] = dict([
+            (k, v) for k, v in res_all.iteritems() if cls in v['classes']
+        ])
+
+    return res
+
+    #
+    # for chr, d in clusters.iteritems():
+    #     # chromosome loop
+    #     res[chr] = {}
+    #     for typ, cldict in d.iteritems():
+    #         # cluster type loop
+    #         res[chr][typ] = {}
+    #         for j, probedict in cldict.iteritems():
+    #             res[chr][typ][j] = dict(probedict)
+    #             if n_jobs > 1:
+    #                 jobs[(chr, typ, j)] = pool.apply_async(
+    #                     test_cluster_data_values_parallel,
+    #                     args=(probedict['probes'],),
+    #                     kwds=test_kwargs
+    #                 )
+    #             else:
+    #                 try:
+    #                     this_y1 = y1.loc[probedict['probes']].dropna()
+    #                     this_y2 = y2.loc[probedict['probes']].dropna()
+    #                     res[chr][typ][j].update(
+    #                         test_cluster_data_values(this_y1, this_y2, **test_kwargs)
+    #                     )
+    #                 except Exception:
+    #                     logger.error("Failed on chr %s type %s number %s", chr, typ, j)
+    #
+    # if n_jobs > 1:
+    #     # close pool and wait for execution to complete
+    #     for (chr, typ, j), task in jobs.iteritems():
+    #         try:
+    #             res[chr][typ][j].update(task.get(1e3))
+    #         except Exception:
+    #             logger.exception("Failed on chr %s type %s number %s", chr, typ, j)
+    # pool.close()
+    # return res
+
+
+def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
+    """
+    Apply a multiple hypothesis testing correction to the test_results. All modifying is done in-place
     :param test_results: As generated by test_clusters.
-    :param copy: If True, return a copy of the results. Otherwise (default), modify results in place and return a
-    new dictionary referencing them.
     """
-    # Filter to include only relevant clusters
-    # NB this doesn't copy values, so any modifications are represented in the original dictionary
-    test_results_only_relevant = filter_dictionary(test_results, filt=lambda x: 'pval' in x, n_level=3, copy=copy)
+    # we'll work with the full set of results as other representations (per class) are just pointers
+    the_dict = test_results['all']
+
     # gather pvalues
-    keys, attrs = zip(*dict_iterator(test_results_only_relevant, n_level=3))
-    pvals = [t['pval'] for t in attrs]
+    # keep a list of keys to ensure order is maintained
+    keys = []
+    pvals = []
+    for k, v in the_dict.iteritems():
+        if 'pval' in v:
+            pvals.append(v['pval'])
+            keys.append(k)
+
     rej, padj, _, _ = multicomp.multipletests(pvals, alpha=alpha, method=method)
 
-    # add results to dictionary
-    for r, pa, d in zip(rej, padj, attrs):
-        d['padj'] = pa
-        d['rej_h0'] = r
+    # add results back to results dictionary
+    for k, pa, r in zip(keys, padj, rej):
+        the_dict[k].update({
+            'padj': pa,
+            'rej_h0': r
+        })
 
-    return test_results_only_relevant
+    # we've done all the modifying in-place, so no return value
+
+    # # Filter to include only relevant clusters
+    # # NB this doesn't copy values, so any modifications are represented in the original dictionary
+    # test_results_only_relevant = filter_dictionary(test_results, filt=lambda x: 'pval' in x, n_level=3, copy=copy)
+    # # gather pvalues
+    # keys, attrs = zip(*dict_iterator(test_results_only_relevant, n_level=3))
+    # pvals = [t['pval'] for t in attrs]
+    # rej, padj, _, _ = multicomp.multipletests(pvals, alpha=alpha, method=method)
+    #
+    # # add results to dictionary
+    # for r, pa, d in zip(rej, padj, attrs):
+    #     d['padj'] = pa
+    #     d['rej_h0'] = r
+    #
+    # return test_results_only_relevant
 
 
 class ProbeCluster(object):
-    def __init__(self, pids, anno, cls=None, chr=None, beta=None, m=None):
+    def __init__(
+            self,
+            pids,
+            anno,
+            cluster_id=None,
+            cls=None,
+            chr=None,
+            beta=None,
+            m=None,
+            anno_requires_lookup=True,
+            compute_genes=True
+    ):
         """
         Represents a collection of methylation probes
         :param pids: The IDs of the probes belonging to this cluster
-        :param anno: The annotation data for this probe, from the Illumina manifest. Probes are in rows.
+        :param anno: The full annotation data from the Illumina manifest. Probes are in rows.
         May include other columns (e.g. `merged_class`).
+        We start by reducing this to just the relevant rows, unless anno_requires_lookup is False.
+        :param cls: May be either a string (for a single class), an iterable (for multiple classes) or None (no class).
         :param beta, m: If supplied, these are the beta and M data corresponding to these probes, in a pandas DataFrame.
+        :param anno_requires_lookup: If True (default), we start by performing a lookup for relevant rows in anno.
+        :param compute_genes: If True (default), compute genes at the start.
         Columns represent samples, rows represent probes.
         """
-        self.anno = anno
-        self.pids = pids
-        self.beta = beta
-        self.m = m
+        self.pids = list(pids)
         self.n_probes = len(pids)
+        self.chr = chr
+        self.cluster_id = cluster_id
+
+        if hasattr(cls, '__iter__'):
+            self.cls = set(cls)
+        elif cls is not None:
+            self.cls = {cls}
+        else:
+            self.cls = cls
+
+        if anno_requires_lookup:
+            self.anno = anno.loc[self.pids]
+
+        else:
+            self.anno = anno
 
         if chr is None:
-            self.chr = self.anno.CHR[0]
-            if (self.anno.CHR != self.chr).any():
+            # no chromosome supplied: try to get this fromthe probe IDs
+            matching_chr = list(set(self.anno.loc[:, 'CHR'].values))
+            if len(matching_chr) > 1:
                 raise AttributeError("Probes are located on different chromosomes")
-        else:
-            self.chr = chr
-
-        self.cls = cls
+            self.chr = matching_chr[0]
 
         self.pval = None
         self.padj = None
+        self._genes = None
+
+        if compute_genes:
+            _ = self.genes
+
+    @property
+    def summary_dict(self):
+        return {
+            'probes': self.pids,
+            'genes': self.genes,
+            'classes': self.cls
+        }
+
+    def __hash__(self):
+        return self.hash().__hash__()
+
+    def hash(self):
+        return tuple(self.pids)
+
+    @property
+    def genes(self):
+        if self._genes is not None:
+            return self._genes
+        genes = self.anno.UCSC_RefGene_Name.dropna()
+        if len(genes) == 0:
+            self._genes = set()
+        else:
+            self._genes = reduce(set.union, genes.tolist())
+        return self._genes
 
     @property
     def coord_list(self):
@@ -376,93 +534,51 @@ class ProbeCluster(object):
         cs = self.coord_list
         return (min(cs), max(cs))
 
-    def check_inputs(self, samples, use_data):
-        if use_data == 'beta':
-            data = self.beta
-        elif use_data == 'm':
-            data = self.m
-        else:
-            raise AttributeError("Unsupported data")
-        if data is None:
-            raise AttributeError("Cannot continue without any data")
 
-        if samples is None:
-            if data.shape[1] > 2:
-                raise ValueError("If the number of samples is >2, must specify which two samples to compare")
-            else:
-                samples = data.columns
-        return samples, data
-
-    def relevant(self, min_median_diff, samples=None, use_data='beta'):
-        samples, data = self.check_inputs(samples, use_data)
-        y1 = data.loc[:, samples[0]]; y2 = data.loc[:, samples[1]]
-
-        return np.abs(np.median(y1 - y2)) > min_median_diff
-
-    def compute_pvalue(self, samples=None, use_data='beta'):
-        if self.n_probes < 4:
-            logger.error("Unable to compute statistics for <4 observations")
-            return
-        samples, data = self.check_inputs(samples, use_data)
-        y1 = data.loc[:, samples[0]]; y2 = data.loc[:, samples[1]]
-        self.pval = nht.mannwhitneyu_test(y1, y2)
-        return self.pval
-
-
-
-def dict_iterator(d, parents=None, level=1, n_level=None):
-    if parents is None:
-        parents = []
-    if (n_level is not None) and (level > n_level):
-        yield (parents, d)
-    else:
-        for k in d.iterkeys():
-            if isinstance(d[k], dict):
-               for x in dict_iterator(d[k], parents + [k], level=level+1, n_level=n_level):
-                   yield x
-            else:
-                yield (parents + [k], d[k])
-
-
-def dict_by_sublevel(d, level, key, n_level=None):
+def test_results_to_table(dat):
     """
-    Given the sublevel with specified key, rebuild the dictionary
-    :param d:
-    :param level:
-    :param key:
-    :param n_level:
-    :return:
+    Convert the nested dictionary structure to a flat table.
+    :param dat: Nested dictionary, as output by test_clusters. Assumed structure:
+    pid, cluster class (or 'all'), cluster id
+    We only need to use 'all', as this has all the cluster classes annotated anyway
     """
-    # translate level for zero indexing
-    j = level - 1
-    g = dict_iterator(d, n_level=n_level)
-    res = {}
-    for k, val in g:
-        # if len(k) <= level:
-        if len(k) < level:
-            raise ValueError("Requested level is too low for this dictionary")
-        if k[j] == key:
-            remaining_keys = k[:j] + k[(j+1):]
-            par = res
-            for rk in remaining_keys[:-1]:
-                par = par.setdefault(rk, {})
-            par[remaining_keys[-1]] = val
-    return res
+    classes = list(CLASSES)
+    cols = ['cluster_id', 'chr', 'genes'] + \
+           ['class_%s' % t for t in classes] + \
+           ['median_1', 'median_2', 'median_delta', 'padj']
+    dtypes = ['uint16', 'object', 'object'] + \
+             ['bool'] * len(classes) + \
+             ['float', 'float', 'float', 'float']
+    rows = {}
+    seen = {}
 
-
-def filter_dictionary(d, filt, n_level=None, copy=False):
-    g = dict_iterator(d, n_level=n_level)
-    res = {}
-    for k, val in g:
-        if not filt(val):
+    the_dict = dict_by_sublevel(dat, 2, 'all')
+    for (pid, cluster_id), attrs in dict_iterator(the_dict, n_level=2):
+        # don't add if this DMR has no associated genes
+        if len(attrs['genes']) == 0:
             continue
-        par = res
-        for rk in k[:-1]:
-            par = par.setdefault(rk, {})
-        par[k[-1]] = val
-    if copy:
-        res = copy.deepcopy(res)
-    return res
+
+        # check whether we have already processed this result
+        seen.setdefault(pid, set())
+        this_hsh = (cluster_id, chr)
+        if this_hsh in seen[pid]:
+            continue
+        else:
+            seen[pid].add(this_hsh)
+        this_row = [cluster_id, chr, tuple(attrs['genes'])] + \
+                   [t in attrs['classes'] for t in classes] + \
+                   [attrs['median1'], attrs['median2'], attrs['median_change'], attrs['padj']]
+        rows.setdefault(pid, []).append(this_row)
+
+    # run through the pids and generate a pandas DataFrame.
+    # additionally run a quick sanity check that no rows are duplicated
+    tbl = {}
+    for pid, r in rows.iteritems():
+        tbl[pid] = pd.DataFrame(r, columns=cols).astype(dict(zip(cols, dtypes)))
+        if tbl[pid].duplicated().any():
+            raise BasicLogicException("Duplicate rows found with PID %s" % pid)
+
+    return tbl
 
 
 class ClusterCollection(object):
@@ -809,14 +925,13 @@ def compute_dmr(
 def count_dmr_genes(res):
     """
 
-    :param res: test_results (or significant/relevant only) from compute_dmr
+    :param res: test_results (or significant/relevant only) from compute_dmr. This is the final nested dictionary,
+    keyed by cluster ID and with value dictionary containing the kw 'genes'
     :return: The number of genes within this set of results
     """
-    the_genes = reduce(
-        lambda x, y: x.union(y),
-        [t[1]['genes'] for t in dict_iterator(res, n_level=3)],
-        set()
-    )
+    the_genes = set()
+    for x in res.values():
+        the_genes.update(x['genes'])
     return len(the_genes)
 
 

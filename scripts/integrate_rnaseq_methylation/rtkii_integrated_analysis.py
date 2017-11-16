@@ -14,7 +14,7 @@ import itertools
 import csv
 import datetime
 import json
-from utils import output, setops
+from utils import output, setops, dictionary
 from matplotlib import pyplot as plt
 import seaborn as sns
 
@@ -169,22 +169,21 @@ def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIB
         )
 
         for typ in ['matched', 'gibco']:
-            test_results_relevant[pid][typ] = dmr.mht_correction(
+            dmr.mht_correction(
                 test_results[pid][typ],
                 alpha=dmr_params['fdr']
             )
-            test_results_significant[pid][typ] = dmr.filter_dictionary(
-                test_results_relevant[pid][typ],
-                filt=lambda x: x['rej_h0'],
-                n_level=3
-            )
-
-    # add list of annotated genes to all clusters
-    for pid in test_results:
-        for _, attrs in dmr.dict_iterator(test_results[pid], n_level=4):
-            genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
-            geneset = reduce(lambda x, y: x.union(y), genes, set())
-            attrs['genes'] = geneset
+            for k, v in test_results[pid][typ].iteritems():
+                test_results_relevant[pid].setdefault(typ, {})[k] = dictionary.filter_dictionary(
+                    v,
+                    filt=lambda x: 'pval' in x,
+                    n_level=1
+                )
+                test_results_significant[pid].setdefault(typ, {})[k] = dictionary.filter_dictionary(
+                    v,
+                    filt=lambda x: x.get('rej_h0', False),
+                    n_level=1
+                )
 
     return {
         'clusters': clusters,
@@ -194,9 +193,39 @@ def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIB
     }
 
 
+def save_dmr_results(dmr_results, fn):
+    with open(fn, 'wb') as f:
+        json.dump(dmr_results['all'], f, cls=TestResultEncoder)
+
+
+def load_dmr_results(fn):
+    test_results = {}
+    with open(fn, 'wb') as f:
+        test_results['all'] = json.load(f)
+
+    # for convenience, provide nested dictionaries pointing to specific class types
+    test_results = dmr.cluster_class_nests(test_results['all'])
+
+    test_results_relevant = dmr.filter_dictionary(
+        test_results,
+        lambda x: 'pval' in x,
+        n_level=2,
+    )
+    test_results_significant = dmr.filter_dictionary(
+        test_results,
+        lambda x: 'pval' in x and x['rej_h0'],
+        n_level=2,
+    )
+    return {
+        'test_results': test_results,
+        'test_results_relevant': test_results_relevant,
+        'test_results_significant': test_results_significant
+    }
+
+
 def tabulate_dmr_results(test_results, outdir=None, **other_results):
     """
-    :param dmr_results: Dictionary giving different representations, typically 'proposed', 'relevant' and
+    :param **other_results: Dictionary giving different representations, typically 'proposed', 'relevant' and
     'significant'. Keys are used to name columns.
     :param outdir: If supplied, tables are written to this directory
     :return:
@@ -208,10 +237,8 @@ def tabulate_dmr_results(test_results, outdir=None, **other_results):
     table_cluster_numbers = {}
 
     # the number of proposed clusters and proposed genes is constant across all results, so just use the first
-    ncl = len(list(
-        dmr.dict_iterator(test_results[pids[0]][types[0]], n_level=3)
-    ))
-    ng = dmr.count_dmr_genes(test_results[pids[0]][types[0]])
+    ncl = len(test_results[pids[0]][types[0]]['all'])
+    ng = dmr.count_dmr_genes(test_results[pids[0]][types[0]]['all'])
     row_template = {'clusters_proposed': ncl, 'genes_proposed': ng}
 
     for pid in pids:
@@ -221,10 +248,8 @@ def tabulate_dmr_results(test_results, outdir=None, **other_results):
             this_row['sample'] = pid
             for suffix in other_results.keys():
                 this_kwarg = other_results[suffix]
-                this_row['clusters_%s' % suffix] = len(list(
-                    dmr.dict_iterator(this_kwarg[pid][typ], n_level=3)
-                ))
-                this_row['genes_%s' % suffix] = dmr.count_dmr_genes(this_kwarg[pid][typ])
+                this_row['clusters_%s' % suffix] = len(this_kwarg[pid][typ]['all'])
+                this_row['genes_%s' % suffix] = dmr.count_dmr_genes(this_kwarg[pid][typ]['all'])
             this_row = pd.Series(this_row)
             table_cluster_numbers[typ] = table_cluster_numbers[typ].append(this_row, ignore_index=True)
 
@@ -236,35 +261,41 @@ def tabulate_dmr_results(test_results, outdir=None, **other_results):
 
 
 def dmr_venn_sets(test_results):
-    test_results_reindex = dmr.dict_by_sublevel(test_results, 2, 'matched')
     test_results_exclusive = {}
     test_results_inclusive = {}
 
-    for (pid, chr, cls), attr in dmr.dict_iterator(test_results_reindex, n_level=3):
-
-        test_results_exclusive.setdefault(pid, {}).setdefault('matched', {}).setdefault(chr, {})
-        test_results_exclusive.setdefault(pid, {}).setdefault('gibco', {}).setdefault(chr, {})
-        test_results_inclusive.setdefault(pid, {}).setdefault('matched', {}).setdefault(chr, {})
-        test_results_inclusive.setdefault(pid, {}).setdefault('gibco', {}).setdefault(chr, {})
+    for pid, v in test_results.iteritems():
+        test_results_exclusive.setdefault(pid, {}).setdefault('matched', {})
+        test_results_exclusive.setdefault(pid, {}).setdefault('gibco', {})
+        test_results_inclusive.setdefault(pid, {}).setdefault('matched', {})
+        test_results_inclusive.setdefault(pid, {}).setdefault('gibco', {})
 
         tmp_venn_set, tmp_venn_counts = setops.venn_from_arrays(
-            test_results[pid]['matched'][chr][cls],
-            test_results[pid]['gibco'][chr][cls],
+            test_results[pid]['matched']['all'],
+            test_results[pid]['gibco']['all'],
         )
 
-        test_results_exclusive[pid]['matched'][chr][cls] = dict([
-            (t, test_results[pid]['matched'][chr][cls][t]) for t in tmp_venn_set['10']
-        ])
-        test_results_exclusive[pid]['gibco'][chr][cls] = dict([
-            (t, test_results[pid]['gibco'][chr][cls][t]) for t in tmp_venn_set['01']
-        ])
+        test_results_exclusive[pid]['matched'] = dmr.cluster_class_nests(
+            dict([
+                (t, test_results[pid]['matched']['all'][t]) for t in tmp_venn_set['10']
+            ])
+        )
+        test_results_exclusive[pid]['gibco'] = dmr.cluster_class_nests(
+            dict([
+                (t, test_results[pid]['gibco']['all'][t]) for t in tmp_venn_set['01']
+            ])
+        )
 
-        test_results_inclusive[pid]['matched'][chr][cls] = dict([
-            (t, test_results[pid]['matched'][chr][cls][t]) for t in tmp_venn_set['11']
-        ])
-        test_results_inclusive[pid]['gibco'][chr][cls] = dict([
-            (t, test_results[pid]['gibco'][chr][cls][t]) for t in tmp_venn_set['11']
-        ])
+        test_results_inclusive[pid]['matched'] = dmr.cluster_class_nests(
+            dict([
+                (t, test_results[pid]['matched']['all'][t]) for t in tmp_venn_set['11']
+            ])
+        )
+        test_results_inclusive[pid]['gibco'] = dmr.cluster_class_nests(
+            dict([
+                (t, test_results[pid]['gibco']['all'][t]) for t in tmp_venn_set['11']
+            ])
+        )
 
     return {
         'exclusive': test_results_exclusive,
@@ -274,7 +305,7 @@ def dmr_venn_sets(test_results):
 
 def n_overlap_datum(joint_dmr_de, this_de, this_dmr):
     n_de = this_de.shape[0]
-    n_dmr = len(list(dmr.dict_iterator(this_dmr, n_level=3)))
+    n_dmr = len(list(dictionary.dict_iterator(this_dmr, n_level=3)))
     n_dmr_genes = dmr.count_dmr_genes(this_dmr)
     n_overlaps = joint_dmr_de['all'].shape[0]
     n_overlaps_unique = joint_dmr_de['all'].loc[:, 'Gene Symbol'].unique().shape[0]
@@ -672,20 +703,11 @@ if __name__ == "__main__":
     if DMR_LOAD_DIR is not None:
         fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.json')
         if os.path.isfile(fn_in):
-            with open(fn_in, 'rb') as f:
-                test_results = json.load(f)
+            tmp = load_dmr_results(fn_in)
+            test_results = tmp['test_results']
+            test_results_relevant = tmp['test_results_relevant']
+            test_results_significant = tmp['test_results_significant']
             loaded = True
-            # recompute relevant and significant results
-            test_results_relevant = dmr.filter_dictionary(
-                test_results,
-                lambda x: 'pval' in x,
-                n_level=5,
-            )
-            test_results_significant = dmr.filter_dictionary(
-                test_results,
-                lambda x: 'pval' in x and x['rej_h0'],
-                n_level=5,
-            )
 
     if not loaded:
         dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
@@ -695,16 +717,14 @@ if __name__ == "__main__":
 
         # Save DMR results to disk
         fout = os.path.join(outdir, "dmr_results.json")
-        with open(fout, 'wb') as f:
-            json.dump(test_results, f, cls=TestResultEncoder)
+        save_dmr_results(test_results, fout)
         print "Saved DMR results to %s" % fout
 
     # Venn showing the distribution of probe classes amongst all regions (incl. not significantly DM)
     me_plots.dmr_cluster_count_by_class(test_results.values()[0].values()[0], outdir=outdir)
 
     # Array of Venns showing the same distribution but of *significant* clusters in pair_all and ref_all
-    me_plots.dmr_cluster_count_array(test_results_significant, comparisons=('gibco', 'matched'),
-                                     comparison_labels=('Ref', 'Paired'), outdir=outdir)
+    me_plots.dmr_cluster_count_array(test_results_significant, comparison_labels=('Ref', 'Paired'), outdir=outdir)
 
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']
@@ -736,10 +756,17 @@ if __name__ == "__main__":
     # side story: check DMR overlap between individuals and group
     # skip this for now but useful to know!
 
+    # convert DMR results to tables
+    dmr_matched_table = dmr.test_results_to_table(dictionary.dict_by_sublevel(test_results_significant, 2, 'matched'))
+    dmr_ref_table = dmr.test_results_to_table(dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco'))
+
+
     # integrate the two results
     # We first look for overlap, then generate Venn sets
-    dmr_matched = dmr.dict_by_sublevel(test_results_significant, 2, 'matched')
-    dmr_ref = dmr.dict_by_sublevel(test_results_significant, 2, 'gibco')
+    dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')
+    dmr_ref = dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco')
+
+    # TODO: update from here
 
     # TODO: move to a function
     # these are the two inputs and the output
@@ -863,20 +890,20 @@ if __name__ == "__main__":
     # For this, we ignore the concordance result and go through all results
     blocks = {}
     for typ in ['pair_all', 'pair_only', 'ref_all', 'ref_only']:
-        t = joint_de_dmr_table2(dmr.dict_by_sublevel(joint_de_dmr_sets[typ], 3, 'all'))
+        t = joint_de_dmr_table2(dictionary.dict_by_sublevel(joint_de_dmr_sets[typ], 3, 'all'))
         for pid in t:
             blocks['GBM%s_%s' % (pid, typ)] = t[pid]
 
     t = joint_de_dmr_table2(
-        dmr.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all'),
-        associated_result=dmr.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all')
+        dictionary.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all'),
+        associated_result=dictionary.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all')
     )
     for pid in t:
         blocks['GBM%s_pair_and_ref' % pid] = t[pid]
 
     t = joint_de_dmr_table2(
-        dmr.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all'),
-        associated_result=dmr.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all')
+        dictionary.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all'),
+        associated_result=dictionary.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all')
     )
     for pid in t:
         blocks['GBM%s_ref_and_pair' % pid] = t[pid]
@@ -913,7 +940,7 @@ if __name__ == "__main__":
     ipa_subdir = os.path.join(ipa_outdir, "all_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
-    blocks = prepare_de_dmr_concordant_blocks(dmr.dict_by_sublevel(joint_de_dmr_sets, 4, 'concordant'), key='all')
+    blocks = prepare_de_dmr_concordant_blocks(dictionary.dict_by_sublevel(joint_de_dmr_sets, 4, 'concordant'), key='all')
     results_to_ipa_format(blocks, ipa_subdir, identifier=None)
 
     # # b) TSS, providing they are concordant
@@ -938,11 +965,11 @@ if __name__ == "__main__":
     pdb.set_trace()
 
     # integrate the two results
-    dmr_matched = dmr.dict_by_sublevel(test_results_significant, 2, 'matched')
-    dmr_matched_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'matched')
-    dmr_ref = dmr.dict_by_sublevel(test_results_significant, 2, 'gibco')
-    dmr_ref_only = dmr.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
-    dmr_intersection = dmr.dict_by_sublevel(test_results_inclusive, 2, 'matched')
+    dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')
+    dmr_matched_only = dictionary.dict_by_sublevel(test_results_exclusive, 2, 'matched')
+    dmr_ref = dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco')
+    dmr_ref_only = dictionary.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
+    dmr_intersection = dictionary.dict_by_sublevel(test_results_inclusive, 2, 'matched')
 
     joint_de_dmr = {
         'pair_all': compute_joint_de_dmr(dmr_matched, de_matched),
@@ -1126,7 +1153,7 @@ if __name__ == "__main__":
     #     for i, cls in enumerate(dmr.CLASSES):
     #         ax = axs[i]
     #         # reordered dict by sublevel
-    #         tmp = dmr.dict_by_sublevel(meth_de, 2, cls)
+    #         tmp = dictionary.dict_by_sublevel(meth_de, 2, cls)
     #         # build labels and gene lists to control the order (otherwise we're relying on dict iteration order)
     #         # we skip over 'all' here
     #         set_labels = []
