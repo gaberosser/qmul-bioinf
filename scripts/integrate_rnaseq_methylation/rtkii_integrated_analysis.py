@@ -5,6 +5,7 @@ from methylation import process, dmr
 from methylation import plots as me_plots
 from integrator.rnaseq_methylationarray import compute_joint_de_dmr
 from integrator import plots
+import copy
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -119,6 +120,50 @@ def compute_de(rnaseq_obj, pids, lfc=1, fdr=0.01, method='QLGLM'):
     }
 
 
+def compute_dmr2(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIBCO'):
+
+    obj = dmr.DmrResults(anno=anno)
+    obj.identify_clusters(**dmr_params)
+    res = {}
+
+    for pid in pids:
+        if pid == 'all':
+            the_idx = ~me_meta.index.str.contains(ref_name_contains)
+        else:
+            the_idx = me_meta.index.str.contains(pid)
+        the_groups = me_meta.loc[the_idx, 'type'].values
+        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+
+        the_obj = obj.copy()
+        the_obj.test_clusters(me_data,
+                              samples=the_samples,
+                              n_jobs=dmr_params['n_jobs'],
+                              min_median_change=dmr_params['delta_m_min'],
+                              method=dmr_params['dmr_test_method'],
+                              **dmr_params['test_kwargs']
+                              )
+        res.setdefault(pid, {})['matched'] = the_obj
+
+        if pid == 'all':
+            the_idx = (me_meta.type != 'iNSC')
+        else:
+            the_idx = (me_meta.index.str.contains(pid) & (me_meta.type == 'GBM')) | me_meta.index.str.contains(ref_name_contains)
+        the_groups = me_meta.loc[the_idx, 'type'].values
+        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+
+        the_obj = obj.copy()
+        the_obj.test_clusters(me_data,
+                              samples=the_samples,
+                              n_jobs=dmr_params['n_jobs'],
+                              min_median_change=dmr_params['delta_m_min'],
+                              method=dmr_params['dmr_test_method'],
+                              **dmr_params['test_kwargs']
+                              )
+        res.setdefault(pid, {})['ref'] = the_obj
+
+    return dmr.DmrResultCollection(**res)
+
+
 def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIBCO'):
 
     clusters = dmr.identify_clusters(anno, **dmr_params)
@@ -141,7 +186,7 @@ def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIB
         the_samples = me_meta.index[the_idx].groupby(the_groups).values()
 
         # matched comparison
-        test_results[pid]['matched'] = dmr.test_clusters(
+        test_results[pid]['matched'] = dmr.test_clusters_in_place(
             clusters,
             me_data,
             samples=the_samples,
@@ -158,7 +203,7 @@ def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIB
             the_idx = (me_meta.index.str.contains(pid) & (me_meta.type == 'GBM')) | me_meta.index.str.contains(ref_name_contains)
         the_groups = me_meta.loc[the_idx, 'type'].values
         the_samples = me_meta.index[the_idx].groupby(the_groups).values()
-        test_results[pid]['gibco'] = dmr.test_clusters(
+        test_results[pid]['gibco'] = dmr.test_clusters_in_place(
             clusters,
             me_data,
             samples=the_samples,
@@ -701,31 +746,28 @@ if __name__ == "__main__":
     # Otherwise this is written after computing the results
     loaded = False
     if DMR_LOAD_DIR is not None:
-        fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.json')
+        fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.pkl')
         if os.path.isfile(fn_in):
-            tmp = load_dmr_results(fn_in)
-            test_results = tmp['test_results']
-            test_results_relevant = tmp['test_results_relevant']
-            test_results_significant = tmp['test_results_significant']
+            dmr_res = dmr.DmrResultCollection.from_pickle(fn_in, anno=anno)
             loaded = True
 
     if not loaded:
-        dmr_res = compute_dmr(me_data, me_meta, anno, pids, dmr_params)
-        test_results = dmr_res['results']
-        test_results_relevant = dmr_res['relevant']
-        test_results_significant = dmr_res['significant']
-
+        dmr_res = compute_dmr2(me_data, me_meta, anno, pids, dmr_params)
         # Save DMR results to disk
-        fout = os.path.join(outdir, "dmr_results.json")
-        save_dmr_results(test_results, fout)
+        fout = os.path.join(outdir, "dmr_results.pkl")
+        dmr_res.to_pickle(fout, include_annotation=False)
         print "Saved DMR results to %s" % fout
 
+    test_results = test_results_relevant = None
+    test_results_significant = dmr_res.apply('results_significant_by_class')
+
     # Venn showing the distribution of probe classes amongst all regions (incl. not significantly DM)
-    me_plots.dmr_cluster_count_by_class(test_results.values()[0].values()[0], outdir=outdir)
-
+    me_plots.dmr_cluster_count_by_class(dmr_res[pids[0]]['matched'].clusters_by_class(), outdir=outdir)
     # Array of Venns showing the same distribution but of *significant* clusters in pair_all and ref_all
-    me_plots.dmr_cluster_count_array(test_results_significant, comparison_labels=('Ref', 'Paired'), outdir=outdir)
+    me_plots.dmr_cluster_count_array(test_results_significant, comparisons=('matched', 'ref'),
+                                     comparison_labels=('Matched', 'Ref'), outdir=outdir)
 
+    # TODO: update from here
     tmp_venn_set = dmr_venn_sets(test_results_significant)
     test_results_exclusive = tmp_venn_set['exclusive']
     test_results_inclusive = tmp_venn_set['inclusive']
@@ -765,8 +807,6 @@ if __name__ == "__main__":
     # We first look for overlap, then generate Venn sets
     dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')
     dmr_ref = dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco')
-
-    # TODO: update from here
 
     # TODO: move to a function
     # these are the two inputs and the output
@@ -957,12 +997,6 @@ if __name__ == "__main__":
     # blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='island')
     # results_to_ipa_format(blocks, ipa_subdir, identifier=None)
 
-
-
-    ## TODO: write to files
-
-    import pdb
-    pdb.set_trace()
 
     # integrate the two results
     dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')

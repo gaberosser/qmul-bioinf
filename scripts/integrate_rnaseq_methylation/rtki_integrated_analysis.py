@@ -192,7 +192,7 @@ def compute_dmr(mvals, anno, n_jobs=None, outdir=None, **params):
         test_results_relevant.setdefault(sid, {})
         test_results_significant.setdefault(sid, {})
 
-        test_results[sid]['gbm_insc'] = dmr.test_clusters(
+        test_results[sid]['gbm_insc'] = dmr.test_clusters_in_place(
             clusters,
             mvals,
             samples=samples,
@@ -204,7 +204,7 @@ def compute_dmr(mvals, anno, n_jobs=None, outdir=None, **params):
 
         # for insc and ref: use a replacement `samples`
         samples_ref = (samples[0], (ref_name,))
-        test_results[sid]['gbm_ref'] = dmr.test_clusters(
+        test_results[sid]['gbm_ref'] = dmr.test_clusters_in_place(
             clusters,
             mvals,
             samples=samples_ref,

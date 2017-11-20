@@ -6,12 +6,15 @@ from stats import nht
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
+import pickle
+import types
 import operator
 import itertools
 from functools import partial
 from collections import defaultdict
 import os
 import json
+import copy
 from utils.output import unique_output_dir
 import numpy as np
 import logging
@@ -39,6 +42,18 @@ TEST_METHODS = {
 
 class BasicLogicException(Exception):
     pass
+
+
+class TestResultEncoder(json.JSONEncoder):
+    """
+    Handles saving results that may contain Bool or sets
+    """
+    def default(self, o):
+        if isinstance(o, set):
+            return tuple(o)
+        elif isinstance(o, bool) or isinstance(o, np.bool_):
+            return int(o)
+        return super(TestResultEncoder, self).default(o)
 
 
 def get_chr(dat, chr, col='CHR'):
@@ -149,36 +164,6 @@ def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1, **kwargs):
 
     return res
 
-    # clusters_new = {}
-    # for chr, dat in clusters.items():
-    #     track_multiples = {}
-    #     clusters_new[chr] = {}
-    #     j = 0
-    #     for cl in CLASSES:
-    #         clusters_new[chr][cl] = {}
-    #         for x in dat[cl].values():
-    #             probe_tup = tuple(x)
-    #             probe_classes = classes[chr][probe_tup]
-    #             if len(probe_classes) == 1:
-    #                 clusters_new[chr][cl][j] = {
-    #                     'probes': x,
-    #                     'classes': probe_classes,
-    #                 }
-    #                 j += 1
-    #             elif probe_tup in track_multiples:
-    #                 # we've already added this cluster under a different class, so we'll just reference it here
-    #                 cid, pr = track_multiples[probe_tup]
-    #                 clusters_new[chr][cl][cid] = pr
-    #             else:
-    #                 # we need to add this cluster and track it
-    #                 clusters_new[chr][cl][j] = {
-    #                     'probes': x,
-    #                     'classes': probe_classes,
-    #                 }
-    #                 track_multiples[probe_tup] = (j, clusters_new[chr][cl][j])
-    #                 j += 1
-    # return clusters_new
-
 
 def median_change(y1, y2):
     return np.abs(np.median(y1 - y2))
@@ -280,7 +265,7 @@ def test_cluster_data_values_parallel(probes, **kwargs):
     return test_cluster_data_values(y1, y2, **kwargs)
 
 
-def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kwargs):
+def test_clusters_in_place(clusters, data, samples, min_median_change=1.4, n_jobs=1, add_nested_classes=True, **kwargs):
     """
     Compare beta or M values between two samples.
     Each cluster is marked as either 'not of interest', 'relevant and non-significant', or
@@ -289,6 +274,7 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kw
     :param dmr_probes: Output of identify regions
     :param samples: Iterable of length two, containing strings referencing the sample names.
     :param kwargs: Passed to test_cluster_data_values
+    :param add_nested_classes: If True (default), we add dict keys for convenience to access individual classes.
     :return: Dict with same structure as dmr_probes. Each cluster has an associated dictionary:
         {'relevant': True/False, 'pval': None if not relevant, float if relevant}
     """
@@ -334,16 +320,12 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, **kw
                 res_all[cl.cluster_id].update(task.get(1e3))
             except Exception:
                 logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
-    pool.close()
 
+    if add_nested_classes:
     # for convenience, provide nested dictionaries allowing access to single class type
-    res['all'] = res_all
-    for cls in CLASSES:
-        res[cls] = dict([
-            (k, v) for k, v in res_all.iteritems() if cls in v['classes']
-        ])
-
-    return res
+        return cluster_class_nests(res_all)
+    else:
+        return res_all
 
 
 def cluster_class_nests(res_all):
@@ -363,40 +345,69 @@ def cluster_class_nests(res_all):
 
     return res
 
-    #
-    # for chr, d in clusters.iteritems():
-    #     # chromosome loop
-    #     res[chr] = {}
-    #     for typ, cldict in d.iteritems():
-    #         # cluster type loop
-    #         res[chr][typ] = {}
-    #         for j, probedict in cldict.iteritems():
-    #             res[chr][typ][j] = dict(probedict)
-    #             if n_jobs > 1:
-    #                 jobs[(chr, typ, j)] = pool.apply_async(
-    #                     test_cluster_data_values_parallel,
-    #                     args=(probedict['probes'],),
-    #                     kwds=test_kwargs
-    #                 )
-    #             else:
-    #                 try:
-    #                     this_y1 = y1.loc[probedict['probes']].dropna()
-    #                     this_y2 = y2.loc[probedict['probes']].dropna()
-    #                     res[chr][typ][j].update(
-    #                         test_cluster_data_values(this_y1, this_y2, **test_kwargs)
-    #                     )
-    #                 except Exception:
-    #                     logger.error("Failed on chr %s type %s number %s", chr, typ, j)
-    #
-    # if n_jobs > 1:
-    #     # close pool and wait for execution to complete
-    #     for (chr, typ, j), task in jobs.iteritems():
-    #         try:
-    #             res[chr][typ][j].update(task.get(1e3))
-    #         except Exception:
-    #             logger.exception("Failed on chr %s type %s number %s", chr, typ, j)
-    # pool.close()
-    # return res
+
+def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, mht='fdr_bh', alpha=0.05, **kwargs):
+    """
+    Compare beta or M values between two samples.
+    Each cluster is marked as either 'not of interest', 'relevant and non-significant', or
+    'relevant AND significant'. Only relevant regions are tested, reducing the number of hypothesis tests and
+    increasing the power.
+    :param clusters: Dictionary keyed by cluster ID, values are ProbeCluster objects, as generated by identify_clusters.
+    :param samples: Iterable of length two, containing strings referencing the sample names.
+    :param min_median_change: Minimum median change in data values between the groups to be declared relevant.
+     Statistical tests are not carried out if this threshold is not met.
+    :param mht: If supplied, apply MHT correction after pvalues have been computed. Disable by setting None.
+    :param alpha: Only used if mht is True. `alpha` value used as a cutoff on the adjusted p value.
+    :param kwargs: Passed to test_cluster_data_values
+    :return: Dict with same keys supplied in clusters dict.dmr_probes. Each cluster has an associated dictionary:
+        {'relevant': True/False, 'pval': None if not relevant, float if relevant}
+    """
+    if len(samples) != 2:
+        raise AttributeError("samples must have length two and reference columns in the data")
+
+    test_kwargs = dict(kwargs)
+    test_kwargs.update({'min_median_change': min_median_change})
+
+    res = {}
+
+    y1 = data.loc[:, samples[0]]
+    y2 = data.loc[:, samples[1]]
+
+    if n_jobs > 1:
+        pool = mp.Pool(n_jobs, initializer=init_pool, initargs=((y1, y2),))
+        jobs = {}
+
+    for cl_id, cl in clusters.iteritems():
+        pids = cl.pids
+        if n_jobs > 1:
+            jobs[cl] = pool.apply_async(
+                test_cluster_data_values_parallel,
+                args=(pids,),
+                kwds=test_kwargs
+            )
+        else:
+            try:
+                this_y1 = y1.loc[pids].dropna()
+                this_y2 = y2.loc[pids].dropna()
+                res[cl.cluster_id] = test_cluster_data_values(this_y1, this_y2, **test_kwargs)
+            except Exception:
+                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+
+    if n_jobs > 1:
+        # close pool and wait for execution to complete
+        pool.close()
+        pool.join()
+        for cl, task in jobs.iteritems():
+            try:
+                res[cl.cluster_id] = task.get(1e3)
+            except Exception:
+                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+
+
+    if mht:
+        mht_correction(res, alpha=alpha, method=mht)
+
+    return res
 
 
 def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
@@ -405,7 +416,9 @@ def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
     :param test_results: As generated by test_clusters.
     """
     # we'll work with the full set of results as other representations (per class) are just pointers
-    the_dict = test_results['all']
+    # the_dict = test_results['all']
+    # assume that the supplied dictionary represents all classes
+    the_dict = test_results
 
     # gather pvalues
     # keep a list of keys to ensure order is maintained
@@ -427,21 +440,6 @@ def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
 
     # we've done all the modifying in-place, so no return value
 
-    # # Filter to include only relevant clusters
-    # # NB this doesn't copy values, so any modifications are represented in the original dictionary
-    # test_results_only_relevant = filter_dictionary(test_results, filt=lambda x: 'pval' in x, n_level=3, copy=copy)
-    # # gather pvalues
-    # keys, attrs = zip(*dict_iterator(test_results_only_relevant, n_level=3))
-    # pvals = [t['pval'] for t in attrs]
-    # rej, padj, _, _ = multicomp.multipletests(pvals, alpha=alpha, method=method)
-    #
-    # # add results to dictionary
-    # for r, pa, d in zip(rej, padj, attrs):
-    #     d['padj'] = pa
-    #     d['rej_h0'] = r
-    #
-    # return test_results_only_relevant
-
 
 class ProbeCluster(object):
     def __init__(
@@ -451,8 +449,6 @@ class ProbeCluster(object):
             cluster_id=None,
             cls=None,
             chr=None,
-            beta=None,
-            m=None,
             anno_requires_lookup=True,
             compute_genes=True
     ):
@@ -493,20 +489,33 @@ class ProbeCluster(object):
                 raise AttributeError("Probes are located on different chromosomes")
             self.chr = matching_chr[0]
 
-        self.pval = None
-        self.padj = None
         self._genes = None
 
         if compute_genes:
             _ = self.genes
 
+    @classmethod
+    def from_dict(cls, summary_dict, anno):
+        return cls(
+            summary_dict['pids'],
+            anno,
+            cluster_id=summary_dict['cid'],
+            cls=summary_dict['classes'],
+            chr=summary_dict['chr']
+        )
+
     @property
     def summary_dict(self):
         return {
-            'probes': self.pids,
+            'pids': self.pids,
             'genes': self.genes,
-            'classes': self.cls
+            'cls': self.cls,
+            'chr': self.chr,
+            'cid': self.cluster_id,
         }
+
+    def __getitem__(self, item):
+        return self.summary_dict[item]
 
     def __hash__(self):
         return self.hash().__hash__()
@@ -581,32 +590,341 @@ def test_results_to_table(dat):
     return tbl
 
 
-class ClusterCollection(object):
+class DmrResults(object):
     """
-    Class for managing a collection of clusters.
+    Class for managing a collection of DMR results.
     This allows indexing by chromosome or class type and adds methods for efficient bulk computation of p values.
     """
-    def __init__(self, cluster_dict=None, pval_dict=None):
+    def __init__(self, clusters=None, anno=None):
         """
-        If supplied, clusters are stored in a dictionary.
-        First level: chromosome
-        Second level: probe class
-        Third level: list of clusters
-        The same hierarchy is used in `self._clusters` and `self._pvals`
-        :param cluster_dict:
-        :param pval_dict:
+        :param anno: Dataframe containing annotation data for the methylation array.
+        :param clusters: List of proposed clusters, as computed by `identify_clusters()`. Either a list, in which case
+        cluster IDs are automatically generated, or a dictionary with keys as IDs.
         """
-        self._clusters = cluster_dict or {}
+        self.clusters = None
+        self.set_clusters(clusters)
+
+        self.results = None
+
+        self.anno = anno
+        self.min_median_change = None
+
+        self._clusters_by_class = None
+        self._results_by_class = None
+        self._results_relevant = None
+        self._results_relevant_by_class = None
+        self._results_significant = None
+        self._results_significant_by_class = None
+
+        self._classes = None
+
+    def copy(self):
+        # copy attributes across; only results need to be deep copied, others can be shared
+        # skip hidden attributes as these can be recomputed quickly
+        new = self.__class__()
+        new.anno = self.anno
+        new.clusters = self.clusters
+        for k, v in self.__dict__.iteritems():
+            if k in {'anno', 'clusters'}:
+                continue
+            if k[0] == '_':
+                continue
+            setattr(new, k, copy.deepcopy(v))
+        return new
+
+    def set_clusters(self, clusters):
+        if isinstance(clusters, dict):
+            self.clusters = clusters
+        elif hasattr(clusters, '__iter__'):
+            self.clusters = dict([
+                (cl.cluster_id, cl) for cl in clusters
+            ])
+        elif clusters is None:
+            self.clusters = None
+        else:
+            raise AttributeError ("Unrecognised data format for clusters.")
+
+    def identify_clusters(self, d_max, n_min, n_jobs=1, anno=None, **kwargs):
+        if anno is None:
+            if self.anno is None:
+                raise ValueError("Must supply annotation data either at object construction or to this function.")
+            else:
+                anno = self.anno
+        else:
+            if self.anno is None:
+                self.anno = anno
+        cl = identify_clusters(anno, n_min=n_min, d_max=d_max, n_jobs=n_jobs)
+        self.set_clusters(cl)
+
+    def test_clusters(self, data, samples, min_median_change=1.4, n_jobs=1, **kwargs):
+        self.min_median_change = min_median_change
+        self.results = test_clusters(
+            self.clusters,
+            data,
+            samples,
+            min_median_change=min_median_change,
+            n_jobs=n_jobs,
+            **kwargs
+        )
+
+        self._results_by_class = None
+        self._results_relevant = None
+        self._results_relevant_by_class = None
+        self._results_significant = None
+        self._results_significant_by_class = None
+
+    @property
+    def classes(self):
+        """
+        Compute a set of all classes in the clusters
+        """
+        if self._classes is None:
+            classes = set()
+            for x in self.clusters.values():
+                classes.update(x.cls)
+            self._classes = classes
+        return self._classes
+
+    def separate_by_class(self, lookup, convert=None):
+        if convert is None:
+            convert = lookup
+        dest = {}
+        for cls in self.classes:
+            dest[cls] = dict([t for t in lookup.items() if cls in convert[t[0]].cls])
+        return dest
+
+    def clusters_by_class(self, cls=None):
+        if self._clusters_by_class is None:
+            self._clusters_by_class = self.separate_by_class(self.clusters)
+        if cls is None:
+            return self._clusters_by_class
+        return self._clusters_by_class[cls]
+
+    def results_by_class(self, cls=None):
+        if self._results_by_class is None:
+            self._results_by_class = self.separate_by_class(self.results, convert=self.clusters)
+        if cls is None:
+            return self._results_by_class
+        return self._results_by_class[cls]
+
+    @property
+    def results_relevant(self):
+        if self._results_relevant is None:
+            self._results_relevant = filter_dictionary(self.results, lambda x: 'pval' in x, n_level=1)
+        return self._results_relevant
+
+    @property
+    def results_significant(self):
+        if self._results_significant is None:
+            self._results_significant = filter_dictionary(self.results, lambda x: x.get('rej_h0', False), n_level=1)
+        return self._results_significant
+
+    def results_relevant_by_class(self, cls=None):
+        if self._results_relevant_by_class is None:
+            self._results_relevant_by_class = self.separate_by_class(self.results_relevant, convert=self.clusters)
+        if cls is None:
+            return self._results_relevant_by_class
+        return self._results_relevant_by_class[cls]
+
+    def results_significant_by_class(self, cls=None):
+        if self._results_significant_by_class is None:
+            self._results_significant_by_class = self.separate_by_class(self.results_significant, convert=self.clusters)
+        if cls is None:
+            return self._results_significant_by_class
+        return self._results_significant_by_class[cls]
 
 
-        self.clusters_by_chromosome = {}
-        self.clusters_by_class = {}
 
-        self._pvals = pval_dict or {}
-        self.pvals_by_chromosome = {}
-        self.pvals_by_class = {}
+def nested_dict_to_flat(x):
+    """
+    From the supplied nested dictionary, generate a flat dictionary in which the keys are tuples showing the
+    original structure. Any object that is *not* a dictionary is considered an end node.
+    """
+    res = {}
+    stack = [(None, None)] + x.items()
+    key = []
+    while True:
+        k, x = stack.pop()
+        if k is None and x is None:
+            # signal to move up one in the nesting hierarchy
+            if len(stack) == 0:
+                # all done
+                break
+            else:
+                # remove from the key
+                key.pop()
+        elif isinstance(x, dict):
+            # leave a marker telling us where this nesting happened
+            stack += [(None, None)]
+            # append items to the stack
+            stack.extend(x.items())
+            # add to the key
+            key.append(k)
+        else:
+            res[tuple(key + [k])] = x
+    return res
 
-    # TODO?
+
+def flat_dict_to_nested(x):
+    res = {}
+    for k, v in x.items():
+        # create nesting structure
+        parent = res
+        for (i, t) in enumerate(k):
+            if i == (len(k) - 1):
+                parent[t] = v
+            else:
+                parent.setdefault(t, {})
+                parent = parent[t]
+    return res
+
+
+class DmrResultCollection(object):
+    """
+    Represents a collection of DmrResult objects. All objects must share the same clusters and anno attributes,
+    but can differ in the results dictionary.
+    """
+    def __init__(self, **objs):
+        """
+        :param objs: The DmrResults objects. These can be bundled into a nested dictionary structure
+        """
+        if len(objs) == 0:
+            raise ValueError("Must supply some `DmrResults` objects.")
+
+        # flat representation of supplied (possibly nested) objects
+        self._flat = nested_dict_to_flat(objs)
+
+        # check objects for compatibility
+        first = True
+        clusters = None
+        anno = None
+
+        for x in self._flat.values():
+            if first:
+                clusters = x.clusters
+                anno = x.anno
+                first = False
+            else:
+                if x.clusters is not clusters:
+                    raise AttributeError("All DmrResults objects must share the same `clusters` attribute.")
+                if x.anno is not anno:
+                    raise AttributeError("All DmrResults objects must share the same `anno` attribute.")
+
+        self.objects = objs
+        self.clusters = clusters
+        self.anno = anno
+
+    def __getitem__(self, item):
+        """
+        Act as a direct lookup into objects
+        """
+        return self.objects[item]
+
+    def __iter__(self):
+        return self.objects.__iter__()
+
+    def keys(self):
+        return self.objects.keys()
+
+    def apply(self, func):
+        # TODO: test
+        if isinstance(func, str):
+            s = func
+            def func(x):
+                if hasattr(x.__class__, s):
+                    inst = getattr(x.__class__, s)
+                    # not data, but could be a property
+                    if isinstance(inst, property):
+                        return getattr(x, s)
+                    elif isinstance(inst, types.MethodType):
+                        return getattr(x, s)()
+                    else:
+                        # what is this? a static data object?
+                        raise NotImplementedError()
+                else:
+                    inst = getattr(x, s)
+                    if not hasattr(inst, '__call__'):
+                        return inst
+                    else:
+                        return inst()
+
+        flat_apply = dict([
+            (k, func(v)) for k, v in self._flat.items()
+        ])
+        return flat_dict_to_nested(flat_apply)
+
+    def to_json(self, fn):
+        """
+        Save this collection to a JSON file. We don't store the annotation, as it can be reloaded from elsewhere.
+        """
+        ## FIXME: using tuples as a dict key breaks JSON support
+        # extract results from flat dict
+        results = dict([(k, v.results) for k, v in self._flat.items()])
+        # convert clusters to a serializable form
+        clusters = dict([
+            (k, v.summary_dict) for k, v in self.clusters.items()
+        ])
+        x = dict(clusters=clusters, results=results)
+        with open(fn, 'wb') as f:
+            json.dump(x, f, cls=TestResultEncoder)
+
+    @classmethod
+    def from_json(cls, fn, anno):
+        """
+        Load from a json file previously saved with to_json
+        """
+        ## FIXME: using tuples as a dict key breaks JSON support
+        with open(fn, 'rb') as f:
+            x = json.load(f)
+        # recreate clusters
+        clusters = dict([
+            (k, ProbeCluster.from_dict(v, anno)) for k, v in x['clusters'].items()
+        ])
+
+        # recreate objects
+        objects = {}
+        for k, v in x['results'].items():
+            objects[k] = DmrResults(clusters=clusters, anno=anno)
+            objects[k].results = v
+
+        return cls(**flat_dict_to_nested(objects))
+
+    def to_pickle(self, fn, include_annotation=True):
+        """
+        Save this collection to pickle. We can store the annotation there, too
+        """
+        # extract results from flat dict
+        results = dict([(k, v.results) for k, v in self._flat.items()])
+        x = dict(clusters=self.clusters, results=results)
+        if include_annotation:
+            x['anno'] = self.anno
+        with open(fn, 'wb') as f:
+            pickle.dump(x, f)
+
+    @classmethod
+    def from_pickle(cls, fn, anno=None):
+        """
+        Load from pickle.
+        :param anno: must be included if it is not bundled
+        """
+        with open(fn, 'rb') as f:
+            x = pickle.load(f)
+
+        if 'anno' in x:
+            if anno is not None:
+                logger.warning("Supplied annotation data will override bundled annotation data.")
+            else:
+                anno = x['anno']
+        elif anno is None:
+            raise AttributeError("Must supply annotation data if not bundled")
+
+        # recreate objects
+        objects = {}
+        for k, v in x['results'].items():
+            objects[k] = DmrResults(clusters=x['clusters'], anno=anno)
+            objects[k].results = v
+
+        return cls(**flat_dict_to_nested(objects))
 
 
 def region_count(dmr_probes):
@@ -889,7 +1207,7 @@ def compute_dmr(
         raise AttributeError("DMR test method not recognised: %s" % dmr_test_method)
     n_jobs = n_jobs or mp.cpu_count()
 
-    test_results = test_clusters(
+    test_results = test_clusters_in_place(
         clusters,
         mvals,
         samples=sample_name_tuples,
@@ -979,7 +1297,7 @@ if __name__ == "__main__":
     test_results_significant = {}
     for sid in ['018', '019', '031']:
         samples = (gbm_sample_dict[sid], dura_sample_dict[sid])
-        test_results[sid] = test_clusters(clusters, m, samples=samples, min_median_change=dm, n_jobs=n_jobs)
+        test_results[sid] = test_clusters_in_place(clusters, m, samples=samples, min_median_change=dm, n_jobs=n_jobs)
         test_results_relevant[sid] = mht_correction(test_results[sid], alpha=fdr)
 
     for sid in ['018', '019', '031']:

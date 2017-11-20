@@ -244,7 +244,7 @@ def dmr_overlap(
 
 
 def dmr_cluster_count_by_class(
-        dmr_results,
+        blocks,
         show_labels=True,
         set_labels=None,
         outdir=None,
@@ -253,8 +253,7 @@ def dmr_cluster_count_by_class(
 ):
     """
     Venn diagram showing the distribution of clusters amongst the classes for a single result.
-    :param dmr_results: Already selected for patient and comparison type. Expect three levels of dictionary
-    nesting: chr, cls, cluster ID.
+    :param blocks: dictionary, keyed by class, values are iterables of IDs
     :param outdir: If supplied, write plot to a file.
     :param figname:
     :return:
@@ -266,14 +265,16 @@ def dmr_cluster_count_by_class(
         created = True
 
     # get classes
-    all_classes = [k for k in dmr_results.keys() if k != 'all']
+    # all_classes = dmr_results.classes
 
-    blocks = []
-    sl = []
-    for cls in all_classes:
-        d = dmr_results[cls]
-        blocks.append(d.keys())
-        sl.append(cls)
+    sl, blocks = zip(*blocks.items())
+
+    # blocks = []
+    # sl = []
+    # for cls in all_classes:
+    #     d = dmr_results[cls]
+    #     blocks.append(d.keys())
+    #     sl.append(cls)
 
     if set_labels is None:
         set_labels = sl

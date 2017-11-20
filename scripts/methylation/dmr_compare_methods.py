@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
         for sid, samples in patient_pairs.items():
 
-            this_res = dmr.test_clusters(
+            this_res = dmr.test_clusters_in_place(
                 clusters,
                 m,
                 samples=samples,
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
             # for insc and ref: use a replacement `samples`
             samples_ref = (samples[0], (CORE_PARAMS['ref_name'],))
-            this_res = dmr.test_clusters(
+            this_res = dmr.test_clusters_in_place(
                 clusters,
                 m,
                 samples=samples_ref,

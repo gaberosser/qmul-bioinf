@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # get new results
     s = (('GBM018_P10', 'GBM018_P12'), ('DURA018_NSC_N4_P4', 'DURA018_NSC_N2_P6'))
-    new_results = dmr.test_clusters(clusters, m, s, n_jobs=4)
+    new_results = dmr.test_clusters_in_place(clusters, m, s, n_jobs=4)
 
     # get values associated with 018 repeats
     n_it = 1999

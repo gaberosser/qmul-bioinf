@@ -173,7 +173,7 @@ if __name__ == '__main__':
             test_results_significant = {}
             for sid in ['018', '019', '031']:
                 samples = ('GBM%s' % sid, 'Dura%s' % sid)
-                test_results[sid] = dmr.test_clusters(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
+                test_results[sid] = dmr.test_clusters_in_place(clusters, m, samples=samples, min_median_change=dm_min, n_jobs=n_jobs)
                 ## FIXME: the function  mht_correction now modifies in place; this will error
                 test_results_relevant[sid] = dmr.mht_correction(test_results[sid], alpha=alpha)
                 test_results_significant[sid] = dmr.filter_dictionary(
