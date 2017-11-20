@@ -135,7 +135,6 @@ def venn_dmr_counts(
         pids=None,
         outdir=None,
         figname='dmr_venn',
-        probe_class=None,
         comparisons=('matched', 'gibco'),
         set_labels=('Isogenic', 'Reference')
 ):
@@ -145,9 +144,8 @@ def venn_dmr_counts(
     - hypermethylated DMR counts
     - hypomethylated DMR counts
     In each case, splitting according to `comparisons`
-    :param dmr_results:
+    :param dmr_results: Dictionary of results, e.g. from the results (results_significant) attribute of DmrResults.
     :param outdir:
-    :param probe_class: If supplied, limit the plotting to this class
     :param comparisons: Iterable giving the comparisons to use.
     :param set_labels: Iterable giving the set labels to use for the plot. Coresponds to comparisons.
     :return:
@@ -163,10 +161,6 @@ def venn_dmr_counts(
         inputs = [
             dmr_results[pid][k] for k in comparisons
         ]
-        if probe_class is not None:
-            inputs = [t[probe_class] for t in inputs]
-        else:
-            inputs = [t['all'] for t in inputs]
 
         inputs_all = [set(x.keys()) for x in inputs]
 
@@ -194,7 +188,6 @@ def venn_dmr_counts(
 def dmr_overlap(
         dmr_results,
         pids=None,
-        probe_class=None,
         comparisons=('matched', 'gibco'),
         comparison_titles=('Isogenic', 'Reference'),
         outdir=None,
@@ -206,7 +199,6 @@ def dmr_overlap(
     This can be limited to a single DMR probe class, or (default) include all.
     :param dmr_results:
     :param pids:
-    :param probe_class:
     :param comparisons:
     :param comparison_titles:
     :param outdir:
@@ -223,17 +215,17 @@ def dmr_overlap(
         inputs = [
             dmr_results[pid][cmp] for pid in pids
         ]
-        n_level = 3
-        if probe_class is not None:
-            inputs = [dmr.dict_by_sublevel(t, 2, probe_class) for t in inputs]
-            n_level = 2
-            hasher = lambda x: tuple(x)
-        else:
-            hasher = lambda x: (x[0], x[2])
-
-        inputs = [
-            set([hasher(t) for t, _ in dmr.dict_iterator(x, n_level=n_level)]) for x in inputs
-        ]
+        # n_level = 3
+        # if probe_class is not None:
+        #     inputs = [dmr.dict_by_sublevel(t, 2, probe_class) for t in inputs]
+        #     n_level = 2
+        #     hasher = lambda x: tuple(x)
+        # else:
+        #     hasher = lambda x: (x[0], x[2])
+        #
+        # inputs = [
+        #     set([hasher(t) for t, _ in dmr.dict_iterator(x, n_level=n_level)]) for x in inputs
+        # ]
         venn.venn_diagram(set_labels=pids, ax=axs[i], *inputs)
         axs[i].set_title(comparison_titles[i])
 

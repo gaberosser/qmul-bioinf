@@ -590,6 +590,18 @@ def test_results_to_table(dat):
     return tbl
 
 
+# TODO: can we use this kind of decorator to programmatically attach methods to the DmrResultsCollection class?
+# def callable_from_collection(func):
+#     """
+#     Decorator that annotates DmrResults classes that may be called from an encasulating DmrResultsCollection object.
+#     This is done (in practice) via the apply command from the parent object.
+#     :param func:
+#     :return:
+#     """
+#     func.__dict__['callable_from_collection'] = True
+#     return func
+
+
 class DmrResults(object):
     """
     Class for managing a collection of DMR results.
@@ -673,6 +685,51 @@ class DmrResults(object):
         self._results_significant = None
         self._results_significant_by_class = None
 
+    def to_table(self, include='all', skip_geneless=True):
+        """
+        Convert results and cluster attributes to a flat table
+        :param include: Controls which clusters are used {'all', 'relevant', 'significant'}
+        :param skip_geneless: If True (default), do not include probe clusters that have no associated genes
+        :return:
+        """
+        # convert classes to a list to ensure reproducible iteration order
+        classes = list(self.classes)
+        cols = ['cluster_id', 'chr', 'genes'] + \
+               ['class_%s' % t for t in classes] + \
+               ['median_1', 'median_2', 'median_delta', 'padj']
+        dtypes = ['uint16', 'object', 'object'] + \
+                 ['bool'] * len(classes) + \
+                 ['float', 'float', 'float', 'float']
+        rows = []
+
+        # set the cluster dictionary used for iteration based on `include`
+        if include == 'all':
+            cl_dict = self.clusters
+        elif include == 'relevant':
+            cl_dict = self.clusters_relevant
+        elif include == 'significant':
+            cl_dict = self.clusters_significant
+        else:
+            raise AttributeError("Unrecognised include option. Supported: 'all', 'relevant', 'significant'.")
+
+        for cluster_id, cl in cl_dict.items():
+            # don't add if this DMR has no associated genes
+            if len(cl.genes) == 0 and skip_geneless:
+                continue
+            the_res = self.results[cluster_id]
+            this_row = [cluster_id, cl.chr, tuple(cl.genes)] + \
+                       [t in cl.cls for t in classes] + \
+                       [the_res['median1'], the_res['median2'], the_res['median_change'], the_res.get('padj', None)]
+            rows.append(this_row)
+
+        # run through the pids and generate a pandas DataFrame.
+        # additionally run a quick sanity check that no rows are duplicated
+        tbl = pd.DataFrame(rows, columns=cols).astype(dict(zip(cols, dtypes))).set_index('cluster_id')
+        if tbl.duplicated().any():
+            raise BasicLogicException("Duplicate rows found.")
+
+        return tbl
+
     @property
     def classes(self):
         """
@@ -693,6 +750,7 @@ class DmrResults(object):
             dest[cls] = dict([t for t in lookup.items() if cls in convert[t[0]].cls])
         return dest
 
+    # @callable_from_collection
     def clusters_by_class(self, cls=None):
         if self._clusters_by_class is None:
             self._clusters_by_class = self.separate_by_class(self.clusters)
@@ -700,12 +758,25 @@ class DmrResults(object):
             return self._clusters_by_class
         return self._clusters_by_class[cls]
 
+    # @callable_from_collection
     def results_by_class(self, cls=None):
         if self._results_by_class is None:
             self._results_by_class = self.separate_by_class(self.results, convert=self.clusters)
         if cls is None:
             return self._results_by_class
         return self._results_by_class[cls]
+
+    @property
+    def clusters_relevant(self):
+        return dict([
+            (k, self.clusters[k]) for k in self.results_relevant
+        ])
+
+    @property
+    def clusters_significant(self):
+        return dict([
+            (k, self.clusters[k]) for k in self.results_significant
+        ])
 
     @property
     def results_relevant(self):
@@ -719,6 +790,7 @@ class DmrResults(object):
             self._results_significant = filter_dictionary(self.results, lambda x: x.get('rej_h0', False), n_level=1)
         return self._results_significant
 
+    # @callable_from_collection
     def results_relevant_by_class(self, cls=None):
         if self._results_relevant_by_class is None:
             self._results_relevant_by_class = self.separate_by_class(self.results_relevant, convert=self.clusters)
@@ -726,6 +798,7 @@ class DmrResults(object):
             return self._results_relevant_by_class
         return self._results_relevant_by_class[cls]
 
+    # @callable_from_collection
     def results_significant_by_class(self, cls=None):
         if self._results_significant_by_class is None:
             self._results_significant_by_class = self.separate_by_class(self.results_significant, convert=self.clusters)
@@ -826,8 +899,11 @@ class DmrResultCollection(object):
     def keys(self):
         return self.objects.keys()
 
+    def iterkeys(self):
+        return self.objects.iterkeys()
+
     def apply(self, func):
-        # TODO: test
+        # TODO: test thoroughly
         if isinstance(func, str):
             s = func
             def func(x):
@@ -852,6 +928,34 @@ class DmrResultCollection(object):
             (k, func(v)) for k, v in self._flat.items()
         ])
         return flat_dict_to_nested(flat_apply)
+
+    def clusters_by_class(self, cls=None):
+        return self.apply(lambda x: x.clusters_by_class(cls=cls))
+
+    def results_by_class(self, cls=None):
+        return self.apply(lambda x: x.results_by_class(cls=cls))
+
+    @property
+    def clusters_relevant(self):
+        return self.apply('clusters_relevant')
+
+    @property
+    def clusters_significant(self):
+        return self.apply('clusters_significant')
+
+    @property
+    def results_relevant(self):
+        return self.apply('results_relevant')
+
+    @property
+    def results_significant(self):
+        return self.apply('results_significant')
+
+    def results_relevant_by_class(self, cls=None):
+        return self.apply(lambda x: x.results_relevant_by_class(cls=cls))
+
+    def results_significant_by_class(self, cls=None):
+        return self.apply(lambda x: x.results_significant_by_class(cls=cls))
 
     def to_json(self, fn):
         """

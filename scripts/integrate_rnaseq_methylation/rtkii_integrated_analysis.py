@@ -268,41 +268,52 @@ def load_dmr_results(fn):
     }
 
 
-def tabulate_dmr_results(test_results, outdir=None, **other_results):
-    """
-    :param **other_results: Dictionary giving different representations, typically 'proposed', 'relevant' and
-    'significant'. Keys are used to name columns.
-    :param outdir: If supplied, tables are written to this directory
-    :return:
-    """
-    pids = test_results.keys()
-    types = test_results.values()[0].keys()
-    the_keys = ['proposed'] + other_results.keys()
+def tabulate_dmr_results(dmr_res, outdir=None, comparisons = ('matched', 'ref')):
+    for_counting = {
+        'relevant': dmr_res.clusters_relevant,
+        'significant': dmr_res.clusters_significant,
+    }
+
+    pids = dmr_res.keys()
+    the_keys = ['proposed', 'relevant', 'significant', 'significant_exclusive', 'significant_intersection']
     cols = ['sample'] + ['clusters_%s' % t for t in the_keys] + ['genes_%s' % t for t in the_keys]
     table_cluster_numbers = {}
 
     # the number of proposed clusters and proposed genes is constant across all results, so just use the first
-    ncl = len(test_results[pids[0]][types[0]]['all'])
-    ng = dmr.count_dmr_genes(test_results[pids[0]][types[0]]['all'])
+    ncl = len(dmr_res.clusters)
+    ng = dmr.count_dmr_genes(dmr_res.clusters)
     row_template = {'clusters_proposed': ncl, 'genes_proposed': ng}
 
     for pid in pids:
-        for typ in types:
+
+        tmp, _ = setops.venn_from_arrays(*[dmr_res[pid][typ].clusters_significant.keys() for typ in comparisons])
+
+        for typ in comparisons:
+            the_venn_key = '10' if typ == 'matched' else '01'
+            po = dict([(k, for_counting['significant'][pid][typ][k]) for k in tmp[the_venn_key]])
+            pr = dict([(k, for_counting['significant'][pid][typ][k]) for k in tmp['11']])
             table_cluster_numbers.setdefault(typ, pd.DataFrame(columns=cols))
             this_row = dict(row_template)
-            this_row['sample'] = pid
-            for suffix in other_results.keys():
-                this_kwarg = other_results[suffix]
-                this_row['clusters_%s' % suffix] = len(this_kwarg[pid][typ]['all'])
-                this_row['genes_%s' % suffix] = dmr.count_dmr_genes(this_kwarg[pid][typ]['all'])
+            this_row.update({
+                'sample': pid,
+                'clusters_relevant': len(for_counting['relevant'][pid][typ]),
+                'clusters_significant': len(for_counting['significant'][pid][typ]),
+                'clusters_significant_exclusive': len(po),
+                'clusters_significant_intersection': len(pr),
+                'genes_relevant': dmr.count_dmr_genes(for_counting['relevant'][pid][typ]),
+                'genes_significant': dmr.count_dmr_genes(for_counting['significant'][pid][typ]),
+                'genes_significant_exclusive': dmr.count_dmr_genes(po),
+                'genes_significant_intersection': dmr.count_dmr_genes(pr),
+            })
             this_row = pd.Series(this_row)
             table_cluster_numbers[typ] = table_cluster_numbers[typ].append(this_row, ignore_index=True)
 
     if outdir is not None:
-        for typ in types:
+        for typ in comparisons:
             table_cluster_numbers[typ].to_csv(os.path.join(outdir, "cluster_numbers.%s.csv" % typ))
 
     return table_cluster_numbers
+
 
 
 def dmr_venn_sets(test_results):
@@ -758,8 +769,8 @@ if __name__ == "__main__":
         dmr_res.to_pickle(fout, include_annotation=False)
         print "Saved DMR results to %s" % fout
 
-    test_results = test_results_relevant = None
-    test_results_significant = dmr_res.apply('results_significant_by_class')
+    test_results_relevant = dmr_res.results_relevant_by_class()
+    test_results_significant = dmr_res.results_significant_by_class()
 
     # Venn showing the distribution of probe classes amongst all regions (incl. not significantly DM)
     me_plots.dmr_cluster_count_by_class(dmr_res[pids[0]]['matched'].clusters_by_class(), outdir=outdir)
@@ -767,31 +778,29 @@ if __name__ == "__main__":
     me_plots.dmr_cluster_count_array(test_results_significant, comparisons=('matched', 'ref'),
                                      comparison_labels=('Matched', 'Ref'), outdir=outdir)
 
-    # TODO: update from here
-    tmp_venn_set = dmr_venn_sets(test_results_significant)
-    test_results_exclusive = tmp_venn_set['exclusive']
-    test_results_inclusive = tmp_venn_set['inclusive']
-
     # summarise DMR results in a table
-    table_cluster_numbers = tabulate_dmr_results(
-        test_results,
-        relevant=test_results_relevant,
-        significant=test_results_significant,
-        significant_exclusive=test_results_exclusive,
-        significant_inclusive=test_results_inclusive,
-        outdir=outdir
-    )
+    table_cluster_numbers = tabulate_dmr_results(dmr_res, outdir=outdir)
 
     # plot the DMR counts, classified into hyper and hypomethylation
-    me_plots.venn_dmr_counts(test_results_significant, outdir=outdir, figname="dmr_venn_all")
+    me_plots.venn_dmr_counts(dmr_res.results_significant, comparisons=('matched', 'ref'), outdir=outdir, figname="dmr_venn_all")
     for cls in dmr.CLASSES:
-        me_plots.venn_dmr_counts(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_venn_%s" % cls)
+        me_plots.venn_dmr_counts(
+            dmr_res.results_significant_by_class(cls),
+            comparisons=('matched', 'ref'),
+            outdir=outdir,
+            figname="dmr_venn_%s" % cls
+        )
 
     # these will fail if we have too many individuals (a limit of the Venn diagram)
     try:
-        me_plots.dmr_overlap(test_results_significant, outdir=outdir, figname="dmr_overlap_all")
+        me_plots.dmr_overlap(
+            dmr_res.results_significant,
+            comparisons=('matched', 'ref'),
+            outdir=outdir,
+            figname="dmr_overlap_all"
+        )
         for cls in dmr.CLASSES:
-            me_plots.dmr_overlap(test_results_significant, probe_class=cls, outdir=outdir, figname="dmr_overlap_%s" % cls)
+            me_plots.dmr_overlap(dmr_res.results_significant_by_class(cls), outdir=outdir, figname="dmr_overlap_%s" % cls)
     except Exception as exc:
         print "Unable to produce DMR overlap plot: %s" % repr(exc)
 
@@ -799,14 +808,14 @@ if __name__ == "__main__":
     # skip this for now but useful to know!
 
     # convert DMR results to tables
-    dmr_matched_table = dmr.test_results_to_table(dictionary.dict_by_sublevel(test_results_significant, 2, 'matched'))
-    dmr_ref_table = dmr.test_results_to_table(dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco'))
-
+    dmr_tables = dmr_res.apply(lambda x: x.to_table(include='significant'))
 
     # integrate the two results
     # We first look for overlap, then generate Venn sets
-    dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')
-    dmr_ref = dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco')
+    dmr_matched = dictionary.dict_by_sublevel(dmr_res, 2, 'matched')
+    dmr_ref = dictionary.dict_by_sublevel(dmr_res, 2, 'ref')
+
+    # TODO: update from here
 
     # TODO: move to a function
     # these are the two inputs and the output
