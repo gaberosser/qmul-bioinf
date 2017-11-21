@@ -7,7 +7,46 @@ from methylation import dmr
 import seaborn as sns
 
 
+def scatter_de_dmr_single(
+        joint_de_dmr,
+        de_fc_col='de_logfc',
+        dmr_fc_col='dmr_median_delta',
+        r_threshold=None,
+        ax=None
+):
+    x = joint_de_dmr.loc[:, de_fc_col]
+    y = joint_de_dmr.loc[:, dmr_fc_col]
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    idx_ul = ((x < 0) & (y > 0))
+    ax.scatter(x.loc[idx_ul], y.loc[idx_ul], c='r')
+    idx_br = ((x > 0) & (y < 0))
+    ax.scatter(x.loc[idx_br], y.loc[idx_br], c='b')
+    idx_od = ((x > 0) & (y > 0)) | ((x < 0) & (y < 0))
+    ax.scatter(x.loc[idx_od], y.loc[idx_od], c='gray')
+
+    if r_threshold is not None:
+        r = (x ** 2 + y ** 2) ** .5
+        for i in np.where(idx_ul & (r > 8))[0]:
+            ax.text(x.iloc[i], y.iloc[i], x.index[i], color='r')
+        for i in np.where(idx_br & (r > 5))[0]:
+            ax.text(x.iloc[i], y.iloc[i], x.index[i], color='b')
+
+    ax.axhline(0, ls='--', c='k', alpha=0.4)
+    ax.axvline(0, ls='--', c='k', alpha=0.4)
+    ax.set_xlabel("DE logFC")
+    ax.set_ylabel("DMR median delta")
+
+    return ax
+
+
 def scatter_plot_dmr_de(meth_de, fig_filestem, fig_titlestem='', outdir=None):
+
+
+
     for sid in meth_de:
         fig_title = ("%s %s" % (fig_titlestem, sid)).strip()
         fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, num=fig_title)

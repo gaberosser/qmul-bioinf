@@ -5,7 +5,7 @@ import glob
 import references
 from rnaseq import normalisation, tcga
 from utils.log import get_console_logger
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2
 logger = get_console_logger(__name__)
 
 INDEX_FIELDS = (
@@ -89,6 +89,15 @@ wtchg_p170446 = RnaSeqStarFileLocations(
     ],
 )
 
+wtchg_p170582 = RnaSeqStarFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'wtchg_p170582'),
+    lanes=[
+        '171101_K00198_0249_BHLGFJBBXX',
+        '171114_K00150_0261_AHM5WJBBXX',
+    ],
+    alignment_subdir='human'
+)
+
 PATIENT_LOOKUP_CC_STAR = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
@@ -105,6 +114,7 @@ PATIENT_LOOKUP_CC_STAR = {
         ('GBM019_P4', wtchg_p160704),
         ('GBM019_P3n6', wtchg_p170390),
         ('DURA019_NSC_N8C_P2', wtchg_p160704),
+        ('DURA019_NSC_N5C1_P2', wtchg_p170582),
     ],
     '024': [
         ('GBM024_P9', wtchg_p160704),
@@ -119,11 +129,13 @@ PATIENT_LOOKUP_CC_STAR = {
         ('GBM030_P9n10', wtchg_p170390),
         ('GBM030_P5', wtchg_p170218),
         ('DURA030_NSC_N16B6_P1', wtchg_p170218),
+        ('DURA030_NSC_N9_P2', wtchg_p170582),
     ],
     '031': [
         ('GBM031_P7', wtchg_p170390),
         ('GBM031_P4', wtchg_p160704),
         ('DURA031_NSC_N44B_P2', wtchg_p160704),
+        ('DURA031_NSC_N44_P3', wtchg_p170582),
     ],
     '044': [
         ('GBM044_P4', wtchg_p170218),

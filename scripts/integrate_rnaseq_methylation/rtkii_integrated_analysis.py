@@ -670,7 +670,7 @@ if __name__ == "__main__":
     # RTK II
     rtkii_pids = ['017', '050', '054']
     # all n=2 samples and RTK II samples
-    pids = ['018', '044', '049', '050', '052', '054', '061']
+    pids = ['017', '018', '019', '030', '031', '044', '050', '052', '054', '061']
 
     de_params = {
         'lfc': 1,
@@ -755,19 +755,22 @@ if __name__ == "__main__":
     # Compute DMR
     # We load pre-computed results if a JSON file with the correct filename is found
     # Otherwise this is written after computing the results
+
+    # use a hash on the PIDs to ensure we're looking for the right results
+    filename = 'dmr_results.%d.pkl' % hash(tuple(sorted(pids)))
+    fn = os.path.join(DMR_LOAD_DIR, filename)
+
     loaded = False
     if DMR_LOAD_DIR is not None:
-        fn_in = os.path.join(DMR_LOAD_DIR, 'dmr_results.pkl')
-        if os.path.isfile(fn_in):
-            dmr_res = dmr.DmrResultCollection.from_pickle(fn_in, anno=anno)
+        if os.path.isfile(fn):
+            dmr_res = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
             loaded = True
 
     if not loaded:
         dmr_res = compute_dmr2(me_data, me_meta, anno, pids, dmr_params)
         # Save DMR results to disk
-        fout = os.path.join(outdir, "dmr_results.pkl")
-        dmr_res.to_pickle(fout, include_annotation=False)
-        print "Saved DMR results to %s" % fout
+        dmr_res.to_pickle(fn, include_annotation=False)
+        print "Saved DMR results to %s" % fn
 
     test_results_relevant = dmr_res.results_relevant_by_class()
     test_results_significant = dmr_res.results_significant_by_class()
@@ -814,8 +817,6 @@ if __name__ == "__main__":
     # We first look for overlap, then generate Venn sets
     dmr_matched = dictionary.dict_by_sublevel(dmr_res, 2, 'matched')
     dmr_ref = dictionary.dict_by_sublevel(dmr_res, 2, 'ref')
-
-    # TODO: update from here
 
     # TODO: move to a function
     # these are the two inputs and the output
@@ -940,169 +941,100 @@ if __name__ == "__main__":
 
     # write DE / DMR results to disk
     # 1. Excel (human-readable)
-    # For this, we ignore the concordance result and go through all results
+    # We choose all classes and all concordance types for this list
     blocks = {}
-    for typ in ['pair_all', 'pair_only', 'ref_all', 'ref_only']:
-        t = joint_de_dmr_table2(dictionary.dict_by_sublevel(joint_de_dmr_sets[typ], 3, 'all'))
-        for pid in t:
-            blocks['GBM%s_%s' % (pid, typ)] = t[pid]
-
-    t = joint_de_dmr_table2(
-        dictionary.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all'),
-        associated_result=dictionary.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all')
-    )
-    for pid in t:
-        blocks['GBM%s_pair_and_ref' % pid] = t[pid]
-
-    t = joint_de_dmr_table2(
-        dictionary.dict_by_sublevel(joint_de_dmr_sets['ref_and_pair'], 3, 'all'),
-        associated_result=dictionary.dict_by_sublevel(joint_de_dmr_sets['pair_and_ref'], 3, 'all')
-    )
-    for pid in t:
-        blocks['GBM%s_ref_and_pair' % pid] = t[pid]
+    for typ, d1 in joint_de_dmr_sets.iteritems():
+        for pid, d2 in d1.iteritems():
+            k = 'GBM%s_%s' % (pid, typ)
+            if typ == 'pair_and_ref':
+                # in this case we need two columns
+                the_dat_pair = d2['all']['all'].copy()
+                the_dat_pair.index = range(the_dat_pair.shape[0])
+                the_dat_ref = joint_de_dmr_sets['ref_and_pair'][pid]['all']['all'].copy()
+                the_dat_ref.index = the_dat_pair.index
+                idx = pd.MultiIndex.from_tuples(
+                    [('pair', t) for t in the_dat_pair.columns] + [('ref', t) for t in the_dat_ref.columns],
+                    names=['comparison', 'fields']
+                )
+                the_dat_combined = pd.concat((the_dat_pair, the_dat_ref), axis=1)
+                the_dat_combined.columns = idx
+                blocks[k] = the_dat_combined
+            elif typ == 'ref_and_pair':
+                # this is included in pair and ref
+                pass
+            else:
+                # simply copy the pre-computed table in
+                blocks[k] = d2['all']['all']
 
     outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
-    results_to_excel(blocks, outfile, write_index=False)
+    # have to write the index as MultiIndex requires it
+    results_to_excel(blocks, outfile, write_index=True)
 
     # 2. IPA format
     # Here, we reduce the output to genes.
-    # A gene is concordant if >=1 corresponding DE/DMR rows are concordant
+    # A gene is concordant if >=1 corresponding DE/DMR rows are concordant (even if other rows are discordant)
+    # In the case of paired AND reference genes, we require both to be concordant - mixtures are not permitted.
     ipa_outdir = os.path.join(outdir, 'ipa_dmr')
     if not os.path.exists(ipa_outdir):
         os.makedirs(ipa_outdir)
 
     # We want several different versions
-    def prepare_de_dmr_concordant_blocks(dat, key='all'):
-        incl_cols = ['logFC', 'FDR']
+    def prepare_de_dmr_concordant_blocks(dat, cls='all'):
+        incl_cols = ['de_logfc', 'de_padj']
+        col_names = ['logFC', 'FDR']
         blocks = {}
+        # iterate over comparisons
         for k, v in dat.items():
+            # iterate over PIDs
             for pid in v:
-                bl = v[pid][key]
-                # reduce to concordant results
-                dmr_sign = np.sign(bl.loc[:, 'me_mediandelta'].astype(float))
-                de_sign = np.sign(bl.loc[:, 'logFC'].astype(float))
-                bl = bl.loc[dmr_sign != de_sign]
+                bl = v[pid][cls]['concordant']
                 # only keep one row per gene
-                idx = ~pd.Index(bl.loc[:, 'Gene Symbol']).duplicated()
-                bl = bl.loc[idx].set_index('Gene Symbol')
+                idx = ~pd.Index(bl.loc[:, 'gene']).duplicated()
+                bl = bl.loc[idx]
+                # attempt to convert genes to Ensembl
+                idx = references.gene_symbol_to_ensembl(bl.gene)
+                b_mixed = False
+                if idx.duplicated().any():
+                    idx.loc[idx.duplicated()] = bl.gene.loc[idx.duplicated()]
+                    b_mixed = True
+                if idx.isnull().any():
+                    idx.loc[idx.isnull()] = bl.gene.loc[idx.isnull()]
+                    b_mixed = True
+                if b_mixed:
+                    print "WARNING: mixed identifiers used in GBM%s %s" % (pid, k)
                 bl = bl.loc[:, incl_cols]
+                bl.index = idx
+                bl.columns = col_names
                 blocks['GBM%s_%s' % (pid, k)] = bl
-        return blocks
+        return blocks, None if b_mixed else "Ensembl"
 
     # a) All probe classes, providing they are concordant
     ipa_subdir = os.path.join(ipa_outdir, "all_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
-    blocks = prepare_de_dmr_concordant_blocks(dictionary.dict_by_sublevel(joint_de_dmr_sets, 4, 'concordant'), key='all')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+    blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets)
+    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
     # # b) TSS, providing they are concordant
-    # ipa_subdir = os.path.join(ipa_outdir, "tss_concordant")
-    # if not os.path.exists(ipa_subdir):
-    #     os.makedirs(ipa_subdir)
-    # blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='tss')
-    # results_to_ipa_format(blocks, ipa_subdir, identifier=None)
-    #
-    # # c) CpG island, providing they are concordant
-    # ipa_subdir = os.path.join(ipa_outdir, "island_concordant")
-    # if not os.path.exists(ipa_subdir):
-    #     os.makedirs(ipa_subdir)
-    # blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='island')
-    # results_to_ipa_format(blocks, ipa_subdir, identifier=None)
-
-
-    # integrate the two results
-    dmr_matched = dictionary.dict_by_sublevel(test_results_significant, 2, 'matched')
-    dmr_matched_only = dictionary.dict_by_sublevel(test_results_exclusive, 2, 'matched')
-    dmr_ref = dictionary.dict_by_sublevel(test_results_significant, 2, 'gibco')
-    dmr_ref_only = dictionary.dict_by_sublevel(test_results_exclusive, 2, 'gibco')
-    dmr_intersection = dictionary.dict_by_sublevel(test_results_inclusive, 2, 'matched')
-
-    joint_de_dmr = {
-        'pair_all': compute_joint_de_dmr(dmr_matched, de_matched),
-        'pair_only': compute_joint_de_dmr(dmr_matched_only, de_matched_only),
-        'pair_and_ref': compute_joint_de_dmr(dmr_intersection, de_intersection_matched),
-        'ref_and_pair': compute_joint_de_dmr(dmr_intersection, de_intersection_ref),
-        'ref_all': compute_joint_de_dmr(dmr_ref, de_ref),
-        'ref_only': compute_joint_de_dmr(dmr_ref_only, de_ref_only),
-    }
-
-    joint_de_dmr_counts = {
-        'pair_all': joint_de_dmr_counts(joint_de_dmr['pair_all'], de_matched, dmr_matched),
-        'pair_only': joint_de_dmr_counts(
-            joint_de_dmr['pair_only'],
-            de_matched_only,
-            dmr_matched_only
-        ),
-        'pair_and_ref': joint_de_dmr_counts(
-            joint_de_dmr['pair_and_ref'],
-            de_intersection_matched,
-            dmr_intersection
-        ),
-    }
-
-    # write DE / DMR results to disk
-    # 1. Excel (human-readable)
-    blocks = {}
-
-    for k, v in joint_de_dmr.items():
-        this_tbl = joint_de_dmr_table(v)
-        for pid in this_tbl:
-            blocks['GBM%s_%s' % (pid, k)] = this_tbl[pid]
-
-    outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
-    results_to_excel(blocks, outfile, write_index=False)
-
-    # 2. IPA format
-    incl_cols = ['logFC', 'FDR']
-
-    ipa_outdir = os.path.join(outdir, 'ipa_dmr')
-    if not os.path.exists(ipa_outdir):
-        os.makedirs(ipa_outdir)
-
-    # We want several different versions
-    def prepare_de_dmr_concordant_blocks(dat, key='all'):
-        blocks = {}
-        for k, v in dat.items():
-            for pid in v:
-                bl = v[pid][key]
-                # reduce to concordant results
-                dmr_sign = np.sign(bl.loc[:, 'me_mediandelta'].astype(float))
-                de_sign = np.sign(bl.loc[:, 'logFC'])
-                bl = bl.loc[dmr_sign != de_sign]
-                # only keep one row per gene
-                idx = ~pd.Index(bl.loc[:, 'Gene Symbol']).duplicated()
-                bl = bl.loc[idx].set_index('Gene Symbol')
-                bl = bl.loc[:, incl_cols]
-                blocks['GBM%s_%s' % (pid, k)] = bl
-        return blocks
-
-    # a) All probe classes, providing they are concordant
-    ipa_subdir = os.path.join(ipa_outdir, "all_concordant")
-    if not os.path.exists(ipa_subdir):
-        os.makedirs(ipa_subdir)
-    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='all')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
-
-    # b) TSS, providing they are concordant
     ipa_subdir = os.path.join(ipa_outdir, "tss_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
-    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='tss')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+    blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets, cls='tss')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
     # c) CpG island, providing they are concordant
     ipa_subdir = os.path.join(ipa_outdir, "island_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
-    blocks = prepare_de_dmr_concordant_blocks(joint_de_dmr, key='island')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=None)
+    blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets, cls='island')
+    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
+    # TODO: update from here
 
     ## TODO: move this elsewhere
-    aa = joint_de_dmr['pair_only']['054']['tss'].set_index('Gene Symbol')
-    x = aa.logFC
-    y = aa.me_mediandelta.astype(float)
+    aa = joint_de_dmr_sets['pair_only']['054']['tss']['all'].set_index('gene')
+    x = aa.de_logfc
+    y = aa.dmr_median_delta.astype(float)
     r = (x ** 2 + y ** 2) ** .5
 
     fig = plt.figure()
@@ -1125,9 +1057,9 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "integrated_scatter_labelled_054_tss_pair_only.png"), dpi=200)
 
-    aa = joint_de_dmr['pair_and_ref']['054']['tss'].set_index('Gene Symbol')
-    x = aa.logFC
-    y = aa.me_mediandelta.astype(float)
+    aa = joint_de_dmr_sets['pair_and_ref']['054']['tss']['all'].set_index('gene')
+    x = aa.de_logfc
+    y = aa.dmr_median_delta.astype(float)
     r = (x ** 2 + y ** 2) ** .5
 
     fig = plt.figure()
@@ -1154,8 +1086,8 @@ if __name__ == "__main__":
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for pid in pids:
-        for i, cmp in enumerate(joint_de_dmr.keys()):
-            for j, cls in enumerate(joint_de_dmr[cmp][pid].keys()):
+        for i, cmp in enumerate(joint_de_dmr_sets.keys()):
+            for j, cls in enumerate(joint_de_dmr_sets[cmp][pid].keys()):
                 # iterate over genes, get quadrant, define colour, plot text
                 pass
 

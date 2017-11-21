@@ -15,7 +15,6 @@ NORM_METHODS = {
     'funnorm'
 }
 
-
 project_dirs = {
     "2016-06-10_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner'),
     "2016-09-21_dutt": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-09-21_dutt'),
@@ -52,7 +51,7 @@ PATIENT_LOOKUP_CELL = {
         ('DURA026_NSC_N31D_P5', '2016-12-19_ucl_genomics'),
     ],
     '030': [
-        ('GBM030_P9n10', "2017-09-19"),
+        ('GBM030_P9', "2017-09-19"),
         ('GBM030_P5', '2017-05-12'),
         ('DURA030_NSC_N16B6_P1', '2017-05-12'),
     ],
