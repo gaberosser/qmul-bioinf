@@ -840,18 +840,22 @@ if __name__ == "__main__":
         for cls in ['all'] + list(dmr.CLASSES):
             for ot in overlap_types:
                 joint_de_dmr_sets.setdefault(ot, {}).setdefault(pid, {}).setdefault(cls, {})
-            x_pair = de_dmr_matched[pid][cls]
-            x_ref = de_dmr_ref[pid][cls]
+            if cls == 'all':
+                x_pair = de_dmr_matched[pid]
+                x_ref = de_dmr_ref[pid]
+            else:
+                x_pair = de_dmr_matched[pid].loc[de_dmr_matched[pid].loc[:, "dmr_class_%s" % cls]]
+                x_ref = de_dmr_ref[pid].loc[de_dmr_ref[pid].loc[:, "dmr_class_%s" % cls]]
 
             # split into discordant and concordant (and add a column to the original data)
-            conc_pair = np.sign(x_pair.logFC) != np.sign(x_pair.me_mediandelta)
-            conc_ref = np.sign(x_ref.logFC) != np.sign(x_ref.me_mediandelta)
+            conc_pair = x_pair.de_direction != x_pair.dmr_direction
+            conc_ref = x_ref.de_direction != x_ref.dmr_direction
             x_pair.loc[:, 'de_dmr_concordant'] = conc_pair
             x_ref.loc[:, 'de_dmr_concordant'] = conc_ref
 
             # define the minimum unique identifier
-            de_dmr_id_pair = x_pair.loc[:, ['Gene Symbol', 'chr', 'me_cid']].apply(tuple, axis=1)
-            de_dmr_id_ref = x_ref.loc[:, ['Gene Symbol', 'chr', 'me_cid']].apply(tuple, axis=1)
+            de_dmr_id_pair = x_pair.loc[:, ['gene', 'dmr_cid']].apply(tuple, axis=1)
+            de_dmr_id_ref = x_ref.loc[:, ['gene', 'dmr_cid']].apply(tuple, axis=1)
 
             v_all, ct_all = setops.venn_from_arrays(
                 de_dmr_id_pair,
@@ -929,8 +933,8 @@ if __name__ == "__main__":
                 if v[pid][cls]['discordant'].de_dmr_concordant.any():
                     raise BasicLogicException("discordant %s: v.de_dmr_concordant.any()" % k)
 
-            aa = set(joint_de_dmr_sets['ref_and_pair'][pid][cls]['mixed'].loc[:, 'Gene Symbol'])
-            bb = set(joint_de_dmr_sets['pair_and_ref'][pid][cls]['mixed'].loc[:, 'Gene Symbol'])
+            aa = set(joint_de_dmr_sets['ref_and_pair'][pid][cls]['mixed'].loc[:, 'gene'])
+            bb = set(joint_de_dmr_sets['pair_and_ref'][pid][cls]['mixed'].loc[:, 'gene'])
             if aa != bb:
                 raise BasicLogicException("IDs in mixed ref / pair do not match")
 

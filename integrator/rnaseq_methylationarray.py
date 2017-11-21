@@ -16,6 +16,16 @@ def compute_joint_de_dmr(
     :return:
     """
 
+    # DE map: (name in combined_list, name in original DMR list, datatype)
+    de_map = [
+        ('gene', 'Gene Symbol', 'object'),
+        ('de_logfc', 'logFC', 'float'),
+        ('de_logcpm', 'logCPM', 'float'),
+        ('de_padj', 'FDR', 'float'),
+    ]
+    de_cols = [t[0] for t in de_map]
+    de_col_dtypes = pd.Series([t[2] for t in de_map], index=de_cols)
+
     res = {}
 
     for sid in dmr_results:
@@ -31,19 +41,15 @@ def compute_joint_de_dmr(
         this_dmr = this_dmr.loc[n_match > 0]
         m = m.loc[n_match > 0]
 
-        # column names and data types
-        de_cols = this_de.columns.tolist()
-        de_col_dtypes = this_de.dtypes
-
         # DMR map: (name in combined_list, name in original DMR list, datatype)
         dmr_map = [
-            ('me_chr', 'chr', 'object'),
-            ('me_median1', 'median_1', 'float'),
-            ('me_median2', 'median_2', 'float'),
-            ('me_median_delta', 'median_delta', 'float'),
-            ('me_padj', 'padj', 'float'),
-        ] + [('me_class_%s' % t, 'class_%s' % t, 'bool') for t in this_classes]
-        dmr_cols = ['me_cid'] + [t[0] for t in dmr_map]
+            ('dmr_chr', 'chr', 'object'),
+            ('dmr_median1', 'median_1', 'float'),
+            ('dmr_median2', 'median_2', 'float'),
+            ('dmr_median_delta', 'median_delta', 'float'),
+            ('dmr_padj', 'padj', 'float'),
+        ] + [('dmr_class_%s' % t, 'class_%s' % t, 'bool') for t in this_classes]
+        dmr_cols = ['dmr_cid'] + [t[0] for t in dmr_map]
         dmr_col_dtypes = pd.Series(
             ['int'] + [t[2] for t in dmr_map],
             index=dmr_cols
@@ -54,28 +60,21 @@ def compute_joint_de_dmr(
 
         for cluster_id, row in this_dmr.iterrows():
             # matching entry in DE (by gene name)
-            de_match = m.loc[cluster_id]
+            # select and change the DE column names
+            de_match = m.loc[cluster_id].loc[:, [t[1] for t in de_map]]
+            de_match.columns = de_cols
             n = de_match.shape[0]
 
             # form the DMR data block by repeating the same row
-            # FIXME: datatype of class_ columns is wrong
             row_for_rpt = [cluster_id] + row.loc[[t[1] for t in dmr_map]].tolist()
             dmr_match = pd.DataFrame([row_for_rpt] * n, columns=dmr_cols, index=de_match.index).astype(dmr_col_dtypes.to_dict())
-            # dmr_data = np.tile(row_for_rpt, (n, 1))
-            # dmr_match = pd.DataFrame(data=dmr_data, columns=dmr_cols, index=de_match.index)\
-            #     .astype(dmr_col_dtypes.to_dict())
 
             this_match = pd.concat((de_match, dmr_match), axis=1)
             this_df = this_df.append(this_match, ignore_index=True)
 
-            # res[sid] = this_match
-
-            # res[sid][cls] = pd.concat(
-            #     (res[sid][cls], this_match), axis=0, ignore_index=True
-            # )
-
+        # add direction columns
+        this_df.loc[:, 'de_direction'] = ['U' if t > 0 else 'D' for t in this_df.loc[:, 'de_logfc']]
+        this_df.loc[:, 'dmr_direction'] = ['U' if t > 0 else 'D' for t in this_df.loc[:, 'dmr_median_delta']]
         res[sid] = this_df
-        # combine all methylation cluster classes
-        # res[sid]['all'] = pd.concat(res[sid].values(), axis=0, ignore_index=True)
 
     return res
