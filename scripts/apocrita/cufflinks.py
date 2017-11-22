@@ -84,7 +84,7 @@ if __name__ == "__main__":
     fl = {}
     for t in flist:
         base = re.sub(r'\.bam', '', t)
-        out_subdir = os.path.join(out_dir, base)
+        out_subdir = os.path.abspath(os.path.join(out_dir, base))
         # if SAM output file exists, log warning and skip
         if os.path.isdir(out_subdir):
             logger.warn("Dir already exists: %s. Skipping.", out_subdir)
@@ -94,7 +94,7 @@ if __name__ == "__main__":
             os.makedirs(out_subdir)
 
         fl[base] = {
-            'bam': os.path.join(read_dir, t),
+            'bam': os.path.abspath(os.path.join(read_dir, t)),
             'outdir': out_subdir,
         }
 
