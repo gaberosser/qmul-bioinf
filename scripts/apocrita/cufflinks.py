@@ -133,10 +133,12 @@ BAM=$(echo $INPUTS | cut -d , -f 1)
 OUTDIR=$(echo $INPUTS | cut -d , -f 2)
 
 # actual code
-if [[ -f $BAM && -z $OUTDIR ]]; then
+if [[ -f $BAM && ! -z $OUTDIR ]]; then
 {cmd}
 else
 echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
+echo "Read file: $BAM"
+echo "Output dir: $OUTDIR"
 fi
 """.format(threads=threads, nfile=len(fl), params_fn=param_fn, cmd=cmd, work_dir=WORKING_DIR)
         f.write(sh)
