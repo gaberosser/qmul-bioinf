@@ -13,6 +13,9 @@ from utils.log import get_file_logger
 from utils.output import unique_output_dir
 
 CORE_CMD = 'cufflinks'
+LOG_DIR = os.path.join(os.environ['HOME'], 'log')
+PARAMS_DIR = os.path.join(os.environ['HOME'], 'params')
+WORKING_DIR = os.path.join(os.environ['HOME'], 'params')
 
 if __name__ == "__main__":
     """
@@ -28,6 +31,14 @@ if __name__ == "__main__":
         )
     )
 
+    logger.info(
+        "Initialised logger from directory %s. However, the working directory for cluster work is %s."
+        "Parameters will be written to %s.",
+        os.path.abspath(os.path.curdir),
+        WORKING_DIR,
+        PARAMS_DIR
+    )
+
     parser = argparse.ArgumentParser()
     optional = parser._action_groups.pop()
     required = parser.add_argument_group('required arguments')
@@ -36,6 +47,7 @@ if __name__ == "__main__":
     optional.add_argument("-o", "--out_dir", help="Output directory")
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
     optional.add_argument("--library_type", help="Library type", default='fr-unstranded')
+
     optional.set_defaults(sort=True)
 
     required.add_argument("-G", "--GTF", help="GTF annotations for quantification", required=True)
@@ -90,12 +102,12 @@ if __name__ == "__main__":
     logger.info("Found %d BAM files: %s.", len(fl), ', '.join(fl.keys()))
 
     # create a text file containing the arguments that will allow us to request an array
-    param_fn = os.path.join(out_dir, "cufflinks_params.%s.txt" % now_str)
+    param_fn = os.path.join(PARAMS_DIR, "cufflinks_params.%s.txt" % now_str)
     with open(param_fn, 'wb') as f:
-        f.writelines(["%s,%s" % (t['bam'], t['outdir']) for t in fl.values()])
+        f.writelines(["%s,%s\n" % (t['bam'], t['outdir']) for t in fl.values()])
 
     # generate the command to run
-    cmd = "cufflinks -G {ref_fn} -p {threads} -o $OUTDIR --library-type {libtype} $BAM".format(
+    cmd = "cufflinks --no-update-check -G {ref_fn} -p {threads} -o $OUTDIR --library-type {libtype} $BAM".format(
         ref_fn=ref_fn,
         threads=threads,
         libtype=library_type
@@ -105,8 +117,9 @@ if __name__ == "__main__":
     script_fn = os.path.join(out_dir, "cufflinks.%s.sh" % now_str)
     with open(script_fn, 'wb') as f:
         sh = \
-"""#!/bin/sh
-#$ -cwd           # Set the working directory for the job to the current directory
+"""
+#!/bin/sh
+#$ -wd {work_dir} # Set the working directory for the job to the current directory
 #$ -j y           # Join stdout and stderr
 #$ -pe smp {threads}      # Request {threads} CPU cores
 #$ -l h_rt=1:0:0  # Request 1 hour runtime
@@ -120,9 +133,13 @@ BAM=$(echo $INPUTS | cut -d , -f 1)
 OUTDIR=$(echo $INPUTS | cut -d , -f 2)
 
 # actual code
+if [[ -f $BAM && -z $OUTDIR ]]; then
 {cmd}
-""".format(threads=threads, nfile=len(fl), params_fn=param_fn, cmd=cmd)
+else
+echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
+fi
+""".format(threads=threads, nfile=len(fl), params_fn=param_fn, cmd=cmd, work_dir=WORKING_DIR)
         f.write(sh)
 
-    logger.info(sh)
+    logger.info("Cluster submission script written: %s", sh)
     subprocess.call(['qsub', script_fn])
