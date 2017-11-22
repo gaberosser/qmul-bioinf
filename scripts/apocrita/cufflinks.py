@@ -5,6 +5,7 @@ import subprocess
 import argparse
 import sys
 import datetime
+import csv
 
 # add root of project dir to the path
 sys.path.append(os.path.dirname(__file__) + '/../../')
@@ -55,8 +56,6 @@ if __name__ == "__main__":
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
     optional.add_argument("--library_type", help="Library type", default='fr-unstranded')
 
-    optional.set_defaults(sort=True)
-
     required.add_argument("-G", "--GTF", help="GTF annotations for quantification", required=True)
 
     # all extra args got to extra
@@ -72,11 +71,19 @@ if __name__ == "__main__":
             args.out_dir = unique_output_dir('cufflinks', root_output_dir=args.read_dir)
         sys.stderr.write("Created output directory %s\n" % args.out_dir)
 
+    arg_dict = args.__dict__
     read_dir = args.read_dir
     ref_fn = args.GTF
     out_dir = args.out_dir
     threads = args.threads
     library_type = args.library_type
+
+    # write arguments to a file for reference
+    conf_fn = os.path.join(out_dir, "%s.conf" % now_str)
+    with open(conf_fn, 'w') as f:
+        c = csv.writer(f, delimiter='\t')
+        c.writerow(['Field', 'Value'])
+        c.writerows([(k, str(v)) for k, v in arg_dict])
 
     logger.info("Arguments: read_dir=%s, ref_fn=%s, out_dir=%s, threads=%s, library_type=%s",
                 read_dir, ref_fn, out_dir, threads, library_type)
@@ -113,7 +120,7 @@ if __name__ == "__main__":
     logger.info("Found %d BAM files: %s.", len(fl), ', '.join(fl.keys()))
 
     # create a text file containing the arguments that will allow us to request an array
-    param_fn = os.path.join(PARAMS_DIR, "cufflinks_params.%s.txt" % now_str)
+    param_fn = os.path.join(out_dir, "params.%s.txt" % now_str)
     with open(param_fn, 'wb') as f:
         f.writelines(["%s,%s\n" % (t['bam'], t['outdir']) for t in fl.values()])
 
