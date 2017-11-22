@@ -101,7 +101,7 @@ if __name__ == "__main__":
             logger.warn("Dir already exists: %s. Skipping.", out_subdir)
             continue
         else:
-            logger.info("Created output subdir %s", base, out_subdir)
+            logger.info("Created output subdir %s", out_subdir)
             os.makedirs(out_subdir)
 
         fl[base] = {
