@@ -13,10 +13,9 @@ sys.path.append(os.path.dirname(__file__) + '/../../')
 from utils.log import get_file_logger
 from utils.output import unique_output_dir
 
+TITLE = 'cufflinks'
 CORE_CMD = 'cufflinks'
 LOG_DIR = os.path.join(os.environ['HOME'], 'log')
-PARAMS_DIR = os.path.join(os.environ['HOME'], 'params')
-WORKING_DIR = os.path.join(os.environ['HOME'], 'tmpdir')
 
 # list of regexes to clean up output dir. Each entry gives (pattern, replace) inputs to re.sub
 # NB we will already have stripped the .bam file extension
@@ -37,14 +36,6 @@ if __name__ == "__main__":
             'log',
             'cufflinks.%s.log' % now_str
         )
-    )
-
-    logger.info(
-        "Initialised logger from directory %s. However, the working directory for cluster work is %s."
-        "Parameters will be written to %s.",
-        os.path.abspath(os.path.curdir),
-        WORKING_DIR,
-        PARAMS_DIR
     )
 
     parser = argparse.ArgumentParser()
@@ -71,7 +62,6 @@ if __name__ == "__main__":
             args.out_dir = unique_output_dir('cufflinks', root_output_dir=args.read_dir)
         sys.stderr.write("Created output directory %s\n" % args.out_dir)
 
-    arg_dict = args.__dict__
     read_dir = args.read_dir
     ref_fn = args.GTF
     out_dir = args.out_dir
@@ -83,7 +73,13 @@ if __name__ == "__main__":
     with open(conf_fn, 'w') as f:
         c = csv.writer(f, delimiter='\t')
         c.writerow(['Field', 'Value'])
-        c.writerows([(k, str(v)) for k, v in arg_dict])
+        c.writerows([(k, str(v)) for k, v in args.__dict__.items()])
+
+    logger.info(
+        "Initialised logger from directory %s. However, the working directory for cluster work is %s.",
+        os.path.abspath(os.path.curdir),
+        out_dir,
+    )
 
     logger.info("Arguments: read_dir=%s, ref_fn=%s, out_dir=%s, threads=%s, library_type=%s",
                 read_dir, ref_fn, out_dir, threads, library_type)
@@ -105,8 +101,11 @@ if __name__ == "__main__":
         logger.info("Input file %s. Cleaned filestem %s. Output subdir %s.", t, base, out_subdir)
         # if SAM output file exists, log warning and skip
         if os.path.isdir(out_subdir):
-            logger.warn("Dir already exists: %s. Skipping.", out_subdir)
-            continue
+            if len(os.listdir(out_subdir)) > 0:
+                logger.warn("Dir already exists: %s. Skipping.", out_subdir)
+                continue
+            else:
+                logger.info("Using existing empty output subdir %s", out_subdir)
         else:
             logger.info("Created output subdir %s", out_subdir)
             os.makedirs(out_subdir)
@@ -158,7 +157,7 @@ echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or t
 echo "Read file: $BAM"
 echo "Output dir: $OUTDIR"
 fi
-""".format(threads=threads, nfile=len(fl), params_fn=param_fn, cmd=cmd, work_dir=WORKING_DIR)
+""".format(threads=threads, nfile=len(fl), params_fn=param_fn, cmd=cmd, work_dir=out_dir)
         f.write(sh)
 
     logger.info("Cluster submission script written: %s", sh)
