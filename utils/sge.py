@@ -391,13 +391,13 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
         sh.append(submit)
 
         sh.append("""
-        if [[ -f $READ1 && -f $READ2 && ! -z $OUTDIR ]]; then
+        if [[ -f $READ1 && -f $READ2 && ! -z $SUBDIR ]]; then
             {cmd}
             STATUS=$?
         else
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
             echo "Read files: $READ1 $READ2"
-            echo "Output dir: $OUTDIR"
+            echo "Output dir: $SUBDIR"
             STATUS=1  # set this so that the task is not masked as completed
         fi
         """.format(cmd=cmd))
