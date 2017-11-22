@@ -164,9 +164,6 @@ class SgeArrayJob(SgeJob):
         self.params_fn = None
         self.n_tasks = None
         super(SgeArrayJob, self).__init__(*args, **kwargs)
-
-    def create_submission_script(self):
-        self.params_fn = os.path.join(self.out_dir, "%s.%s.params" % (self.title, self.now_str))
         self.create_params_file()
 
     def create_params_file(self):
@@ -174,6 +171,7 @@ class SgeArrayJob(SgeJob):
         Write parameters to a file, separated by a comma.
         :return:
         """
+        self.params_fn = os.path.join(self.out_dir, "%s.%s.params" % (self.title, self.now_str))
         with open(self.params_fn, 'wb') as f:
             c = csv.writer(f)
             c.writerows(self.params)
@@ -252,6 +250,9 @@ class PEFastqFileIteratorMixin(object):
             rec[base][read_num] = os.path.abspath(os.path.join(self.args['read_dir'], t))
 
         for base, p in rec.items():
+            if len(p) == 0:
+                # skip
+                continue
             params.append([p[1], p[2], p['out_subdir']])
             seen.append(base)
 
@@ -370,7 +371,7 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
 
         # NB: uses one more core than the number we request (if it can)
         # Aim to provide 4Gb overall
-        eff_threads = self.args['threads'] + 1
+        eff_threads = int(self.args['threads']) + 1
         ram_per_core = 1.
         if (ram_per_core * eff_threads) < 4:
             ram_per_core = int(math.ceil(4. / float(eff_threads)))
