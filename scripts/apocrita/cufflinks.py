@@ -15,7 +15,7 @@ from utils.output import unique_output_dir
 CORE_CMD = 'cufflinks'
 LOG_DIR = os.path.join(os.environ['HOME'], 'log')
 PARAMS_DIR = os.path.join(os.environ['HOME'], 'params')
-WORKING_DIR = os.path.join(os.environ['HOME'], 'params')
+WORKING_DIR = os.path.join(os.environ['HOME'], 'tmpdir')
 
 if __name__ == "__main__":
     """
