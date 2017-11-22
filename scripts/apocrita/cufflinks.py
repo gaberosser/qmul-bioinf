@@ -20,8 +20,8 @@ WORKING_DIR = os.path.join(os.environ['HOME'], 'tmpdir')
 # list of regexes to clean up output dir. Each entry gives (pattern, replace) inputs to re.sub
 # NB we will already have stripped the .bam file extension
 outdir_cleanup_regexes = [
-    (re.compile(r'Aligned\.sortedByCoord\.out', '')),
-    (re.compile(r'Aligned\.out', '')),
+    (r'Aligned\.sortedByCoord\.out', ''),
+    (r'Aligned\.out', ''),
 ]
 
 if __name__ == "__main__":
