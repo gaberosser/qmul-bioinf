@@ -17,6 +17,13 @@ LOG_DIR = os.path.join(os.environ['HOME'], 'log')
 PARAMS_DIR = os.path.join(os.environ['HOME'], 'params')
 WORKING_DIR = os.path.join(os.environ['HOME'], 'tmpdir')
 
+# list of regexes to clean up output dir. Each entry gives (pattern, replace) inputs to re.sub
+# NB we will already have stripped the .bam file extension
+outdir_cleanup_regexes = [
+    (re.compile(r'Aligned\.sortedByCoord\.out', '')),
+    (re.compile(r'Aligned\.out', '')),
+]
+
 if __name__ == "__main__":
     """
     Usage: cufflinks.py path_to_bams path_to_gtf path_to_output_dir passed_to_function
@@ -84,13 +91,17 @@ if __name__ == "__main__":
     fl = {}
     for t in flist:
         base = re.sub(r'\.bam', '', t)
+        # apply cleanup
+        for patt, repl in outdir_cleanup_regexes:
+            base = re.sub(patt, repl, base)
         out_subdir = os.path.abspath(os.path.join(out_dir, base))
+        logger.info("Input file %s. Cleaned filestem %s. Output subdir %s.", t, base, out_subdir)
         # if SAM output file exists, log warning and skip
         if os.path.isdir(out_subdir):
             logger.warn("Dir already exists: %s. Skipping.", out_subdir)
             continue
         else:
-            logger.info("Input file %s. Created output subdir %s", base, out_subdir)
+            logger.info("Created output subdir %s", base, out_subdir)
             os.makedirs(out_subdir)
 
         fl[base] = {
