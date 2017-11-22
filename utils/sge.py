@@ -11,25 +11,25 @@ from utils.output import unique_output_dir
 
 def sge_submission_header(work_dir=None, threads=1, ram_per_core="1G", runtime="1:0:0", arr_size=1):
     header = [
-        '# !/bin/sh',
-        '# $ -j y # Join stdout and stderr'
+        '#!/bin/sh',
+        '#$ -j y # Join stdout and stderr'
     ]
     if work_dir is None:
-        header.append('# $ -cwd # Use current directory as working directory')
+        header.append('#$ -cwd # Use current directory as working directory')
     else:
-        header.append("# $ -wd {work_dir} # Set the working directory for the job to the current directory".
+        header.append("#$ -wd {work_dir} # Set the working directory for the job to the current directory".
                       format(work_dir=work_dir))
 
-    header.append("# $ -pe smp {threads} # Request {threads} CPU cores".format(threads=threads))
-    header.append("# $ -l h_rt={runtime}  # Runtime".format(runtime=runtime))
-    header.append("# $ -l h_vmem={ram} # Request RAM / core".format(ram=ram_per_core))
+    header.append("#$ -pe smp {threads} # Request {threads} CPU cores".format(threads=threads))
+    header.append("#$ -l h_rt={runtime}  # Runtime".format(runtime=runtime))
+    header.append("#$ -l h_vmem={ram} # Request RAM / core".format(ram=ram_per_core))
 
     if arr_size is not None and arr_size > 1:
-        header.append("# $ -t 1-{nfile}".format(nfile=arr_size))
+        header.append("#$ -t 1-{nfile}".format(nfile=arr_size))
 
     header.append(
         "# source bashrc to get correct path\n"
-        ".$HOME /.bashrc"
+        ". $HOME/.bashrc"
     )
 
     return '\n'.join(header)
@@ -51,8 +51,8 @@ def sge_tracking_files_boilerplate(submitted_fn, completed_fn):
     :param completed_fn:
     :return:
     """
-    sh_submit = 'printf "${SGE_TASK_ID}\n" >> %s' % submitted_fn
-    sh_complete = 'if [ $STATUS == 0 ]; then printf "${SGE_TASK_ID}\n" >> %s; fi' % completed_fn
+    sh_submit = 'printf "${SGE_TASK_ID}\\n" >> %s' % submitted_fn
+    sh_complete = 'if [ $STATUS == 0 ]; then printf "${SGE_TASK_ID}\\n" >> %s; fi' % completed_fn
     return sh_submit, sh_complete
 
 
@@ -391,12 +391,12 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
         sh.append(submit)
 
         sh.append("""
-        if [[ -f $BAM && ! -z $OUTDIR ]]; then
+        if [[ -f $READ1 && -f $READ2 && ! -z $OUTDIR ]]; then
             {cmd}
             STATUS=$?
         else
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
-            echo "Read file: $BAM"
+            echo "Read files: $READ1 $READ2"
             echo "Output dir: $OUTDIR"
             STATUS=1  # set this so that the task is not masked as completed
         fi
