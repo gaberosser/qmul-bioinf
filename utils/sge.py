@@ -215,7 +215,7 @@ class BamFileIteratorMixin(object):
                 os.makedirs(out_subdir)
                 self.logger.info("Created output subdir %s", out_subdir)
 
-            params.append([(os.path.abspath(os.path.join(self.args['read_dir'], t)), out_subdir)])
+            params.append([os.path.abspath(os.path.join(self.args['read_dir'], t)), out_subdir])
             seen.append(base)
         return dict(zip(seen, params))
 
