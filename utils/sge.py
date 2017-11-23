@@ -67,7 +67,7 @@ class SgeJob(object):
     def __init__(
             self,
             out_dir=os.path.abspath('.'),
-            *extra_args,
+            extra_args=tuple(),
             **kwargs
     ):
         self.out_dir = os.path.abspath(out_dir)

@@ -1,21 +1,15 @@
 #!/usr/bin/env python
 import os
-import re
-import subprocess
 import argparse
 import sys
-import datetime
-import csv
 
 # add root of project dir to the path
 sys.path.append(os.path.dirname(__file__) + '/../../')
 
-from utils import sge, output
+from utils import sge
 
 
 if __name__ == "__main__":
-    now_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-
     parser = argparse.ArgumentParser()
     optional = parser._action_groups.pop()
     required = parser.add_argument_group('required arguments')
@@ -37,6 +31,6 @@ if __name__ == "__main__":
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
-    obj = sge.SalmonIlluminaPESgeJob(*extra, **args.__dict__)
+    obj = sge.SalmonIlluminaPESgeJob(extra_args=extra, **args.__dict__)
     obj.create_submission_script()
     obj.submit()

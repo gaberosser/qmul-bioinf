@@ -19,6 +19,7 @@ class RnaSeqStarFileLocations(object):
     def __init__(self, root_dir, lanes, alignment_subdir=None, strandedness='r'):
         self.root_dir = root_dir
         self.strandedness = strandedness
+        self.alignment_subdir = alignment_subdir
         self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
         self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
         if alignment_subdir is None:
