@@ -328,13 +328,13 @@ class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
         sh.append(submit)
 
         sh.append("""
-        if [[ -f $BAM && ! -z $OUTDIR ]]; then
+        if [[ -f $BAM && ! -z $SUBDIR ]]; then
             {cmd}
             STATUS=$?
         else
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
             echo "Read file: $BAM"
-            echo "Output dir: $OUTDIR"
+            echo "Output dir: $SUBDIR"
             STATUS=1  # set this so that the task is not marked as completed
         fi
         """.format(cmd=cmd))
