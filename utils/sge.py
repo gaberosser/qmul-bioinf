@@ -61,8 +61,15 @@ class SgeJob(object):
     core_cmd = None
     log_dir = os.path.join(os.environ['HOME'], 'log')
     required_args = []
+    require_empty_outdir = False
+    create_outdir = False
 
-    def __init__(self, out_dir=os.path.abspath('.'), *extra_args, **kwargs):
+    def __init__(
+            self,
+            out_dir=os.path.abspath('.'),
+            *extra_args,
+            **kwargs
+    ):
         self.out_dir = os.path.abspath(out_dir)
         # initiate logger
         self.now_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -135,7 +142,7 @@ class SgeJob(object):
         """
         # write arguments to a file for reference
 
-        with open(self.conf_fn, 'w') as f:
+        with open(self.conf_fn, 'wb') as f:
             c = csv.writer(f, delimiter='\t')
             c.writerow(['Field', 'Value'])
             c.writerows([(k, str(v)) for k, v in self.args.items()])
@@ -173,7 +180,7 @@ class SgeArrayJob(SgeJob):
         """
         self.params_fn = os.path.join(self.out_dir, "%s.%s.params" % (self.title, self.now_str))
         with open(self.params_fn, 'wb') as f:
-            c = csv.writer(f)
+            c = csv.writer(f, lineterminator='\n')  # IMPORTANT: the lineterminator command prevents carriage returns
             c.writerows(self.params)
 
 
@@ -197,15 +204,16 @@ class BamFileIteratorMixin(object):
             out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
             self.logger.info("Input file %s. Cleaned filestem %s. Output subdir %s.", t, base, out_subdir)
             # if output file exists, log warning and skip
-            if os.path.isdir(out_subdir):
+            if self.require_empty_outdir and os.path.isdir(out_subdir):
                 if len(os.listdir(out_subdir)) > 0:
                     self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
                     continue
                 else:
                     self.logger.info("Using existing empty output subdir %s", out_subdir)
-            else:
-                self.logger.info("Created output subdir %s", out_subdir)
+
+            if not os.path.exists(out_subdir) and self.create_outdir:
                 os.makedirs(out_subdir)
+                self.logger.info("Created output subdir %s", out_subdir)
 
             params.append([(os.path.abspath(os.path.join(self.args['read_dir'], t)), out_subdir)])
             seen.append(base)
@@ -236,13 +244,13 @@ class PEFastqFileIteratorMixin(object):
 
             if 'out_subdir' not in rec[base]:
                 out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
-                if os.path.isdir(out_subdir):
+                if self.require_empty_outdir and os.path.isdir(out_subdir):
                     if len(os.listdir(out_subdir)) > 0:
                         self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
                         continue
                     else:
                         self.logger.info("Using existing empty output subdir %s", out_subdir)
-                else:
+                if self.create_outdir and not os.path.exists(out_subdir):
                     os.makedirs(out_subdir)
                     self.logger.info("Created output subdir %s", out_subdir)
                 rec[base]['out_subdir'] = out_subdir
@@ -274,6 +282,8 @@ class PEFastqIlluminaIteratorMixin(PEFastqFileIteratorMixin):
 class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
     title = 'cufflinks'
     required_args = ['read_dir', 'threads', 'library_type', 'GTF']
+    require_empty_outdir = False
+    create_outdir = True
 
     def check_inputs(self):
         if not os.path.isfile(self.args['GTF']):
@@ -325,7 +335,7 @@ class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
             echo "Read file: $BAM"
             echo "Output dir: $OUTDIR"
-            STATUS=1  # set this so that the task is not masked as completed
+            STATUS=1  # set this so that the task is not marked as completed
         fi
         """.format(cmd=cmd))
 
@@ -341,6 +351,8 @@ class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
 class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
     title = 'salmon'
     required_args = ['read_dir', 'threads', 'library_type', 'index_dir']
+    require_empty_outdir = False
+    create_outdir = False
 
     def check_inputs(self):
         if not os.path.isdir(self.args['index_dir']):
@@ -364,8 +376,9 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
         param_names = ['READ1', 'READ2', 'SUBDIR']
 
         # generate the main command
-        cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -1 $READ1 -2 $READ2 -o $SUBDIR {extra}"\
-            .format(extra=' '.join(self.extra_args), **self.args)
+        cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -1 $READ1 -2 $READ2 -o $SUBDIR".format(**self.args)
+        if len(self.extra_args):
+            cmd += " {extra}".format(extra=' '.join(self.extra_args))
 
         sh = []
 
@@ -381,7 +394,7 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
                 work_dir=self.out_dir,
                 threads=eff_threads,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:15:0",
+                runtime="0:20:0",
                 arr_size=self.n_tasks
             )
         )
