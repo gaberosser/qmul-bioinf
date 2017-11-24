@@ -15,40 +15,59 @@ INDEX_FIELDS = (
     'Ensembl Gene ID'
 )
 
-class RnaSeqStarFileLocations(object):
+class RnaSeqFileLocations(object):
     def __init__(self, root_dir, lanes, alignment_subdir=None, strandedness='r'):
         self.root_dir = root_dir
         self.strandedness = strandedness
         self.alignment_subdir = alignment_subdir
         self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
         self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
-        if alignment_subdir is None:
-            self.count_dirs = [os.path.join(d, 'star_alignment') for d in self.lane_dirs]
-        else:
-            self.count_dirs = [os.path.join(d, alignment_subdir, 'star_alignment') for d in self.lane_dirs]
 
+        self.params = dict(star={}, salmon={}, cufflinks={})
+
+        if alignment_subdir is None:
+            self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in self.lane_dirs]
+            self.params['salmon']['count_dirs'] = [os.path.join(d, 'salmon') for d in self.lane_dirs]
+        else:
+            self.params['star']['count_dirs'] = [os.path.join(d, alignment_subdir, 'star_alignment') for d in self.lane_dirs]
+            self.params['salmon']['count_dirs'] = [os.path.join(d, alignment_subdir, 'salmon') for d in self.lane_dirs]
 
     @property
-    def loader_kwargs(self):
+    def star_loader_kwargs(self):
         return {
-            'count_dirs': self.count_dirs,
+            'count_dirs': self.params['star']['count_dirs'],
             'meta_fns': self.meta_files,
             'strandedness': self.strandedness
         }
 
+    @property
+    def salmon_loader_kwargs(self):
+        return {
+            'count_dirs': self.params['salmon']['count_dirs'],
+            'meta_fns': self.meta_files
+        }
 
-wtchg_p160704 = RnaSeqStarFileLocations(
+    def loader_kwargs(self, typ):
+        if typ == 'star':
+            return self.star_loader_kwargs
+        elif typ == 'salmon':
+            return self.salmon_loader_kwargs
+        else:
+            raise NotImplementedError("Unrecognised type: %s" % typ)
+
+
+wtchg_p160704 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704'),
     lanes=['161222_K00198_0152_AHGYG3BBXX', '161219_K00198_0151_BHGYHTBBXX'],
 )
 
-wtchg_p170218 = RnaSeqStarFileLocations(
+wtchg_p170218 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218'),
     lanes=['170509_K00150_0192_BHJKCLBBXX', '170515_K00150_0196_BHJKC5BBXX_lane_2', '170515_K00150_0196_BHJKC5BBXX_lane_3'],
     alignment_subdir='human'
 )
 
-wtchg_p170390 = RnaSeqStarFileLocations(
+wtchg_p170390 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390'),
     lanes=[
         '170727_K00198_0222_AHKWW5BBXX',
@@ -58,7 +77,7 @@ wtchg_p170390 = RnaSeqStarFileLocations(
     alignment_subdir='human'
 )
 
-wtchg_p170503 = RnaSeqStarFileLocations(
+wtchg_p170503 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503'),
     lanes=[
         '170929_K00150_0250_BHLGNHBBXX',
@@ -67,14 +86,14 @@ wtchg_p170503 = RnaSeqStarFileLocations(
     ],
 )
 
-wtchg_p160704_ribozero = RnaSeqStarFileLocations(
+wtchg_p160704_ribozero = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero'),
     lanes=[
         '170328_K00150_0177_BHJ2C2BBXX',
     ],
 )
 
-wtchg_p160704_ribozero2 = RnaSeqStarFileLocations(
+wtchg_p160704_ribozero2 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero_rerun'),
     lanes=[
         '170905_K00150_0238_BHLFMVBBXX',
@@ -82,7 +101,7 @@ wtchg_p160704_ribozero2 = RnaSeqStarFileLocations(
     ],
 )
 
-wtchg_p170446 = RnaSeqStarFileLocations(
+wtchg_p170446 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170446'),
     lanes=[
         '170905_K00150_0238_BHLFMVBBXX',
@@ -90,7 +109,7 @@ wtchg_p170446 = RnaSeqStarFileLocations(
     ],
 )
 
-wtchg_p170582 = RnaSeqStarFileLocations(
+wtchg_p170582 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'wtchg_p170582'),
     lanes=[
         '171101_K00198_0249_BHLGFJBBXX',
@@ -99,7 +118,14 @@ wtchg_p170582 = RnaSeqStarFileLocations(
     alignment_subdir='human'
 )
 
-PATIENT_LOOKUP_CC_STAR = {
+gse73721_loc = RnaSeqFileLocations(
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721'),
+    lanes=[
+        '',
+    ],
+)
+
+PATIENT_LOOKUP_CC = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
         ('GBM017_P4', wtchg_p170390),
@@ -179,7 +205,7 @@ PATIENT_LOOKUP_CC_STAR = {
     ]
 }
 
-PATIENT_LOOKUP_FFPE_STAR = {
+PATIENT_LOOKUP_FFPE = {
     '017': [
         ('NH15_1661DEF2C', wtchg_p170446)
     ],
@@ -228,22 +254,14 @@ def strip_extension(s, file_ext):
 
 class CountDataMixin(object):
 
-    def process(self):
-        """
-        Get processed data from raw
-        The default use case involves no processing
-        """
-        return self.data
-
-    def annotate(self, data, annotate_by=None, annotation_type=None):
-        data = data if data is not None else self.data
+    def annotate(self, annotate_by=None, annotation_type=None):
         annotate_by = annotate_by or self.annotate_by
         annotation_type = annotation_type or self.annotation_type
         if annotate_by == 'Ensembl Gene ID':
             # this is the default indexing anyway
             annotate_by = None
         return annotate(
-            data,
+            self.data,
             annotate_by=annotate_by,
             annotation_type=annotation_type,
             tax_id=self.tax_id
@@ -251,27 +269,21 @@ class CountDataMixin(object):
 
     @property
     def data_by_symbol(self):
-        data = self.process()
         return self.annotate(
-            data=data,
             annotate_by='Approved Symbol',
             annotation_type='protein_coding',
         )
 
     @property
     def data_by_ensembl(self):
-        data = self.process()
         return self.annotate(
-            data=data,
             annotate_by='Ensembl Gene ID',
             annotation_type='protein_coding',
         )
 
     @property
     def data_by_entrez(self):
-        data = self.process()
         return self.annotate(
-            data=data,
             annotate_by='Entrez Gene ID',
             annotation_type='protein_coding',
         )
@@ -358,13 +370,19 @@ class CountDatasetLoader(CountDataMixin):
         self.transcript_lengths = None
         self.num_reads = None
 
+        # alternative units
+        self.raw_tpm = None
+        self.raw_fpkm = None
+        self._tpm = None
+        self._fpkm = None
+
         # file extension appears in the column headings of the data but can be stripped for brevity
         self.file_ext = file_ext if file_ext is not None else self.__class__.default_file_ext
 
         self.load_meta()
         self.load_data()
-        self.data = self.process()
-        self.data = self.annotate(data=self.data)
+        self.process()
+        self.data = self.annotate()
 
     def load_meta(self):
         """
@@ -409,18 +427,35 @@ class CountDatasetLoader(CountDataMixin):
         if self.raw_meta is not None:
             self.meta = self.raw_meta.loc[keep_idx]
         data = self.raw_data.loc[:, to_keep]
+        if self.raw_fpkm is not None:
+            fpkm = self.raw_fpkm.loc[:, to_keep]
+        if self.raw_tpm is not None:
+            tpm = self.raw_tpm.loc[:, to_keep]
 
         # set column names if we have metadata to do so
         # the file extension may already have been stripped by this point (e.g. HTSeqCountLoader)
         # but this will have no effect here
         col_idx = [strip_extension(t, self.file_ext) for t in data.columns]
         if self.meta_has_sample_names:
-            data.columns = self.meta.loc[col_idx, 'sample'].values
+            cols = self.meta.loc[col_idx, 'sample'].values
+            data.columns = cols
+            if self.raw_fpkm is not None:
+                fpkm.columns = cols
+            if self.raw_tpm is not None:
+                tpm.columns = cols
         else:
             # just strip the extension where present
             data.columns = col_idx
-        return data
+            if self.raw_fpkm is not None:
+                fpkm.columns = col_idx
+            if self.raw_tpm is not None:
+                tpm.columns = col_idx
 
+        self.data = data
+        if self.raw_fpkm is not None:
+            self._fpkm = fpkm
+        if self.raw_tpm is not None:
+            self._tpm = tpm
 
 class FeatureCountLoader(CountDatasetLoader):
     default_file_ext = '.bam'
@@ -447,7 +482,7 @@ class FeatureCountLoader(CountDatasetLoader):
     def process(self):
         # we need to store a useful column now from the raw data
         self.transcript_lengths = self.raw_data.loc[:, 'Length']
-        return super(FeatureCountLoader, self).process()
+        super(FeatureCountLoader, self).process()
 
     ## TODO: can we delete this and use the parent method?
     def get_fpkm(self):
@@ -542,6 +577,33 @@ class StarCountLoader(MultipleFileCountLoader):
                 self.raw_data.loc[:, sn] = dat.iloc[:, 2]
 
 
+class SalmonQuantLoader(MultipleFileCountLoader):
+    # FIXME: this looks strange and is required to fit in with the glob filter in the parent class
+    default_file_ext = '/quant.sf'
+
+    def get_sample_names(self):
+        # strip the known filename to get the sample name as a base
+        return [os.path.basename(t.replace(self.default_file_ext, '')) + self.default_file_ext for t in self.data_files]
+
+    def load_data(self):
+        sample_names = self.get_sample_names()
+        self.raw_data = None
+        first = True
+        for sn, fn in zip(sample_names, self.data_files):
+            dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
+            if first:
+                self.raw_counts = dat.loc[:, ['NumReads']].copy()
+                self.raw_counts.columns = [sn]
+                self.raw_tpm = dat.loc[:, ['TPM']].copy()
+                self.raw_tpm.columns = [sn]
+                first = False
+            else:
+                self.raw_counts.loc[:, sn] = dat.loc[:, 'NumReads']
+                self.raw_tpm.loc[:, sn] = dat.loc[:, 'TPM']
+
+        self.raw_data = self.raw_counts
+
+
 class MultipleLaneCountDatasetLoader(CountDataMixin):
     loader_class = CountDatasetLoader
 
@@ -609,7 +671,6 @@ class MultipleLaneCountDatasetLoader(CountDataMixin):
                     meta.loc[:, 'read_count'] += this_meta.loc[:, 'read_count'].values
 
         return meta
-
 
     @property
     def data_by_symbol(self):
@@ -722,6 +783,10 @@ class MultipleLaneStarCountLoader(MultipleLaneCountDatasetLoader):
                 self.loaders.append(self.loader_class(count_dir=dfn, meta_fn=mfn, *args, **kwargs))
             else:
                 self.loaders.append(self.loader_class(count_file=dfn, meta_fn=mfn, *args, **kwargs))
+
+
+class MultipleLaneSalmonCountLoader(MultipleLaneStarCountLoader):
+    loader_class = SalmonQuantLoader
 
 
 class MultipleBatchLoader(CountDataMixin):
@@ -1501,15 +1566,20 @@ def load_by_patient(
     :return:
     """
 
-    if source == 'star':
-        if type == "cell_culture":
-            LOOKUP = PATIENT_LOOKUP_CC_STAR
-        elif type == "ffpe":
-            LOOKUP = PATIENT_LOOKUP_FFPE_STAR
-        else:
-            raise NotImplementedError()
+    if type == "cell_culture":
+        LOOKUP = PATIENT_LOOKUP_CC
+    elif type == "ffpe":
+        LOOKUP = PATIENT_LOOKUP_FFPE
     else:
         raise NotImplementedError()
+
+    if source == 'star':
+        cls = MultipleLaneStarCountLoader
+    elif source == 'salmon':
+        cls = MultipleLaneSalmonCountLoader
+    else:
+        raise NotImplementedError()
+
 
     # ensure patient IDs are in correct form
     if patient_ids == 'all':
@@ -1538,11 +1608,11 @@ def load_by_patient(
     objs = []
     for ldr, samples in by_loader.items():
         objs.append(
-            MultipleLaneStarCountLoader(
+            cls(
                 annotate_by=annotate_by,
                 annotation_type=annotation_type,
                 samples=samples,
-                **ldr.loader_kwargs
+                **ldr.loader_kwargs(source)
             )
         )
 
@@ -1735,6 +1805,13 @@ def gse73721(source='star', annotate_by='all', annotation_type='protein_coding')
             meta_fn=metafn,
             annotate_by=annotate_by,
             annotation_type=annotation_type
+        )
+    elif source == 'salmon':
+        obj = SalmonQuantLoader(
+            count_dir=os.path.join(indir, 'salmon'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
         )
     else:
         raise ValueError("Unrecognised source.")

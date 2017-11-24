@@ -17,7 +17,7 @@ if __name__ == "__main__":
     optional.add_argument("--read_dir", help="Directory containing reads", default='./')
     optional.add_argument("-o", "--out_dir", help="Output directory")
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
-    optional.add_argument("--library_type", help="Library type", default='ISR')
+    optional.add_argument("--library_type", help="Library type", default='A')
 
     required.add_argument("-i", "--index_dir", help="Directory of pre-computed Salmon index", required=True)
 

@@ -237,7 +237,6 @@ class PEFastqFileIteratorMixin(object):
         rr = re.compile(r'\.fastq(\.gz)?$', flags=re.IGNORECASE)
         flist = [t for t in os.listdir(self.args['read_dir']) if re.search(rr, t)]
         # check for existing output and identify pairs of files
-        ignore = set()
         for t in flist:
             base, read_num = self.parse_filename(t, cleanup_regex_arr=cleanup_regex_arr)
             rec.setdefault(base, {})
@@ -277,6 +276,45 @@ class PEFastqIlluminaIteratorMixin(PEFastqFileIteratorMixin):
             for patt, repl in cleanup_regex_arr:
                 base = re.sub(patt, repl, base)
         return base, read_num
+
+
+class SEFastqFileIteratorMixin(object):
+    """
+    Adds a method to build a list of single fastq files in the input directory.
+    We also check for the output directory in each case to avoid overwriting
+    """
+
+    def parse_filename(self, filename, cleanup_regex_arr=None):
+        base = re.sub(r'\.fastq(\.gz)?$', '', filename)
+        # apply cleanup
+        if cleanup_regex_arr is not None:
+            for patt, repl in cleanup_regex_arr:
+                base = re.sub(patt, repl, base)
+        return base
+
+    def generate_parameters_and_create_subdirs(self, cleanup_regex_arr=None):
+        params = []
+        seen = []
+
+        rr = re.compile(r'\.fastq(\.gz)?$', flags=re.IGNORECASE)
+        flist = [t for t in os.listdir(self.args['read_dir']) if re.search(rr, t)]
+        # check for existing output and identify pairs of files
+        for t in flist:
+            base = self.parse_filename(t, cleanup_regex_arr=cleanup_regex_arr)
+            seen.append(base)
+            out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
+            if self.require_empty_outdir and os.path.isdir(out_subdir):
+                if len(os.listdir(out_subdir)) > 0:
+                    self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
+                    continue
+                else:
+                    self.logger.info("Using existing empty output subdir %s", out_subdir)
+            if self.create_outdir and not os.path.exists(out_subdir):
+                os.makedirs(out_subdir)
+                self.logger.info("Created output subdir %s", out_subdir)
+            params.append([os.path.abspath(os.path.join(self.args['read_dir'], t)), out_subdir])
+
+        return dict(zip(seen, params))
 
 
 class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
@@ -410,6 +448,79 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
         else
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
             echo "Read files: $READ1 $READ2"
+            echo "Output dir: $SUBDIR"
+            STATUS=1  # set this so that the task is not masked as completed
+        fi
+        """.format(cmd=cmd))
+
+        sh.append(complete)
+
+        # create the actual submission script
+        with open(self.script_fn, 'wb') as f:
+            f.write('\n'.join(sh))
+
+        self.logger.info("Cluster submission script written to %s: \n%s", self.script_fn, sh)
+
+
+class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
+    title = 'salmon'
+    required_args = ['read_dir', 'threads', 'library_type', 'index_dir']
+    require_empty_outdir = False
+    create_outdir = False
+
+    def check_inputs(self):
+        if not os.path.isdir(self.args['index_dir']):
+            self.logger.error("Unable to find specified index directory %s", self.args['index_dir'])
+            return False
+        return True
+
+    def prepare_submission(self):
+        res = self.generate_parameters_and_create_subdirs()
+        self.params = res.values()
+
+        # log the filelist
+        self.logger.info("Found %d fastq files: %s.", len(self.params), ', '.join(res.keys()))
+        self.n_tasks = len(self.params)
+
+    def create_submission_script(self):
+        # parameter names as they will appear in the bash script
+        param_names = ['READ', 'SUBDIR']
+
+        # generate the main command
+        cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -r $READ -o $SUBDIR".format(**self.args)
+        if len(self.extra_args):
+            cmd += " {extra}".format(extra=' '.join(self.extra_args))
+
+        sh = []
+
+        # NB: uses one more core than the number we request (if it can)
+        # Aim to provide 4Gb overall
+        eff_threads = int(self.args['threads']) + 1
+        ram_per_core = 1.
+        if (ram_per_core * eff_threads) < 4:
+            ram_per_core = int(math.ceil(4. / float(eff_threads)))
+
+        sh.append(
+            sge_submission_header(
+                work_dir=self.out_dir,
+                threads=eff_threads,
+                ram_per_core='%dG' % ram_per_core,
+                runtime="0:20:0",
+                arr_size=self.n_tasks
+            )
+        )
+        sh.append(sge_array_params_boilerplate(self.params_fn, param_names))
+
+        submit, complete = sge_tracking_files_boilerplate(self.submitted_fn, self.completed_fn)
+        sh.append(submit)
+
+        sh.append("""
+        if [[ -f $READ && ! -z $SUBDIR ]]; then
+            {cmd}
+            STATUS=$?
+        else
+            echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
+            echo "Read file: $READ"
             echo "Output dir: $SUBDIR"
             STATUS=1  # set this so that the task is not masked as completed
         fi
