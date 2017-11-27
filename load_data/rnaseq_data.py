@@ -23,14 +23,17 @@ class RnaSeqFileLocations(object):
         self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
         self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
 
-        self.params = dict(star={}, salmon={}, cufflinks={})
+        self.params = dict(star={}, salmon={})
 
         if alignment_subdir is None:
-            self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in self.lane_dirs]
-            self.params['salmon']['count_dirs'] = [os.path.join(d, 'salmon') for d in self.lane_dirs]
+            base_dirs = self.lane_dirs
         else:
-            self.params['star']['count_dirs'] = [os.path.join(d, alignment_subdir, 'star_alignment') for d in self.lane_dirs]
-            self.params['salmon']['count_dirs'] = [os.path.join(d, alignment_subdir, 'salmon') for d in self.lane_dirs]
+            base_dirs = [os.path.join(d, alignment_subdir) for d in self.lane_dirs]
+
+        self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in base_dirs]
+        self.params['star']['cufflinks'] = {}
+        self.params['star']['cufflinks']['count_dirs'] = [os.path.join(d, 'star_alignment', 'cufflinks') for d in base_dirs]
+        self.params['salmon']['count_dirs'] = [os.path.join(d, 'salmon') for d in base_dirs]
 
     @property
     def star_loader_kwargs(self):
@@ -47,11 +50,20 @@ class RnaSeqFileLocations(object):
             'meta_fns': self.meta_files
         }
 
+    @property
+    def star_cufflinks_kwargs(self):
+        return {
+            'count_dirs': self.params['star']['cufflinks']['count_dirs'],
+            'meta_fns': self.meta_files
+        }
+
     def loader_kwargs(self, typ):
         if typ == 'star':
             return self.star_loader_kwargs
         elif typ == 'salmon':
             return self.salmon_loader_kwargs
+        elif type == 'star/cufflinks':
+            return self.star_cufflinks_kwargs
         else:
             raise NotImplementedError("Unrecognised type: %s" % typ)
 
@@ -583,11 +595,13 @@ class SalmonQuantLoader(MultipleFileCountLoader):
 
     def get_sample_names(self):
         # strip the known filename to get the sample name as a base
+        # then add it back in for compatibility with the downstreaming renaming
         return [os.path.basename(t.replace(self.default_file_ext, '')) + self.default_file_ext for t in self.data_files]
 
     def load_data(self):
         sample_names = self.get_sample_names()
         self.raw_data = None
+        self.raw_tpm = None
         first = True
         for sn, fn in zip(sample_names, self.data_files):
             dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
@@ -602,6 +616,35 @@ class SalmonQuantLoader(MultipleFileCountLoader):
                 self.raw_tpm.loc[:, sn] = dat.loc[:, 'TPM']
 
         self.raw_data = self.raw_counts
+
+
+class CufflinksGeneLoader(SalmonQuantLoader):
+    ## TODO: we can also load the confidence interval and gene length if supported
+    default_file_ext = "/genes.fpkm_tracking"
+
+    def load_data(self):
+        sample_names = self.get_sample_names()
+        self.raw_data = None
+        first = True
+        for sn, fn in zip(sample_names, self.data_files):
+            dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
+
+            dupe_idx = dat.index[dat.index.duplicated()].unique()
+            dupe_fpkm = dat.loc[dupe_idx, 'FPKM']
+            dupe_fpkm = dupe_fpkm.groupby(dupe_fpkm.index).max()
+            dupe_fpkm.name = sn
+            unique_fpkm = dat.loc[~dat.index.duplicated(False), 'FPKM'].copy()
+            unique_fpkm.name = sn
+
+            if first:
+                # get duplicates and keep only the maximum value
+                # these are a small proportion (~100 out of 50,000 genes)
+                self.raw_fpkm = pd.DataFrame({sn: pd.concat((unique_fpkm, dupe_fpkm))})
+                first = False
+            else:
+                self.raw_fpkm.loc[:, sn] = pd.concat((unique_fpkm, dupe_fpkm))
+
+        self.raw_data = self.raw_fpkm
 
 
 class MultipleLaneCountDatasetLoader(CountDataMixin):
