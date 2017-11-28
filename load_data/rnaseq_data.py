@@ -187,12 +187,14 @@ PATIENT_LOOKUP_CC = {
         ('GBM049_P6', wtchg_p170503),
         ('DURA049_NSC_N19_P4', wtchg_p170503),
         ('DURA049_NSC_N5_P2', wtchg_p170503),
+        ('DURA049_IPSC_N5_P10', wtchg_p170582)
     ],
     '050': [
         ('GBM050_P7n8', wtchg_p170503),
         ('GBM050_P9', wtchg_p170503),
         ('DURA050_NSC_N12_P3', wtchg_p170503),
         ('DURA050_NSC_N16_P4', wtchg_p170503),
+        ('DURA050_IPSC_N12_P5', wtchg_p170582)
     ],
     '052': [
         ('GBM052_P6n7', wtchg_p170503),
@@ -205,12 +207,14 @@ PATIENT_LOOKUP_CC = {
         ('GBM054_P6', wtchg_p170503),
         ('DURA054_NSC_N3C_P2', wtchg_p170503),
         ('DURA054_NSC_N2E_P1', wtchg_p170503),
+        ('DURA054_IPSC_N3C_P11', wtchg_p170582)
     ],
     '061': [
         ('GBM061_P3', wtchg_p170503),
         ('GBM061_P5', wtchg_p170503),
         ('DURA061_NSC_N4_P2', wtchg_p170503),
         ('DURA061_NSC_N6_P4', wtchg_p170503),
+        ('DURA061_IPSC_N4_P5', wtchg_p170582)
     ],
     'GIBCO': [
         ('GIBCO_NSC_P4', wtchg_p170218),

@@ -6,7 +6,7 @@ import sys
 # add root of project dir to the path
 sys.path.append(os.path.dirname(__file__) + '/../../')
 
-from utils import sge
+from utils import local_scripting as ls
 
 
 if __name__ == "__main__":
@@ -31,6 +31,6 @@ if __name__ == "__main__":
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
-    obj = sge.SalmonIlluminaSESgeJob(extra_args=extra, **args.__dict__)
+    obj = ls.SalmonIlluminaPEJob(extra_args=extra, **args.__dict__)
     obj.write_submission_script()
     obj.submit()

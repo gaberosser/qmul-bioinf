@@ -89,6 +89,8 @@ class SgeJob(object):
         self.submitted_fn = os.path.join(self.out_dir, "submitted.%s.%s" % (self.title, self.now_str))
         self.completed_fn = os.path.join(self.out_dir, "completed.%s.%s" % (self.title, self.now_str))
 
+        self.sh = []
+
         self.write_conf_file()
 
         # write a basic opening log entry
@@ -158,8 +160,22 @@ class SgeJob(object):
     def create_submission_script(self):
         """
         Generate the submission script that we will finally submit to SGE
+        Store this in self.sh as a list
         :return:
         """
+        raise NotImplementedError()
+
+    def write_submission_script(self):
+        """
+        Write self.sh to self.script_fn
+        :return:
+        """
+        self.create_submission_script()
+        s = '\n'.join(self.sh)
+        with open(self.script_fn, 'wb') as f:
+            f.write(s)
+
+        self.logger.info("Cluster submission script written to %s: \n%s", self.script_fn, s)
 
     def submit(self):
         subprocess.call(['qsub', self.script_fn])
@@ -379,11 +395,7 @@ class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
 
         sh.append(complete)
 
-        # create the actual submission script
-        with open(self.script_fn, 'wb') as f:
-            f.write('\n'.join(sh))
-
-        self.logger.info("Cluster submission script written to %s: \n%s", self.script_fn, sh)
+        self.sh = sh
 
 
 class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
@@ -455,11 +467,7 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
 
         sh.append(complete)
 
-        # create the actual submission script
-        with open(self.script_fn, 'wb') as f:
-            f.write('\n'.join(sh))
-
-        self.logger.info("Cluster submission script written to %s: \n%s", self.script_fn, sh)
+        self.sh = sh
 
 
 class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
@@ -528,8 +536,5 @@ class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
 
         sh.append(complete)
 
-        # create the actual submission script
-        with open(self.script_fn, 'wb') as f:
-            f.write('\n'.join(sh))
+        self.sh = sh
 
-        self.logger.info("Cluster submission script written to %s: \n%s", self.script_fn, sh)

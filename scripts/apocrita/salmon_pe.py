@@ -32,5 +32,5 @@ if __name__ == "__main__":
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
     obj = sge.SalmonIlluminaPESgeJob(extra_args=extra, **args.__dict__)
-    obj.create_submission_script()
+    obj.write_submission_script()
     obj.submit()

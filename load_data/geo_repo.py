@@ -9,10 +9,14 @@ from gzip import GzipFile
 logger = get_console_logger(__name__)
 
 
+"""
+For a simple method to get all the data associated with a GEO project, use scripts/bash/download_sra_project_fastq.sh
+Get associated SRA attributes with sra.get_runinfo_table
+"""
+
 
 def download_from_ftp(dl_paths, outdir=None, host='ftp-trace.ncbi.nlm.nih.gov', user='', passwd=''):
     """
-
     :param dl_paths: List of paths to download
     :param host:
     :param user:
@@ -80,3 +84,44 @@ def load_metadata_from_series_matrix(infile):
                 break
 
     return meta
+
+
+def combine_metadata_from_series_matrices(*infiles):
+    """
+    Combine GEO metadata from multiple series matrices
+    :param infiles:
+    :return:
+    """
+    mg = [load_metadata_from_series_matrix(gsf) for gsf in infiles]
+    return pd.concat(mg, axis=0, ignore_index=True)
+
+
+def combine_geo_sra_metadata(geo_series_files, srp_id):
+    """
+    Create a combined metadata table
+    :param geo_series_files: Iterable of .txt or .txt.gz  filenames for series matrices, or a single string.
+    will be passed to load_metadata_from_series_matrix
+    :param srp_id: SRPxxxxx project ID
+    :return:
+    """
+    from sra import get_runinfo_table
+    if not hasattr(geo_series_files, '__iter__'):
+        geo_series_files = [geo_series_files]
+    meta_geo = combine_metadata_from_series_matrices(*geo_series_files)
+    meta_geo.set_index('accession', inplace=True)
+    meta_sra = get_runinfo_table(srp_id).dropna(axis=1, how='all')
+
+    # there may be multiple runs for a single sample (e.g. separate lanes)
+    # in these cases, duplicate the values in the GEO repo
+
+    g = meta_geo.loc[meta_sra.SampleName]
+    g.insert(0, 'accession', g.index)
+    g.index = meta_sra.index
+
+    combined = pd.concat((g, meta_sra), axis=1)
+
+    # rename columns for compatibility
+    cols = combined.columns.tolist()
+
+    combined.columns = cols
+    return combined
