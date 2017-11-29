@@ -576,7 +576,7 @@ class TrimgalorePESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
                 work_dir=self.out_dir,
                 threads=1,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:30:0",
+                runtime="0:90:0",
                 arr_size=self.n_tasks
             )
         )
@@ -638,7 +638,7 @@ class TrimgaloreSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
                 work_dir=self.out_dir,
                 threads=1,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:30:0",
+                runtime="0:90:0",
                 arr_size=self.n_tasks
             )
         )
