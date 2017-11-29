@@ -538,3 +538,126 @@ class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
 
         self.sh = sh
 
+
+class TrimgalorePESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
+    title = 'trimgalore'
+    required_args = ['read_dir']
+    require_empty_outdir = True
+    create_outdir = False
+
+    def prepare_submission(self):
+        cleanup_regex_arr = [
+            (r'_[12]$', ''),
+        ]
+        res = self.generate_parameters_and_create_subdirs(cleanup_regex_arr)
+        self.params = res.values()
+
+        # log the filelist
+        self.logger.info("Found %d fastq pairs: %s.", len(self.params), ', '.join(res.keys()))
+        self.n_tasks = len(self.params)
+
+    def create_submission_script(self):
+        # parameter names as they will appear in the bash script
+        param_names = ['READ1', 'READ2']
+
+        # generate the main command
+        cmd = "trim_galore -o {out_dir} --paired $READ1 $READ2".format(out_dir=self.out_dir, **self.args)
+        if len(self.extra_args):
+            cmd += " {extra}".format(extra=' '.join(self.extra_args))
+
+        sh = []
+
+        # NB: uses one more core than the number we request (if it can)
+        # Aim to provide 4Gb overall
+        ram_per_core = 1.
+
+        sh.append(
+            sge_submission_header(
+                work_dir=self.out_dir,
+                threads=1,
+                ram_per_core='%dG' % ram_per_core,
+                runtime="0:30:0",
+                arr_size=self.n_tasks
+            )
+        )
+        sh.append(sge_array_params_boilerplate(self.params_fn, param_names))
+
+        submit, complete = sge_tracking_files_boilerplate(self.submitted_fn, self.completed_fn)
+        sh.append(submit)
+
+        sh.append("""
+        if [[ -f $READ1 && -f $READ2 ]]; then
+            {cmd}
+            STATUS=$?
+        else
+            echo "Unable to execute run ${{SGE_TASK_ID}} as one or more of the read files did not exist."
+            echo "Read files: $READ1 $READ2"
+            STATUS=1  # set this so that the task is not masked as completed
+        fi
+        """.format(cmd=cmd))
+
+        sh.append(complete)
+
+        self.sh = sh
+
+
+class TrimgaloreSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
+    title = 'trimgalore'
+    required_args = ['read_dir']
+    require_empty_outdir = True
+    create_outdir = False
+
+    def prepare_submission(self):
+        cleanup_regex_arr = [
+            (r'_[12]$', ''),
+        ]
+        res = self.generate_parameters_and_create_subdirs(cleanup_regex_arr)
+        self.params = res.values()
+
+        # log the filelist
+        self.logger.info("Found %d fastq files: %s.", len(self.params), ', '.join(res.keys()))
+        self.n_tasks = len(self.params)
+
+    def create_submission_script(self):
+        # parameter names as they will appear in the bash script
+        param_names = ['READ1']
+
+        # generate the main command
+        cmd = "trim_galore -o {out_dir} $READ1".format(out_dir=self.out_dir, **self.args)
+        if len(self.extra_args):
+            cmd += " {extra}".format(extra=' '.join(self.extra_args))
+
+        sh = []
+
+        # NB: uses one more core than the number we request (if it can)
+        # Aim to provide 4Gb overall
+        ram_per_core = 1.
+
+        sh.append(
+            sge_submission_header(
+                work_dir=self.out_dir,
+                threads=1,
+                ram_per_core='%dG' % ram_per_core,
+                runtime="0:30:0",
+                arr_size=self.n_tasks
+            )
+        )
+        sh.append(sge_array_params_boilerplate(self.params_fn, param_names))
+
+        submit, complete = sge_tracking_files_boilerplate(self.submitted_fn, self.completed_fn)
+        sh.append(submit)
+
+        sh.append("""
+        if [[ -f $READ1 ]]; then
+            {cmd}
+            STATUS=$?
+        else
+            echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist."
+            echo "Read file: $READ1"
+            STATUS=1  # set this so that the task is not masked as completed
+        fi
+        """.format(cmd=cmd))
+
+        sh.append(complete)
+
+        self.sh = sh
