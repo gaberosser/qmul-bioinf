@@ -606,6 +606,8 @@ class SalmonQuantLoader(MultipleFileCountLoader):
         sample_names = self.get_sample_names()
         self.raw_data = None
         self.raw_tpm = None
+        self.unit_length = None
+        self.effective_unit_length = None
         first = True
         for sn, fn in zip(sample_names, self.data_files):
             dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
@@ -614,12 +616,24 @@ class SalmonQuantLoader(MultipleFileCountLoader):
                 self.raw_counts.columns = [sn]
                 self.raw_tpm = dat.loc[:, ['TPM']].copy()
                 self.raw_tpm.columns = [sn]
+                self.unit_length = dat.loc[:, ['Length']]
+                self.unit_length.columns = [sn]
+                self.effective_unit_length = dat.loc[:, ['EffectiveLength']]
+                self.effective_unit_length.columns = [sn]
                 first = False
             else:
                 self.raw_counts.loc[:, sn] = dat.loc[:, 'NumReads']
                 self.raw_tpm.loc[:, sn] = dat.loc[:, 'TPM']
+                self.unit_length.loc[:, sn] = dat.loc[:, 'Length']
+                self.effective_unit_length.loc[:, sn] = dat.loc[:, 'EffectiveLength']
 
         self.raw_data = self.raw_counts
+
+    def aggregate_to_gene_level(self):
+        """
+        Aggregate (by addition) to the gene level
+        :return:
+        """
 
 
 class CufflinksGeneLoader(SalmonQuantLoader):
