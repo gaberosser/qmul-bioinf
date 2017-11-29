@@ -433,18 +433,18 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
         sh = []
 
         # NB: uses one more core than the number we request (if it can)
-        # Aim to provide 4Gb overall
+        # Aim to provide 8Gb overall
         eff_threads = int(self.args['threads']) + 1
-        ram_per_core = 1.
-        if (ram_per_core * eff_threads) < 4:
-            ram_per_core = int(math.ceil(4. / float(eff_threads)))
+        ram_per_core = 2.
+        if (ram_per_core * eff_threads) < 8:
+            ram_per_core = int(math.ceil(8. / float(eff_threads)))
 
         sh.append(
             sge_submission_header(
                 work_dir=self.out_dir,
                 threads=eff_threads,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:20:0",
+                runtime="0:40:0",
                 arr_size=self.n_tasks
             )
         )
@@ -504,16 +504,16 @@ class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
         # NB: uses one more core than the number we request (if it can)
         # Aim to provide 4Gb overall
         eff_threads = int(self.args['threads']) + 1
-        ram_per_core = 1.
-        if (ram_per_core * eff_threads) < 4:
-            ram_per_core = int(math.ceil(4. / float(eff_threads)))
+        ram_per_core = 2.
+        if (ram_per_core * eff_threads) < 8:
+            ram_per_core = int(math.ceil(8. / float(eff_threads)))
 
         sh.append(
             sge_submission_header(
                 work_dir=self.out_dir,
                 threads=eff_threads,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:20:0",
+                runtime="0:40:0",
                 arr_size=self.n_tasks
             )
         )
