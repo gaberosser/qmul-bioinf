@@ -23,6 +23,9 @@ class SalmonIlluminaSEJob(LocalScriptConversionMixin, sge.SalmonIlluminaSESgeJob
 class SalmonIlluminaPEJob(LocalScriptConversionMixin, sge.SalmonIlluminaPESgeJob):
     pass
 
+class SalmonIlluminaMultiLanePEJob(LocalScriptConversionMixin, sge.SalmonIlluminaMultiLanePESgeJob):
+    pass
+
 class CufflinksJob(LocalScriptConversionMixin, sge.CufflinksSgeJob):
     pass
 

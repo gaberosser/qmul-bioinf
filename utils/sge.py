@@ -257,6 +257,7 @@ class PEFastqFileIteratorMixin(object):
             base, read_num = self.parse_filename(t, cleanup_regex_arr=cleanup_regex_arr)
             rec.setdefault(base, {})
 
+            ## TODO: this should be moved to a higher level function - it's boilerplate
             if 'out_subdir' not in rec[base]:
                 out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
                 if self.require_empty_outdir and os.path.isdir(out_subdir):
@@ -278,6 +279,90 @@ class PEFastqFileIteratorMixin(object):
                 continue
             params.append([p[1], p[2], p['out_subdir']])
             seen.append(base)
+
+        return dict(zip(seen, params))
+
+
+class PEFastqIlluminaMultiLaneMixin(object):
+    def parse_filename(self, filename, cleanup_regex_arr=None):
+        if cleanup_regex_arr is None:
+            cleanup_regex_arr = [
+                (r'_[12]$', ''),
+                ('^WTCHG_[0-9]+_', ''),
+            ]
+        base = re.sub(r'\.fastq(\.gz)?$', '', filename)
+        # get read number
+        read_num = int(base[-1])
+        # apply cleanup
+        if cleanup_regex_arr is not None:
+            for patt, repl in cleanup_regex_arr:
+                base = re.sub(patt, repl, base)
+        return base, read_num
+
+    def generate_parameters_and_create_subdirs(self, cleanup_regex_arr=None):
+        params = []
+        seen = []
+        rec = {}
+
+        to_join = {}
+        root_dir = os.path.abspath(self.args['read_dir'])
+        dlist = [os.path.join(root_dir, t) for t in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, t))]
+
+        for d in dlist:
+            flist = [t for t in os.listdir(d) if '.fastq' in t]
+            for fn in flist:
+                read_id, read_num = self.parse_filename(fn, cleanup_regex_arr=cleanup_regex_arr)
+                to_join.setdefault(read_id, {}).setdefault(d, {})[read_num] = os.path.join(d, fn)
+
+        n = None
+        self.logger.info(
+            "Identified %d fastq groups that can be combined: %s", len(to_join), ', '.join(to_join.keys())
+        )
+
+        for read_id, d in to_join.items():
+            seen.append(read_id)
+            x = d.values()[0]
+            # get all valid pairs / singles
+            if len(x) == 2:
+                typ = 'paired-end'
+            else:
+                self.logger.error("Found %d corresponding reads - wasn't expecting that.", len(x))
+                raise ValueError("Incorrect number of corresponding reads: %d" % len(x))
+
+            self.logger.info("Read group %s. Type: %s", read_id, typ)
+
+            # check the number of directories - this should be consistent across all reads
+            if n is None:
+                n = len(d)
+            else:
+                if len(d) != n:
+                    raise AttributeError(
+                        "Previous read group had %d matching directories; this one has %d." % (n, len(d)))
+
+            # check output subdirectory and create if necessary
+            # TODO: to boilerplate somewhere higher up
+            out_subdir = os.path.abspath(os.path.join(self.out_dir, read_id))
+            if self.require_empty_outdir and os.path.isdir(out_subdir):
+                if len(os.listdir(out_subdir)) > 0:
+                    self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
+                    continue
+                else:
+                    self.logger.info("Using existing empty output subdir %s", out_subdir)
+            if self.create_outdir and not os.path.exists(out_subdir):
+                os.makedirs(out_subdir)
+                self.logger.info("Created output subdir %s", out_subdir)
+
+            rec.setdefault(read_id, {})
+            for the_dir, the_dict in d.items():
+                for read_num, the_file in the_dict.items():
+                    rec[read_id].setdefault(read_num, []).append(the_file)
+
+            this_param = []
+            for i in range(len(x)):
+                # join equivalent read files with a space
+                this_param.append(' '.join(rec[read_id][i + 1]))
+            this_param.append(out_subdir)
+            params.append(this_param)
 
         return dict(zip(seen, params))
 
@@ -529,6 +614,80 @@ class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
         else
             echo "Unable to execute run ${{SGE_TASK_ID}} as the read file did not exist or the output dir variable is empty."
             echo "Read file: $READ"
+            echo "Output dir: $SUBDIR"
+            STATUS=1  # set this so that the task is not masked as completed
+        fi
+        """.format(cmd=cmd))
+
+        sh.append(complete)
+
+        self.sh = sh
+
+
+class SalmonIlluminaMultiLanePESgeJob(SgeArrayJob, PEFastqIlluminaMultiLaneMixin):
+    title = 'salmon'
+    required_args = ['read_dir', 'threads', 'library_type', 'index_dir']
+    require_empty_outdir = False
+    create_outdir = False
+
+    def check_inputs(self):
+        if not os.path.isdir(self.args['index_dir']):
+            self.logger.error("Unable to find specified index directory %s", self.args['index_dir'])
+            return False
+        return True
+
+    def prepare_submission(self):
+        res = self.generate_parameters_and_create_subdirs()
+        self.params = res.values()
+
+        # log the filelist
+        self.logger.info("Found %d fastq pairs: %s.", len(self.params), ', '.join(res.keys()))
+        self.n_tasks = len(self.params)
+
+    def create_submission_script(self):
+        # parameter names as they will appear in the bash script
+        # TODO: specify this properly previously
+        if self.n_tasks == 0:
+            self.logger.error("Unable to run script, no input files found.")
+            raise AttributeError("Unable to run script, no input files found.")
+        n = len(self.params[0][0].split(' '))
+        param_names = ['READS1', 'READS2', 'SUBDIR']
+
+        # generate the main command
+        cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -1 $READS1 -2 $READS2 -o $SUBDIR".format(**self.args)
+        if len(self.extra_args):
+            cmd += " {extra}".format(extra=' '.join(self.extra_args))
+
+        sh = []
+
+        # NB: uses one more core than the number we request (if it can)
+        # Aim to provide 8Gb overall
+        eff_threads = int(self.args['threads']) + 1
+        ram_per_core = 2.
+        if (ram_per_core * eff_threads) < 8:
+            ram_per_core = int(math.ceil(8. / float(eff_threads)))
+
+        sh.append(
+            sge_submission_header(
+                work_dir=self.out_dir,
+                threads=eff_threads,
+                ram_per_core='%dG' % ram_per_core,
+                runtime="0:40:0",
+                arr_size=self.n_tasks
+            )
+        )
+        sh.append(sge_array_params_boilerplate(self.params_fn, param_names))
+
+        submit, complete = sge_tracking_files_boilerplate(self.submitted_fn, self.completed_fn)
+        sh.append(submit)
+
+        sh.append("""
+        if [[ ! -z $SUBDIR ]]; then
+            {cmd}
+            STATUS=$?
+        else
+            echo "Unable to execute run ${{SGE_TASK_ID}} as the output dir variable is empty."
+            echo "Read files: $READS1 $READS2"
             echo "Output dir: $SUBDIR"
             STATUS=1  # set this so that the task is not masked as completed
         fi
