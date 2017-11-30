@@ -25,15 +25,18 @@ class RnaSeqFileLocations(object):
 
         self.params = dict(star={}, salmon={})
 
-        if alignment_subdir is None:
+        if self.alignment_subdir is None:
             base_dirs = self.lane_dirs
+            self.params['salmon']['count_dir'] = os.path.join(self.root_dir, 'salmon')
+            self.root_meta_file = os.path.join(self.root_dir, 'sources.csv')
         else:
-            base_dirs = [os.path.join(d, alignment_subdir) for d in self.lane_dirs]
+            base_dirs = [os.path.join(d, self.alignment_subdir) for d in self.lane_dirs]
+            self.params['salmon']['count_dir'] = os.path.join(self.root_dir, self.alignment_subdir, 'salmon')
+            self.root_meta_file = os.path.join(self.root_dir, self.alignment_subdir, 'sources.csv')
 
         self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in base_dirs]
         self.params['star']['cufflinks'] = {}
         self.params['star']['cufflinks']['count_dirs'] = [os.path.join(d, 'star_alignment', 'cufflinks') for d in base_dirs]
-        self.params['salmon']['count_dirs'] = [os.path.join(d, 'salmon') for d in base_dirs]
 
     @property
     def star_loader_kwargs(self):
@@ -46,8 +49,8 @@ class RnaSeqFileLocations(object):
     @property
     def salmon_loader_kwargs(self):
         return {
-            'count_dirs': self.params['salmon']['count_dirs'],
-            'meta_fns': self.meta_files
+            'count_dir': self.params['salmon']['count_dir'],
+            'meta_fn': self.root_meta_file
         }
 
     @property
@@ -1637,7 +1640,7 @@ def load_by_patient(
     if source == 'star':
         cls = MultipleLaneStarCountLoader
     elif source == 'salmon':
-        cls = MultipleLaneSalmonCountLoader
+        cls = SalmonQuantLoader
     else:
         raise NotImplementedError()
 
