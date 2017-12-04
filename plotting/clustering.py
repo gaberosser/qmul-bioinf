@@ -298,6 +298,7 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
 
 def plot_clustermap(
         dat,
+        method='average', metric='correlation',
         show_gene_labels=False,
         rotate_xticklabels=True,
         **kwargs
@@ -319,6 +320,8 @@ def plot_clustermap(
     """
     cg = sns.clustermap(
         dat,
+        method=method,
+        metric=metric,
         **kwargs
     )
     # check whether x ticks were requested - if so, rotate and raise the bottom of the axes

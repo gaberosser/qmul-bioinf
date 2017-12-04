@@ -22,17 +22,16 @@ class RnaSeqFileLocations(object):
         self.alignment_subdir = alignment_subdir
         self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
         self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
+        self.root_meta_file = os.path.join(self.root_dir, 'sources.csv')
 
         self.params = dict(star={}, salmon={})
 
         if self.alignment_subdir is None:
             base_dirs = self.lane_dirs
             self.params['salmon']['count_dir'] = os.path.join(self.root_dir, 'salmon')
-            self.root_meta_file = os.path.join(self.root_dir, 'sources.csv')
         else:
             base_dirs = [os.path.join(d, self.alignment_subdir) for d in self.lane_dirs]
             self.params['salmon']['count_dir'] = os.path.join(self.root_dir, self.alignment_subdir, 'salmon')
-            self.root_meta_file = os.path.join(self.root_dir, self.alignment_subdir, 'sources.csv')
 
         self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in base_dirs]
         self.params['star']['cufflinks'] = {}
@@ -428,8 +427,13 @@ class CountDatasetLoader(CountDataMixin):
         Performed after raw data is loaded
         :return: Processed data
         """
+
+        # ensure meta index is a string
+        self.raw_meta.index = self.raw_meta.index.astype(str)
+
         # filter by sample if requested
         if self.samples_to_keep is not None:
+            print self.samples_to_keep
             # we require the 'sample' column in metadata
             if not self.meta_has_sample_names:
                 raise AttributeError("Sample names have been supplied but the meta data has no 'sample' column.")
@@ -603,7 +607,8 @@ class SalmonQuantLoader(MultipleFileCountLoader):
     def get_sample_names(self):
         # strip the known filename to get the sample name as a base
         # then add it back in for compatibility with the downstreaming renaming
-        return [os.path.basename(t.replace(self.default_file_ext, '')) + self.default_file_ext for t in self.data_files]
+        # return [os.path.basename(t.replace(self.default_file_ext, '')) + self.default_file_ext for t in self.data_files]
+        return [os.path.basename(t.replace(self.default_file_ext, '')) for t in self.data_files]
 
     def load_data(self):
         sample_names = self.get_sample_names()
@@ -631,6 +636,7 @@ class SalmonQuantLoader(MultipleFileCountLoader):
                 self.effective_unit_length.loc[:, sn] = dat.loc[:, 'EffectiveLength']
 
         self.raw_data = self.raw_counts
+        print self.raw_data.columns
 
     def aggregate_to_gene_level(self):
         """
@@ -2205,3 +2211,132 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
         raise ValueError("Unrecognised source")
 
     return obj
+
+
+
+## FIXME: this is necessary to speed things up, but for god's/gods'/f sake REFACTOR THIS VIPER'S NEST OF MISERY so that
+# all the loaders just work.
+
+def gse73721_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE73721')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def pollard_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'E-MTAB-3867')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse80732_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE80732')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse64882_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE64882')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse84166_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE84166')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+
+def load_salmon(count_dir, meta_fn, samples=None, units='tpm'):
+    meta = pd.read_csv(meta_fn, header=0, index_col=0).loc[:, 'sample']
+    meta.index = meta.index.astype(str)
+    if samples is not None:
+        meta = meta.loc[meta.isin(samples)]
+        # TODO: warn if unexpected number
+    else:
+        samples = meta.values
+
+    data = None
+
+    data_files = []
+    snames = []
+    for i, sn in meta.iteritems():
+        df = os.path.join(count_dir, i, 'quant.sf')
+        if os.path.isfile(df):
+            data_files.append(df)
+            snames.append(sn)
+
+    if len(snames) != len(samples):
+        missing = set(samples).difference(snames)
+        print "Expected %d samples, found %d. Missing: %s" % (len(samples), len(snames), ', '.join(missing))
+        samples = snames
+
+    # load
+    for df, sn in zip(data_files, snames):
+        the_dat = pd.read_csv(df, header=0, index_col=0, sep='\t')
+        if units == 'tpm':
+            the_dat = the_dat.loc[:, 'TPM']
+        elif units == 'estimated_counts':
+            the_dat = the_dat.loc[:, 'NumReads']
+        if data is None:
+            data = pd.DataFrame(index=the_dat.index, columns=samples)
+        data.loc[:, sn] = the_dat
+
+    return data.astype(float)
+
+
+def load_salmon_by_patient_id(patient_ids, units='tpm', include_control=True, type='cell_culture'):
+    if units not in ['tpm', 'estimated_counts']:
+        raise ValueError("Units unrecognised")
+
+    if type == "cell_culture":
+        LOOKUP = PATIENT_LOOKUP_CC
+    elif type == "ffpe":
+        LOOKUP = PATIENT_LOOKUP_FFPE
+    else:
+        raise NotImplementedError()
+
+    # ensure patient IDs are in correct form
+    if patient_ids == 'all':
+        patient_ids = [t for t in LOOKUP.keys() if t != 'GIBCO']
+    elif hasattr(patient_ids, '__iter__'):
+        patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
+    else:
+        if isinstance(patient_ids, str):
+            patient_ids = [patient_ids]
+        else:
+            patient_ids = ['%03d' % patient_ids]
+
+    if include_control and type == 'cell_culture':
+        patient_ids += ['GIBCO']
+
+    # precompute the loaders required to avoid reloading multiple times
+    # we'll also take a note of the order for later reordering
+    sample_order = []
+    by_loader = {}
+    for pid in patient_ids:
+        d = LOOKUP[pid]
+        for s, ldr in d:
+            by_loader.setdefault(ldr, []).append(s)
+            sample_order.append(s)
+
+    data = None
+    for ldr, samples in by_loader.items():
+        tmp = ldr.loader_kwargs('salmon')
+        count_dir = tmp['count_dir']
+        meta_fn = tmp['meta_fn']
+
+        this_dat = load_salmon(count_dir, meta_fn, units=units, samples=samples)
+
+        if data is None:
+            data = pd.DataFrame(index=this_dat.index, columns=sample_order)
+
+        data.loc[:, samples] = this_dat
+
+    return data.astype(float)
