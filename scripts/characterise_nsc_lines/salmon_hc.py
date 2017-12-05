@@ -1,5 +1,6 @@
 from load_data import rnaseq_data
 from plotting import clustering
+from scripts.rnaseq import gtf_reader
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -21,58 +22,54 @@ def hist_logvalues(data, thresholds=None, eps=1e-6):
     return ax
 
 
-def cluster_logdata_with_threshold(data, min_val, n, mad=None, min_over=2, eps=1e-2):
+def cluster_logdata_with_threshold(data, min_val=None, n=None, mad=None, min_over=2, eps=1e-2, **kwargs):
     func = lambda x: np.log2(data + eps)
-    return cluster_data_with_threshold(data, min_val, n, mad=mad, min_over=min_over, transform=func)
+    return cluster_data_with_threshold(data, min_val, n, mad=mad, min_over=min_over, transform=func, **kwargs)
 
 
-def cluster_data_with_threshold(data, min_tpm, n, mad=None, min_over=2, transform=None):
-    idx = (data > min_tpm).sum(axis=1) > min_over
-    dat = data.loc[idx]
+def cluster_data_with_threshold(data, min_val=None, n=None, mad=None, min_over=2, transform=None, **kwargs):
+    if min_val is not None and min_over is not None:
+        idx = (data > min_val).sum(axis=1) > min_over
+        data = data.loc[idx]
+
     if transform is not None:
-        dat = transform(dat)
-    if mad is None:
-        mad = transformations.median_absolute_deviation(dat).sort_values(ascending=False)
-    else:
-        if len(mad.index.intersection(data.loc[idx].index)) != idx.sum():
-            raise AttributeError("If a pre-computed MAD is supplied, it must contain all required entries")
-    this_mad = mad.loc[dat.loc[idx].index]
-    the_dat = dat.loc[this_mad.index[:n]]
+        data = transform(data)
 
-    cm = clustering.plot_clustermap(the_dat, cmap='RdBu_r', metric='correlation')
-    cm.gs.update(bottom=0.2)
-    return cm, mad
+    if n is not None:
+        if mad is None:
+            mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
+        else:
+            mad = mad.sort_values(ascending=False)
+            if len(mad.index.intersection(data.index)) != data.shape[0]:
+                raise AttributeError("If a pre-computed MAD is supplied, it must contain all required entries")
 
+        data = data.loc[mad.index[:n]]
 
-def cluster_data_with_threshold(data, min_tpm, n, mad=None, min_over=2, eps=1e-2):
-    idx = (data > min_tpm).sum(axis=1) > min_over
-    p = data.loc[idx]
-    if mad is None:
-        mad = transformations.median_absolute_deviation(p).sort_values(ascending=False)
-    else:
-        if len(mad.index.intersection(p.index)) != idx.sum():
-            raise AttributeError("If a pre-computed MAD is supplied, it must contain all required entries")
-    this_mad = mad.loc[data.loc[idx].index]
-    the_dat = p.loc[this_mad.index[:n]]
-
-    cm = clustering.plot_clustermap(the_dat, cmap='RdBu_r', metric='correlation')
+    cm = clustering.plot_clustermap(data, cmap='RdBu_r', metric='correlation', **kwargs)
     cm.gs.update(bottom=0.2)
     return cm, mad
 
 
 if __name__ == "__main__":
-    units = 'estimated_counts'
+    # units = 'estimated_counts'
+    units = 'tpm'
+    # remove_mt = True
+    remove_mt = False
     outdir = unique_output_dir("salmon_insc_characterisation")
+    n_gene_try = [1000, 2000, 3000, 5000][::-1]  # largest first, so we can reuse the MAD array
     # load 12 patients iNSC, 4 iPSC
     pids = ['017', '018', '019', '030', '031', '026', '044', '049', '050', '052', '054', '061']
     if units == 'tpm':
         min_val = 1
         min_n = 4
-        min_vals = [.1, 1, 10]
+        eps = .01
     elif units == 'estimated_counts':
         min_val = 10
         min_n = 4
-        min_vals = [1, 5, 10]
+        eps = .01
+
+    if remove_mt:
+        mt_ensg = set(gtf_reader.get_mitochondrial())
 
     patient_data = rnaseq_data.load_salmon_by_patient_id(pids, units=units)
 
@@ -82,21 +79,6 @@ if __name__ == "__main__":
     # update index to remove accession version
     idx = patient_data.index.str.replace(r'.[0-9]+$', '')
     patient_data.index = idx
-
-
-
-    # ax = hist_logvalues(patient_data, thresholds=min_vals)
-    #
-    # ax.figure.savefig(os.path.join(outdir, "log10_intensities_with_min_tpm_threshold.png"), dpi=200)
-    # ax.figure.savefig(os.path.join(outdir, "log10_intensities_with_min_tpm_threshold.pdf"))
-    #
-    # mad = None
-    # for n_t in [1000, 2000, 5000][::-1]:
-    #     for min_val in min_vals:
-    #         cm, mad = cluster_logdata_with_threshold(patient_data, min_val, n_t, mad=mad)
-    #         fname = "clustering_corr_log10_top%d_by_mad_mintpm_%.1f.{ext}" % (n_t, min_val)
-    #         cm.savefig(os.path.join(outdir, fname).format(ext='pdf'))
-    #         cm.savefig(os.path.join(outdir, fname).format(ext='png'), dpi=200)
 
     # now aggregate to gene level and repeat
     # TODO: move to rnaseq module or similar
@@ -117,23 +99,44 @@ if __name__ == "__main__":
     genes = gene_transcript.loc[patient_data.index, 'Gene stable ID']
 
     patient_data_by_gene = patient_data.groupby(genes).sum()
+
+    # discard mitochondrial genes
+    if remove_mt:
+        idx = ~patient_data_by_gene.index.isin(mt_ensg)
+        pdbg = patient_data_by_gene.loc[idx]
+        # renorm
+        if units == 'tpm':
+            pdbg = pdbg.divide(pdbg.sum(), axis=1) * 1e6
+    else:
+        pdbg = patient_data_by_gene
+
     # discard genes expressed at low values
-    idx = (patient_data_by_gene > min_val).sum(axis=1) > min_n
+    idx = (pdbg > min_val).sum(axis=1) > min_n
+    pdbg = pdbg.loc[idx]
 
-    pdbg_norm = patient_data_by_gene.loc[idx]
-    pdbg_norm = pdbg_norm.divide(pdbg_norm.sum(axis=0), axis=1)
+    if units == 'estimated_counts':
+        # here we can normalise by library size if desired
+        pass
 
-    ax = hist_logvalues(patient_data_by_gene, thresholds=min_vals)
-    ax.figure.savefig(os.path.join(outdir, "log10_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
-    ax.figure.savefig(os.path.join(outdir, "log10_intensities_by_gene_with_min_tpm_threshold.pdf"))
+    ax = hist_logvalues(patient_data_by_gene, thresholds=[min_val])
+    ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.pdf"))
 
-    mad_by_gene = None
-    for n_t in [1000, 2000, 5000][::-1]:
-        # no m in val as we already applied it
-        cm, mad_by_gene = cluster_logdata_with_threshold(pdbg_norm, 0, n_t, mad=mad_by_gene, eps=1e-12)
-        fname = "clustering_by_gene_corr_log10_top%d_by_mad.{ext}" % n_t
-        # cm.savefig(os.path.join(outdir, fname).format(ext='pdf'))
-        cm.savefig(os.path.join(outdir, fname).format(ext='png'), dpi=200)
+    mad = transformations.median_absolute_deviation(pdbg).sort_values(ascending=False)
+    pdbg_log = np.log2(pdbg + eps)
+    mad_log = transformations.median_absolute_deviation(pdbg_log).sort_values(ascending=False)
+    row_colours = pd.DataFrame('gray', index=pdbg_log.columns, columns=[''])
+    row_colours.loc[row_colours.index.str.contains('IPSC')] = '#fdc086'
+    row_colours.loc[row_colours.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'
+    row_colours.loc[row_colours.index.str.contains('GIBCO')] = '#96daff'
+
+
+    for n_t in n_gene_try:
+        fname = "clustering_by_gene_corr_top%d_by_mad.{ext}" % n_t
+        fname_log = "clustering_by_gene_corr_log_top%d_by_mad.{ext}" % n_t
+
+        d = clustering.dendrogram_with_colours(pdbg_log.loc[mad_log.index[:n_t]], row_colours, fig_kws={'figsize': (10, 5.5)})
+        d['fig'].savefig(os.path.join(outdir, fname_log.format(ext='png')), dpi=200)
 
     # bring in reference data
     ref_dats = [
@@ -141,28 +144,109 @@ if __name__ == "__main__":
         rnaseq_data.pollard_salmon(units=units),
         rnaseq_data.gse80732_salmon(units=units),
         rnaseq_data.gse64882_salmon(units=units),
-        rnaseq_data.gse84166_salmon(units=units)
+        rnaseq_data.gse84166_salmon(units=units),
+        rnaseq_data.gse61794_salmon(units=units),
     ]
+
     ref = pd.concat(ref_dats, axis=1)
     ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
-    #discard fetal ctx astro (Barres)
+    # discard Barres irrelevant samples
     ref = ref.loc[:, ~ref.columns.str.contains('Fetal ctx')]
+    ref = ref.loc[:, ~ref.columns.str.contains('tumor')]
+    ref = ref.loc[:, ~ref.columns.str.contains('ctx endo')]
+    ref = ref.loc[:, ~ref.columns.str.contains('whole cortex')]
+    ref = ref.loc[:, ~ref.columns.str.contains('myeloid')]
+    # discard immortalised cell line
+    ref = ref.loc[:, ~ref.columns.str.contains('LM-NSC')]
+    # discard fibroblasts
+    ref = ref.loc[:, ~ref.columns.str.contains(r'^fibroblast')]
+    #
+
+    # Take mean over various replicates (for simplicity)
+    cols = ref.loc[:, ref.columns.str.contains('Pollard NSC')].columns
+    ref.insert(0, 'Fetal NSC (Caren et al.)', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'H1-[12]')].columns
+    ref.insert(0, 'H1', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'H1-EPS')].columns
+    ref.insert(0, 'H1-EPS', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'ES1-EPS')].columns
+    ref.insert(0, 'ES1-EPS', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'H9_NSC')].columns
+    ref.insert(0, 'H9-NSC', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'INSC fibroblast')].columns
+    ref.insert(0, 'Fibroblast-derived NSC (Shahbazi et al.)', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'NSC008')].columns
+    ref.insert(0, 'Fetal NSC (Li et al.)', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
+
+    cols = ref.loc[:, ref.columns.str.contains(r'fetal NSC rep')].columns
+    ref.insert(0, 'Fetal NSC (Shahbazi et al.)', ref.loc[:, cols].mean(axis=1))
+    ref.drop(cols, axis=1, inplace=True)
 
     ref_by_gene = ref.groupby(genes).sum()
 
     # now let's try clustering everything together
-    altogether_by_gene = pd.concat((patient_data_by_gene, ref_by_gene), axis=1)
+    abg = pd.concat((patient_data_by_gene, ref_by_gene), axis=1)
+
+    # discard mitochondrial genes
+    if remove_mt:
+        idx = ~abg.index.isin(mt_ensg)
+        abg = abg.loc[idx]
+        # renorm
+        if units == 'tpm':
+            abg = abg.divide(abg.sum(), axis=1) * 1e6
 
     # discard genes expressed at low values
-    idx = (altogether_by_gene > min_val).sum(axis=1) > min_n
+    idx = (abg > min_val).sum(axis=1) > min_n
+    abg = abg.loc[idx]
 
-    abg_norm = altogether_by_gene.loc[idx]
-    abg_norm = abg_norm.divide(abg_norm.sum(axis=0), axis=1)
+    abg_log = np.log2(abg + eps)
+    amad_log = transformations.median_absolute_deviation(abg_log).sort_values(ascending=False)
 
-    # this looks bad...
-    cm, mad_all = cluster_logdata_with_threshold(abg_norm, 0, n=5000, eps=1e-12)
+    if units == 'estimated_counts':
+        # optionally could normalise here?
+        pass
 
-    abg_vsd = transformations.variance_stabilizing_transform(altogether_by_gene)
+    row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=[''])
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'H9-NSC')] = 'blue'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Fetal')] = 'yellow'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Fibroblast')] = '#fff89e'
+    row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains('ES1')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Hippocamp.* astro')] = '#e78ac3'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'ctx .*astro')] = '#b3b3b3'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'oligo')] = '#fccde5'
+
+    for n_t in n_gene_try:
+        fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+
+        cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
+        cm.gs.update(bottom=0.3)
+        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+        d = clustering.dendrogram_with_colours(
+            abg_log.loc[amad_log.index[:n_t]],
+            row_colours_all,
+            fig_kws={'figsize': (10, 5.5)}
+        )
+        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
 
