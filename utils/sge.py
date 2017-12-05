@@ -29,7 +29,9 @@ def sge_submission_header(work_dir=None, threads=1, ram_per_core="1G", runtime="
 
     header.append(
         "# source bashrc to get correct path\n"
-        ". $HOME/.bashrc"
+        ". $HOME/.bashrc\n"
+        "# load modules (this script should be in the path)\n"
+        ". load_modules.sh"
     )
 
     return '\n'.join(header)
@@ -416,6 +418,65 @@ class SEFastqFileIteratorMixin(object):
             params.append([os.path.abspath(os.path.join(self.args['read_dir'], t)), out_subdir])
 
         return dict(zip(seen, params))
+
+
+class SraDownloadFastqSgeJob(SgeArrayJob):
+    title = 'sra_getter'
+    required_args = ['project_id']
+    require_empty_outdir = False
+    create_outdir = True
+
+    def generate_parameters_and_create_subdirs(self, cleanup_regex_arr=None):
+
+        CMD = "esearch -db sra -query {pid} | efetch --format runinfo | cut -d ',' -f 1 | grep 'SRR'"
+        srr_list = subprocess.check_output(CMD.format(pid=self.args['project_id']), shell=True)
+        params = [[t] for t in srr_list.split('\n') if len(t)]
+
+        return params
+
+    def prepare_submission(self, *args, **kwargs):
+        self.params = self.generate_parameters_and_create_subdirs()
+        self.logger.info(
+            "Found %d SRA file submissions to dowload: %s",
+            len(self.params),
+            ', '.join([t[0] for t in self.params])
+        )
+        self.n_tasks = len(self.params)
+
+    def create_submission_script(self):
+        param_names = ['srr_id']
+        cmd = "fastq-dump --split-files $srr_id -O {out_dir}".format(out_dir=self.out_dir)
+
+        sh = []
+
+        sh.append(
+            sge_submission_header(
+                work_dir=self.out_dir,
+                threads=1,
+                ram_per_core='512M',
+                runtime="1:0:0",
+                arr_size=self.n_tasks
+            )
+        )
+        sh.append(sge_array_params_boilerplate(self.params_fn, param_names))
+
+        submit, complete = sge_tracking_files_boilerplate(self.submitted_fn, self.completed_fn)
+        sh.append(submit)
+
+        sh.append("""
+        if [[ ! -z $srr_id ]]; then
+            {cmd}
+            STATUS=$?
+        else
+            echo "Unable to execute run ${{SGE_TASK_ID}} as the SRR ID variable is empty."
+            echo "SRR ID: $srr_id"
+            STATUS=1  # set this so that the task is not marked as completed
+        fi
+        """.format(cmd=cmd))
+
+        sh.append(complete)
+
+        self.sh = sh
 
 
 class CufflinksSgeJob(SgeArrayJob, BamFileIteratorMixin):
