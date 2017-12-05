@@ -445,7 +445,7 @@ class SraDownloadFastqSgeJob(SgeArrayJob):
 
     def create_submission_script(self):
         param_names = ['srr_id']
-        cmd = "fastq-dump --split-files $srr_id -O {out_dir}".format(out_dir=self.out_dir)
+        cmd = "fastq-dump --gzip --split-files $srr_id -O {out_dir}".format(out_dir=self.out_dir)
 
         sh = []
 
@@ -454,7 +454,7 @@ class SraDownloadFastqSgeJob(SgeArrayJob):
                 work_dir=self.out_dir,
                 threads=1,
                 ram_per_core='512M',
-                runtime="1:0:0",
+                runtime="2:30:0",  # TODO: make this an input var?
                 arr_size=self.n_tasks
             )
         )
