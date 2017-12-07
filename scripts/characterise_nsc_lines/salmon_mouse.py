@@ -139,18 +139,18 @@ if __name__ == '__main__':
 
     # bring in reference data
     ref_dats = [
-        # rnaseq_data.gse78938_salmon(units=units),
+        ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
         ('Liu et al.', rnaseq_data.gse96950_salmon(units=units)),
         ('Wapinski et al.', rnaseq_data.gse43916_salmon(units=units)),
         ('Friedmann-Morvinski et al.', rnaseq_data.gse73127_salmon(units=units)),
         ('Friedmann-Morvinski et al.', rnaseq_data.gse64411_salmon(units=units)),
-        ('Zhang et al.', rnaseq_data.gse52564_salmon(units=units)),
+        # ('Zhang et al.', rnaseq_data.gse52564_salmon(units=units)),
         ('Chen et al.', rnaseq_data.gse52125_salmon(units=units)),
         ('Yanez et al.', rnaseq_data.gse88982_salmon(units=units)),
         ('Lynch', rnaseq_data.gse78795_salmon(units=units)),
         ('Moyon et al.', rnaseq_data.gse66029_salmon(units=units)),
         ('Schmid et al.', rnaseq_data.gse75592_salmon(units=units)),
-        ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
+        # ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
     ]
 
     # drop unneeded and rename
@@ -181,12 +181,14 @@ if __name__ == '__main__':
     ref = pd.concat([t[1] for t in ref_dats], axis=1)
     ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
+    ref = ref.loc[:, ~ref.columns.str.contains('Normal brain')]
     ref = ref.loc[:, ~ref.columns.str.contains('GBM')]
     ref = ref.loc[:, ~ref.columns.str.contains('TrNeuron')]
     ref = ref.loc[:, ~ref.columns.str.contains('TrAstrocyte')]
     ref = ref.loc[:, ~ref.columns.str.contains('Tumour')]
     ref = ref.loc[:, ~ref.columns.str.contains('MP and cMoP')]
-    ref = ref.loc[:, ~ref.columns.str.contains('- lps')]
+    ref = ref.loc[:, ~ref.columns.str.contains('LPS')]
+    ref = ref.loc[:, ~ref.columns.str.contains(r'day [148]')]
 
     ref_by_gene = ref.groupby(genes).sum()
 
@@ -212,31 +214,59 @@ if __name__ == '__main__':
         # optionally could normalise here?
         pass
 
-    row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=[''])
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = '#7fc97f'  # green
-    row_colours_all.loc[row_colours_all.index.str.contains(r'[Nn]euron')] = '#fdc086'  # orange
-    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#96daff'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'Oligo')] = 'blue'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'OPC')] = 'yellow'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'MEF')] = '#fff89e'
-    # row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
-    # row_colours_all.loc[row_colours_all.index.str.contains('ES1')] = '#ff7777'
-    # row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
-    # row_colours_all.loc[row_colours_all.index.str.contains(r'Hippocamp.* astro')] = '#e78ac3'
-    # row_colours_all.loc[row_colours_all.index.str.contains(r'ctx .*astro')] = '#b3b3b3'
-    # row_colours_all.loc[row_colours_all.index.str.contains(r'oligo')] = '#fccde5'
+    # row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=['Cell type', 'Study'])
+    row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=['Cell type',])
 
-    for n_t in n_gene_try:
+    # cell type
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC'), 'Cell type'] = '#a5fff9' # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSLC'), 'Cell type'] = '#a5fff9' # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC'), 'Cell type'] = '#1eb9d8' # light blue
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Nn]euron'), 'Cell type'] = '#6dada9'  # teal
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte'), 'Cell type'] = '#ebff49' # yellow
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Oo]ligo'), 'Cell type'] = '#ffa8b3' # pale red
+    row_colours_all.loc[row_colours_all.index.str.contains(r'OPC'), 'Cell type'] = '#b70017' # dark red
+    row_colours_all.loc[row_colours_all.index.str.contains(r'MEF'), 'Cell type'] = '#f6ffaa' # pale yellow
+    row_colours_all.loc[row_colours_all.index.str.contains(r'ESC'), 'Cell type'] = '#8b33dd' # pale purple
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[iI]PSC'), 'Cell type'] = '#8b33dd' # pale purple
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Mm]icroglia'), 'Cell type'] = '#ffd8af' # pale orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Yanez'), 'Cell type'] = '#ffa03d' # orange
+    # these override previously-defined colours
+    row_colours_all.loc[row_colours.index.str.contains(r'eNSC[0-9]med'), 'Cell type'] = '#96ff9d' # pale green
+    row_colours_all.loc[row_colours.index.str.contains(r'eNSC[0-9]mouse'), 'Cell type'] = '#008408' # dark green
+    row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*mouse'), 'Cell type'] = '#3543ff' # dark blue
+    row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*human'), 'Cell type'] = '#c4c8ff' # pale blue
+
+    # study
+    # row_colours_all.loc[:, 'Study'] = '#96ff9d'
+    # for i in range(len(ref_dats)):
+    #     row_colours_all.loc[row_colours_all.index.str.contains(ref_dats[i][0]), 'Study'] = \
+    #         "%.3f" % np.linspace(0, 1, len(ref_dats))[i]
+
+    for n_t in n_gene_try + [abg.shape[0]]:
         fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
 
-        cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
-        cm.gs.update(bottom=0.3)
-        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+        # don't plot the clustermap with all genes
+        if n_t < abg.shape[0]:
+            cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
+            cm.gs.update(bottom=0.3)
+            cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
         fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
         d = clustering.dendrogram_with_colours(
             abg_log.loc[amad_log.index[:n_t]],
             row_colours_all,
-            fig_kws={'figsize': (10, 5.5)}
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
         )
         d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "all_samples_corrplot_log_top%d_by_mad.{ext}" % n_t
+        cm = clustering.plot_correlation_clustermap(
+            abg_log.loc[amad_log.index[:n_t]],
+            row_colors=row_colours_all,
+            n_gene=n_t,
+        )
+        plt.setp(cm.ax_heatmap.get_xticklabels(), rotation=90, fontsize=10)
+        plt.setp(cm.ax_heatmap.get_yticklabels(), rotation=0, fontsize=10)
+        cm.gs.update(bottom=0.35, right=0.65)
+        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
