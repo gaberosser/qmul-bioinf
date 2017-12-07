@@ -2218,7 +2218,7 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
 # all the loaders just work.
 
 def gse73721_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE73721')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
@@ -2251,6 +2251,119 @@ def gse84166_salmon(units='tpm'):
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
+
+def gse61794_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+# mouse data
+def mouse_nsc_salmon(units='tpm'):
+    # initial runs
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'mouse', 'salmon')
+
+    samples = ['eNSC%dmouse' % i for i in (3, 5, 6)] \
+    + ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] \
+    + ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
+
+    dat1 = load_salmon(count_dir, meta_fn, units=units, samples=samples)
+
+    # 3 x replacement runs
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
+    count_dir = os.path.join(indir, 'mouse', 'salmon')
+    samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
+    meta_fn = os.path.join(indir, 'sources.csv')
+
+    dat2 = load_salmon(count_dir, meta_fn, units=units, samples=samples)
+
+    return pd.concat((dat1, dat2), axis=1)
+
+
+def gse96950_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE96950')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse43916_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE43916')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse73127_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE73127')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse64411_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE64411')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'trimgalore', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse52564_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE52564')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse52125_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE52125')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse88982_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE88982')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse66029_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE66029')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse75592_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE75592')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse78795_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE78795')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse75246_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE75246')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse78938_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE78938')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
 
 
 def load_salmon(count_dir, meta_fn, samples=None, units='tpm'):

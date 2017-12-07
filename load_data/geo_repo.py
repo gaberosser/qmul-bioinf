@@ -96,12 +96,14 @@ def combine_metadata_from_series_matrices(*infiles):
     return pd.concat(mg, axis=0, ignore_index=True)
 
 
-def combine_geo_sra_metadata(geo_series_files, srp_id):
+def combine_geo_sra_metadata(geo_series_files, srp_id, add_all_sra=False):
     """
     Create a combined metadata table
     :param geo_series_files: Iterable of .txt or .txt.gz  filenames for series matrices, or a single string.
     will be passed to load_metadata_from_series_matrix
-    :param srp_id: SRPxxxxx project ID
+    :param srp_id: SRPxxxxx project ID (or PRJNAxxxx)
+    :param add_all_sra: If True, add ALL columns from the SRA runinfo table. Otherwise, just add the SRA
+    accessions (default)
     :return:
     """
     from sra import get_runinfo_table
@@ -118,10 +120,17 @@ def combine_geo_sra_metadata(geo_series_files, srp_id):
     g.insert(0, 'accession', g.index)
     g.index = meta_sra.index
 
-    combined = pd.concat((g, meta_sra), axis=1)
+    if add_all_sra:
+        combined = pd.concat((g, meta_sra), axis=1)
+        # rename columns for compatibility
+        # cols = combined.columns.tolist()
+        # combined.columns = cols
+    else:
+        combined = g
 
-    # rename columns for compatibility
-    cols = combined.columns.tolist()
-
-    combined.columns = cols
+    combined.index.name = 'filename'
+    if 'title' in combined.columns:
+        cols = combined.columns.tolist()
+        cols[cols.index('title')] = 'sample'
+        combined.columns = cols
     return combined
