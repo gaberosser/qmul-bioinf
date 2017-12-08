@@ -2,19 +2,21 @@ import math
 from pyscript import jobs, sge
 
 
-class StarSgeRequirements(sge.ApocritaJobMixin):
+class StarSgeRequirements(sge.ApocritaArrayJobMixin):
     min_ram_gb = 32.
     estimated_runtime_per_core = 720.
     @property
     def ram_per_core(self):
-        nthread = len(self.params)
+        nthread = int(self.args['threads'])
         # aim for minimum 32Gb
         gb_per_core = int(math.ceil(self.min_ram_gb / float(nthread)))
+        print "Num thread: %d" % nthread
+        print "Gb per core: %d" % gb_per_core
         return "%dG" % gb_per_core
 
     @property
     def runtime_mins(self):
-        nthread = len(self.params)
+        nthread = int(self.args['threads'])
         # roughly 60 mins with 12 cores
         return self.estimated_runtime_per_core / float(nthread)
 
@@ -57,11 +59,11 @@ class StarBase(jobs.ArrayJob):
         self.setup_params(self.args['read_dir'])
 
 
-class StarMultilanePEApocrita(StarBase, jobs.PEFastqIlluminaMultiLaneMixin, StarSgeRequirements):
+class StarMultilanePEApocrita(StarSgeRequirements, StarBase, jobs.PEFastqIlluminaMultiLaneMixin):
     pass
 
 
-class StarMultilanePEBash(StarBase, jobs.PEFastqIlluminaMultiLaneMixin, jobs.BashJobMixin):
+class StarMultilanePEBash(jobs.BashArrayJobMixin, StarBase, jobs.PEFastqIlluminaMultiLaneMixin):
     pass
 
 
@@ -69,7 +71,7 @@ class StarPEApocrita(StarBase, jobs.PEFastqFileIteratorMixin, StarSgeRequirement
     pass
 
 
-class StarPEBash(StarBase, jobs.PEFastqFileIteratorMixin, jobs.BashJobMixin):
+class StarPEBash(StarBase, jobs.PEFastqFileIteratorMixin, jobs.BashArrayJobMixin):
     pass
 
 
@@ -77,5 +79,5 @@ class StarSEApocrita(StarBase, jobs.SEFastqFileIteratorMixin, StarSgeRequirement
     pass
 
 
-class StarSEBash(StarBase, jobs.SEFastqFileIteratorMixin, jobs.BashJobMixin):
+class StarSEBash(StarBase, jobs.SEFastqFileIteratorMixin, jobs.BashArrayJobMixin):
     pass

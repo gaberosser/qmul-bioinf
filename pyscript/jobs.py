@@ -37,9 +37,31 @@ def tracking_files_boilerplate(submitted_fn, completed_fn):
 
 
 class BashJobMixin(object):
+    def shebang(self):
+        """
+        Generate the shebang line(s) for the top of the script
+        :return:
+        """
+        # Default behaviour: run with bash
+        return "#!/bin/bash\n\n"
+
     def submit(self):
         print "Bash submit()"
         subprocess.call(['bash', self.script_fn])
+
+
+class BashArrayJobMixin(BashJobMixin):
+    def generate_script(self):
+        """
+        Generate the full script object (in a list, to be joined with newlines)
+        Set the self.sh variable
+        We can make use of self.shebang(), self.script_body()
+        """
+        sh = [
+            self.shebang(),
+            "for SGE_TASK_ID in $(seq {n}); do".format(n=len(self.params)),
+        ] + self.script_body() + ['done']
+        self.sh = sh
 
 
 class Job(object):
@@ -166,11 +188,10 @@ class Job(object):
 
     def shebang(self):
         """
-        Generate the shebang line(s) for the top of the script
+        Implement this in a mixin.
         :return:
         """
-        # Default behaviour: run with bash
-        return "#!/bin/bash\n\n"
+        raise NotImplementedError()
 
     def core_command(self):
         """
@@ -237,7 +258,7 @@ class ArrayJob(Job):
             c = csv.writer(f, delimiter=self.param_delim, lineterminator='\n')  # IMPORTANT: the lineterminator command prevents carriage returns
             c.writerows(self.params)
 
-    def generate_script(self):
+    def script_body(self):
         # generate core
         cmd = self.core_command()
 
@@ -249,8 +270,8 @@ class ArrayJob(Job):
         read_params_str = array_params_boilerplate(self.params_fn, argnames, sep=self.param_delim)
 
         sh = [
-            self.shebang(),
-            "for SGE_TASK_ID in $(seq {n}); do".format(n=len(self.params)),
+            # self.shebang(),
+            # "for SGE_TASK_ID in $(seq {n}); do".format(n=len(self.params)),
             read_params_str,
             submit,
             '\n'
@@ -280,9 +301,16 @@ class ArrayJob(Job):
             sh.append("STATUS=1  # set this so that the task is not marked as completed")
             sh.append("fi")
         sh.append(complete)
-        sh.append('done')
+        # sh.append('done')
 
-        self.sh = sh
+        return sh
+
+    def generate_script(self):
+        """
+        Implement this in a mixin
+        :return:
+        """
+        raise NotImplementedError()
 
 
 def filename_to_name(fname, ext, cleanup_regex_arr=None):

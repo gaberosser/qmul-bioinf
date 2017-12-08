@@ -74,3 +74,13 @@ class ApocritaJobMixin(object):
     def submit(self):
         print "Apocrita submit()"
         subprocess.call(['qsub', self.script_fn])
+
+
+class ApocritaArrayJobMixin(ApocritaJobMixin):
+    def generate_script(self):
+        """
+        Generate the full script object (in a list, to be joined with newlines)
+        Set the self.sh variable
+        We can make use of self.shebang(), self.script_body()
+        """
+        self.sh = [self.shebang()] + self.script_body()
