@@ -53,10 +53,14 @@ class Job(object):
             self,
             out_dir=os.path.abspath('.'),
             extra_args=tuple(),
+            include=None,
+            exclude=None,
             **kwargs
     ):
         self.out_dir = os.path.abspath(out_dir)
         self.now_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self.include = include
+        self.exclude = exclude
 
         # initiate logger
         self.logger = None
@@ -212,6 +216,7 @@ class ArrayJob(Job):
         # format: (name as it appears in bash script, bash check or None)
         # ('$param_name', '! -z')
     ]
+    param_delim = ','
 
     def __init__(self, *args, **kwargs):
         self.params = []
@@ -229,7 +234,7 @@ class ArrayJob(Job):
         self.params_fn = os.path.join(self.out_dir, "%s.%s.params" % (self.title, self.now_str))
         self.logger.info("Generating parameters file for %d runs: %s", len(self.run_names), ', '.join(self.run_names))
         with open(self.params_fn, 'wb') as f:
-            c = csv.writer(f, lineterminator='\n')  # IMPORTANT: the lineterminator command prevents carriage returns
+            c = csv.writer(f, delimiter=self.param_delim, lineterminator='\n')  # IMPORTANT: the lineterminator command prevents carriage returns
             c.writerows(self.params)
 
     def generate_script(self):
@@ -241,7 +246,7 @@ class ArrayJob(Job):
 
         # reading parameters from file
         argnames = [t[0].replace('$', '') for t in self.parameters]
-        read_params_str = array_params_boilerplate(self.params_fn, argnames)
+        read_params_str = array_params_boilerplate(self.params_fn, argnames, sep=self.param_delim)
 
         sh = [
             self.shebang(),
@@ -319,6 +324,16 @@ class FileIteratorMixin(object):
         # check for existing output and identify pairs of files
         for t in flist:
             base = filename_to_name(t, self.ext, cleanup_regex_arr=self.cleanup_regex)
+
+            if self.include is not None:
+                if base not in self.include:
+                    self.logger.info("Skipping file %s as it is not in the list of included files", base)
+                    continue
+            if self.exclude is not None:
+                if base in self.exclude:
+                    self.logger.info("Skipping file %s as it is in the list of excluded files", base)
+                    continue
+
             out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
             # if output file exists, log warning and skip
             if self.skip_non_empty and os.path.isdir(out_subdir):
@@ -348,6 +363,16 @@ class PairedFileIteratorMixin(FileIteratorMixin):
         # check for existing output and identify pairs of files
         for t in flist:
             base, read_num = filename_to_name_and_read_num(t, self.ext, cleanup_regex_arr=self.cleanup_regex)
+
+            if self.include is not None:
+                if base not in self.include:
+                    self.logger.info("Skipping file %s as it is not in the list of included files", base)
+                    continue
+            if self.exclude is not None:
+                if base in self.exclude:
+                    self.logger.info("Skipping file %s as it is in the list of excluded files", base)
+                    continue
+
             rec.setdefault(base, {})
 
             if 'out_subdir' not in rec[base]:
@@ -414,6 +439,7 @@ class PEFastqIlluminaMultiLaneMixin(PairedFileIteratorMixin):
         (r'_[12]$', ''),
         ('^WTCHG_[0-9]+_', ''),  # specific to WTCHG, but otherwise ignored
     ]
+    file_sep = ','  # the character used to separate files of the same read number in different lanes
 
     def setup_params(self, read_dir, *args, **kwargs):
         self.params = []
@@ -430,6 +456,16 @@ class PEFastqIlluminaMultiLaneMixin(PairedFileIteratorMixin):
             flist = [t for t in os.listdir(d) if re.search(rr, t)]
             for t in flist:
                 base, read_num = filename_to_name_and_read_num(t, self.ext, cleanup_regex_arr=self.cleanup_regex)
+
+                if self.include is not None:
+                    if base not in self.include:
+                        self.logger.info("Skipping file %s as it is not in the list of included files", base)
+                        continue
+                if self.exclude is not None:
+                    if base in self.exclude:
+                        self.logger.info("Skipping file %s as it is in the list of excluded files", base)
+                        continue
+
                 to_join.setdefault(base, {}).setdefault(d, {})[read_num] = os.path.join(d, t)
 
         n = None
@@ -478,7 +514,7 @@ class PEFastqIlluminaMultiLaneMixin(PairedFileIteratorMixin):
             this_param = [base]
             for i in [1, 2]:
                 # join equivalent read files with a space
-                this_param.append(' '.join(rec[base][i]))
+                this_param.append(self.file_sep.join(rec[base][i]))
             this_param.append(out_subdir)
             if re.search(r'\.gz$', rec[base][1][0], flags=re.IGNORECASE):
                 this_param.append('gz')

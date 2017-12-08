@@ -37,6 +37,6 @@ if __name__ == "__main__":
     if args.exclude is not None:
         args.exclude = args.exclude.split(',')
 
-    obj = star.StarMultilanePEApocrita(extra_args=extra, **args.__dict__)
+    obj = star.StarMultilanePEBash(extra_args=extra, **args.__dict__)
     obj.create_script()
     obj.submit()
