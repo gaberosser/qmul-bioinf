@@ -139,18 +139,18 @@ if __name__ == '__main__':
 
     # bring in reference data
     ref_dats = [
-        ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
+        # ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
         ('Liu et al.', rnaseq_data.gse96950_salmon(units=units)),
         ('Wapinski et al.', rnaseq_data.gse43916_salmon(units=units)),
-        ('Friedmann-Morvinski et al.', rnaseq_data.gse73127_salmon(units=units)),
-        ('Friedmann-Morvinski et al.', rnaseq_data.gse64411_salmon(units=units)),
+        # ('Friedmann-Morvinski et al.', rnaseq_data.gse73127_salmon(units=units)),
+        # ('Friedmann-Morvinski et al.', rnaseq_data.gse64411_salmon(units=units)),
         # ('Zhang et al.', rnaseq_data.gse52564_salmon(units=units)),
-        ('Chen et al.', rnaseq_data.gse52125_salmon(units=units)),
+        # ('Chen et al.', rnaseq_data.gse52125_salmon(units=units)),
         ('Yanez et al.', rnaseq_data.gse88982_salmon(units=units)),
         ('Lynch', rnaseq_data.gse78795_salmon(units=units)),
         ('Moyon et al.', rnaseq_data.gse66029_salmon(units=units)),
         ('Schmid et al.', rnaseq_data.gse75592_salmon(units=units)),
-        # ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
+        ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
     ]
 
     # drop unneeded and rename

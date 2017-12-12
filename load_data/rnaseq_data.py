@@ -73,6 +73,7 @@ class RnaSeqFileLocations(object):
 wtchg_p160704 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704'),
     lanes=['161222_K00198_0152_AHGYG3BBXX', '161219_K00198_0151_BHGYHTBBXX'],
+    alignment_subdir='human'
 )
 
 wtchg_p170218 = RnaSeqFileLocations(
@@ -98,6 +99,7 @@ wtchg_p170503 = RnaSeqFileLocations(
         '171003_K00198_0242_AHLGYVBBXX_1',
         '171003_K00198_0242_AHLGYVBBXX_2'
     ],
+    alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero = RnaSeqFileLocations(
@@ -105,6 +107,7 @@ wtchg_p160704_ribozero = RnaSeqFileLocations(
     lanes=[
         '170328_K00150_0177_BHJ2C2BBXX',
     ],
+    alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero2 = RnaSeqFileLocations(
@@ -113,6 +116,7 @@ wtchg_p160704_ribozero2 = RnaSeqFileLocations(
         '170905_K00150_0238_BHLFMVBBXX',
         '170907_K00150_0239_AHLFL2BBXX',
     ],
+    alignment_subdir='human'
 )
 
 wtchg_p170446 = RnaSeqFileLocations(
@@ -121,6 +125,7 @@ wtchg_p170446 = RnaSeqFileLocations(
         '170905_K00150_0238_BHLFMVBBXX',
         '170907_K00150_0239_AHLFL2BBXX',
     ],
+    alignment_subdir='human'
 )
 
 wtchg_p170582 = RnaSeqFileLocations(
@@ -2280,6 +2285,75 @@ def mouse_nsc_salmon(units='tpm'):
     dat2 = load_salmon(count_dir, meta_fn, units=units, samples=samples)
 
     return pd.concat((dat1, dat2), axis=1)
+
+
+def mouse_nsc_star():
+    # initial runs
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'mouse', 'star_alignment')
+
+    samples = ['eNSC%dmouse' % i for i in (3, 5, 6)] \
+    + ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] \
+    + ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
+
+    dat1 = load_star(count_dir, meta_fn, 'r', samples=samples)
+
+    # 3 x replacement runs
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
+    count_dir = os.path.join(indir, 'mouse', 'star_alignment')
+    samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
+    meta_fn = os.path.join(indir, 'sources.csv')
+
+    dat2 = load_star(count_dir, meta_fn, 'r', samples=samples)
+
+    return pd.concat((dat1, dat2), axis=1)
+
+
+def load_star(count_dir, meta_fn, strandedness, samples=None):
+    if strandedness == 'u':
+        idx = 0
+    elif strandedness == 'f':
+        idx = 1
+    elif strandedness == 'r':
+        idx = 2
+    else:
+        raise ValueError("Unrecognised strandedness option. Should be one of 'u', 'f', 'r'.")
+
+    meta = pd.read_csv(meta_fn, header=0, index_col=0).loc[:, 'sample']
+    meta.index = meta.index.astype(str)
+    if samples is not None:
+        meta = meta.loc[meta.isin(samples)]
+        # TODO: warn if unexpected number
+    else:
+        samples = meta.values
+
+    data = None
+
+    data_files = []
+    snames = []
+    for i, sn in meta.iteritems():
+        df = os.path.join(count_dir, '%sReadsPerGene.out.tab' % i)
+        if os.path.isfile(df):
+            data_files.append(df)
+            snames.append(sn)
+
+    if len(snames) != len(samples):
+        missing = set(samples).difference(snames)
+        print "Expected %d samples, found %d. Missing: %s" % (len(samples), len(snames), ', '.join(missing))
+        samples = snames
+
+    # load
+    for df, sn in zip(data_files, snames):
+        the_dat = pd.read_csv(df, header=None, index_col=0, sep='\t')
+        the_dat = the_dat.iloc[:, idx]
+
+        if data is None:
+            data = pd.DataFrame(index=the_dat.index, columns=samples)
+        data.loc[:, sn] = the_dat
+
+    return data.astype(float)
+
 
 
 def gse96950_salmon(units='tpm'):
