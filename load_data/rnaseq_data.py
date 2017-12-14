@@ -537,7 +537,7 @@ class MultipleFileCountLoader(CountDatasetLoader):
             # pick out all files in the directory
             file_ext = kwargs.get('file_ext', self.__class__.default_file_ext)
             if not os.path.exists(count_dir):
-                raise ValueError("Supplied count_dir does not exist")
+                raise ValueError("Supplied count_dir %s does not exist" % count_dir)
             flist = glob.glob(os.path.join(count_dir, '*%s' % file_ext))
             self.data_files = []
             for f in flist:
