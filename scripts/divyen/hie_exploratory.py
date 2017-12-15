@@ -6,6 +6,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 from scipy import stats
+from statsmodels import api as sm
 
 from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
@@ -15,7 +16,7 @@ BIOMARKERS = [
     'Plt',
     'Neutrophil',
     'Lymphocyte',
-    'PT',
+    # 'PT',  # PT test and INR are highly related
     'INR',
     'APTT',
     'Urea',
@@ -61,6 +62,7 @@ if __name__ == "__main__":
     )]
     outcomes = dat.loc[:, OUTCOME_COL]
 
+    # vals_outcomes = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS + [OUTCOME_COL]]
 
     # standardize - necessary when using array plots to keep the range the same
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
@@ -86,6 +88,9 @@ if __name__ == "__main__":
     for i, bt in enumerate(batches[1]):
         idx = batches[0] == i
         ax.scatter(pp[idx, 0], pp[idx, 1], c=colours[i], label=bt)
+
+    fig.savefig(os.path.join(outdir, "pca_by_batch.pdf"))
+    fig.savefig(os.path.join(outdir, "pca_by_batch.png"), dpi=200)
 
     # does peak/trough value correlate with age?
     val_age_corr = {
@@ -240,6 +245,26 @@ if __name__ == "__main__":
 
     ax.scatter(y[fav_idx, 0], y[fav_idx, 1], c='b')
     ax.scatter(y[unfav_idx, 0], y[unfav_idx, 1], c='g')
+
+    # statsmodels logistic regression
+
+    peaks_dat_const = sm.add_constant(peaks_dat)
+    est = sm.OLS(outcomes, peaks_dat_const)
+    est2 = est.fit()
+    print est2.summary()
+
+    # decision tree classifier
+    from sklearn import tree
+    import graphviz
+    clf = tree.DecisionTreeClassifier()
+    clf = clf.fit(peaks_dat, outcomes)
+    dot_data = tree.export_graphviz(clf, out_file=None, feature_names=peaks_dat.columns, class_names=['Unfav', 'Fav'],
+                                    filled = True, rounded = True)
+    graph = graphviz.Source(dot_data)
+    graph.render(os.path.join())# TODO
+
+
+    # decision tree regression
 
     from sklearn.linear_model import LogisticRegression
     logistic = LogisticRegression(C=1)  # what is C?

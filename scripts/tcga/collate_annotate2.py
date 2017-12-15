@@ -68,7 +68,24 @@ def load_one_methylation(indir, fid, fname, col_name=None):
     return the_col
 
 
-def load_files(indir, loader, meta_fn=None, sample_types=('Primary Tumor',)):
+def load_one_microarray(indir, fid, fname, col_name=None):
+    fn = os.path.join(indir, fid, fname)
+    the_col = pd.read_csv(fn, sep='\t', index_col=0, header=0).iloc[1:, 0]
+    # only keep genes
+    the_col.index.name = 'gene_symbol'
+    # rename
+    if col_name is not None:
+        the_col.name = col_name
+    return the_col
+
+
+def load_files(
+        indir,
+        loader,
+        meta_fn=None,
+        sample_types=('Primary Tumor',),
+        filetype=None
+):
     sample_types = set(sample_types)
 
     if meta_fn is None:
@@ -86,7 +103,10 @@ def load_files(indir, loader, meta_fn=None, sample_types=('Primary Tumor',)):
         fid = m['file_id']
         fname = m['file_name']
 
-        ftype = get_filetype(fname)
+        if filetype is None:
+            ftype = get_filetype(fname)
+        else:
+            ftype = filetype
 
         if len(m['cases']) > 1:
             raise AttributeError("Unexpectedly encountered >1 cases attributed to a single file: %s." % repr(m))
@@ -132,19 +152,22 @@ def save_to_disk(dat, filestem):
     # save to disk: CSV and Excel formats
     xl_writer = pd.ExcelWriter("%s.xlsx" % filestem)
     for ftype, t in dat.items():
-        fn = os.path.join(outdir, "%s.%s.csv" % (ftype, filestem))
+        fn = "%s.%s.csv" % (filestem, ftype)
         t.to_csv(fn)
         t.to_excel(xl_writer, ftype)
     xl_writer.save()
 
 
 if __name__ == "__main__":
+    outdir = unique_output_dir("tcga_gbm_data", reuse_empty=True)
+
     # RNA-Seq
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'raw')
-    outdir = unique_output_dir("tcga_gbm_rnaseq", reuse_empty=True)
     rnaseq_info, rnaseq_dat = load_files(indir, loader=load_one_rnaseq)
     fout = os.path.join(outdir, "rnaseq")
     save_to_disk(rnaseq_dat, fout)
+    fout = os.path.join(outdir, "rnaseq.meta")
+    save_to_disk(rnaseq_info, fout)
 
     # Methylation (27K)
     indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'raw_27k')
@@ -156,3 +179,22 @@ if __name__ == "__main__":
     meth450_info, meth450_dat = load_files(indir, loader=load_one_methylation)
     meth450_dat = meth450_dat['methylation_450k'].dropna(how='all', axis=0)
 
+    meth_dat = dict(methylation_450k=meth450_dat, methylation_27k=meth27_dat)
+    meth_info = dict(methylation_450k=meth450_info, methylation_27k=meth27_info)
+    fout = os.path.join(outdir, 'methylation_array')
+    save_to_disk(meth_dat, fout)
+    fout = os.path.join(outdir, 'methylation_array.meta')
+    save_to_disk(meth_info, fout)
+
+    # arrays
+    array_types = ['raw_agilentg4502a_07_1', 'raw_agilentg4502a_07_2', 'raw_ht_hg_u133a']
+    marr_dat = {}
+    marr_info = {}
+    root_dir = os.path.join(DATA_DIR_NON_GIT2, 'microarray', 'tcga_gbm', 'primary_tumour', 'raw')
+    for at in array_types:
+        marr_info[at], the_dat = load_files(os.path.join(root_dir, at), loader=load_one_microarray, filetype=at)
+        marr_dat[at] = the_dat[at].dropna(how='all', axis=0)
+    fout = os.path.join(outdir, 'microarray')
+    save_to_disk(marr_dat, fout)
+    fout = os.path.join(outdir, 'microarray.meta')
+    save_to_disk(marr_info, fout)
