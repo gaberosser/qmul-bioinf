@@ -12,9 +12,9 @@ from settings import DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2
 
 
 file_types = [
-    (r'\.htseq\.counts$', 'htseq'),
-    (r'\.FPKM\.txt$', 'fpkm'),
-    (r'\.FPKM-UQ\.txt$', 'fpkm-uq'),
+    (r'\.htseq\.counts', 'htseq'),
+    (r'\.FPKM\.txt', 'fpkm'),
+    (r'\.FPKM-UQ\.txt', 'fpkm-uq'),
     (r'HumanMethylation27', 'methylation_27k'),
     (r'HumanMethylation450', 'methylation_450k'),
 ]
@@ -83,7 +83,7 @@ def load_files(
         indir,
         loader,
         meta_fn=None,
-        sample_types=('Primary Tumor',),
+        sample_types=('Primary Tumor', 'Solid Tissue Normal'),
         filetype=None
 ):
     sample_types = set(sample_types)
@@ -148,12 +148,17 @@ def load_files(
     return info, dat
 
 
-def save_to_disk(dat, filestem):
+def save_to_disk(dat, filestem, compress=True):
     # save to disk: CSV and Excel formats
     xl_writer = pd.ExcelWriter("%s.xlsx" % filestem)
     for ftype, t in dat.items():
         fn = "%s.%s.csv" % (filestem, ftype)
-        t.to_csv(fn)
+        if compress:
+            fn = "%s.%s.csv.gz" % (filestem, ftype)
+            t.to_csv(fn, compression='gzip')
+        else:
+            fn = "%s.%s.csv" % (filestem, ftype)
+            t.to_csv(fn)
         t.to_excel(xl_writer, ftype)
     xl_writer.save()
 
@@ -161,33 +166,52 @@ def save_to_disk(dat, filestem):
 if __name__ == "__main__":
     outdir = unique_output_dir("tcga_gbm_data", reuse_empty=True)
 
-    # RNA-Seq
+    # RNA-Seq primary tumour
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'raw')
     rnaseq_info, rnaseq_dat = load_files(indir, loader=load_one_rnaseq)
     fout = os.path.join(outdir, "rnaseq")
-    save_to_disk(rnaseq_dat, fout)
+    save_to_disk(rnaseq_dat, fout, compress=True)
     fout = os.path.join(outdir, "rnaseq.meta")
-    save_to_disk(rnaseq_info, fout)
+    rnaseq_info.to_csv("%s.csv" % fout)
+    rnaseq_info.to_excel("%s.xlsx" % fout)
+
+    # RNA-Seq solid tissue normal
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'solid_tissue_normal', 'raw')
+    rnaseq_norm_info, rnaseq_norm_dat = load_files(indir, loader=load_one_rnaseq)
+    fout = os.path.join(outdir, "rnaseq_normal")
+    save_to_disk(rnaseq_norm_dat, fout, compress=True)
+    fout = os.path.join(outdir, "rnaseq_normal.meta")
+    rnaseq_norm_info.to_csv("%s.csv" % fout)
+    rnaseq_norm_info.to_excel("%s.xlsx" % fout)
 
     # Methylation (27K)
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'raw_27k')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'raw', '27k')
     meth27_info, meth27_dat = load_files(indir, loader=load_one_methylation)
     meth27_dat = meth27_dat['methylation_27k'].dropna(how='all', axis=0)
+    meth27_dat.to_csv(os.path.join(outdir, "methylation.27k.csv.gz"), compression='gzip')
+    meth27_dat.to_excel(os.path.join(outdir, "methylation.27k.xlsx"))
+    meth27_info.to_csv(os.path.join(outdir, "methylation.27k.meta.csv"))
+    meth27_info.to_excel(os.path.join(outdir, "methylation.27k.meta.xlsx"))
 
     # Methylation (450K)
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'raw_450k')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'raw', '450k')
     meth450_info, meth450_dat = load_files(indir, loader=load_one_methylation)
     meth450_dat = meth450_dat['methylation_450k'].dropna(how='all', axis=0)
+    meth450_dat.to_csv(os.path.join(outdir, "methylation.450k.csv.gz"), compression='gzip')
+    # meth450_dat.to_excel(os.path.join(outdir, "methylation.450k.xlsx"))
+    meth450_info.to_csv(os.path.join(outdir, "methylation.450k.meta.csv"))
+    meth450_info.to_excel(os.path.join(outdir, "methylation.450k.meta.xlsx"))
 
-    meth_dat = dict(methylation_450k=meth450_dat, methylation_27k=meth27_dat)
-    meth_info = dict(methylation_450k=meth450_info, methylation_27k=meth27_info)
-    fout = os.path.join(outdir, 'methylation_array')
-    save_to_disk(meth_dat, fout)
-    fout = os.path.join(outdir, 'methylation_array.meta')
-    save_to_disk(meth_info, fout)
+    # Methylation (450K) solid tissue normal
+    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'solid_tissue_normal', 'raw', '450k')
+    meth450_norm_info, meth450_norm_dat = load_files(indir, loader=load_one_methylation)
+    meth450_norm_dat = meth450_norm_dat['methylation_450k'].dropna(how='all', axis=0)
+    meth450_norm_dat.to_csv(os.path.join(outdir, "methylation_normal.450k.csv.gz"), compression='gzip')
+    meth450_norm_info.to_csv(os.path.join(outdir, "methylation_normal.450k.meta.csv"))
+    meth450_norm_info.to_excel(os.path.join(outdir, "methylation_normal.450k.meta.xlsx"))
 
     # arrays
-    array_types = ['raw_agilentg4502a_07_1', 'raw_agilentg4502a_07_2', 'raw_ht_hg_u133a']
+    array_types = ['agilentg4502a_07_1', 'agilentg4502a_07_2', 'ht_hg_u133a']
     marr_dat = {}
     marr_info = {}
     root_dir = os.path.join(DATA_DIR_NON_GIT2, 'microarray', 'tcga_gbm', 'primary_tumour', 'raw')
@@ -197,4 +221,4 @@ if __name__ == "__main__":
     fout = os.path.join(outdir, 'microarray')
     save_to_disk(marr_dat, fout)
     fout = os.path.join(outdir, 'microarray.meta')
-    save_to_disk(marr_info, fout)
+    save_to_disk(marr_info, fout, compress=False)

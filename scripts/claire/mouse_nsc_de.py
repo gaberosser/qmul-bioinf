@@ -13,6 +13,8 @@ if __name__ == '__main__':
     fdr = 0.01
 
     dat = rnaseq_data.mouse_nsc_star()
+    idx = dat.columns.str.contains(r'eNSC[0-9]med') | dat.columns.str.contains(r'mDura[0-9AN]*human')
+    dat = dat.loc[:, idx]
     the_groups = pd.Series('eNSC', index=dat.columns)
     the_groups[dat.columns.str.contains('mDura')] = 'iNSC'
     the_contrast = 'iNSC - eNSC'

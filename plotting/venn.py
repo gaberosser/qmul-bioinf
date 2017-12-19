@@ -37,7 +37,7 @@ def venn4(data, set_labels=None, show_names=True, ax=None, **kwds):
             figsize = (10, 10)
 
         fig = plt.figure(figsize=figsize)  # set figure size
-        ax = fig.gca()
+        ax = fig.add_subplot(111)
 
     # set colors for different Circles or ellipses
     if 'colors' in kwds and isinstance(kwds['colors'], Iterable) and len(kwds['colors']) >= 4:
