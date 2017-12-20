@@ -121,16 +121,16 @@ if __name__ == "__main__":
         'method': 'GLM'
     }
 
-    dmr_params = {
-        'core_min_sample_overlap': 3,  # 3 / 4 samples must match
-        'd_max': 400,
-        'n_min': 6,
-        'delta_m_min': 1.4,
-        'fdr': 0.01,
-        'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
-        'test_kwargs': {},
-        'n_jobs': 8,
-    }
+    # dmr_params = {
+    #     'core_min_sample_overlap': 3,  # 3 / 4 samples must match
+    #     'd_max': 400,
+    #     'n_min': 6,
+    #     'delta_m_min': 1.4,
+    #     'fdr': 0.01,
+    #     'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
+    #     'test_kwargs': {},
+    #     'n_jobs': 8,
+    # }
 
     # Load RNA-Seq from STAR
     rnaseq_obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
@@ -155,26 +155,28 @@ if __name__ == "__main__":
     salmon_dat = salmon_dat.loc[:, ~salmon_dat.columns.str.contains('IPSC')]
 
 
-    # filter to remove genes that are not expressed sufficiently
-    # this is only used in the group comparison - individual samples are filtered separately in batches
-
     de_res = compute_cross_de(rnaseq_obj, pids, **de_params)
-    # de = de_res['de']
 
-    # now we need to compare the paired resulits with every other result (Gibco and other iNSC)
+    # counts of DE genes
+    de_counts = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    for pid in pids:
+        for pid2 in pids + ['GIBCO']:
+            de_counts.loc[pid, pid2] = de_res[(pid, pid2)].shape[0]
+
+    # now we need to compare the paired results with every other result (Gibco and other iNSC)
     pair_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
     ref_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
     pair_and_ref_concordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
     pair_and_ref_discordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    # loop over GBM samples
     for pid in pids:
+        # syngeneic comparison
         the_pair = de_res[(pid, pid)]
-        for pid2 in pids + ['GIBCO']:
-            # if pid2 == pid:
-            #     pair_only.loc[pid, pid2] = pd.Index([])
-            #     ref_only.loc[pid, pid2] = pd.Index([])
-            #     pair_and_ref_concordant.loc[pid, pid2] = pd.Index([])
-            #     pair_and_ref_discordant.loc[pid, pid2] = pd.Index([])
 
+        # loop over (i)NSC samples
+        # when this is the same as the syngeneic comparison, there will (obviously) be no 'pair only' or 'ref only'
+        # genes!
+        for pid2 in pids + ['GIBCO']:
             the_ref = de_res[(pid, pid2)]
             the_sets, _ = setops.venn_from_arrays(the_pair.index, the_ref.index)
             pair_only.loc[pid, pid2] = the_sets['10']
@@ -185,7 +187,8 @@ if __name__ == "__main__":
             pair_and_ref_discordant.loc[pid, pid2] = the_pair.loc[the_sets['11']].loc[~the_conc_idx].index
 
     # can get counts like this
-    pair_only.applymap(len)
+    po_counts = pair_only.applymap(len)
+    ro_counts = ref_only.applymap(len)
 
     # look at intersection of Gibco and all others for a given GBM
     po_int_gibco = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
@@ -194,7 +197,7 @@ if __name__ == "__main__":
         po_int_gibco.loc[pid] = pair_only.loc[pid].apply(lambda x: sorted(set(x).intersection(the_ref)))
     po_pct_overlap_with_gibco = po_int_gibco.applymap(len) / pair_only.applymap(len) * 100.
 
-    # now look at it the other way: what is present in X vs Y_i that isn't in any other Y?
+    # now look at it the other way: what is present in X vs Y_i that isn't in X vs any other Y?
     po_diff = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
     for pid in pids:
         for pid2 in pair_only.columns:

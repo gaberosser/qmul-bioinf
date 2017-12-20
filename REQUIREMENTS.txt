@@ -7,3 +7,4 @@ xlrd
 ipython
 matplotlib_venn
 statsmodels
+python-pptx
