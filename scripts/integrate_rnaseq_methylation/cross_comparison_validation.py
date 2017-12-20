@@ -190,6 +190,16 @@ if __name__ == "__main__":
     po_counts = pair_only.applymap(len)
     ro_counts = ref_only.applymap(len)
 
+    ## TODO: I *think* this is what we discussed at the meeting - genes that must be pair only in every comparison?
+    po_each = [
+        sorted(
+            reduce(lambda x, y: set(x).intersection(y), pair_only.loc[pid, ~pair_only.columns.str.contains(pid)])
+        ) for pid in pids
+    ]
+    po_each = pd.Series(po_each, index=pids)
+
+    ## TODO: fix from here
+
     # look at intersection of Gibco and all others for a given GBM
     po_int_gibco = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
     for pid in pids:
