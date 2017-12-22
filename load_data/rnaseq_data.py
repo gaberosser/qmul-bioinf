@@ -16,32 +16,24 @@ INDEX_FIELDS = (
 )
 
 class RnaSeqFileLocations(object):
-    def __init__(self, root_dir, lanes, alignment_subdir=None, strandedness='r'):
+    def __init__(self, root_dir, alignment_subdir=None, strandedness='r'):
         self.root_dir = root_dir
         self.strandedness = strandedness
         self.alignment_subdir = alignment_subdir
-        self.lane_dirs = [os.path.join(root_dir, l) for l in lanes]
-        self.meta_files = [os.path.join(d, 'sources.csv') for d in self.lane_dirs]
-        self.root_meta_file = os.path.join(self.root_dir, 'sources.csv')
+        self.base_dir = self.root_dir if alignment_subdir is None else os.path.join(self.root_dir, self.alignment_subdir)
+        self.meta_file = os.path.join(self.root_dir, 'sources.csv')
 
         self.params = dict(star={}, salmon={})
-
-        if self.alignment_subdir is None:
-            base_dirs = self.lane_dirs
-            self.params['salmon']['count_dir'] = os.path.join(self.root_dir, 'salmon')
-        else:
-            base_dirs = [os.path.join(d, self.alignment_subdir) for d in self.lane_dirs]
-            self.params['salmon']['count_dir'] = os.path.join(self.root_dir, self.alignment_subdir, 'salmon')
-
-        self.params['star']['count_dirs'] = [os.path.join(d, 'star_alignment') for d in base_dirs]
+        self.params['salmon']['count_dir'] = os.path.join(self.base_dir, 'salmon')
+        self.params['star']['count_dir'] = os.path.join(self.base_dir, 'star_alignment')
         self.params['star']['cufflinks'] = {}
-        self.params['star']['cufflinks']['count_dirs'] = [os.path.join(d, 'star_alignment', 'cufflinks') for d in base_dirs]
+        self.params['star']['cufflinks']['count_dir'] = os.path.join(self.base_dir, 'star_alignment', 'cufflinks')
 
     @property
     def star_loader_kwargs(self):
         return {
-            'count_dirs': self.params['star']['count_dirs'],
-            'meta_fns': self.meta_files,
+            'count_dir': self.params['star']['count_dir'],
+            'meta_fn': self.meta_file,
             'strandedness': self.strandedness
         }
 
@@ -49,14 +41,14 @@ class RnaSeqFileLocations(object):
     def salmon_loader_kwargs(self):
         return {
             'count_dir': self.params['salmon']['count_dir'],
-            'meta_fn': self.root_meta_file
+            'meta_fn': self.meta_file
         }
 
     @property
     def star_cufflinks_kwargs(self):
         return {
-            'count_dirs': self.params['star']['cufflinks']['count_dirs'],
-            'meta_fns': self.meta_files
+            'count_dir': self.params['star']['cufflinks']['count_dir'],
+            'meta_fn': self.meta_file
         }
 
     def loader_kwargs(self, typ):
@@ -72,76 +64,46 @@ class RnaSeqFileLocations(object):
 
 wtchg_p160704 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704'),
-    lanes=['161222_K00198_0152_AHGYG3BBXX', '161219_K00198_0151_BHGYHTBBXX'],
     alignment_subdir='human'
 )
 
 wtchg_p170218 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218'),
-    lanes=['170509_K00150_0192_BHJKCLBBXX', '170515_K00150_0196_BHJKC5BBXX_lane_2', '170515_K00150_0196_BHJKC5BBXX_lane_3'],
     alignment_subdir='human'
 )
 
 wtchg_p170390 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390'),
-    lanes=[
-        '170727_K00198_0222_AHKWW5BBXX',
-        '170731_K00150_0226_AHL2CJBBXX_1',
-        '170731_K00150_0226_AHL2CJBBXX_2'
-    ],
     alignment_subdir='human'
 )
 
 wtchg_p170503 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503'),
-    lanes=[
-        '170929_K00150_0250_BHLGNHBBXX',
-        '171003_K00198_0242_AHLGYVBBXX_1',
-        '171003_K00198_0242_AHLGYVBBXX_2'
-    ],
     alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero'),
-    lanes=[
-        '170328_K00150_0177_BHJ2C2BBXX',
-    ],
     alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero2 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero_rerun'),
-    lanes=[
-        '170905_K00150_0238_BHLFMVBBXX',
-        '170907_K00150_0239_AHLFL2BBXX',
-    ],
     alignment_subdir='human'
 )
 
 wtchg_p170446 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170446'),
-    lanes=[
-        '170905_K00150_0238_BHLFMVBBXX',
-        '170907_K00150_0239_AHLFL2BBXX',
-    ],
     alignment_subdir='human'
 )
 
 wtchg_p170582 = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'wtchg_p170582'),
-    lanes=[
-        '171101_K00198_0249_BHLGFJBBXX',
-        '171114_K00150_0261_AHM5WJBBXX',
-    ],
     alignment_subdir='human'
 )
 
 gse73721_loc = RnaSeqFileLocations(
     root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721'),
-    lanes=[
-        '',
-    ],
 )
 
 PATIENT_LOOKUP_CC = {
@@ -432,7 +394,6 @@ class CountDatasetLoader(CountDataMixin):
         Performed after raw data is loaded
         :return: Processed data
         """
-
         # ensure meta index is a string
         self.raw_meta.index = self.raw_meta.index.astype(str)
 
@@ -1649,7 +1610,7 @@ def load_by_patient(
         raise NotImplementedError()
 
     if source == 'star':
-        cls = MultipleLaneStarCountLoader
+        cls = StarCountLoader
     elif source == 'salmon':
         cls = SalmonQuantLoader
     else:

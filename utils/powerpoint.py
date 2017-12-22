@@ -36,7 +36,8 @@ def _do_formatting(value, format_str):
     return value
 
 
-def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatters=None, rounding=None):
+def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatters=None, rounding=None,
+                include_index=True):
     """Converts a Pandas DataFrame to a PowerPoint table on the given
     Slide of a PowerPoint presentation.
 
@@ -57,19 +58,34 @@ def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatte
      rounds away the 3 right-hand digits (eg. taking 25437 to 25000).
      """
     rows, cols = df.shape
-    res = slide.shapes.add_table(rows + 1, cols, left, top, width, height)
+    nrows = rows + 1
+    if include_index:
+        ncols = cols + 1
+    else:
+        ncols = cols
+
+    res = slide.shapes.add_table(nrows, ncols, left, top, width, height)
 
     if colnames is None:
         colnames = list(df.columns)
 
     # Insert the column names
+    # Cast to string just in case this is required
     for col_index, col_name in enumerate(colnames):
-        res.table.cell(0, col_index).text = col_name
+        if include_index:
+            col_index += 1
+        res.table.cell(0, col_index).text = str(col_name)
+
+    # insert the row names if requested
+    if include_index:
+        for row_index, row_name in enumerate(list(df.index)):
+            res.table.cell(row_index + 1, 0).text = row_name
 
     m = df.as_matrix()
 
     for row in range(rows):
         for col in range(cols):
+            colidx = col + 1 if include_index else col
             val = m[row, col]
 
             if col_formatters is None:
@@ -78,7 +94,7 @@ def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatte
                 # text = col_formatters[col].format(m[row, col])
                 text = _do_formatting(val, col_formatters[col])
 
-            res.table.cell(row + 1, col).text = text
+            res.table.cell(row + 1, colidx).text = text
             # res.table.cell(row+1, col).text_frame.fit_text()
 
 
