@@ -1,4 +1,6 @@
 import pandas as pd
+import collections
+
 
 def binary_combinations(n, include_zero=False):
     """
@@ -57,40 +59,22 @@ def venn_from_arrays(*args, **kwargs):
     return venn_sets, venn_counts
 
 
-# def venn_from_array_with_constraints(constraint_fns=None, attributes=None, combine_op='and', *args):
-#     """
-#     In addition to finding matching elements, also check one or more arbitrary constraints based on attributes.
-#     :param constraint_fns: Iterable of functions, each one to be applied to the corresponding element in attributes
-#     :param attributes: Iterable of array of attributes, supplied as a pd.Series indexed by the IDs in args.
-#     :param combine_op: Either 'and' or 'or'
-#     :param args: Input arguments. Each element contains an iterable of IDs. As passed to `venn_from_arrays`.
-#     :return:
-#     """
-#     n = len(args)
-#
-#     if combine_op not in {'and', 'or'}:
-#         raise AttributeError("combine_op unrecognised. Options are 'and', 'or'")
-#     if attributes is None:
-#         raise AttributeError("Must supply attributes")
-#     if constraint_fns is None:
-#         raise AttributeError("Must supply constraint functions")
-#     if len(constraint_fns) != len(attributes):
-#         raise AttributeError("Must supply matching numbers of constraint functions and attributes")
-#
-#     # check that all attributes are present.
-#     all_items = reduce(lambda x, y: set(x).union(y), args, set())
-#     for attr in attributes:
-#         if any(~pd.Index(all_items).isin(attr.index)):
-#             raise KeyError(
-#                 "One or more of the IDs is not matched in the attributes: %s" %
-#                 ', '.join([str(t) for t in all_items.difference(attr.index)])
-#             )
-#
-#     # run the basic venn algorithm
-#     venn_sets, venn_counts = venn_from_arrays(*args)
-#
-#     # now run back through and check matching in each case
-#     for attr, fun in zip(attributes, constraint_fns):
-#
-#         # dat = attr.loc[ID]
-#         pass
+def intersection_with_threshold(min_n=None, *args):
+    """
+    Each element in args is an iterable. We compute the intersection amongst all of the items in those iterables.
+    If min_n is supplied, we relax the requirement that an item must be in every iterable. Instead, it must be in
+    gte min_n of them.
+    NB if min_n == 1, we effectively compute a union.
+    :param args:
+    """
+    if min_n is None or min_n == len(args):
+        return reduce(lambda x, y: set(x).intersection(y), args)
+
+    # count each item
+    ct = collections.Counter()
+    for x in args:
+        for k in x:
+            ct[k] += 1
+
+    # keep with a threshold
+    return set([k for k in ct if ct[k] >= min_n])

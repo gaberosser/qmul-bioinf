@@ -9,7 +9,7 @@ import seaborn as sns
 import references
 from rnaseq import filter, differential_expression
 from settings import LOCAL_DATA_DIR
-from utils import output, setops
+from utils import output, setops, excel, ipa
 from load_data import rnaseq_data
 
 
@@ -46,9 +46,7 @@ def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QL
     return res
 
 
-
-def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), lfc=1, fdr=0.01, method='QLGLM',
-                     njob=None):
+def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), lfc=1, fdr=0.01, method='QLGLM'):
     """
     Compute DE between every patient GBM sample and every _other_ healthy patient sample, in addition to paired DE.
     We can also include one or more external references (e.g. Gibco, the default).
@@ -63,23 +61,9 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
     """
     if method not in {'QLGLM', 'GLM', 'exact'}:
         raise NotImplementedError("Unsupported method.")
-    # if njob is None:
-    #     njob = mp.cpu_count()
-    # if njob > 1:
-    #     pool = mp.Pool(njob)
-
     de = {}
 
     for pid in pids:
-
-        # # usual paired comparison
-        # the_idx = rnaseq_obj.meta.index.str.contains(pid)
-        # the_data = rnaseq_obj.data.loc[:, the_idx]
-        # the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
-        #
-        # the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
-        # the_comparison = ['GBM', 'iNSC']
-        # de_matched[pid] = run_one_de(the_data, the_groups, the_comparison, lfc=lfc, fdr=fdr, method=method)
 
         # cross comparison
         for pid2 in pids:
@@ -104,27 +88,6 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
 
 
     return de
-
-
-def intersection_with_threshold(arr, min_n=None):
-    """
-    Each element in arr is an iterable. We compute the intersection amongst all of the items in those iterables.
-    If min_n is supplied, we relax the requirement that an item must be in every iterable. Instead, it must be in
-    gte min_n of them.
-    NB if min_n == 1, we effectively compute a union
-    """
-    if min_n is None or min_n == len(arr):
-        return reduce(lambda x, y: set(x).intersection(y), arr)
-
-    # count each item
-    ct = collections.Counter()
-    for x in arr:
-        for k in x:
-            ct[k] += 1
-
-    # keep with a threshold
-    return set([k for k in ct if ct[k] >= min_n])
-
 
 
 if __name__ == "__main__":
@@ -223,6 +186,16 @@ if __name__ == "__main__":
     ]
     po_each = pd.Series(po_each, index=pids)
 
+    # export gene lists here
+    po_export = {}
+    for pid in pids:
+        po_export["GBM%s_pair_only" % pid] = de_res[(pid, pid)].loc[po_each.loc[pid]]
+    excel.pandas_to_excel(po_export, os.path.join(outdir, "pair_only_all_consistent.xlsx"))
+    subdir = os.path.join(outdir, "ipa_all_consistent")
+    if not os.path.isdir(subdir):
+        os.makedirs(subdir)
+    ipa.results_to_ipa_format(po_export, outdir=subdir)
+
     # now relax this requirement: which genes would be included if we require their inclusion in N of the cells
     # (rather than all)?
     possible_counts = range(1, pair_only.shape[1])
@@ -239,6 +212,19 @@ if __name__ == "__main__":
         for i in possible_counts:
             the_genes = [k for k in this_counter if this_counter[k] >= i]
             po_each_threshold.loc[pid, i] = the_genes
+
+    # export gene lists here - only consider N-1 and N-2
+    for i in [1, 2]:
+        j = len(pids) - i
+        the_list = po_each_threshold.loc[:, j]
+        po_export = {}
+        for pid in pids:
+            po_export["GBM%s_pair_only" % pid] = de_res[(pid, pid)].loc[the_list.loc[pid]]
+        excel.pandas_to_excel(po_export, os.path.join(outdir, "pair_only_%d_consistent.xlsx" % j))
+        subdir = os.path.join(outdir, "ipa_%d_consistent" % j)
+        if not os.path.isdir(subdir):
+            os.makedirs(subdir)
+        ipa.results_to_ipa_format(po_export, outdir=subdir)
 
     # ...how many of these are shared between patients?
     # consider all, K -1 and K-2

@@ -127,10 +127,10 @@ if __name__ == "__main__":
     dmr_counts = dmr_sign.applymap(len)
 
     # pair only
-    po_dmr = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    ro_dmr = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    pr_concordant_dmr = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    pr_discordant_dmr = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    pair_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    ref_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    pair_and_ref_concordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    pair_and_ref_discordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
     for pid in pids:
         for pid2 in pids + ['GIBCO']:
             p = dmr_sign.loc[pid, pid]
@@ -138,18 +138,121 @@ if __name__ == "__main__":
             pres = dmr_res[pid][pid].results_significant
             rres = dmr_res[pid][pid2].results_significant
             x, _ = setops.venn_from_arrays(p, r)
-            po_dmr.loc[pid, pid2] = x['10']
-            ro_dmr.loc[pid, pid2] = x['01']
+            pair_only.loc[pid, pid2] = x['10']
+            ref_only.loc[pid, pid2] = x['01']
             # ref and pair IDs
             pr_id = x['11']
             # signs
             pmed_change_sign = np.array([np.sign(pres[t]['median_change']) for t in pr_id])
             rmed_change_sign = np.array([np.sign(rres[t]['median_change']) for t in pr_id])
 
-            pr_concordant_dmr.loc[pid, pid2] = list(
+            pair_and_ref_concordant.loc[pid, pid2] = list(
                 np.array(x['11'])[pmed_change_sign == rmed_change_sign]
             )
 
-            pr_discordant_dmr.loc[pid, pid2] = list(
+            pair_and_ref_discordant.loc[pid, pid2] = list(
                 np.array(x['11'])[pmed_change_sign != rmed_change_sign]
             )
+
+    po_counts = pair_only.applymap(len)
+    ro_counts = ref_only.applymap(len)
+
+    # identify probes that are present in every ref comparison
+
+    po_each = [
+        sorted(
+            reduce(intersecter, pair_only.loc[pid, ~pair_only.columns.str.contains(pid)])
+        ) for pid in pids
+    ]
+    po_each = pd.Series(po_each, index=pids)
+
+    # now relax this requirement: which probes would be included if we require their inclusion in N of the cells
+    # (rather than all)?
+    possible_counts = range(1, pair_only.shape[1])
+    po_each_threshold = pd.DataFrame(index=pids, columns=possible_counts)
+    for pid in pids:
+        this_counter = collections.Counter()
+        # iterate over each column
+        # we can include the empty diagonal cell, since it will not affect the counting
+        for col in pair_only.columns:
+            for e in pair_only.loc[pid, col]:
+                this_counter[e] += 1
+        # progressively filter the gene list based on counts
+        the_genes = this_counter.keys()
+        for i in possible_counts:
+            the_genes = [k for k in this_counter if this_counter[k] >= i]
+            po_each_threshold.loc[pid, i] = the_genes
+
+    # ...how many of these are shared between patients?
+    # consider all, K -1 and K-2
+    for i in possible_counts:
+        _, cts = setops.venn_from_arrays(*po_each_threshold.loc[:, i].values)
+        this_tally = []
+        K = len(pids)
+        print "N = %d" % i
+        for j in [K, K - 1, K - 2]:
+            this_ct = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
+            print "%d DMRs shared by >=%d patients" % (this_ct, j)
+
+    # what is present in X vs Y_i that isn't in X vs any other Y?
+    po_diff = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
+    for pid in pids:
+        for pid2 in pair_only.columns:
+            the_ref = pair_only.loc[pid, pid2]
+            all_else = pair_only.loc[pid, pair_only.columns != pid2]
+            union_all_else = reduce(set.union, all_else, set())
+            po_diff.loc[pid, pid2] = sorted(set(the_ref).difference(union_all_else))
+
+    po_intersection_insc = pd.Series(index=pids)
+    for pid in pids:
+        # first, find the genes that are always PO when an iNSC reference is used
+        tmp = reduce(intersecter, pair_only.loc[pid, pair_only.index[pair_only.index != pid]])
+        # now exclude any that are also DE when the Gibco reference is used
+        po_intersection_insc.loc[pid] = tmp.difference(pair_only.loc[pid, 'GIBCO'])
+
+    po_specific_to_reference = [
+        sorted(
+            reduce(lambda x, y: set(x).intersection(y), po_diff.loc[~po_diff.index.str.contains(pid), pid])
+        ) for pid in pids + ['GIBCO']
+        ]
+    po_specific_to_reference = pd.Series(po_specific_to_reference, index=pids + ['GIBCO'])
+
+    # get the clusters that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
+    # these will have a mathylation pattern in Gibco similar to GBM, so that they do NOT appear
+    po_gibco_diff = po_specific_to_reference.loc['GIBCO']
+    po_gibco_diff_tss = [t for t in po_gibco_diff if 'tss' in dmr_res.clusters[t].cls]
+    po_gibco_diff_island = [t for t in po_gibco_diff if 'island' in dmr_res.clusters[t].cls]
+
+
+    # po_gibco_diff_gs = references.ensembl_to_gene_symbol(po_gibco_diff)
+    # po_gibco_diff_gs = po_gibco_diff_gs.where(~po_gibco_diff_gs.isnull(), po_gibco_diff)
+
+    po_dat = me_data.loc[po_gibco_diff]
+    po_dat.index = po_gibco_diff_gs
+    po_dat = np.log2(po_dat + 1)
+
+    # po_dat = salmon_dat.loc[po_gibco_diff]
+    # po_dat.index = po_gibco_diff_gs
+    # # dropna() here loses one gene - LINC01090 / ENSG00000231689
+    # # all others are present
+    # po_dat = np.log2(po_dat.dropna() + 0.01)
+
+    # rearrange columns
+    cols = (
+        po_dat.columns[po_dat.columns.str.contains('GBM')].tolist() +
+        ['GIBCO_NSC_P4'] +
+        po_dat.columns[po_dat.columns.str.contains('DURA')].tolist()
+    )
+    po_dat = po_dat.loc[:, cols]
+    # insert spacing columns
+    idx = np.where(po_dat.columns.str.contains('GIBCO'))[0][0]
+    po_dat.insert(idx, '', np.nan)
+    po_dat.insert(idx + 2, ' ', np.nan)
+
+    fig = plt.figure(figsize=(7, 10))
+    ax = fig.add_subplot(111)
+    ax = sns.heatmap(po_dat, cmap=cmap, ax=ax)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "consistently_in_pair_only.png"), dpi=200)
