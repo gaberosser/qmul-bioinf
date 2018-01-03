@@ -58,12 +58,53 @@ def compute_cross_dmr(me_data, me_meta, anno, pids, dmr_params, external_referen
     return dmr.DmrResultCollection(**res)
 
 
+def plot_methylation_heatmap(
+    data,
+        cluster_ids,
+        dmr_res,
+        ref_key='GIBCONSC_P4',
+        cmap='RdYlGn_r',
+        yticklabels=False,
+        plot_cluster_dividers=True,
+):
+    probe_ids = reduce(lambda x, y: x + y, (dmr_res.clusters[t].pids for t in cluster_ids), [])
+    # add manual breaks
+    # this needs to be reversed due to the method of plotting a heatmap
+    break_idx = np.cumsum([len(dmr_res.clusters[t].pids) for t in cluster_ids][::-1])[:-1]
+
+    po_dat = data.loc[probe_ids]
+
+    # rearrange columns
+    cols = (
+        sorted(po_dat.columns[po_dat.columns.str.contains('GBM')].tolist()) +
+        [ref_key] +
+        sorted(po_dat.columns[po_dat.columns.str.contains('DURA')].tolist())
+    )
+    po_dat = po_dat.loc[:, cols]
+    # insert spacing columns
+    idx = np.where(po_dat.columns == ref_key)[0][0]
+    po_dat.insert(idx, '', np.nan)
+    po_dat.insert(idx + 2, ' ', np.nan)
+
+    fig = plt.figure(figsize=(7, 10))
+    ax = fig.add_subplot(111)
+    ax = sns.heatmap(po_dat, cmap=cmap, ax=ax, yticklabels=yticklabels)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    fig.tight_layout()
+    if plot_cluster_dividers:
+        [ax.plot([0, len(cols) + 2], [t, t], c='k', lw=1., ls='--', alpha=0.6) for t in break_idx]
+    return ax
+
 if __name__ == "__main__":
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
+    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'cross_validate_dmr')
     outdir = output.unique_output_dir("cross_validate_dmr", reuse_empty=True)
     ref_name = 'GIBCONSC_P4'
-    # all n=2 samples and RTK II samples
     pids = ['017', '019', '030', '031', '050', '054']
+    subgroups = {
+        'RTK I': ['019', '030', '031'],
+        'RTK II': ['017', '050', '054'],
+    }
     cmap = 'RdYlGn_r'
 
     dmr_params = {
@@ -185,14 +226,32 @@ if __name__ == "__main__":
 
     # ...how many of these are shared between patients?
     # consider all, K -1 and K-2
+    K = len(pids)
     for i in possible_counts:
         _, cts = setops.venn_from_arrays(*po_each_threshold.loc[:, i].values)
         this_tally = []
-        K = len(pids)
+
         print "N = %d" % i
-        for j in [K, K - 1, K - 2]:
+        for j in [K, K - 1, K - 2, K - 3]:
             this_ct = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
             print "%d DMRs shared by >=%d patients" % (this_ct, j)
+        # also look at the overlap within the subgroups
+        for grp_name, grp_members in subgroups.items():
+            # get the group member results
+            this_po_each_threshold = po_each_threshold.loc[grp_members]
+            _, cts = setops.venn_from_arrays(*this_po_each_threshold.loc[:, i].values)
+            the_idx = ''.join(['1'] * len(grp_members))
+            print "%d DMRs shared by all patients in subgroup %s" % (cts[the_idx], grp_name)
+
+    # for reference: what do these numbers look like in the Gibco comparison (only)?
+    po_gibco_common_counts = pd.Series(index=possible_counts)
+    _, cts = setops.venn_from_arrays(*pair_only.loc[:, 'GIBCO'].values)
+    for j in possible_counts:
+        po_gibco_common_counts.loc[j] = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
+        print "%d DMRs shared by >=%d patients in the pair-only Gibco comparison" % (
+            int(po_gibco_common_counts.loc[j]),
+            j
+        )
 
     # what is present in X vs Y_i that isn't in X vs any other Y?
     po_diff = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
@@ -202,6 +261,14 @@ if __name__ == "__main__":
             all_else = pair_only.loc[pid, pair_only.columns != pid2]
             union_all_else = reduce(set.union, all_else, set())
             po_diff.loc[pid, pid2] = sorted(set(the_ref).difference(union_all_else))
+
+    ro_diff = pd.DataFrame(index=ref_only.index, columns=ref_only.columns)
+    for pid in pids:
+        for pid2 in ref_only.columns:
+            the_ref = ref_only.loc[pid, pid2]
+            all_else = ref_only.loc[pid, ref_only.columns != pid2]
+            union_all_else = reduce(set.union, all_else, set())
+            ro_diff.loc[pid, pid2] = sorted(set(the_ref).difference(union_all_else))
 
     po_intersection_insc = pd.Series(index=pids)
     for pid in pids:
@@ -217,42 +284,32 @@ if __name__ == "__main__":
         ]
     po_specific_to_reference = pd.Series(po_specific_to_reference, index=pids + ['GIBCO'])
 
+    ro_intersection_insc = pd.Series(index=pids)
+    for pid in pids:
+        # first, find the genes that are always PO when an iNSC reference is used
+        tmp = reduce(intersecter, ref_only.loc[pid, ref_only.index[ref_only.index != pid]])
+        # now exclude any that are also DE when the Gibco reference is used
+        ro_intersection_insc.loc[pid] = tmp.difference(ref_only.loc[pid, 'GIBCO'])
+
+    ro_specific_to_reference = [
+        sorted(
+            reduce(lambda x, y: set(x).intersection(y), ro_diff.loc[~ro_diff.index.str.contains(pid), pid])
+        ) for pid in pids + ['GIBCO']
+        ]
+    ro_specific_to_reference = pd.Series(ro_specific_to_reference, index=pids + ['GIBCO'])
+
+
     # get the clusters that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
-    # these will have a mathylation pattern in Gibco similar to GBM, so that they do NOT appear
+    # these will have a methylation pattern in Gibco similar to GBM, so that they do NOT appear
     po_gibco_diff = po_specific_to_reference.loc['GIBCO']
-    po_gibco_diff_tss = [t for t in po_gibco_diff if 'tss' in dmr_res.clusters[t].cls]
-    po_gibco_diff_island = [t for t in po_gibco_diff if 'island' in dmr_res.clusters[t].cls]
+    ro_gibco_diff = ro_specific_to_reference.loc['GIBCO']
 
+    # can also look separately at different probe classes
+    # po_gibco_diff_tss = [t for t in po_gibco_diff if 'tss' in dmr_res.clusters[t].cls]
+    # po_gibco_diff_island = [t for t in po_gibco_diff if 'island' in dmr_res.clusters[t].cls]
 
-    # po_gibco_diff_gs = references.ensembl_to_gene_symbol(po_gibco_diff)
-    # po_gibco_diff_gs = po_gibco_diff_gs.where(~po_gibco_diff_gs.isnull(), po_gibco_diff)
+    ax = plot_methylation_heatmap(me_data, po_gibco_diff, dmr_res)
+    ax.figure.savefig(os.path.join(outdir, "consistently_in_pair_only.png"), dpi=200)
 
-    po_dat = me_data.loc[po_gibco_diff]
-    po_dat.index = po_gibco_diff_gs
-    po_dat = np.log2(po_dat + 1)
-
-    # po_dat = salmon_dat.loc[po_gibco_diff]
-    # po_dat.index = po_gibco_diff_gs
-    # # dropna() here loses one gene - LINC01090 / ENSG00000231689
-    # # all others are present
-    # po_dat = np.log2(po_dat.dropna() + 0.01)
-
-    # rearrange columns
-    cols = (
-        po_dat.columns[po_dat.columns.str.contains('GBM')].tolist() +
-        ['GIBCO_NSC_P4'] +
-        po_dat.columns[po_dat.columns.str.contains('DURA')].tolist()
-    )
-    po_dat = po_dat.loc[:, cols]
-    # insert spacing columns
-    idx = np.where(po_dat.columns.str.contains('GIBCO'))[0][0]
-    po_dat.insert(idx, '', np.nan)
-    po_dat.insert(idx + 2, ' ', np.nan)
-
-    fig = plt.figure(figsize=(7, 10))
-    ax = fig.add_subplot(111)
-    ax = sns.heatmap(po_dat, cmap=cmap, ax=ax)
-    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
-    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "consistently_in_pair_only.png"), dpi=200)
+    ax = plot_methylation_heatmap(me_data, ro_gibco_diff, dmr_res, plot_cluster_dividers=False)
+    ax.figure.savefig(os.path.join(outdir, "consistently_in_ref_only.png"), dpi=200)

@@ -106,6 +106,11 @@ if __name__ == "__main__":
         'method': 'GLM'
     }
 
+    subgroups = {
+        'RTK I': ['019', '030', '031'],
+        'RTK II': ['017', '050', '054'],
+    }
+
     # dmr_params = {
     #     'core_min_sample_overlap': 3,  # 3 / 4 samples must match
     #     'd_max': 400,
@@ -227,15 +232,33 @@ if __name__ == "__main__":
         ipa.results_to_ipa_format(po_export, outdir=subdir)
 
     # ...how many of these are shared between patients?
-    # consider all, K -1 and K-2
+    # consider K to K-3 (inclusive)
     for i in possible_counts:
         _, cts = setops.venn_from_arrays(*po_each_threshold.loc[:, i].values)
         this_tally = []
         K = len(pids)
         print "N = %d" % i
-        for j in [K, K-1, K-2]:
+        for j in [K, K-1, K-2, K-3]:
             this_ct = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
             print "%d genes shared by >=%d patients" % (this_ct, j)
+
+        # also look at the overlap within the subgroups
+        for grp_name, grp_members in subgroups.items():
+            # get the group member results
+            this_po_each_threshold = po_each_threshold.loc[grp_members]
+            _, cts = setops.venn_from_arrays(*this_po_each_threshold.loc[:, i].values)
+            the_idx = ''.join(['1'] * len(grp_members))
+            print "%d DMRs shared by all patients in subgroup %s" % (cts[the_idx], grp_name)
+
+    # for reference: what do these numbers look like in the Gibco comparison (only)?
+    po_gibco_common_counts = pd.Series(index=possible_counts, dtype=int)
+    _, cts = setops.venn_from_arrays(*pair_only.loc[:, 'GIBCO'].values)
+    for j in possible_counts:
+        po_gibco_common_counts.loc[j] = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
+        print "%d DMRs shared by >=%d patients in the pair-only Gibco comparison" % (
+            int(po_gibco_common_counts.loc[j]),
+            j
+        )
 
     # look at intersection of Gibco and all others for a given GBM
     po_int_gibco = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
