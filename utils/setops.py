@@ -86,6 +86,7 @@ def pairwise_similarity(arr, method='intersection'):
     The similarity between A and B is defined as the fraction of elements in A that are also in B. This is
     directional.
     :param arr: An iterable of iterables. Each element is a list representing items, e.g. genes.
+    :param method: Either 'intersection' (use the intersection to compute the similarity) or 'union' (use the union)
     :return: An array of similarity scores, each of which is between 0 and 1.
     """
     n = len(arr)
@@ -96,10 +97,13 @@ def pairwise_similarity(arr, method='intersection'):
             gl1 = arr[j]
             if method == 'intersection':
                 a = len(set(gl0).intersection(gl1))
+                res.append(a / float(len(gl0)))
+                res.append(a / float(len(gl1)))
             elif method == 'union':
-                a = len(set(gl0).union(gl1))
+                a = float(len(set(gl0).union(gl1)))
+                res.append(len(gl0) / a)
+                res.append(len(gl1) / a)
             else:
                 raise ValueError("Unrecognised method %s" % method)
-            res.append(a / float(len(gl0)))
-            res.append(a / float(len(gl1)))
+
     return res
