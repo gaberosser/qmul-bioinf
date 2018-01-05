@@ -657,3 +657,10 @@ if __name__ == "__main__":
     ax.set_ylim([-4, 4])
     fig.savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_all.png"), dpi=300)
     fig.savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_all.pdf"))
+
+    # export data for AD
+    to_export = rnaseq_meta.copy()
+    to_export.insert(0, 'mg_score_z', x.loc[to_export.index])
+    to_export.insert(0, 'bmdm_score_z', y.loc[to_export.index])
+    to_export.insert(0, 'mtor_score_z', z.loc[to_export.index])
+    to_export.to_excel(os.path.join(outdir, 'bowman_data_with_scores.xlsx'))

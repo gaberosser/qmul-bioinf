@@ -98,7 +98,7 @@ wtchg_p170446 = RnaSeqFileLocations(
 )
 
 wtchg_p170582 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'wtchg_p170582'),
+    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170582'),
     alignment_subdir='human'
 )
 

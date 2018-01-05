@@ -1,5 +1,5 @@
 import os
-import re
+import multiprocessing as mp
 import collections
 import numpy as np
 import pandas as pd
@@ -164,6 +164,7 @@ if __name__ == "__main__":
     ro_counts = ref_only.applymap(len)
 
     # the permutation part
+    # here we find the genes that are core (for a given N) over every possible permutation of references
     po_core_genes = {}
 
     for pid in pids:
@@ -183,29 +184,57 @@ if __name__ == "__main__":
     # this strangeness is to remind me that there is currently only 1 ref (but that could change)
     n_perm = ncr(len(pids) + len(additional_pids) + 1 - 1, len(pids))
 
+    # run over results and compute
+    # 1) similarity score: the number of genes in each list divided by the number in the union over all permutations
+    # 2) union of genes over all permutations
+    # 3) intersection of genes over all permutations
+
     similarities = {}
-    intersct = {}
+    isct = {}
     unn = {}
     for N in range(1, len(pids) + 1):
         similarities[N] = pd.DataFrame(index=pids, columns=range(n_perm))
-        intersct[N] = pd.Series(index=pids)
+        isct[N] = pd.Series(index=pids)
         unn[N] = pd.Series(index=pids)
         for pid in pids:
             unn[N].loc[pid] = reduce(
                 unioner, (t.loc[N] for t in po_core_genes[pid].values())
             )
-            intersct[N].loc[pid] = reduce(
+            isct[N].loc[pid] = reduce(
                 intersecter, (t.loc[N] for t in po_core_genes[pid].values())
             )
             norm = float(len(unn[N].loc[pid]))
             for i, t in enumerate(po_core_genes[pid].values()):
-                similarities[N].loc[pid, i] = len(set(t.loc[N]).intersection(unn[N].loc[pid])) / norm
+                similarities[N].loc[pid, i] = len(t.loc[N]) / norm
 
-        # this_counts = pd.DataFrame([t.apply(len) for t in po_core_genes[pid].values()])
-        # fig = plt.figure(num=pid)
-        # ax = fig.add_subplot(111)
-        # ax.hist(this_counts.loc[:, 6].values, 30)
+    isct_over_unn = pd.DataFrame(
+        [isct[i].apply(len) / unn[i].apply(len) for i in range(1, len(pids) + 1)],
+        index=range(1, len(pids) + 1)
+    )
+    ax = isct_over_unn.plot.line()
+    ax.set_ylabel('Consistent / union')
+    ax.set_xlabel('N')
+    ax.figure.savefig(os.path.join(outdir, "intersection_over_union.png"), dpi=200)
 
+    # compute the pairwise overlap for every possible pair
+    pool = mp.Pool()
+    jobs = {}
+
+    for N in range(1, len(pids) + 1):
+        for pid in pids:
+            arr = [t.loc[N] for t in po_core_genes[pid].values()]
+            jobs[(N, pid)] = pool.apply_async(setops.pairwise_similarity, args=(arr,), kwds={'method': 'union'})
+
+    pool.close()
+    pool.join()
+    pwise_similarities = {}
+    for N in range(1, len(pids) + 1):
+        pwise_similarities[N] = {}
+        for pid in pids:
+            pwise_similarities[N][pid] = jobs[(N, pid)].get(1e6)
+
+    # plot overall similarity
+    # per PID
     sim_bins = np.linspace(0, 1, 200)
     for pid in pids:
         fig, axs = plt.subplots(nrows=len(pids), num=pid, figsize=(6, 7.5))
@@ -223,3 +252,59 @@ if __name__ == "__main__":
         fig.tight_layout(pad=0.1, h_pad=0.1)
         fig.savefig(os.path.join(outdir, "similarity_score_%s.png" % pid), dpi=200)
 
+    fig, axs = plt.subplots(nrows=len(pids), figsize=(6, 7.5))
+    big_ax = fig.add_subplot(111, frameon=False)
+    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+    big_ax.grid(False)
+    big_ax.set_ylabel("Frequency")
+    big_ax.set_xlabel("Overall similarity score")
+    for i, ax in enumerate(axs):
+        ax.hist(similarities[i + 1].values.flatten(), bins=sim_bins)
+        if i != (len(pids) - 1):
+            ax.xaxis.set_ticklabels([])
+        ax.text(0.05, 0.95, "N=%d" % (i + 1), transform=ax.transAxes, fontsize=14, va='top')
+
+    fig.tight_layout(pad=0.1, h_pad=0.1)
+    fig.savefig(os.path.join(outdir, "combined_overall_similarity_score.png"), dpi=200)
+
+
+    # plot pairwise similarity
+    for pid in pids:
+        fig, axs = plt.subplots(nrows=len(pids), num=pid, figsize=(6, 7.5))
+        big_ax = fig.add_subplot(111, frameon=False)
+        big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+        big_ax.grid(False)
+        big_ax.set_ylabel("Frequency")
+        big_ax.set_xlabel("Pairwise similarity score")
+        for i, ax in enumerate(axs):
+            ax.hist(pwise_similarities[i + 1][pid], bins=sim_bins)
+            if i != (len(pids) - 1):
+                ax.xaxis.set_ticklabels([])
+            ax.text(0.05, 0.95, "N=%d" % (i + 1), transform=ax.transAxes, fontsize=14, va='top')
+
+        fig.tight_layout(pad=0.1, h_pad=0.1)
+        fig.savefig(os.path.join(outdir, "pwise_similarity_score_%s.png" % pid), dpi=200)
+
+    # combine PIDs to generate one giant list for each N
+    combined_pwise_sim = dict([
+        (
+            N,
+            reduce(lambda x, y: x + y, pwise_similarities[N].values())
+        ) for N in range(1, len(pids) + 1)
+    ])
+
+    # plot pairwise similarity
+    fig, axs = plt.subplots(nrows=len(pids), figsize=(6, 7.5))
+    big_ax = fig.add_subplot(111, frameon=False)
+    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+    big_ax.grid(False)
+    big_ax.set_ylabel("Frequency")
+    big_ax.set_xlabel("Pairwise similarity score")
+    for i, ax in enumerate(axs):
+        ax.hist(combined_pwise_sim[i + 1], bins=sim_bins)
+        if i != (len(pids) - 1):
+            ax.xaxis.set_ticklabels([])
+        ax.text(0.05, 0.95, "N=%d" % (i + 1), transform=ax.transAxes, fontsize=14, va='top')
+
+    fig.tight_layout(pad=0.1, h_pad=0.1)
+    fig.savefig(os.path.join(outdir, "combined_pwise_similarity_score.png"), dpi=200)

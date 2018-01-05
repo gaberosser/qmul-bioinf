@@ -78,3 +78,28 @@ def intersection_with_threshold(min_n=None, *args):
 
     # keep with a threshold
     return set([k for k in ct if ct[k] >= min_n])
+
+
+def pairwise_similarity(arr, method='intersection'):
+    """
+    Compute the pairwise similarity between every possible pairing in the supplied data
+    The similarity between A and B is defined as the fraction of elements in A that are also in B. This is
+    directional.
+    :param arr: An iterable of iterables. Each element is a list representing items, e.g. genes.
+    :return: An array of similarity scores, each of which is between 0 and 1.
+    """
+    n = len(arr)
+    res = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            gl0 = arr[i]
+            gl1 = arr[j]
+            if method == 'intersection':
+                a = len(set(gl0).intersection(gl1))
+            elif method == 'union':
+                a = len(set(gl0).union(gl1))
+            else:
+                raise ValueError("Unrecognised method %s" % method)
+            res.append(a / float(len(gl0)))
+            res.append(a / float(len(gl1)))
+    return res
