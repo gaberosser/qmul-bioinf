@@ -1,0 +1,56 @@
+---
+title: "tcga_survival_metadata"
+author: "Gabriel Rosser"
+date: "5 January 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = normalizePath('..'))
+```
+
+# Load the data
+
+First we load the TCGA data, complete with the mTOR, MG and BMDM gene signature scores.
+
+```{r}
+# This just defines the data directories
+source('_settings.R')
+in.file <- file.path(data.dir, 'bowman_tcga', 'bowman_data_with_scores.csv')
+data <- read.csv(in.file)
+```
+
+# Exploratory
+
+Plot survival vs each of the scores.
+
+```{r}
+plot(data$mtor_score_z, data$survival)
+plot(data$mg_score_z, data$survival)
+plot(data$bmdm_score_z, data$survival)
+```
+
+# Statistical model
+
+Now we define and fit a very simple statistical model with no interaction terms, just the intercept and two parameters for mTOR and MG signatures.
+
+```{r}
+formula <- survival ~ mtor_score_z + mg_score_z
+fit <- lm(formula, data)
+summary(fit)
+```
+
+Only the intercept is significant.
+
+Now we try a more fancy model with an interaction term
+
+```{r}
+formula <- survival ~ mtor_score_z * mg_score_z
+fit <- lm(formula, data)
+summary(fit)
+```
+
+Still nothing.
