@@ -327,6 +327,12 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "consistently_in_pair_only.png"), dpi=200)
 
+    # export those same genes to a file, adding gene symbols
+    for_export = rnaseq_obj.data.loc[po_gibco_diff, cols]
+    gs = references.ensembl_to_gene_symbol(for_export.index)
+    for_export.insert(0, 'gene_symbol', gs)
+    for_export.to_excel(os.path.join(outdir, 'consistently_in_pair_only.xlsx'))
+
     ## TODO: fix from here
 
     # get the genes that consistently appear in the Gibco reference comparison only and NOT in any other reference
