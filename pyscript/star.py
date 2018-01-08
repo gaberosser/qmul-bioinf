@@ -67,17 +67,17 @@ class StarMultilanePEBash(jobs.BashArrayJobMixin, StarBase, jobs.PEFastqIllumina
     pass
 
 
-class StarPEApocrita(StarBase, jobs.PEFastqFileIteratorMixin, StarSgeRequirements):
+class StarPEApocrita(StarSgeRequirements, StarBase, jobs.PEFastqFileIteratorMixin):
     pass
 
 
-class StarPEBash(StarBase, jobs.PEFastqFileIteratorMixin, jobs.BashArrayJobMixin):
+class StarPEBash(jobs.BashArrayJobMixin, StarBase, jobs.PEFastqFileIteratorMixin):
     pass
 
 
-class StarSEApocrita(StarBase, jobs.SEFastqFileIteratorMixin, StarSgeRequirements):
+class StarSEApocrita(StarSgeRequirements, StarBase, jobs.SEFastqFileIteratorMixin):
     pass
 
 
-class StarSEBash(StarBase, jobs.SEFastqFileIteratorMixin, jobs.BashArrayJobMixin):
+class StarSEBash(jobs.BashArrayJobMixin, StarBase, jobs.SEFastqFileIteratorMixin):
     pass
