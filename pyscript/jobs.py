@@ -439,7 +439,6 @@ class PEFastqFileIteratorMixin(PairedFileIteratorMixin):
 
     def setup_params(self, *args, **kwargs):
         super(PEFastqFileIteratorMixin, self).setup_params(*args, **kwargs)
-        print self.params
         for p_arr in self.params:
             if re.search(r'\.gz$', p_arr[1], flags=re.IGNORECASE):
                 p_arr.append('gz')

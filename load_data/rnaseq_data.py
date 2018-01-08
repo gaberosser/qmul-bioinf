@@ -1872,12 +1872,6 @@ def gse61794(source='star', annotate_by='all', annotation_type='protein_coding',
         )
     elif source == 'htseq-count':
         raise NotImplementedError
-        # obj = HTSeqCountLoader(
-        #     count_dir=os.path.join(indir, 'hisat2_alignment', 'htseq-count'),
-        #     meta_fn=metafn,
-        #     annotate_by=annotate_by,
-        #     annotation_type=annotation_type
-        # )
     elif source == 'featurecounts':
         obj = FeatureCountLoader(
             count_file=os.path.join(indir, 'hisat2_alignment', 'featureCounts'),
@@ -1941,6 +1935,44 @@ def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_typ
     else:
         raise NotImplementedError
 
+    return obj
+
+
+def gse92839(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Bago et al. iNSC (plus precursor fibroblasts) and ReNcell CX NPC lines
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE92839')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'human', 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            strandedness='r'
+        )
+    else:
+        raise NotImplementedError()
+    return obj
+
+
+def gse38993(source='star', annotate_by='all', annotation_type='protein_coding'):
+    """
+    Kelley and Rinn H1 ESC, NSC and 2 x fibroblast
+    """
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE38993')
+    metafn = os.path.join(indir, 'sources.csv')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=os.path.join(indir, 'human', 'star_alignment'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+            strandedness='u',
+        )
+    else:
+        raise NotImplementedError()
     return obj
 
 

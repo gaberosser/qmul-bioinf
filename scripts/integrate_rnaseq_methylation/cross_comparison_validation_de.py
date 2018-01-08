@@ -127,6 +127,12 @@ if __name__ == "__main__":
 
     # Load RNA-Seq from STAR
     rnaseq_obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
+
+    # load additional references if required
+    rencell_obj = rnaseq_data.gse92839(annotate_by='Ensembl Gene ID')
+    h1_obj = rnaseq_data.gse38993(annotate_by='Ensembl Gene ID')
+    rnaseq_obj = rnaseq_data.MultipleBatchLoader([rnaseq_obj, rencell_obj, h1_obj])
+
     # discard unmapped, etc
     rnaseq_obj.data = rnaseq_obj.data.loc[rnaseq_obj.data.index.str.contains('ENSG')]
     rnaseq_obj.meta = rnaseq_obj.meta.loc[~rnaseq_obj.meta.index.str.contains('IPSC')]
