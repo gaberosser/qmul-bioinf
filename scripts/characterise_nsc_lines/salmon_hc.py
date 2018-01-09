@@ -140,61 +140,62 @@ if __name__ == "__main__":
 
     # bring in reference data
     ref_dats = [
-        rnaseq_data.gse73721_salmon(units=units),
-        rnaseq_data.pollard_salmon(units=units),
-        rnaseq_data.gse80732_salmon(units=units),
-        rnaseq_data.gse64882_salmon(units=units),
-        rnaseq_data.gse84166_salmon(units=units),
-        rnaseq_data.gse61794_salmon(units=units),
+        ('Barres et al.', rnaseq_data.gse73721_salmon(units=units),),
+        ('Caren et al.', rnaseq_data.pollard_salmon(units=units),),
+        ('Yang et al.', rnaseq_data.gse80732_salmon(units=units),),
+        ('Shahbazi et al.', rnaseq_data.gse64882_salmon(units=units),),
+        ('Li et al.', rnaseq_data.gse84166_salmon(units=units),),
+        ('Duan et al.', rnaseq_data.gse61794_salmon(units=units),),
+        ('Bago et al.', rnaseq_data.gse92839_salmon(units=units),),
+        ('Kelley and Rinn', rnaseq_data.gse38993_salmon(units=units),),
     ]
 
-    ref = pd.concat(ref_dats, axis=1)
+    ref = pd.concat([t[1] for t in ref_dats], axis=1)
+    batches = pd.Series(
+        reduce(lambda x, y: x + y, [[t[0]] * t[1].shape[1] for t in ref_dats]),
+        index=ref.columns
+    )
     ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
     # discard Barres irrelevant samples
-    ref = ref.loc[:, ~ref.columns.str.contains('Fetal ctx')]
-    ref = ref.loc[:, ~ref.columns.str.contains('tumor')]
-    ref = ref.loc[:, ~ref.columns.str.contains('ctx endo')]
-    ref = ref.loc[:, ~ref.columns.str.contains('whole cortex')]
-    ref = ref.loc[:, ~ref.columns.str.contains('myeloid')]
     # discard immortalised cell line
-    ref = ref.loc[:, ~ref.columns.str.contains('LM-NSC')]
-    # discard fibroblasts
-    ref = ref.loc[:, ~ref.columns.str.contains(r'^fibroblast')]
-    #
+    # discard fibroblasts (careful, need to be selective here)
+
+    to_discard = [
+        'Fetal ctx', 'tumor', 'ctx endo', 'whole cortex', 'myeloid', 'LM-NSC', r'^fibroblast', 'NHF1-hTERT fibroblasts'
+    ]
+    for td in to_discard:
+        the_idx = ~ref.columns.str.contains(td)
+        ref = ref.loc[:, the_idx]
+        batches = batches.loc[the_idx]
 
     # Take mean over various replicates (for simplicity)
-    cols = ref.loc[:, ref.columns.str.contains('Pollard NSC')].columns
-    ref.insert(0, 'Fetal NSC (Caren et al.)', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
+    to_aggr = [
+        ('Pollard NSC', 'Fetal NSC'),
+        (r'H1-[12]', 'H1 PSC'),
+        (r'H1-EPS', 'H1 EPSC'),
+        (r'ES1-EPS', 'ES1 EPSC'),
+        (r'H9_NSC', 'H9 NSC'),
+        (r'INSC fibroblast', 'Fibroblast-derived iNSC'),
+        (r'NSC008', 'Fetal NSC'),
+        (r'fetal NSC rep', 'Fetal NSC'),
+        (r'ReNcell CX', 'ReNcell CX NSC'),
+        (r'NHF1-hTERT hiNSC', 'Fibroblast-derived iNSC'),
+        (r'H1 ESC', 'H1 PSC'),  # purely for renaming purposes
+    ]
 
-    cols = ref.loc[:, ref.columns.str.contains(r'H1-[12]')].columns
-    ref.insert(0, 'H1', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
+    for srch, repl in to_aggr:
+        cols = ref.loc[:, ref.columns.str.contains(srch)].columns
+        ref.insert(0, repl, ref.loc[:, cols].mean(axis=1), allow_duplicates=True)
+        ref.drop(cols, axis=1, inplace=True)
+        batches = pd.Series([batches.loc[cols[0]]], index=[repl]).append(batches)
+        # batches.loc[repl] = batches.loc[cols[0]]
+        batches.drop(cols, inplace=True)
 
-    cols = ref.loc[:, ref.columns.str.contains(r'H1-EPS')].columns
-    ref.insert(0, 'H1-EPS', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
-
-    cols = ref.loc[:, ref.columns.str.contains(r'ES1-EPS')].columns
-    ref.insert(0, 'ES1-EPS', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
-
-    cols = ref.loc[:, ref.columns.str.contains(r'H9_NSC')].columns
-    ref.insert(0, 'H9-NSC', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
-
-    cols = ref.loc[:, ref.columns.str.contains(r'INSC fibroblast')].columns
-    ref.insert(0, 'Fibroblast-derived NSC (Shahbazi et al.)', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
-
-    cols = ref.loc[:, ref.columns.str.contains(r'NSC008')].columns
-    ref.insert(0, 'Fetal NSC (Li et al.)', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
-
-    cols = ref.loc[:, ref.columns.str.contains(r'fetal NSC rep')].columns
-    ref.insert(0, 'Fetal NSC (Shahbazi et al.)', ref.loc[:, cols].mean(axis=1))
-    ref.drop(cols, axis=1, inplace=True)
+    # append study name to columns
+    new_cols = ["%s (%s)" % (ref.columns[i], batches.iloc[i]) for i in range(len(ref.columns))]
+    ref.columns = new_cols
+    batches.index = new_cols
 
     ref_by_gene = ref.groupby(genes).sum()
 
@@ -245,8 +246,7 @@ if __name__ == "__main__":
         d = clustering.dendrogram_with_colours(
             abg_log.loc[amad_log.index[:n_t]],
             row_colours_all,
-            fig_kws={'figsize': (10, 5.5)}
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
         )
         d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
-
-

@@ -91,8 +91,6 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
 
 
 if __name__ == "__main__":
-    # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
 
     outdir = output.unique_output_dir("cross_validate_de", reuse_empty=True)
     ref_name = 'GIBCONSC_P4'

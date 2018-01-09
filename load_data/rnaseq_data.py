@@ -1952,6 +1952,13 @@ def gse92839(source='star', annotate_by='all', annotation_type='protein_coding')
             annotation_type=annotation_type,
             strandedness='r'
         )
+    elif source == 'salmon':
+        obj = SalmonQuantLoader(
+            count_dir=os.path.join(indir, 'human', 'salmon'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
+        )
     else:
         raise NotImplementedError()
     return obj
@@ -1970,6 +1977,13 @@ def gse38993(source='star', annotate_by='all', annotation_type='protein_coding')
             annotate_by=annotate_by,
             annotation_type=annotation_type,
             strandedness='u',
+        )
+    elif source == 'salmon':
+        obj = SalmonQuantLoader(
+            count_dir=os.path.join(indir, 'human', 'salmon'),
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            annotation_type=annotation_type,
         )
     else:
         raise NotImplementedError()
@@ -2255,6 +2269,21 @@ def gse61794_salmon(units='tpm'):
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse38993_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE38993')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def gse92839_salmon(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE92839')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
 
 # mouse data
 def mouse_nsc_salmon(units='tpm'):
