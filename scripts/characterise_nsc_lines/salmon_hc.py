@@ -222,18 +222,19 @@ if __name__ == "__main__":
         pass
 
     row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=[''])
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = 'blue'
     row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'H9-NSC')] = 'blue'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'Fetal')] = 'yellow'
     row_colours_all.loc[row_colours_all.index.str.contains(r'Fibroblast')] = '#fff89e'
-    row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Fetal')] = 'yellow'
+    # row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('ES1')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains('PSC')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
     row_colours_all.loc[row_colours_all.index.str.contains(r'Hippocamp.* astro')] = '#e78ac3'
     row_colours_all.loc[row_colours_all.index.str.contains(r'ctx .*astro')] = '#b3b3b3'
     row_colours_all.loc[row_colours_all.index.str.contains(r'oligo')] = '#fccde5'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
 
     for n_t in n_gene_try:
         fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
@@ -246,6 +247,28 @@ if __name__ == "__main__":
         d = clustering.dendrogram_with_colours(
             abg_log.loc[amad_log.index[:n_t]],
             row_colours_all,
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
+        )
+        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    # remove Bares and replot
+    abg_nobarres = abg.loc[:, ~abg.columns.str.contains('Barres')]
+    abg_nobarres_log = abg_log.loc[:, ~abg_log.columns.str.contains('Barres')]
+    amad_nobarres_log = transformations.median_absolute_deviation(abg_nobarres_log).sort_values(ascending=False)
+    row_colours_nobarres = row_colours_all.loc[abg_nobarres.columns]
+
+    for n_t in n_gene_try:
+        fname = "no_barres_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+
+        cm, mad_all = cluster_logdata_with_threshold(abg_nobarres, n=n_t, eps=eps, col_colors=row_colours_nobarres)
+        cm.gs.update(bottom=0.3)
+        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+        d = clustering.dendrogram_with_colours(
+            abg_nobarres_log.loc[amad_nobarres_log.index[:n_t]],
+            row_colours_nobarres,
             fig_kws={'figsize': (5.5, 10)},
             vertical=False
         )
