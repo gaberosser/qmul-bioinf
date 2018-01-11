@@ -17,8 +17,9 @@ if __name__ == "__main__":
     optional.add_argument("--read_dir", help="Directory containing reads", default='./')
     optional.add_argument("-o", "--out_dir", help="Output directory")
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
+    optional.add_argument("-l", "--library_type", help="Library type (default: auto)")
 
-    required.add_argument("-i", "--genomeDir", help="Directory of pre-computed Salmon index", required=True)
+    required.add_argument("-i", "--index_dir", help="Directory of pre-computed Salmon index", required=True)
 
     # all extra args got to extra
     args, extra = parser.parse_known_args()

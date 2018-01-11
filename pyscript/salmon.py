@@ -19,7 +19,7 @@ class SalmonSgeRequirements(sge.ApocritaArrayJobMixin):
 
 class SalmonPEBase(jobs.ArrayJob):
     title = 'salmon_multilane_pe'
-    required_args = ['read_dir', 'threads', 'genomeDir']
+    required_args = ['read_dir', 'threads', 'index_dir']
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
