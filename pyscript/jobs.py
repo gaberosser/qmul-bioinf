@@ -552,6 +552,13 @@ class PEFastqIlluminaMultiLaneMixin(PairedFileIteratorMixin):
             self.run_names.append(base)
 
 
+class PEFastqEncodeMultiLaneMixin(PEFastqIlluminaMultiLaneMixin):
+    cleanup_regex = [
+        (r'_[12]$', ''),
+        (r'^ENC[^_]+_', ''),
+    ]
+
+
 class SraRunIteratorMixin(object):
     def setup_params(self, project_id, *args, **kwargs):
         """
