@@ -23,6 +23,7 @@ class SalmonPEBase(jobs.ArrayJob):
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
+        ('$NAME', None),
         ('$READS1', '! -z'),
         ('$READS2', '! -z'),
         ('$SUBDIR', None),  # this will be ignored
@@ -50,6 +51,7 @@ class SalmonSEBase(jobs.ArrayJob):
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
+        ('$NAME', None),
         ('$READ', '! -z'),
         ('$SUBDIR', None),  # this will be ignored
     ]
