@@ -590,7 +590,7 @@ class SalmonIlluminaPESgeJob(SgeArrayJob, PEFastqIlluminaIteratorMixin):
                 work_dir=self.out_dir,
                 threads=eff_threads,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:40:0",
+                runtime="2:0:0",
                 arr_size=self.n_tasks
             )
         )
@@ -659,7 +659,7 @@ class SalmonIlluminaSESgeJob(SgeArrayJob, SEFastqFileIteratorMixin):
                 work_dir=self.out_dir,
                 threads=eff_threads,
                 ram_per_core='%dG' % ram_per_core,
-                runtime="0:40:0",
+                runtime="2:0:0",
                 arr_size=self.n_tasks
             )
         )
