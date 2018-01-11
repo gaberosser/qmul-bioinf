@@ -27,6 +27,9 @@ def apocrita_submission_header(work_dir=None, threads=1, ram_per_core="1G", runt
 
     if arr_size is not None and arr_size > 1:
         header.append("#$ -t 1-{nfile}".format(nfile=arr_size))
+    elif arr_size == 1:
+        header.append("#$ -t 1-1")
+
 
     header.append(
         "# source bashrc to get correct path\n"

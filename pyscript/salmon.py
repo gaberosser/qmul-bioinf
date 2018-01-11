@@ -69,10 +69,12 @@ class SalmonSEBase(jobs.ArrayJob):
 
 
 class SalmonMultilanePEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
     pass
 
 
 class SalmonMultilanePEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
     pass
 
 
