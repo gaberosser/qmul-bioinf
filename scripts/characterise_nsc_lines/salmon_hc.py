@@ -148,6 +148,9 @@ if __name__ == "__main__":
         ('Duan et al.', rnaseq_data.gse61794_salmon(units=units),),
         ('Bago et al.', rnaseq_data.gse92839_salmon(units=units),),
         ('Kelley and Rinn', rnaseq_data.gse38993_salmon(units=units),),
+        ('ENCODE Wold', rnaseq_data.encode_h1_esc_wold(units=units),),
+        ('ENCODE Costello', rnaseq_data.encode_h1_esc_costello(units=units),),
+        ('ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
     ]
 
     ref = pd.concat([t[1] for t in ref_dats], axis=1)

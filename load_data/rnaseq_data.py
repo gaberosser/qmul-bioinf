@@ -2285,6 +2285,27 @@ def gse92839_salmon(units='tpm'):
     return load_salmon(count_dir, meta_fn, units=units)
 
 
+def encode_h1_esc_costello(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR950PSB')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_esc_wold(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR000EYP')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_esc_gingeras(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR000COU')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
 # mouse data
 def mouse_nsc_salmon(units='tpm'):
     # initial runs
