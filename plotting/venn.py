@@ -1,4 +1,4 @@
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, gridspec
 from matplotlib.patches import Ellipse
 from matplotlib_venn import venn2, venn3
 from utils import setops
@@ -88,3 +88,11 @@ def venn4(data, set_labels=None, show_names=True, ax=None, **kwds):
         ax.text(270, 275, set_labels[3], **alignment)
 
     return ax
+
+
+def upset_set_size_plot(*args, **kwargs):
+    """
+    Produce a summary plot showing the set sizes when the number of sets is > 4.
+    Inspired / totally copying UpsetR: https://cran.r-project.org/web/packages/UpSetR/vignettes/basic.usage.html
+    """
+    venn_sets, venn_counts = setops.venn_from_arrays(*args, **kwargs)
