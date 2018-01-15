@@ -151,6 +151,12 @@ if __name__ == "__main__":
         ('ENCODE Wold', rnaseq_data.encode_h1_esc_wold(units=units),),
         ('ENCODE Costello', rnaseq_data.encode_h1_esc_costello(units=units),),
         ('ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
+        ('ENCODE Gingeras', rnaseq_data.encode_h7_esc_gingeras(units=units),),
+        ('ENCODE Gingeras', rnaseq_data.encode_h9_npc_gingeras(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker1(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker2(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
     ]
 
     ref = pd.concat([t[1] for t in ref_dats], axis=1)
@@ -185,6 +191,11 @@ if __name__ == "__main__":
         (r'ReNcell CX', 'ReNcell CX NSC'),
         (r'NHF1-hTERT hiNSC', 'Fibroblast-derived iNSC'),
         (r'H1 ESC', 'H1 PSC'),  # purely for renaming purposes
+        ('H9-hNPC rep', 'H9 NPC Encode'),
+        ('H7-hESC rep', 'H7 ESC Encode'),
+        # (r'H1-hNPC', 'H1 hNPC Encode'),
+        # (r'H1-hESC rep', 'H1 hESC Encode'),
+        # (r'H1-hESC', 'H1 hESC Encode'),
     ]
 
     for srch, repl in to_aggr:
