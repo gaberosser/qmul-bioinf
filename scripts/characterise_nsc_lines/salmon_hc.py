@@ -153,10 +153,10 @@ if __name__ == "__main__":
         ('ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
         ('ENCODE Gingeras', rnaseq_data.encode_h7_esc_gingeras(units=units),),
         ('ENCODE Gingeras', rnaseq_data.encode_h9_npc_gingeras(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
         ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker1(units=units),),
         ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker2(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
+        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
     ]
 
     ref = pd.concat([t[1] for t in ref_dats], axis=1)

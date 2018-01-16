@@ -47,11 +47,76 @@ def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QL
     return res
 
 
+def venn_set_to_dataframe(data, venn_set, set_labels, include_sets=None):
+    """
+    Given the input DE data and Venn sets, generate a long format dataframe containing all the data, one column
+    per patient and one row per gene.
+    Optionally filter the sets to include only a subset
+    :param data: Dict containing DE results, keyed by the entries of set_labels
+    :param venn_set:
+    :param set_labels:
+    :param include_sets:
+    :return:
+    """
+    if include_sets is not None:
+        venn_set = dict([
+            (k, v) for k, v in venn_set.items() if k in include_sets
+        ])
+
+    res = []
+    for k in venn_set:
+        the_genes = venn_set[k]
+        # populate with individual patient results
+        blocks = []
+        consistency_check = []
+        for i, t in enumerate(k):
+            pid = set_labels[i]
+            this_datum = pd.DataFrame(index=the_genes, columns=[pid, "%s_logFC" % pid, "%s_FDR" % pid])
+            if t == '1':
+                this_datum.loc[the_genes, pid] = 'Y'
+                this_datum.loc[the_genes, "%s_logFC" % pid] = data[pid].loc[the_genes, 'logFC']
+                this_datum.loc[the_genes, "%s_FDR" % pid] = data[pid].loc[the_genes, 'FDR']
+                cc = data[pid].loc[the_genes, 'Direction']
+                cc.name = pid
+                consistency_check.append(cc)
+            else:
+                this_datum.loc[the_genes, pid] = 'N'
+
+            blocks.append(this_datum)
+
+        core_block = pd.concat(blocks, axis=1)
+        # assess consistency of DE direction
+        consistency_check = pd.concat(consistency_check, axis=1)
+
+        idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+
+        consist = pd.Series(index=the_genes)
+        consist.loc[idx] = 'Y'
+        consist.loc[~idx] = 'N'
+        core_block.insert(core_block.shape[1], 'consistent', consist)
+        res.append(core_block)
+
+    # check: no genes should be in more than one data entry
+    for i, k in enumerate(venn_set):
+        for j, k2 in enumerate(venn_set):
+            if k == k2: continue
+            bb = len(res[i].index.intersection(res[j].index))
+            if bb > 0:
+                raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
+
+    res = pd.concat(res, axis=0)
+
+    # add gene symbols
+    add_gene_symbols(res)
+
+    return res
+
+
 if __name__ == "__main__":
     outdir = output.unique_output_dir("compare_paired_de", reuse_empty=True)
 
     # all n=2 samples and RTK II samples
-    pids = ['017', '019', '030', '031', '050', '054']
+    pids = ['019', '030', '031', '017', '050', '054']
     cmap = 'RdYlGn_r'
 
     de_params = {
@@ -99,51 +164,44 @@ if __name__ == "__main__":
         venn_set_inconsistent[k] = the_de_direction.loc[~idx].index
 
     # generate list and save to Excel file
-    idx = []
-    cols = reduce(
-        lambda x, y: x + y,
-        [
-            ["%s" % pid, "%s_logFC" % pid, "%s_FDR" % pid] for pid in pids
-        ]
-    )
-    data = []
-    for k in venn_set:
-        the_genes = venn_set[k]
-        # populate with individual patient results
-        blocks = []
-        for i, t in enumerate(k):
-            pid = pids[i]
-            this_datum = pd.DataFrame(index=the_genes, columns=[pid, "%s_logFC" % pid, "%s_FDR" % pid])
-            if t == '1':
-                this_datum.loc[the_genes, pid] = 'Y'
-                this_datum.loc[the_genes, "%s_logFC" % pid] = de_res[pid].loc[the_genes, 'logFC']
-                this_datum.loc[the_genes, "%s_FDR" % pid] = de_res[pid].loc[the_genes, 'FDR']
-            else:
-                this_datum.loc[the_genes, pid] = 'N'
-                # this_datum.loc[the_genes, "%s_logFC" % pid] = de_res[pid].loc[the_genes, 'logFC']
-                # this_datum.loc[the_genes, "%s_FDR" % pid] = de_res[pid].loc[the_genes, 'FDR']
-            blocks.append(this_datum)
-        core_block = pd.concat(blocks, axis=1)
-        consist = pd.Series(index=the_genes)
-        consist.loc[venn_set_consistent[k]] = 'Y'
-        consist.loc[venn_set_inconsistent[k]] = 'N'
-        core_block.insert(core_block.shape[1], 'consistent', consist)
-        data.append(core_block)
-
-    # check: no genes should be in more than one data entry
-    for i, k in enumerate(venn_set):
-        for j, k2 in enumerate(venn_set):
-            if k == k2: continue
-            bb = len(data[i].index.intersection(data[j].index))
-            if bb > 0: print "%s, %s, %d" % (k, k2, bb)
-
-    data = pd.concat(data, axis=0)
-
-    # add gene symbols
-    add_gene_symbols(data)
+    data = venn_set_to_dataframe(de_res, venn_set, pids)
 
     # save
     data.to_excel(os.path.join(outdir, 'de_list_compare_patients.xlsx'))
+
+    # generate an expanded core gene set, defined as genes that are DE in both RTK I and RTK II (any number of patients)
+    subgroup_ind = dict([
+        (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
+    ])
+    expanded_core_sets = []
+    for k in venn_set:
+        this_k = np.array([t for t in k]).astype(bool)
+        nmatch = 0
+        for grp, grp_idx in subgroup_ind.items():
+            if this_k[grp_idx].any():
+                nmatch += 1
+        if nmatch == 0:
+            raise AttributeError("Shouldn't be able to find any entries that correspond to NO subgroups.")
+        elif nmatch > 1:
+            # add to the expanded core set
+            expanded_core_sets.append(k)
+
+
+
+    expanded_core = venn_set_to_dataframe(de_res, venn_set, pids, include_sets=expanded_core_sets)
+
+    # save
+    expanded_core.to_excel(os.path.join(outdir, 'expanded_core_gene_list.xlsx'))
+
+    # subgroup-specific lists (just for completeness)
+    sg_specific_sets = {}
+    for grp in subgroup_ind:
+        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        sg_specific_sets[grp] = k
+
+    subgroup_specific = venn_set_to_dataframe(de_res, venn_set, pids, include_sets=sg_specific_sets.values())
+    subgroup_specific.to_excel(os.path.join(outdir, 'subgroup_specific_gene_list.xlsx'))
+
 
     # UpsetR attribute plots
     set_labels = ['019', '030', '031', '017', '050', '054']

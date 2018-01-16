@@ -2312,6 +2312,48 @@ def encode_h1_esc_gingeras(units='tpm'):
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
+def encode_h7_esc_gingeras(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR490SQH')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h9_npc_gingeras(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR244ISQ')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_npc_ecker1(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR977XUX')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_npc_ecker2(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR572EET')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_esc_ecker1(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR670WQY')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
+def encode_h1_esc_ecker2(units='tpm'):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR043RSE')
+    meta_fn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'human', 'salmon')
+    return load_salmon(count_dir, meta_fn, units=units)
+
+
 
 def encode_h9_npc_gingeras(units='tpm'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR244ISQ')
