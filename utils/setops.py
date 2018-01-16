@@ -29,6 +29,20 @@ def binary_combinations_sum_gte(n, nmin, **kwargs):
             yield bn
 
 
+def binary_combinations_sum_eq(n, neq, **kwargs):
+    """
+    Generator of binary strings n digits long.
+    The strings generated have exactly neq ones.
+    :param n:
+    :param neq:
+    :param kwargs: Passed to binary_combinations
+    :return:
+    """
+    for bn in binary_combinations(n, **kwargs):
+        if len(bn.replace('0', '')) == neq:
+            yield bn
+
+
 def venn_from_arrays(*args, **kwargs):
     """
     The input arguments *args contain a number of arrays. Each one is a list or similar, e.g. a list of strings

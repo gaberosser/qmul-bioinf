@@ -145,82 +145,26 @@ if __name__ == "__main__":
     # save
     data.to_excel(os.path.join(outdir, 'de_list_compare_patients.xlsx'))
 
-    # plot UpsetR basic plot
-    # will move this to plotting.venn when complete
-    set_labels = pids  # this will be supplied to the function
-    args = [de_res[pid].index for pid in set_labels]  # this will be supplied to the function
-    venn_set, venn_ct = setops.venn_from_arrays(*args)
-    include_singletons = False
-    n_to_plot = 30
-    width = 0.9
-    ms = 10  # marker size in pt
-    lightgrey = '#cecece'
+    # UpsetR attribute plots
+    set_labels = ['019', '030', '031', '017', '050', '054']
+    data_for_upset = [de_res[pid].index for pid in set_labels]  # this will be supplied to the function
 
-    # could alternatively sort by no. intersecting sets?
-    if include_singletons:
-        ordered_counts = sorted(venn_ct.items(), key=lambda x: x[1], reverse=True)
-    else:
-        # exclude any results with only one set
-        ordered_counts = sorted(
-            [t for t in venn_ct.items() if len(t[0].replace('0', '')) > 1],
-            key=lambda x: x[1],
-            reverse=True
-        )
-    ordered_counts = ordered_counts[:n_to_plot]
-
-    gs_kw = dict(
-        left=0.05,
-        right=0.99,
-        top=0.99,
-        bottom=0.1,
-        wspace=0.1,
-        hspace=0.01,
-        height_ratios=[6, 3],
-        width_ratios=[3, 6],
+    # 1. Descending order
+    upset1 = venn.upset_set_size_plot(
+        data_for_upset,
+        set_labels,
+        min_size=10,
+        n_plot=30
     )
+    upset1['figure'].savefig(os.path.join(outdir, "upset_descending.png"), dpi=200)
 
-    gs = gridspec.GridSpec(nrows=2, ncols=2, **gs_kw)
-    fig = plt.figure(figsize=(9, 6))
-    ax_tl = fig.add_subplot(gs[0, 0])
-    ax_set_size = fig.add_subplot(gs[1, 0])
-    ax_intersect = fig.add_subplot(gs[1, 1], sharey=ax_set_size)
-    ax_main = fig.add_subplot(gs[0, 1], sharex=ax_intersect)
-
-    # hide some things
-    ax_tl.set_visible(False)
-    plt.setp(ax_intersect.get_yticklabels(), visible=False)
-    plt.setp(ax_main.get_xticklabels(), visible=False)
-    plt.setp(ax_intersect.get_xticklabels(), visible=False)
-
-    # data
-    x_arr = np.arange(len(ordered_counts)) + 0.5
-    y_arr = np.arange(len(set_labels))
-
-    # main bar chart
-    ax_main.bar(x_arr, [t[1] for t in ordered_counts], width=width)
-    ax_main.set_ylabel('Number of DE genes in set')
-
-    # bottom right set intersections
-    # grey markers everywhere
-    for y in y_arr:
-        ax_intersect.plot(x_arr, np.ones_like(x_arr) * y, marker='o', mfc=lightgrey, mec='none', ms=ms, ls='none')
-    # black markers only on sets that are included
-    for i, (k, v) in enumerate(ordered_counts):
-        x = x_arr[i]
-        y = [j for j, u in enumerate(k) if u == '1']
-        ax_intersect.plot(x * np.ones(len(y)), y, marker='o', mfc='k', mec='k', ms=ms, ls='none')
-
-    # bottom left : singleton set size
-    singleton_sizes = [len(t) for t in args]
-    ax_set_size.barh(y_arr + 0.5, singleton_sizes, -width, align='edge')
-    ax_set_size.invert_xaxis()
-    ax_set_size.set_ylim([-.5, len(set_labels) - .5])
-    ax_set_size.yaxis.tick_right()
-    ax_set_size.set_yticks(y_arr)
-    ax_set_size.set_yticklabels(set_labels)
-    ax_set_size.set_xlabel("Number of DE genes in single comparison")
-
-
-
-
+    # 2. Grouped by number of participants in the sets
+    upset2 = venn.upset_set_size_plot(
+        data_for_upset,
+        set_labels,
+        order_by_n_members=True,
+        min_size=30,
+        n_plot=50
+    )
+    upset2['figure'].savefig(os.path.join(outdir, "upset_grouped_descending.png"), dpi=200)
 
