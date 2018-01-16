@@ -50,6 +50,67 @@ def cluster_data_with_threshold(data, min_val=None, n=None, mad=None, min_over=2
     return cm, mad
 
 
+def compare_mad_genes(data, samples1, samples2=None, max_ng=10000, step=50):
+    """
+    Test the overlap of two samples in terms of the top genes drawn (by descending MAD).
+    :param data:
+    :param samples1:
+    :param samples2: Second sample set. If None, use all samples.
+    :return:
+    """
+    d1 = data.loc[:, samples1]
+    if samples2 is not None:
+        d2 = data.loc[:, samples2]
+    else:
+        d2 = data
+
+    mad1 = transformations.median_absolute_deviation(d1).sort_values(ascending=False)
+    mad2 = transformations.median_absolute_deviation(d2).sort_values(ascending=False)
+
+    ng = np.arange(step, max_ng + 1, step)
+
+    iu = [(
+        mad1.index[:i].intersection(mad2.index[:i]),
+        mad2.index[:i].union(mad2.index[:i])
+    ) for i in ng]
+    iu_pct = np.array([
+        t[0].size / float(t[1].size) * 100 for t in iu
+    ])
+    return ng, iu_pct
+
+
+
+def hc_plot_dendrogram_vary_n_gene(
+        data,
+        row_colours,
+        n_gene_arr=(1000, 2000, 3000, 5000, 10000),
+        metric='correlation'
+):
+    """
+    For each value in n_gene_arr, plot a dendrogram showing the result of hierarchical clustering of the data using
+    that many genes (selected in descending MAD order)
+    :param data: Cols are samples, rows are genes (or similar)
+    :param row_colours: As passed to dendrogram routine
+    :param n_gene_arr: The values to test
+    :return:
+    """
+    mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
+    fig_dict = {}
+    for ng in n_gene_arr:
+        the_dat = data.loc[mad.index[:ng]]
+        d = clustering.dendrogram_with_colours(
+            the_dat,
+            row_colours,
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False,
+            metric=metric
+        )
+        fig_dict[ng] = d
+    return fig_dict
+
+
+
+
 if __name__ == "__main__":
     # units = 'estimated_counts'
     units = 'tpm'
@@ -276,40 +337,169 @@ if __name__ == "__main__":
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
 
-    for n_t in n_gene_try:
-        fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+    plt_dict = hc_plot_dendrogram_vary_n_gene(abg_log, row_colours_all)
+    for ng, x in plt_dict.items():
+        fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
-        cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
-        cm.gs.update(bottom=0.3)
-        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
-
-        fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
-        d = clustering.dendrogram_with_colours(
-            abg_log.loc[amad_log.index[:n_t]],
-            row_colours_all,
-            fig_kws={'figsize': (5.5, 10)},
-            vertical=False
-        )
-        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    # for n_t in n_gene_try:
+    #     fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+    #
+    #     cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
+    #     cm.gs.update(bottom=0.3)
+    #     cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    #
+    #     fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+    #     d = clustering.dendrogram_with_colours(
+    #         abg_log.loc[amad_log.index[:n_t]],
+    #         row_colours_all,
+    #         fig_kws={'figsize': (5.5, 10)},
+    #         vertical=False
+    #     )
+    #     d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
     # remove Bares and replot
-    abg_nobarres = abg.loc[:, ~abg.columns.str.contains('Barres')]
+    # abg_nobarres = abg.loc[:, ~abg.columns.str.contains('Barres')]
+
     abg_nobarres_log = abg_log.loc[:, ~abg_log.columns.str.contains('Barres')]
     amad_nobarres_log = transformations.median_absolute_deviation(abg_nobarres_log).sort_values(ascending=False)
-    row_colours_nobarres = row_colours_all.loc[abg_nobarres.columns]
+    row_colours_nobarres = row_colours_all.loc[abg_nobarres_log.columns]
 
-    for n_t in n_gene_try:
-        fname = "no_barres_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+    plt_dict = hc_plot_dendrogram_vary_n_gene(abg_nobarres_log, row_colours_nobarres)
+    for ng, x in plt_dict.items():
+        fname = "no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
-        cm, mad_all = cluster_logdata_with_threshold(abg_nobarres, n=n_t, eps=eps, col_colors=row_colours_nobarres)
-        cm.gs.update(bottom=0.3)
-        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
-        fname = "no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
-        d = clustering.dendrogram_with_colours(
-            abg_nobarres_log.loc[amad_nobarres_log.index[:n_t]],
-            row_colours_nobarres,
-            fig_kws={'figsize': (5.5, 10)},
-            vertical=False
-        )
-        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    # kick out fetal samples
+    x = abg_nobarres_log.loc[:, ~abg_nobarres_log.columns.str.contains('Fetal')]
+    x = x.loc[:, ~x.columns.str.contains('Fibroblast-derived iNSC')]
+    x = x.loc[:, ~x.columns.str.contains('ReNcell')]
+    abg_nofetal_nobarres_log = x
+    rc = row_colours_all.loc[x.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(x, rc)
+    for ng, x in plt_dict.items():
+        fname = "no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # Encode samples, no Barres
+    x = abg_nobarres_log.loc[:, ~abg_nobarres_log.columns.str.contains('Kelley')]
+    x = x.loc[:, ~x.columns.str.contains('Duan')]
+    x = x.loc[:, ~x.columns.str.contains('Bago')]
+    abg_encode_nobarres_log = x
+
+    rc = row_colours_all.loc[x.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(x, rc)
+    for ng, x in plt_dict.items():
+        fname = "encode_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # Encode samples, no Barres, no fetal
+    x = abg_encode_nobarres_log.loc[:, ~abg_encode_nobarres_log.columns.str.contains('Fetal')]
+    x = x.loc[:, ~x.columns.str.contains('Fibroblast-derived iNSC')]
+    x = x.loc[:, ~x.columns.str.contains('ReNcell')]
+    abg_encode_nofetal_nobarres_log = x
+
+    rc = row_colours_all.loc[x.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(x, rc)
+    for ng, x in plt_dict.items():
+        fname = "encode_no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    # no Encode, no Barres
+    x = abg_nobarres_log.loc[:, ~abg_nobarres_log.columns.str.contains('ENCODE')]
+    abg_noencode_nobarres_log = x
+    rc = row_colours_all.loc[x.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(x, rc)
+    for ng, x in plt_dict.items():
+        fname = "no_encode_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # no Encode, no Barres, no fetal
+    x = abg_noencode_nobarres_log.loc[:, ~abg_noencode_nobarres_log.columns.str.contains('Fetal')]
+    x = x.loc[:, ~x.columns.str.contains('Fibroblast-derived iNSC')]
+    x = x.loc[:, ~x.columns.str.contains('ReNcell')]
+    abg_noencode_no_fetal_nobarres_log = x
+    rc = row_colours_all.loc[x.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(x, rc)
+    for ng, x in plt_dict.items():
+        fname = "no_encode_no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    # for n_t in n_gene_try:
+    #     fname = "no_barres_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+    #
+    #     cm, mad_all = cluster_logdata_with_threshold(abg_nobarres, n=n_t, eps=eps, col_colors=row_colours_nobarres)
+    #     cm.gs.update(bottom=0.3)
+    #     cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    #
+    #     fname = "no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+    #     d = clustering.dendrogram_with_colours(
+    #         abg_nobarres_log.loc[amad_nobarres_log.index[:n_t]],
+    #         row_colours_nobarres,
+    #         fig_kws={'figsize': (5.5, 10)},
+    #         vertical=False
+    #     )
+    #     d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # more out of interest than anything else:
+    # what proportion of the genes (ranked by MAD) are shared between the 'with Barres' and 'without Barres' sets?
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ng, iu_pct = compare_mad_genes(abg_log, samples1=abg_nobarres_log.columns)
+    ax.plot(ng, iu_pct, label="With/without Barres")
+
+    ng, iu_pct = compare_mad_genes(abg_log, samples1=abg_noencode_nobarres_log.columns, samples2=abg_nobarres_log.columns)
+    ax.plot(ng, iu_pct, label="Without Barres, with/without Encode")
+
+    ax.set_xlabel("Number of genes (descending MAD order)")
+    ax.set_ylabel("Percentage common with and without Barres data")
+    ax.legend(loc='lower right')
+    fig.savefig(os.path.join(outdir, "gene_intersection_pct.png"), dpi=200)
+
+    # now try with different sample choices
+
+
+    # TODO: move this. PCA plot
+    from plotting import pca
+    from sklearn.decomposition import PCA
+
+    p = PCA()
+    y = p.fit_transform(abg_nobarres_log.transpose())
+
+    subgroups = pd.Series('NA', index=abg_nobarres_log.columns)
+    subgroups.loc[subgroups.index.str.contains('NPC')] = 'NPC'
+    subgroups.loc[subgroups.index.str.contains('NSC')] = 'NPC'
+    subgroups.loc[subgroups.index.str.contains('PSC')] = 'PSC'
+    subgroups.loc[subgroups.index.str.contains('ESC')] = 'PSC'
+    subgroups.loc[subgroups.index.str.contains('fetal')] = 'Fetal NSC'
+    subgroups.loc[subgroups.index.str.contains('iNSC')] = 'iNSC'
+    subgroups.loc[subgroups.index.str.contains(r'DURA[0-9]*_NSC')] = 'Dura iNSC'
+    subgroups.loc[subgroups.index.str.contains('IPSC')] = 'Dura iPSC'
+    sg_cmap = {
+        'NPC': 'b',
+        'PSC': 'g',
+        'iNSC': 'y',
+        'Dura iNSC': 'c',
+        'IPSC': 'r',
+        'Dura iPSC': 'm',
+        'NA': 'k'
+    }
+    ax = pca.pca_plot_by_group_2d(y, subgroups, components=(0, 1), ellipses=False, colour_map=sg_cmap)
+    plt.tight_layout()
+    ax.figure.savefig(os.path.join(outdir, "no_barres_pca_01.png"), dpi=200)
+    ax = pca.pca_plot_by_group_2d(y, subgroups, components=(1, 2), ellipses=False, colour_map=sg_cmap)
+    plt.tight_layout()
+    ax.figure.savefig(os.path.join(outdir, "no_barres_pca_12.png"), dpi=200)
+    ax = pca.pca_plot_by_group_2d(y, subgroups, components=(0, 2), ellipses=False, colour_map=sg_cmap)
+    plt.tight_layout()
+    ax.figure.savefig(os.path.join(outdir, "no_barres_pca_02.png"), dpi=200)

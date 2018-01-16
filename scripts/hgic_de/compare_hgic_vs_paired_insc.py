@@ -31,15 +31,36 @@ def add_fc_direction(df):
     df.insert(df.shape[1], 'Direction', direction)
 
 
-def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QLGLM'):
+def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QLGLM', return_full=False):
     if method == 'QLGLM':
         the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
-        res = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+        res = differential_expression.edger_glmqlfit(
+            the_data,
+            the_groups,
+            the_contrast,
+            lfc=lfc,
+            fdr=fdr,
+            return_full=return_full
+        )
     elif method == 'GLM':
         the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
-        res = differential_expression.edger_glmfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+        res = differential_expression.edger_glmfit(
+            the_data,
+            the_groups,
+            the_contrast,
+            lfc=lfc,
+            fdr=fdr,
+            return_full=return_full
+        )
     elif method == 'exact':
-        res = differential_expression.edger_exacttest(the_data, the_groups, pair=the_comparison[::-1], lfc=lfc, fdr=fdr)
+        res = differential_expression.edger_exacttest(
+            the_data,
+            the_groups,
+            pair=the_comparison[::-1],
+            lfc=lfc,
+            fdr=fdr,
+            return_full=return_full
+        )
 
     add_gene_symbols(res)
     add_fc_direction(res)
@@ -47,15 +68,18 @@ def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QL
     return res
 
 
-def venn_set_to_dataframe(data, venn_set, set_labels, include_sets=None):
+def venn_set_to_dataframe(data, venn_set, set_labels, include_sets=None, full_data=None):
     """
     Given the input DE data and Venn sets, generate a long format dataframe containing all the data, one column
     per patient and one row per gene.
-    Optionally filter the sets to include only a subset
+    Optionally filter the sets to include only a subset.
+    Optionally include non-significant results too.
     :param data: Dict containing DE results, keyed by the entries of set_labels
     :param venn_set:
     :param set_labels:
     :param include_sets:
+    :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
+    significant results can be accessed.
     :return:
     """
     if include_sets is not None:
@@ -81,18 +105,22 @@ def venn_set_to_dataframe(data, venn_set, set_labels, include_sets=None):
                 consistency_check.append(cc)
             else:
                 this_datum.loc[the_genes, pid] = 'N'
+                if full_data is not None:
+                    this_datum.loc[the_genes, "%s_logFC" % pid] = full_data[pid].loc[the_genes, 'logFC']
+                    this_datum.loc[the_genes, "%s_FDR" % pid] = full_data[pid].loc[the_genes, 'FDR']
 
             blocks.append(this_datum)
 
         core_block = pd.concat(blocks, axis=1)
         # assess consistency of DE direction
-        consistency_check = pd.concat(consistency_check, axis=1)
-
-        idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
-
         consist = pd.Series(index=the_genes)
-        consist.loc[idx] = 'Y'
-        consist.loc[~idx] = 'N'
+
+        if len(consistency_check) > 0:
+            consistency_check = pd.concat(consistency_check, axis=1)
+            idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+            consist.loc[idx] = 'Y'
+            consist.loc[~idx] = 'N'
+
         core_block.insert(core_block.shape[1], 'consistent', consist)
         res.append(core_block)
 
@@ -141,15 +169,23 @@ if __name__ == "__main__":
 
     # compute DE between hGIC and paired iNSC
     de_res = {}
+    de_res_full = {}
     for pid in pids:
         hgic_samples = rnaseq_obj.meta.index[rnaseq_obj.meta.index.str.contains(pid)]
         the_data = rnaseq_obj.data.loc[:, hgic_samples]
         the_groups = rnaseq_obj.meta.loc[hgic_samples, 'type']
         the_comparison = ['GBM', 'iNSC']
         de_res[pid] = run_one_de(the_data, the_groups, the_comparison, **de_params)
+        de_res_full[pid] = run_one_de(the_data, the_groups, the_comparison, return_full=True, **de_params)
         print "GBM %s paired comparison, %d DE genes" % (pid, de_res[pid].shape[0])
 
     venn_set, venn_ct = setops.venn_from_arrays(*[de_res[pid].index for pid in pids])
+
+    # add null set manually
+    de_genes_all = reduce(lambda x, y: set(x).union(y), venn_set.values())
+    k_null = ''.join(['0'] * len(pids))
+    venn_set[k_null] = list(de_res_full[pids[0]].index.difference(de_genes_all))
+    venn_ct[k_null] = len(venn_set[k_null])
 
     # check direction is the same
     venn_set_consistent = {}
@@ -164,7 +200,7 @@ if __name__ == "__main__":
         venn_set_inconsistent[k] = the_de_direction.loc[~idx].index
 
     # generate list and save to Excel file
-    data = venn_set_to_dataframe(de_res, venn_set, pids)
+    data = venn_set_to_dataframe(de_res, venn_set, pids, full_data=de_res_full)
 
     # save
     data.to_excel(os.path.join(outdir, 'de_list_compare_patients.xlsx'))
@@ -180,9 +216,7 @@ if __name__ == "__main__":
         for grp, grp_idx in subgroup_ind.items():
             if this_k[grp_idx].any():
                 nmatch += 1
-        if nmatch == 0:
-            raise AttributeError("Shouldn't be able to find any entries that correspond to NO subgroups.")
-        elif nmatch > 1:
+        if nmatch > 1:
             # add to the expanded core set
             expanded_core_sets.append(k)
 

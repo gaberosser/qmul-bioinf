@@ -19,9 +19,10 @@ if __name__ == '__main__':
     the_groups[dat.columns.str.contains('mDura')] = 'iNSC'
     the_contrast = 'iNSC - eNSC'
 
-    res = differential_expression.edger_glmqlfit(dat, the_groups, the_contrast, lfc=lfc, fdr=fdr)
+    res = differential_expression.edger_glmqlfit(dat, the_groups, the_contrast, lfc=lfc, fdr=fdr, return_full=True)
 
     gs = references.ensembl_to_gene_symbol(res.index, tax_id=10090)
+    gs = gs.loc[~gs.index.duplicated()]
     res.insert(0, "Gene symbol", gs.values)
 
     out_fn = os.path.join(outdir, "de_insc-ensc.xlsx")

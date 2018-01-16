@@ -8,7 +8,7 @@ toptags_cols = [
     "logFC", "unshrunk.logFC", "logCPM", "PValue", "FDR"
 ]
 
-def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
+def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, return_full=False):
     rdata = pandas2ri.py2ri(the_data)
     rgroups = robjects.FactorVector(the_groups)
     y = r("DGEList")(rdata)
@@ -21,7 +21,10 @@ def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
     rcontrast = r('makeContrasts')(robjects.StrVector([the_contrast]), levels=design)
     fit = r('glmQLFit')(y, design)
     lrt = r('glmTreat')(fit, contrast=rcontrast, lfc=lfc)
-    toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': fdr})
+    if return_full:
+        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': 1.})
+    else:
+        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': fdr})
     if len(toptags) == 0:
         return pd.DataFrame(columns=toptags_cols)
     else:
@@ -31,7 +34,7 @@ def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
 edger_glmqlfit = rinterface.RFunctionDeferred(_edger_func_glmqlfit, imports=['edgeR'])
 
 
-def _edger_func_glmfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
+def _edger_func_glmfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, return_full=False):
     rdata = pandas2ri.py2ri(the_data)
     rgroups = robjects.FactorVector(the_groups)
     y = r("DGEList")(rdata)
@@ -44,7 +47,10 @@ def _edger_func_glmfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
     rcontrast = r('makeContrasts')(robjects.StrVector([the_contrast]), levels=design)
     fit = r('glmFit')(y, design)
     lrt = r('glmTreat')(fit, contrast=rcontrast, lfc=lfc)
-    toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': fdr})
+    if return_full:
+        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': 1.})
+    else:
+        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': fdr})
     if len(toptags) == 0:
         return pd.DataFrame(columns=toptags_cols)
     else:
@@ -54,7 +60,7 @@ def _edger_func_glmfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1):
 edger_glmfit = rinterface.RFunctionDeferred(_edger_func_glmfit, imports=['edgeR'])
 
 
-def _edger_func_exacttest(the_data, the_groups, fdr=0.01, lfc=1, pair=None):
+def _edger_func_exacttest(the_data, the_groups, fdr=0.01, lfc=1, pair=None, return_full=False):
     """
     Run edgeR DE analysis without fitting a GLM. Instead, we just compare two groups. Only a single factor is supported.
     :param the_data:
@@ -74,7 +80,10 @@ def _edger_func_exacttest(the_data, the_groups, fdr=0.01, lfc=1, pair=None):
     y = r("calcNormFactors")(y)
     y = r("estimateDisp")(y)
     et = r('exactTest')(y, rpair)
-    toptags = r('topTags')(et, n=r('Inf'), **{'p.value': fdr})
+    if return_full:
+        toptags = r('topTags')(et, n=r('Inf'), **{'p.value': 1.})
+    else:
+        toptags = r('topTags')(et, n=r('Inf'), **{'p.value': fdr})
     if len(toptags) == 0:
         return pd.DataFrame(columns=toptags_cols)
     else:
