@@ -139,31 +139,47 @@ if __name__ == "__main__":
         d['fig'].savefig(os.path.join(outdir, fname_log.format(ext='png')), dpi=200)
 
     # bring in reference data
+    # IDs (if req), lab (appears in label), loader
     ref_dats = [
-        ('Barres et al.', rnaseq_data.gse73721_salmon(units=units),),
-        ('Caren et al.', rnaseq_data.pollard_salmon(units=units),),
-        ('Yang et al.', rnaseq_data.gse80732_salmon(units=units),),
-        ('Shahbazi et al.', rnaseq_data.gse64882_salmon(units=units),),
-        ('Li et al.', rnaseq_data.gse84166_salmon(units=units),),
-        ('Duan et al.', rnaseq_data.gse61794_salmon(units=units),),
-        ('Bago et al.', rnaseq_data.gse92839_salmon(units=units),),
-        ('Kelley and Rinn', rnaseq_data.gse38993_salmon(units=units),),
-        ('ENCODE Wold', rnaseq_data.encode_h1_esc_wold(units=units),),
-        ('ENCODE Costello', rnaseq_data.encode_h1_esc_costello(units=units),),
-        ('ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
-        ('ENCODE Gingeras', rnaseq_data.encode_h7_esc_gingeras(units=units),),
-        ('ENCODE Gingeras', rnaseq_data.encode_h9_npc_gingeras(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker1(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker2(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
-        ('ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
+        (None, 'Barres et al.', rnaseq_data.gse73721_salmon(units=units),),
+        (None, 'Caren et al.', rnaseq_data.pollard_salmon(units=units),),
+        (None, 'Yang et al.', rnaseq_data.gse80732_salmon(units=units),),
+        (None, 'Shahbazi et al.', rnaseq_data.gse64882_salmon(units=units),),
+        (None, 'Li et al.', rnaseq_data.gse84166_salmon(units=units),),
+        (None, 'Duan et al.', rnaseq_data.gse61794_salmon(units=units),),
+        (None, 'Bago et al.', rnaseq_data.gse92839_salmon(units=units),),
+        (None, 'Kelley and Rinn', rnaseq_data.gse38993_salmon(units=units),),
+        (None, 'ENCODE Wold', rnaseq_data.encode_h1_esc_wold(units=units),),
+        (['H1 PSC Costello_PSB'], 'ENCODE Costello', rnaseq_data.encode_h1_esc_costello(units=units),),
+        (['ENCSR000COU rep 1', 'ENCSR000COU rep 2'], 'ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
+        (None, 'ENCODE Gingeras', rnaseq_data.encode_h7_esc_gingeras(units=units),),
+        (None, 'ENCODE Gingeras', rnaseq_data.encode_h9_npc_gingeras(units=units),),
+        (['H1 PSC Ecker_WQY'], 'ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker1(units=units),),
+        (['H1 PSC Ecker_RSE'], 'ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker2(units=units),),
+        (['H1 NPC Ecker_XUX'], 'ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
+        (['H1 NPC Ecker_EET'], 'ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
     ]
 
-    ref = pd.concat([t[1] for t in ref_dats], axis=1)
-    batches = pd.Series(
-        reduce(lambda x, y: x + y, [[t[0]] * t[1].shape[1] for t in ref_dats]),
-        index=ref.columns
-    )
+    ref_arr = []
+    ref_labels = []
+    ref_cols = []
+    batches = []
+
+    for i, r in enumerate(ref_dats):
+        the_dat = r[2]
+        if r[0] is not None:
+            the_cols = r[0]
+        else:
+            the_cols = the_dat.columns
+        ref_cols.extend(the_cols)
+        ref_labels.extend(the_dat.columns)
+        ref_arr.append(the_dat)
+        batches.extend([r[1]] * the_dat.shape[1])
+
+    ref = pd.concat(ref_arr, axis=1)
+    ref.columns = ref_cols
+    batches = pd.Series(batches, index=ref_cols)
+    labels = pd.Series(ref_labels, ref_cols)
     ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
     # discard Barres irrelevant samples
@@ -171,12 +187,14 @@ if __name__ == "__main__":
     # discard fibroblasts (careful, need to be selective here)
 
     to_discard = [
-        'Fetal ctx', 'tumor', 'ctx endo', 'whole cortex', 'myeloid', 'LM-NSC', r'^fibroblast', 'NHF1-hTERT fibroblasts'
+        'Fetal ctx', 'tumor', 'ctx endo', 'whole cortex', 'myeloid', 'LM-NSC', r'^fibroblast', 'NHF1-hTERT fibroblasts',
+        'foreskin fibroblast', 'lung fibroblast'
     ]
     for td in to_discard:
         the_idx = ~ref.columns.str.contains(td)
         ref = ref.loc[:, the_idx]
         batches = batches.loc[the_idx]
+        labels = labels.loc[the_idx]
 
     # Take mean over various replicates (for simplicity)
     to_aggr = [
@@ -190,21 +208,33 @@ if __name__ == "__main__":
         (r'fetal NSC rep', 'Fetal NSC'),
         (r'ReNcell CX', 'ReNcell CX NSC'),
         (r'NHF1-hTERT hiNSC', 'Fibroblast-derived iNSC'),
-        (r'H1 ESC', 'H1 PSC'),  # purely for renaming purposes
+        (r'ENCSR000COU rep', 'H1 PSC'),
+        (r'H1-hESC rep', 'H1 PSC'),
+        (r'H7-hESC rep', 'H7 PSC'),
+        (r'H9-hNPC rep', 'H9 NPC'),
+        (r'H1 NPC Ecker', 'H1 NPC'),
+        (r'H1 PSC Ecker', 'H1 PSC'),
     ]
 
     for srch, repl in to_aggr:
-        cols = ref.loc[:, ref.columns.str.contains(srch)].columns
-        ref.insert(0, repl, ref.loc[:, cols].mean(axis=1), allow_duplicates=True)
-        ref.drop(cols, axis=1, inplace=True)
-        batches = pd.Series([batches.loc[cols[0]]], index=[repl]).append(batches)
-        # batches.loc[repl] = batches.loc[cols[0]]
-        batches.drop(cols, inplace=True)
+        idx = ref.columns.str.contains(srch)
 
-    # append study name to columns
-    new_cols = ["%s (%s)" % (ref.columns[i], batches.iloc[i]) for i in range(len(ref.columns))]
-    ref.columns = new_cols
-    batches.index = new_cols
+        new_col = ref.loc[:, idx].mean(axis=1)
+        new_batch = batches.loc[idx].iloc[0]
+        new_label = repl
+
+        ref = ref.loc[:, ~idx]
+        ref.insert(ref.shape[1], repl, new_col, allow_duplicates=True)
+        batches = batches.loc[~idx]
+        batches = batches.append(pd.Series([new_batch], index=[repl]))
+        labels = labels.loc[~idx]
+        labels = labels.append(pd.Series([new_label], index=[repl]))
+
+    # append study name to labels
+    new_labels = ["%s (%s)" % (t) for t in zip(labels.index, batches.values)]
+
+    ref.columns = new_labels
+    batches.index = new_labels
 
     ref_by_gene = ref.groupby(genes).sum()
 
@@ -232,6 +262,7 @@ if __name__ == "__main__":
 
     row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=[''])
     row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = 'blue'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = 'blue'
     row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'
     row_colours_all.loc[row_colours_all.index.str.contains(r'Fibroblast')] = '#fff89e'
     row_colours_all.loc[row_colours_all.index.str.contains(r'Fetal')] = 'yellow'
