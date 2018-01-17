@@ -9,7 +9,7 @@ import pandas as pd
 if __name__ == '__main__':
     outdir = unique_output_dir("mouse_NSC_DE", reuse_empty=True)
 
-    lfc = 1
+    lfc = 0
     fdr = 0.01
 
     dat = rnaseq_data.mouse_nsc_star()

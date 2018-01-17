@@ -46,7 +46,15 @@ def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QL
     return res
 
 
-def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), lfc=1, fdr=0.01, method='QLGLM'):
+def compute_cross_de(
+        rnaseq_obj,
+        pids,
+        external_references=(('GIBCO', 'NSC'),),
+        lfc=1,
+        fdr=0.01,
+        method='QLGLM',
+        njob=None
+):
     """
     Compute DE between every patient GBM sample and every _other_ healthy patient sample, in addition to paired DE.
     We can also include one or more external references (e.g. Gibco, the default).
@@ -56,12 +64,15 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
     :param lfc:
     :param fdr:
     :param method:
-    :param njob:
+    :param njob: Number of multiprocessing workers to use (default: None - automatically selected)
     :return:
     """
     if method not in {'QLGLM', 'GLM', 'exact'}:
         raise NotImplementedError("Unsupported method.")
     de = {}
+
+    pool = mp.Pool()
+    jobs = {}
 
     for pid in pids:
 
@@ -70,22 +81,42 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
             the_idx = (rnaseq_obj.meta.index.str.contains(pid) & (rnaseq_obj.meta.loc[:, 'type'] == 'GBM')) | \
                       (rnaseq_obj.meta.index.str.contains(pid2) & (rnaseq_obj.meta.loc[:, 'type'] == 'iNSC'))
             the_data = rnaseq_obj.data.loc[:, the_idx]
-            the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
+            # filtering here changes the lists quite a lot
+            # the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_comparison = ['GBM', 'iNSC']
-
-            de[(pid, pid2)] = run_one_de(the_data, the_groups, the_comparison, lfc=lfc, fdr=fdr, method=method)
+            if njob == 1:
+                de[(pid, pid2)] = run_one_de(the_data, the_groups, the_comparison, lfc=lfc, fdr=fdr, method=method)
+            else:
+                jobs[(pid, pid2)] = pool.apply_async(
+                    run_one_de,
+                    args=(the_data, the_groups, the_comparison),
+                    kwds=dict(lfc=lfc, fdr=fdr, method=method)
+                )
 
         # external reference comparison
         for er, er_type in external_references:
             the_idx = (rnaseq_obj.meta.index.str.contains(pid) & (rnaseq_obj.meta.loc[:, 'type'] == 'GBM')) | \
                       (rnaseq_obj.meta.index.str.contains(er) & (rnaseq_obj.meta.loc[:, 'type'] == er_type))
             the_data = rnaseq_obj.data.loc[:, the_idx]
-            the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
+            # filtering here changes the lists quite a lot
+            # the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_comparison = ['GBM', er_type]
-            de[(pid, er)] = run_one_de(the_data, the_groups, the_comparison, lfc=lfc, fdr=fdr, method=method)
+            if njob == 1:
+                de[(pid, er)] = run_one_de(the_data, the_groups, the_comparison, lfc=lfc, fdr=fdr, method=method)
+            else:
+                jobs[(pid, er)] = pool.apply_async(
+                    run_one_de,
+                    args=(the_data, the_groups, the_comparison),
+                    kwds=dict(lfc=lfc, fdr=fdr, method=method)
+                )
 
+    if njob != 1:
+        pool.close()
+        pool.join()
+        for k, j in jobs.items():
+            de[k] = j.get(1e6)
 
     return de
 
@@ -93,7 +124,6 @@ def compute_cross_de(rnaseq_obj, pids, external_references=(('GIBCO', 'NSC'),), 
 if __name__ == "__main__":
 
     outdir = output.unique_output_dir("cross_validate_de", reuse_empty=True)
-    ref_name = 'GIBCONSC_P4'
     # all n=2 samples and RTK II samples
     pids = ['017', '019', '030', '031', '050', '054']
     cmap = 'RdYlGn_r'
@@ -109,17 +139,6 @@ if __name__ == "__main__":
         'RTK II': ['017', '050', '054'],
     }
 
-    # dmr_params = {
-    #     'core_min_sample_overlap': 3,  # 3 / 4 samples must match
-    #     'd_max': 400,
-    #     'n_min': 6,
-    #     'delta_m_min': 1.4,
-    #     'fdr': 0.01,
-    #     'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
-    #     'test_kwargs': {},
-    #     'n_jobs': 8,
-    # }
-
     intersecter = lambda x, y: set(x).intersection(y)
     unioner = lambda x, y: set(x).union(y)
 
@@ -127,44 +146,57 @@ if __name__ == "__main__":
     rnaseq_obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
 
     # load additional references if required
-    rencell_obj = rnaseq_data.gse92839(annotate_by='Ensembl Gene ID')
+    h9_obj = rnaseq_data.gse61794(annotate_by='Ensembl Gene ID')
     h1_obj = rnaseq_data.gse38993(annotate_by='Ensembl Gene ID')
-    rnaseq_obj = rnaseq_data.MultipleBatchLoader([rnaseq_obj, rencell_obj, h1_obj])
+    rnaseq_obj = rnaseq_data.MultipleBatchLoader([rnaseq_obj, h1_obj, h9_obj])
 
     # discard unmapped, etc
     rnaseq_obj.data = rnaseq_obj.data.loc[rnaseq_obj.data.index.str.contains('ENSG')]
-    rnaseq_obj.meta = rnaseq_obj.meta.loc[~rnaseq_obj.meta.index.str.contains('IPSC')]
+    rnaseq_obj.meta = rnaseq_obj.meta.loc[~rnaseq_obj.meta.index.str.contains('PSC')]
+    rnaseq_obj.meta = rnaseq_obj.meta.loc[~rnaseq_obj.meta.index.str.contains('fibroblast')]
     rnaseq_obj.data = rnaseq_obj.data.loc[:, rnaseq_obj.meta.index]
 
     # load RNA-Seq from Salmon (for normalised comparison)
-    salmon_dat = rnaseq_data.load_salmon_by_patient_id(pids)
-    idx = salmon_dat.index.str.replace(r'.[0-9]+$', '')
-    salmon_dat.index = idx
-    fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90',
-                      'gene_to_transcript.txt')
-    gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
+    # disabled for now
+    if False:
+        salmon_dat = rnaseq_data.load_salmon_by_patient_id(pids)
+        idx = salmon_dat.index.str.replace(r'.[0-9]+$', '')
+        salmon_dat.index = idx
+        fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90',
+                          'gene_to_transcript.txt')
+        gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
 
-    # aggregate to gene level
-    genes = gene_transcript.loc[salmon_dat.index, 'Gene stable ID']
-    salmon_dat = salmon_dat.groupby(genes).sum()
+        # aggregate to gene level
+        genes = gene_transcript.loc[salmon_dat.index, 'Gene stable ID']
+        salmon_dat = salmon_dat.groupby(genes).sum()
 
-    # discard unmapped, etc
-    salmon_dat = salmon_dat.loc[:, ~salmon_dat.columns.str.contains('IPSC')]
+        # discard unmapped, etc
+        salmon_dat = salmon_dat.loc[:, ~salmon_dat.columns.str.contains('IPSC')]
 
-
-    de_res = compute_cross_de(rnaseq_obj, pids, **de_params)
+    external_refs = [
+        ('GIBCO', 'NSC'),
+        ('H9', 'NSC'),
+        ('H1', 'NSC'),
+    ]
+    external_ref_labels = [t[0] for t in external_refs]
+    ref_samples = reduce(
+        lambda x, y: x+y,
+        [rnaseq_obj.meta.index[rnaseq_obj.meta.index.str.contains(t[0])].tolist() for t in external_refs]
+    )
+    cols = pids + [t[0] for t in external_refs]
+    de_res = compute_cross_de(rnaseq_obj, pids, external_references=external_refs, **de_params)
 
     # counts of DE genes
-    de_counts = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    de_counts = pd.DataFrame(index=pids, columns=cols)
     for pid in pids:
-        for pid2 in pids + ['GIBCO']:
+        for pid2 in cols:
             de_counts.loc[pid, pid2] = de_res[(pid, pid2)].shape[0]
 
     # now we need to compare the paired results with every other result (Gibco and other iNSC)
-    pair_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    ref_only = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    pair_and_ref_concordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
-    pair_and_ref_discordant = pd.DataFrame(index=pids, columns=pids + ['GIBCO'])
+    pair_only = pd.DataFrame(index=pids, columns=cols)
+    ref_only = pd.DataFrame(index=pids, columns=cols)
+    pair_and_ref_concordant = pd.DataFrame(index=pids, columns=cols)
+    pair_and_ref_discordant = pd.DataFrame(index=pids, columns=cols)
     # loop over GBM samples
     for pid in pids:
         # syngeneic comparison
@@ -173,7 +205,7 @@ if __name__ == "__main__":
         # loop over (i)NSC samples
         # when this is the same as the syngeneic comparison, there will (obviously) be no 'pair only' or 'ref only'
         # genes!
-        for pid2 in pids + ['GIBCO']:
+        for pid2 in cols:
             the_ref = de_res[(pid, pid2)]
             the_sets, _ = setops.venn_from_arrays(the_pair.index, the_ref.index)
             pair_only.loc[pid, pid2] = the_sets['10']
@@ -252,26 +284,22 @@ if __name__ == "__main__":
             this_po_each_threshold = po_each_threshold.loc[grp_members]
             _, cts = setops.venn_from_arrays(*this_po_each_threshold.loc[:, i].values)
             the_idx = ''.join(['1'] * len(grp_members))
-            print "%d DMRs shared by all patients in subgroup %s" % (cts[the_idx], grp_name)
+            print "%d DE genes shared by all patients in subgroup %s" % (cts[the_idx], grp_name)
+
+    ### TODO: add a third reference column, 'all', that treats the three external references as combined, and uses
+    ### the genes that are core to all three.
 
     # for reference: what do these numbers look like in the Gibco comparison (only)?
     po_gibco_common_counts = pd.Series(index=possible_counts, dtype=int)
     _, cts = setops.venn_from_arrays(*pair_only.loc[:, 'GIBCO'].values)
     for j in possible_counts:
         po_gibco_common_counts.loc[j] = sum([cts[k] for k in setops.binary_combinations_sum_gte(K, j)])
-        print "%d DMRs shared by >=%d patients in the pair-only Gibco comparison" % (
+        print "%d DE genes shared by >=%d patients in the pair-only Gibco comparison" % (
             int(po_gibco_common_counts.loc[j]),
             j
         )
 
-    # look at intersection of Gibco and all others for a given GBM
-    po_int_gibco = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
-    for pid in pids:
-        the_ref = pair_only.loc[pid].iloc[-1]
-        po_int_gibco.loc[pid] = pair_only.loc[pid].apply(lambda x: sorted(set(x).intersection(the_ref)))
-    po_pct_overlap_with_gibco = po_int_gibco.applymap(len) / pair_only.applymap(len) * 100.
-
-    # now look at it the other way: what is present in X vs Y_i that isn't in X vs any other Y?
+    # What is present in X vs Y_i that isn't in X vs any other Y?
     po_diff = pd.DataFrame(index=pair_only.index, columns=pair_only.columns)
     for pid in pids:
         for pid2 in pair_only.columns:
@@ -280,23 +308,31 @@ if __name__ == "__main__":
             union_all_else = reduce(set.union, all_else, set())
             po_diff.loc[pid, pid2] = sorted(set(the_ref).difference(union_all_else))
 
-    po_intersection_insc = pd.Series(index=pids)
+    # find DE genes that are always PO when a (non-matching) iNSC reference is used, but NOT when an external reference
+    # is used.
+    po_intersection_insc = pd.DataFrame(index=pids, columns=external_ref_labels + ['any'])
     for pid in pids:
         # first, find the genes that are always PO when an iNSC reference is used
         tmp = reduce(intersecter, pair_only.loc[pid, pair_only.index[pair_only.index != pid]])
-        # now exclude any that are also DE when the Gibco reference is used
-        po_intersection_insc.loc[pid] = tmp.difference(pair_only.loc[pid, 'GIBCO'])
+        for er in external_ref_labels:
+            # second, find the union of genes that are PO when this external reference is used
+            tmp2 = pair_only.loc[pid, er]
+            # we want anything in the first part that is NOT in the second part
+            po_intersection_insc.loc[pid, er] = tmp.difference(tmp2)
+        # now, find the union of genes that are PO when ANY of the external references is used
+        tmp2 = reduce(unioner, pair_only.loc[pid, external_ref_labels])
+        po_intersection_insc.loc[pid, 'any'] = tmp.difference(tmp2)
 
+    # find DE genes
     po_specific_to_reference = [
         sorted(
-            reduce(lambda x, y: set(x).intersection(y), po_diff.loc[~po_diff.index.str.contains(pid), pid])
-        ) for pid in pids + ['GIBCO']
+            reduce(intersecter, po_diff.loc[~po_diff.index.str.contains(pid), pid])
+        ) for pid in cols
     ]
-    po_specific_to_reference = pd.Series(po_specific_to_reference, index=pids + ['GIBCO'])
+    po_specific_to_reference = pd.Series(po_specific_to_reference, index=cols)
 
     # get the genes that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
     # these will have an expression pattern in Gibco similar to GBM, so that they do NOT appear
-    # po_gibco_diff = sorted(reduce(lambda x, y: set(y).intersection(x), po_diff.loc[:, 'GIBCO']))
     po_gibco_diff = po_specific_to_reference.loc['GIBCO']
     po_gibco_diff_gs = references.ensembl_to_gene_symbol(po_gibco_diff)
     po_gibco_diff_gs = po_gibco_diff_gs.where(~po_gibco_diff_gs.isnull(), po_gibco_diff)
@@ -312,16 +348,18 @@ if __name__ == "__main__":
     # po_dat = np.log2(po_dat.dropna() + 0.01)
 
     # rearrange columns
-    cols = (
+    the_cols = (
         po_dat.columns[po_dat.columns.str.contains('GBM')].tolist() +
-        ['GIBCO_NSC_P4'] +
+        ref_samples +
         po_dat.columns[po_dat.columns.str.contains('DURA')].tolist()
     )
-    po_dat = po_dat.loc[:, cols]
+    spacing1 = po_dat.columns.str.contains('GBM').sum()
+    spacing2 = spacing1 + len(ref_samples) + 1  # +1 required as we will already have added a space to the left of this
+    po_dat = po_dat.loc[:, the_cols]
+
     # insert spacing columns
-    idx = np.where(po_dat.columns.str.contains('GIBCO'))[0][0]
-    po_dat.insert(idx, '', np.nan)
-    po_dat.insert(idx + 2, ' ', np.nan)
+    po_dat.insert(spacing1, '', np.nan)
+    po_dat.insert(spacing2, ' ', np.nan)
 
     fig = plt.figure(figsize=(7, 10))
     ax = fig.add_subplot(111)
@@ -356,9 +394,9 @@ if __name__ == "__main__":
     ro_each = [
         sorted(
             reduce(lambda x, y: set(x).intersection(y), ro_diff.loc[~ro_diff.index.str.contains(pid), pid])
-        ) for pid in pids + ['GIBCO']
+        ) for pid in cols
     ]
-    ro_each = pd.Series(ro_each, index=pids + ['GIBCO'])
+    ro_each = pd.Series(ro_each, index=cols)
 
     # ro_gibco_diff = sorted(reduce(lambda x, y: set(y).intersection(x), ro_diff.loc[:, 'GIBCO']))
     ro_gibco_diff = ro_each.loc['GIBCO']

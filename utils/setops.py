@@ -57,7 +57,7 @@ def venn_from_arrays(*args, **kwargs):
     all_items = reduce(lambda x, y: set(x).union(y), args, set())
     venn_counts = {}
     venn_sets = {}
-    for bn in binary_combinations(n, **kwargs):
+    for bn in binary_combinations(n):
         # generate binary representation
         this_add = set(all_items)
         this_subtract = set()
