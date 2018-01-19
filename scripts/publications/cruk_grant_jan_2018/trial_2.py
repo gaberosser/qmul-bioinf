@@ -12,7 +12,7 @@ This script is a cut down version of scripts.hgic_de.compare_hgic_vs_paired_insc
 """
 
 if __name__ == "__main__":
-    outdir = output.unique_output_dir("cruk_figures_trial1", reuse_empty=True)
+    outdir = output.unique_output_dir("cruk_figures_trial2", reuse_empty=True)
 
     # all n=2 samples and RTK II samples
     pids = ['019', '030', '031', '017', '050', '054']
@@ -119,7 +119,7 @@ if __name__ == "__main__":
         ('RTK II full', {'sets': sets_full['RTK II'], 'colour': '#820505'}),
         ('RTK II partial', {'sets': sets_partial['RTK II'], 'colour': '#d67373'}),
         ('Expanded core', {'sets': expanded_core_sets, 'colour': '#4C72B0'}),
-        ('Unique', {'sets': sets_unique, 'colour': '#c3d15c'})
+        ('Unique', {'sets': sets_unique, 'colour': '#f4e842'})
     ]
 
     # 1. Descending order
@@ -133,19 +133,6 @@ if __name__ == "__main__":
     )
     upset1['figure'].savefig(os.path.join(outdir, "upset_descending.png"), dpi=200)
     upset1['figure'].savefig(os.path.join(outdir, "upset_descending.tiff"), dpi=200)
-
-    # 2. Grouped by number of participants in the sets
-    upset2 = venn.upset_set_size_plot(
-        data_for_upset,
-        set_labels,
-        set_colours=set_colours,
-        order_by_n_members=True,
-        min_size=30,
-        n_plot=50,
-        default_colour = 'gray'
-    )
-    upset2['figure'].savefig(os.path.join(outdir, "upset_grouped_descending.png"), dpi=200)
-    upset2['figure'].savefig(os.path.join(outdir, "upset_grouped_descending.tiff"), dpi=200)
 
     # expression heatmap to accompany it, just showing GBM (collapsed replicates)
     dat_gbm_aggr = pd.DataFrame(index=rnaseq_obj.data.index, columns=pids)

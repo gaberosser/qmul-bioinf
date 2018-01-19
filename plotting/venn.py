@@ -275,10 +275,9 @@ def upset_set_size_plot(
     ax_set_size.legend(
         loc='lower left',
         # fontsize=8,
-        frameon=True,
-        fancybox=True,
+        frameon=False,
         facecolor='w',
-        edgecolor='k',
+        # edgecolor='k',
         bbox_to_anchor=(0.05, 1.1),  # place above and outside the axis
     )
 

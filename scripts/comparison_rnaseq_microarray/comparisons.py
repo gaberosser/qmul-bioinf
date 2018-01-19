@@ -38,7 +38,7 @@ def annotate_by_MB_group(df):
 
 def plot_microarray_mb_gene_expression(mb_samples=('ICb1299-III', 'ICb1299-IV')):
     """
-    Produce 2 figures:
+    Produce 2 publications:
     1) bar chart subplots showing the absolute normed intensity values for the MB-implicated genes in both
     healthy and MB samples.
     2) bar chart subplots showing the log2 fold change in those same genes
@@ -116,7 +116,7 @@ def plot_microarray_mb_gene_expression(mb_samples=('ICb1299-III', 'ICb1299-IV'))
 
 def plot_rna_seq_mb_gene_expression():
     """
-    Produce 2 figures:
+    Produce 2 publications:
     1) bar chart subplots showing the absolute TPM values for RNA-Seq in the MB-implicated genes in both
     healthy and MB samples.
     2) bar chart subplots showing the log2 fold change in those same genes
