@@ -33,6 +33,6 @@ if __name__ == "__main__":
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
-    obj = salmon.SalmonMultilaneEncodePEApocrita(extra_args=extra, **args.__dict__)
+    obj = salmon.SalmonMultilaneIlluminaPEApocrita(extra_args=extra, **args.__dict__)
     obj.create_script()
     obj.submit()
