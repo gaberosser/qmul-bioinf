@@ -1,58 +1,22 @@
 import multiprocessing as mp
 import os
-import re
-import collections
 import numpy as np
 from plotting import venn
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
-import references
 from rnaseq import filter, differential_expression
-from settings import LOCAL_DATA_DIR
-from utils import output, setops, excel, ipa
+from utils import output, setops
 from load_data import rnaseq_data
 
 
-def add_gene_symbols(df):
-    """
-    Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
-    """
-    gs = references.ensembl_to_gene_symbol(df.index)
-    # resolve any duplicates arbitrarily (these should be rare)
-    gs = gs.loc[~gs.index.duplicated()]
-    df.insert(0, 'Gene Symbol', gs)
-
-
-def add_fc_direction(df):
-    direction = pd.Series(index=df.index, name='Direction')
-    direction.loc[df.logFC < 0] = 'down'
-    direction.loc[df.logFC > 0] = 'up'
-    df.insert(df.shape[1], 'Direction', direction)
-
-
-def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QLGLM'):
-    if method == 'QLGLM':
-        the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
-        res = differential_expression.edger_glmqlfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
-    elif method == 'GLM':
-        the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
-        res = differential_expression.edger_glmfit(the_data, the_groups, the_contrast, lfc=lfc, fdr=fdr)
-    elif method == 'exact':
-        res = differential_expression.edger_exacttest(the_data, the_groups, pair=the_comparison[::-1], lfc=lfc, fdr=fdr)
-
-    add_gene_symbols(res)
-    add_fc_direction(res)
-
-    return res
-
-
 if __name__ == "__main__":
-    outdir = output.unique_output_dir("multi_reference_de", reuse_empty=True)
+    outdir = output.unique_output_dir("hgic_trial_2", reuse_empty=True)
 
     # all n=2 samples and RTK II samples
     pids = ['017', '019', '030', '031', '050', '054']
     cmap = 'RdYlGn_r'
+    njob = mp.cpu_count()
 
     de_params = {
         'lfc': 1,
@@ -68,12 +32,14 @@ if __name__ == "__main__":
     intersecter = lambda x, y: set(x).intersection(y)
     unioner = lambda x, y: set(x).union(y)
 
+    if njob != 1:
+        pool = mp.Pool(njob)
+
     # Load RNA-Seq from STAR
     rnaseq_obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
 
     # load additional references if required
     refs = [
-        # ('ReNcell CX', rnaseq_data.gse92839(annotate_by='Ensembl Gene ID')),
         ('H1', rnaseq_data.gse38993(annotate_by='Ensembl Gene ID')),
         ('H9', rnaseq_data.gse61794(annotate_by='Ensembl Gene ID', collapse_replicates=False))
     ]
@@ -93,6 +59,7 @@ if __name__ == "__main__":
     rnaseq_obj.data = rnaseq_obj.data.loc[:, rnaseq_obj.meta.index]
 
     # compute DE between hGIC and references
+    jobs = {}
     de_res = {}
     for pid in pids:
         hgic_samples = rnaseq_obj.meta.index[
@@ -107,8 +74,15 @@ if __name__ == "__main__":
         the_data = rnaseq_obj.data.loc[:, hgic_samples | ref_samples]
         the_groups = rnaseq_obj.meta.loc[hgic_samples | ref_samples, 'type']
         the_comparison = ['GBM', ref_type]
-        de_res[(pid, the_ref)] = run_one_de(the_data, the_groups, the_comparison, **de_params)
-        print "GBM %s paired comparison, %d DE genes" % (pid, de_res[(pid, the_ref)].shape[0])
+        if njob == 1:
+            de_res[(pid, the_ref)] = differential_expression.run_one_de(the_data, the_groups, the_comparison, **de_params)
+            print "GBM %s paired comparison, %d DE genes" % (pid, de_res[(pid, the_ref)].shape[0])
+        else:
+            jobs[(pid, the_ref)] = pool.apply_async(
+                differential_expression.run_one_de,
+                args=(the_data, the_groups, the_comparison),
+                kwds=de_params
+            )
 
         # GBM vs reference
         for the_ref in all_refs:
@@ -117,8 +91,22 @@ if __name__ == "__main__":
             the_data = rnaseq_obj.data.loc[:, hgic_samples | ref_samples]
             the_groups = rnaseq_obj.meta.loc[hgic_samples | ref_samples, 'type']
             the_comparison = ['GBM', ref_type]
-            de_res[(pid, the_ref)] = run_one_de(the_data, the_groups, the_comparison, **de_params)
-            print "GBM %s, ref %s, %d DE genes" % (pid, the_ref, de_res[(pid, the_ref)].shape[0])
+            if njob == 1:
+                de_res[(pid, the_ref)] = differential_expression.run_one_de(the_data, the_groups, the_comparison, **de_params)
+                print "GBM %s, ref %s, %d DE genes" % (pid, the_ref, de_res[(pid, the_ref)].shape[0])
+            else:
+                jobs[(pid, the_ref)] = pool.apply_async(
+                    differential_expression.run_one_de,
+                    args=(the_data, the_groups, the_comparison),
+                    kwds=de_params
+                )
+
+    if njob != 1:
+        pool.close()
+        pool.join()
+        for k, j in jobs.items():
+            de_res[k] = j.get(1e6)
+            print "GBM %s, ref %s, %d DE genes" % (k[0], k[1], de_res[k].shape[0])
 
     # plot: how many DE genes are present in each reference comparison?
     fig, axs = plt.subplots(nrows=2, ncols=3)
@@ -138,6 +126,7 @@ if __name__ == "__main__":
         axs[i, j].set_title("GBM%s vs..." % pid)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'number_de_multiple_references.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'number_de_multiple_references.tiff'), dpi=200)
 
     # plot: how many DE genes are in the pair only comparison when each reference is used?
     pair_only = pd.DataFrame(index=pids, columns=all_refs)
@@ -174,12 +163,14 @@ if __name__ == "__main__":
         axs[i, j].set_title("GBM%s pair only" % pid)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'number_po_de_multiple_references.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'number_po_de_multiple_references.tiff'), dpi=200)
 
     # proportion of each pair only DE count that is shared by all
     for k in range(2, len(all_refs) + 1):
         ax = (pair_only_core[k].applymap(len) / pair_only.applymap(len) * 100).plot.bar()
         ax.set_xlabel('Patient')
-        ax.set_title('Percentage of pair only DE genes that are in %d / %d reference comparisons' % (k, len(all_refs)))
+        # ax.set_title('Percentage of pair only DE genes that are in %d / %d reference comparisons' % (k, len(all_refs)))
         ax.set_ylim([0, 100])
         ax.figure.savefig(os.path.join(outdir, "perc_po_gene_correspondence_%d_of_%d.png" % (k, len(all_refs))), dpi=200)
+        ax.figure.savefig(os.path.join(outdir, "perc_po_gene_correspondence_%d_of_%d.tiff" % (k, len(all_refs))), dpi=200)
 

@@ -1,4 +1,5 @@
 import references
+import pandas as pd
 
 
 def top_genes(
@@ -29,3 +30,23 @@ def top_genes(
         res[col] = set(t.index)
     return res
 
+
+def add_gene_symbols_to_ensembl_data(df, tax_id=9606):
+    """
+    Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
+    """
+    gs = references.ensembl_to_gene_symbol(df.index, tax_id=tax_id)
+    # resolve any duplicates arbitrarily (these should be rare)
+    gs = gs.loc[~gs.index.duplicated()]
+    df.insert(0, 'Gene Symbol', gs)
+
+
+def add_fc_direction(df, logfc_field='logFC'):
+    """
+    Add direction column to DE data with the logFC in the field with name logfc_field
+    """
+    the_logfc = df.loc[:, logfc_field]
+    direction = pd.Series(index=df.index, name='Direction')
+    direction.loc[the_logfc < 0] = 'down'
+    direction.loc[the_logfc > 0] = 'up'
+    df.insert(df.shape[1], 'Direction', direction)

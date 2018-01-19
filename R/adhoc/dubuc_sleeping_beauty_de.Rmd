@@ -1,0 +1,81 @@
+---
+title: "dubuc_sleeping_beauty_de"
+author: "Gabriel Rosser"
+date: "11 January 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+opts_knit$set(root.dir = normalizePath('..'))
+
+knitr::opts_chunk$set(echo = TRUE)
+require(limma)
+require(Biobase)
+require(hexbin)
+require(corrgram)
+```
+
+## Aim
+
+We have gene expression microarray data from 8 mice that were previously treated with the Sleeping Beauty transposon screen. In 3 of the mice, an insertional deactivation was detected in the CHD7 gene. We would like to run a differential expression analysis to find which genes are DE between the group with the insertion and those without.
+
+The gene expression data were provided in an Excel file. We don't know exactly how they have been processed, but it's safe to assume some kind of normalisation has been applied.
+
+## Method
+
+Typically, we would load data from raw (.CEL) data files. However, we can work around this and manually load the data (<https://support.bioconductor.org/p/69116/>).
+
+```{r load}
+source('_settings.R')
+in.dir <- file.path(data.dir, 'sleeping_beauty_mouse_screen')
+
+# phenoData
+tmp <- read.csv(file.path(in.dir, "pheno_data.csv"), row.names = 1)
+pdata <- AnnotatedDataFrame(tmp)
+groups <- pdata@data$chd7
+
+# featureData
+tmp <- read.csv(file.path(in.dir, "feature_data.csv"), row.names = 1)
+fdata <- AnnotatedDataFrame(tmp)
+
+# expressionData
+tmp <- read.csv(file.path(in.dir, "expression_data.csv"), row.names = 1)
+m <- as.matrix(tmp)
+
+# combine them
+eset <- new("ExpressionSet", exprs = m, phenoData = pdata, featureData = fdata)
+```
+
+Let's check the pairwise sample correlation
+
+```{r}
+hexplom(m)
+corrgram(m, order=NULL, lower.panel = panel.shade, upper.panel = panel.conf, text.panel = panel.txt)
+```
+
+This immediately rings warning bells - the correlation between all samples is very high. We can expect to detect relatively few DE genes.
+
+We now use the `R` package `limma` to run the actual DE analysis. We output a table of all genes that are DE with adjusted p value < 0.1.
+
+```{r}
+design <- model.matrix(~0 + groups)
+colnames(design) <- levels(groups)
+
+fit <- lmFit(eset, design)
+
+# test insertion vs WT
+contrasts <- makeContrasts(ins="Ins-WT", levels=design)
+
+fit  <- contrasts.fit(fit, contrasts)
+fit  <- eBayes(fit)
+
+topTable(fit, p.value=0.1, n=Inf)
+```
+
+Only 1 gene, and one that doesn't have a particularly large fold change? Notably, several hundred probes have an _unadjusted_ p value < 0.01:
+
+```{r}
+topTable(fit, p.value=0.05, n=Inf, adjust.method = 'none')
+```
+

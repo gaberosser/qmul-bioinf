@@ -53,7 +53,7 @@ def compute_cross_de(
         lfc=1,
         fdr=0.01,
         method='QLGLM',
-        njob=None
+        njob=None,
 ):
     """
     Compute DE between every patient GBM sample and every _other_ healthy patient sample, in addition to paired DE.
@@ -81,8 +81,6 @@ def compute_cross_de(
             the_idx = (rnaseq_obj.meta.index.str.contains(pid) & (rnaseq_obj.meta.loc[:, 'type'] == 'GBM')) | \
                       (rnaseq_obj.meta.index.str.contains(pid2) & (rnaseq_obj.meta.loc[:, 'type'] == 'iNSC'))
             the_data = rnaseq_obj.data.loc[:, the_idx]
-            # filtering here changes the lists quite a lot
-            # the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_comparison = ['GBM', 'iNSC']
             if njob == 1:
@@ -99,8 +97,6 @@ def compute_cross_de(
             the_idx = (rnaseq_obj.meta.index.str.contains(pid) & (rnaseq_obj.meta.loc[:, 'type'] == 'GBM')) | \
                       (rnaseq_obj.meta.index.str.contains(er) & (rnaseq_obj.meta.loc[:, 'type'] == er_type))
             the_data = rnaseq_obj.data.loc[:, the_idx]
-            # filtering here changes the lists quite a lot
-            # the_data = filter.filter_by_cpm(the_data, min_n_samples=1)
             the_groups = rnaseq_obj.meta.loc[the_idx, 'type'].values
             the_comparison = ['GBM', er_type]
             if njob == 1:
@@ -175,8 +171,8 @@ if __name__ == "__main__":
 
     external_refs = [
         ('GIBCO', 'NSC'),
-        ('H9', 'NSC'),
-        ('H1', 'NSC'),
+        # ('H9', 'NSC'),
+        # ('H1', 'NSC'),
     ]
     external_ref_labels = [t[0] for t in external_refs]
     ref_samples = reduce(
@@ -286,9 +282,6 @@ if __name__ == "__main__":
             the_idx = ''.join(['1'] * len(grp_members))
             print "%d DE genes shared by all patients in subgroup %s" % (cts[the_idx], grp_name)
 
-    ### TODO: add a third reference column, 'all', that treats the three external references as combined, and uses
-    ### the genes that are core to all three.
-
     # for reference: what do these numbers look like in the Gibco comparison (only)?
     po_gibco_common_counts = pd.Series(index=possible_counts, dtype=int)
     _, cts = setops.venn_from_arrays(*pair_only.loc[:, 'GIBCO'].values)
@@ -370,7 +363,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "consistently_in_pair_only.png"), dpi=200)
 
     # export those same genes to a file, adding gene symbols
-    for_export = rnaseq_obj.data.loc[po_gibco_diff, cols]
+    for_export = rnaseq_obj.data.loc[po_gibco_diff, the_cols]
     gs = references.ensembl_to_gene_symbol(for_export.index)
     for_export.insert(0, 'gene_symbol', gs)
     for_export.to_excel(os.path.join(outdir, 'consistently_in_pair_only.xlsx'))
