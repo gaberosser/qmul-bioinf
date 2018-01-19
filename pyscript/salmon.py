@@ -68,14 +68,25 @@ class SalmonSEBase(jobs.ArrayJob):
         self.setup_params(self.args['read_dir'])
 
 
-class SalmonMultilanePEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
+class SalmonMultilaneEncodePEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
     file_sep = ' '  # the character used to separate files of the same read number in different lanes
     pass
 
 
-class SalmonMultilanePEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
+class SalmonMultilaneEncodePEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.PEFastqEncodeMultiLaneMixin):
     file_sep = ' '  # the character used to separate files of the same read number in different lanes
     pass
+
+
+class SalmonMultilaneIlluminaPEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqIlluminaMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    pass
+
+
+class SalmonMultilaneIlluminaPEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.PEFastqIlluminaMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    pass
+
 
 
 class SalmonPEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqFileIteratorMixin):

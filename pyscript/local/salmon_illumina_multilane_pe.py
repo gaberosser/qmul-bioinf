@@ -2,7 +2,6 @@
 import os
 import argparse
 import sys
-import math
 
 # add root of project dir to the path
 sys.path.append(os.path.dirname(__file__) + '/../../')
@@ -19,6 +18,9 @@ if __name__ == "__main__":
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
     optional.add_argument("-l", "--library_type", help="Library type (default: auto)", default='A')
 
+    optional.add_argument("--include", help="List of filestems to include (comma separated)")
+    optional.add_argument("--exclude", help="List of filestems to exclude (comma separated)")
+
     required.add_argument("-i", "--index_dir", help="Directory of pre-computed Salmon index", required=True)
 
     # all extra args got to extra
@@ -26,11 +28,16 @@ if __name__ == "__main__":
 
     if args.out_dir is None:
         # if no output_dir specified, create one in the reads directory
-        args.out_dir = os.path.join(args.read_dir, 'star_alignment')
+        args.out_dir = os.path.join(args.read_dir, 'salmon')
         if not os.path.exists(args.out_dir):
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
-    obj = salmon.SalmonMultilaneEncodePEApocrita(extra_args=extra, **args.__dict__)
+    if args.include is not None:
+        args.include = args.include.split(',')
+    if args.exclude is not None:
+        args.exclude = args.exclude.split(',')
+
+    obj = salmon.SalmonMultilaneIlluminaPEBash(extra_args=extra, **args.__dict__)
     obj.create_script()
     obj.submit()
