@@ -71,14 +71,25 @@ if __name__ == "__main__":
     bm_peaks = pd.concat((bm_peaks, outcomes), axis=1)
     bm_peaks.columns = bm_peaks.columns.str.replace(' peak', '')
 
+    # pairplot by batch
+    xx = pd.concat((peaks_dat, dat.loc[:, 'batch']), axis=1)
+
     # Look for batch effects using PCA on biomarker values
     # this requires us to fill NA values with column mean
-    for col, colval in peaks_dat.iteritems():
-        if colval.isnull().any():
-            peaks_dat.loc[:, col] = colval.fillna(colval.mean())
+
+    data_for_pca = peaks_dat.copy()
+
+    # use this code to fill missing values with the mean:
+    # for col, colval in data_for_pca.iteritems():
+    #     if colval.isnull().any():
+    #         data_for_pca.loc[:, col] = colval.fillna(colval.mean())
+
+    # use this code to discard any variables with missing data:
+    data_for_pca = peaks_dat.loc[:, peaks_dat.isnull().sum(axis=0) == 0]
+
     pca = PCA(n_components=6)
-    pca.fit(peaks_dat)
-    pp = pca.transform(peaks_dat)
+    pca.fit(data_for_pca)
+    pp = pca.transform(data_for_pca)
     # scatter, shading by component
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -88,9 +99,44 @@ if __name__ == "__main__":
     for i, bt in enumerate(batches[1]):
         idx = batches[0] == i
         ax.scatter(pp[idx, 0], pp[idx, 1], c=colours[i], label=bt)
-
+    ax.legend(loc='best', fontsize=14, frameon=True, facecolor='w', fancybox=True)
+    ax.set_xlabel("Principle component 1")
+    ax.set_ylabel("Principle component 2")
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, "pca_by_batch.pdf"))
     fig.savefig(os.path.join(outdir, "pca_by_batch.png"), dpi=200)
+
+    # look for sign differences in the distribution of individual variables
+    p_anova = {}
+    for col in peaks_dat.columns:
+        this_dat = peaks_dat.loc[:, col].groupby(dat.batch).apply(lambda x: list(x.dropna()))
+        args = []
+        this_dropped = []
+        for k, t in this_dat.iteritems():
+            if len(t) > 0:
+                args.append(t)
+            else:
+                this_dropped.append(k)
+        if len(this_dropped):
+            # find the missing ones
+            print "Warning: variable %s is entirely missing from batches: %s" % (col, ", ".join(this_dropped))
+            print "Running with remaining batches"
+        this_res = stats.f_oneway(*args)
+        p_anova[col] = this_res.pvalue
+
+    # for each significantly different biomarker, plot a histogram
+    for col, p in p_anova.items():
+        if p < 0.05:
+            print "Variable %s has a significant one-way ANOVA result (p<%.3e)" % (col, p)
+            this_dat = pd.concat((peaks_dat.loc[:, col], dat.batch), axis=1)
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            sns.boxplot(data=this_dat, x='batch', y=col, ax=ax, color='w')
+            sns.swarmplot(data=this_dat, y=col, x='batch', ax=ax)
+            fig.savefig(os.path.join(outdir, "sign_diff_by_anova_%s.png" % col), dpi=200)
+
+
+
 
     # does peak/trough value correlate with age?
     val_age_corr = {
@@ -183,7 +229,7 @@ if __name__ == "__main__":
         this_dat.loc[this_dat.loc[:, 'Outcome'] == 1, 'Outcome'] = 'Unfavourable'
         this_dat.loc[this_dat.loc[:, 'Outcome'] == 2, 'Outcome'] = 'Favourable'
 
-        sns.boxplot(data=this_dat, x='Outcome', y=c, ax=ax)
+        sns.boxplot(data=this_dat, x='Outcome', y=c, ax=ax, color='w')
         sns.swarmplot(data=this_dat, x='Outcome', y=c, ax=ax)
 
         # ax.scatter(scat[:, 0], scat[:, 1], c=scat[:, 2], cmap='RdBu')
@@ -261,7 +307,7 @@ if __name__ == "__main__":
     dot_data = tree.export_graphviz(clf, out_file=None, feature_names=peaks_dat.columns, class_names=['Unfav', 'Fav'],
                                     filled = True, rounded = True)
     graph = graphviz.Source(dot_data)
-    graph.render(os.path.join())# TODO
+    graph.render(os.path.join(outdir, 'decision_tree_graph'))# TODO
 
 
     # decision tree regression
