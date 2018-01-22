@@ -559,6 +559,98 @@ class PEFastqEncodeMultiLaneMixin(PEFastqIlluminaMultiLaneMixin):
     ]
 
 
+class PEFastqBartsMultiLaneMixin(PairedFileIteratorMixin):
+    ext = r'fastq(\.gz)?'
+    cleanup_regex = [
+        (r'_[12]$', ''),
+    ]
+    file_sep = ','  # the character used to separate files of the same read number in different lanes
+
+    def setup_params(self, read_dir, *args, **kwargs):
+        self.params = []
+        self.run_names = []
+
+        rr = re.compile(r'\.{ext}$'.format(ext=self.ext), flags=re.IGNORECASE)
+        root_dir = os.path.abspath(read_dir)
+        flist = [t for t in os.listdir(root_dir) if re.search(rr, t)]
+
+        to_join = {}
+        rec = {}
+
+        for t in flist:
+            # get the read number and stem
+            stem, read_num = filename_to_name_and_read_num(t, self.ext, cleanup_regex_arr=self.cleanup_regex)
+            # the stem still contains the lane number
+            lane_num = int(re.search("L(?P<lane>[0-9]*)$", stem).group('lane'))
+            base = re.sub("_L[0-9]*$", "", stem)
+            if self.include is not None:
+                if base not in self.include:
+                    self.logger.info("Skipping file %s as it is not in the list of included files", base)
+                    continue
+            if self.exclude is not None:
+                if base in self.exclude:
+                    self.logger.info("Skipping file %s as it is in the list of excluded files", base)
+                    continue
+
+            to_join.setdefault(base, {}).setdefault(lane_num, {})[read_num] = os.path.join(root_dir, t)
+
+        n = None
+        self.logger.info("Identified %d samples in multiple lanes." % len(to_join))
+        for base, lanes in to_join.items():
+            self.logger.info(
+                "Sample %s has %d lanes", base, len(lanes)
+            )
+
+        for base, lanes in to_join.items():
+            x = lanes.values()[0]
+            # get all valid pairs / singles
+            if len(x) != 2:
+                self.logger.error("Found %d corresponding reads - expected 2.", len(x))
+                raise ValueError("Incorrect number of corresponding reads: %d" % len(x))
+
+            self.logger.info("Read group %s.", base)
+
+            # check the number of lanes - this should be consistent across all reads
+            if n is None:
+                n = len(lanes)
+            else:
+                if len(lanes) != n:
+                    raise AttributeError(
+                        "Previous read group had %d matching directories; this one has %d." % (n, len(lanes)))
+
+            # check output subdirectory and create if necessary
+
+            out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
+            if self.skip_non_empty and os.path.isdir(out_subdir):
+                if len(os.listdir(out_subdir)) > 0:
+                    self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
+                    continue
+                else:
+                    self.logger.info("Using existing empty output subdir %s", out_subdir)
+
+            if self.create_subdirs and not os.path.exists(out_subdir):
+                os.makedirs(out_subdir)
+                self.logger.info("Created output subdir %s", out_subdir)
+            rec.setdefault(base, {})
+            rec[base]['out_subdir'] = out_subdir
+
+            for the_lane_num, the_dict in lanes.items():
+                for read_num, the_file in the_dict.items():
+                    rec[base].setdefault(read_num, []).append(the_file)
+
+            this_param = [base]
+            for i in [1, 2]:
+                # join equivalent read files with a space
+                this_param.append(self.file_sep.join(rec[base][i]))
+            this_param.append(out_subdir)
+            if re.search(r'\.gz$', rec[base][1][0], flags=re.IGNORECASE):
+                this_param.append('gz')
+            else:
+                this_param.append('fastq')
+            self.params.append(this_param)
+            self.run_names.append(base)
+
+
 class SraRunIteratorMixin(object):
     def setup_params(self, project_id, *args, **kwargs):
         """
