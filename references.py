@@ -43,8 +43,9 @@ def conversion_table(type='protein_coding', tax_id=9606):
 def _translate(cat, x, to_field, from_field):
     return cat.set_index(from_field).loc[x, to_field]
 
-def translate(x, to_field, from_field):
-    cat = conversion_table()
+
+def translate(x, to_field, from_field, tax_id=9606, type='all'):
+    cat = conversion_table(type=type, tax_id=tax_id)
     return cat.set_index(from_field).loc[x, to_field]
 
 
@@ -71,3 +72,35 @@ def ensembl_to_gene_symbol(e, tax_id=9606):
 def ensembl_to_name(e, tax_id=9606):
     cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, e, 'Approved Name', 'Ensembl Gene ID')
+
+
+def translate_quantification_resolving_duplicates(dat, from_field, to_field, type='all', tax_id=9606, resolution='mean'):
+    """
+    Translate the index used for the input quantification data to some other
+    :param dat: Pandas DataFrame containing some kind of quantification data
+    :param to_field:
+    :param from_field:
+    :param type:
+    :param tax_id:
+    :param resolution: Approach used to resolve duplicates (TODO: add more as required).
+    :return:
+    """
+    gs = translate(dat.index, to_field, from_field, tax_id=tax_id)
+    gs = gs.loc[~gs.index.duplicated()]
+
+    gs.dropna(inplace=True)
+    dat = dat.loc[gs.index]
+    dat.index = gs
+
+    # this may leave some duplicate values to resolve
+    dupe_idx = dat.index[dat.index.duplicated()]
+    dupe_map = dat.index.isin(dupe_idx)
+    if dupe_map.sum() != 0:
+        dupes = dat.loc[dupe_map]
+        dat = dat.loc[~dupe_map]
+        if resolution == 'mean':
+            dupes_aggr = dupes.groupby(dupes.index).mean()
+        else:
+            raise NotImplementedError("Unsupported resolution method %s." % resolution)
+        dat = dat.append(dupes_aggr)
+    return dat

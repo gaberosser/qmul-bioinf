@@ -4,6 +4,7 @@ from utils.output import unique_output_dir
 import references
 import os
 import pandas as pd
+import numpy as np
 
 
 if __name__ == '__main__':
@@ -12,7 +13,11 @@ if __name__ == '__main__':
     lfc = 0
     fdr = 0.01
 
-    dat = rnaseq_data.mouse_nsc_star()
+    # load our data
+
+    obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')
+    dat = obj.data
+    dat = dat.loc[dat.index.str.contains('ENS')]
     idx = dat.columns.str.contains(r'eNSC[0-9]med') | dat.columns.str.contains(r'mDura[0-9AN]*human')
     dat = dat.loc[:, idx]
     the_groups = pd.Series('eNSC', index=dat.columns)
@@ -30,3 +35,30 @@ if __name__ == '__main__':
     xl_writer = pd.ExcelWriter(out_fn)
     res.to_excel(xl_writer, "DE results", index=True)
     xl_writer.save()
+
+    # load the GBM mouse model data and combine
+    obj_gbm = rnaseq_data.mouse_gbm_pten_p53(annotate_by='Ensembl Gene ID')
+    obj = rnaseq_data.MultipleBatchLoader([obj, obj_gbm])
+    dat = obj.data
+    dat = dat.loc[dat.index.str.contains('ENS')]
+
+    idx = (
+        dat.columns.str.contains(r'eNSC[0-9]med')
+        | dat.columns.str.contains(r'mDura[0-9AN]*human')
+        | dat.columns.str.contains(r'GBM')
+        | dat.columns.str.contains(r'WT')
+    )
+    dat = dat.loc[:, idx]
+    groups = pd.Series('eNSC', index=dat.columns)
+    groups[dat.columns.str.contains('mDura')] = 'iNSC'
+    groups[dat.columns.str.contains('GBM')] = 'GBM'
+    groups[dat.columns.str.contains('WT')] = 'eNSC2'
+
+    # expt 1: eNSC vs iNSC
+    res = {}
+    the_dat = dat.loc[:, groups.index[(groups == 'iNSC') | (groups == 'eNSC')]]
+    the_groups = pd.Series('eNSC', index=the_dat.columns)
+    the_groups[the_dat.columns.str.contains('mDura')] = 'iNSC'
+    the_contrast = 'iNSC - eNSC'
+
+    res['iNSC_vs_eNSC'] = differential_expression.edger_glmqlfit(the_dat, the_groups, the_contrast, lfc=lfc, fdr=fdr, return_full=True)

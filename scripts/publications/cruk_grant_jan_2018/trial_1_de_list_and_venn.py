@@ -12,7 +12,7 @@ from load_data import rnaseq_data
 
 if __name__ == "__main__":
 
-    outdir = output.unique_output_dir("cruk_trial_2", reuse_empty=True)
+    outdir = output.unique_output_dir("cruk_trial_1", reuse_empty=True)
     # all n=2 samples and RTK II samples
     pids = ['017', '019', '030', '031', '050', '054']
     cmap = 'RdYlGn_r'

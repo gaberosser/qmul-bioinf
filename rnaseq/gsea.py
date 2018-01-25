@@ -1,6 +1,7 @@
 import csv
 import pandas as pd
 from utils.log import get_console_logger
+from utils import rinterface
 logger = get_console_logger(__name__)
 
 
@@ -102,3 +103,15 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
         return (es, ecdf_in, ecdf_out)
     else:
         return es
+
+
+try:
+    from rpy2.robjects import r
+except ImportError:
+    pass
+
+def _wang_ssgsea_classification(gct_file, n_perm=1000):
+    r("runSsGSEAwithPermutation")(gct_file, n_perm)
+
+
+wang_ssgsea_classification = rinterface.RFunctionDeferred(_wang_ssgsea_classification, imports=['ssgsea.GBM.classification'])

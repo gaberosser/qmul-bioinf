@@ -23,7 +23,7 @@ class BismarkSgeRequirements(sge.ApocritaArrayJobMixin):
 
 
 class BismarkPEBase(jobs.ArrayJob):
-    ## TODO
+    
     title = 'bismark'
     required_args = ['read_dir', 'threads', 'index_dir']
     parameters = [
@@ -43,18 +43,6 @@ class BismarkPEBase(jobs.ArrayJob):
         # if '--outSAMstrandField' not in self.extra_args:
         #     self.extra_args.extend(
         #         ['--outSAMstrandField', 'intronMotif']
-        #     )
-        # if '--quantMode' not in self.extra_args:
-        #     self.extra_args.extend(
-        #         ['--quantMode', 'GeneCounts']
-        #     )
-        # if '--outSAMtype' not in self.extra_args:
-        #     self.extra_args.extend(
-        #         ['--outSAMtype', 'BAM SortedByCoordinate']
-        #     )
-        # if '--readFilesCommand' not in self.extra_args:
-        #     self.extra_args.extend(
-        #         ['$([ "$GZ" = "gz" ] && echo "--readFilesCommand zcat" || echo "")']
         #     )
 
     def prepare_submission(self, *args, **kwargs):

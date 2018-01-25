@@ -2006,21 +2006,16 @@ def mouse_nsc_validation_samples(source='star', annotate_by='all'):
 
     # expt 1: original data
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
-    lanedirs = [
-        os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
-        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
-        os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_2')
-    ]
+    countdir = os.path.join(indir, 'mouse', 'star_alignment')
+    metafn = os.path.join(indir, 'sources.csv')
 
-    metafiles = [os.path.join(d, 'sources.csv') for d in lanedirs]
-    countdirs = [os.path.join(d, 'mouse', 'star_alignment') for d in lanedirs]
     samples = ['eNSC%dmouse' % i for i in (3, 5, 6)] \
     + ['mDura%smouse' % i for i in ('3N1', '5N24A', '6N6')] \
     + ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
 
-    obj = all_samples_multilane_loader(
-        countdirs,
-        metafiles,
+    obj = StarCountLoader(
+        count_dir=countdir,
+        meta_fn=metafn,
         strandedness='r',
         source=source,
         annotate_by=annotate_by,
@@ -2032,7 +2027,7 @@ def mouse_nsc_validation_samples(source='star', annotate_by='all'):
     # expt 2: 3 x replacement runs
 
     samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506', '170829_K00150_0236_AHL5YHBBXX')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
     countdir = os.path.join(indir, 'mouse', 'star_alignment')
     metafn = os.path.join(indir, 'sources.csv')
     obj = StarCountLoader(
@@ -2224,6 +2219,24 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
 
     return obj
 
+
+def mouse_gbm_pten_p53(source='star', annotate_by='all', **kwargs):
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GBM_Pten_P53')
+    metafn = os.path.join(indir, 'sources.csv')
+    count_dir = os.path.join(indir, 'mouse', 'star_alignment')
+    if source == 'star':
+        obj = StarCountLoader(
+            count_dir=count_dir,
+            meta_fn=metafn,
+            annotate_by=annotate_by,
+            strandedness='u',
+            tax_id=10090,
+            **kwargs
+        )
+    else:
+        raise ValueError("Unrecognised source")
+
+    return obj
 
 
 ## FIXME: this is necessary to speed things up, but for god's/gods'/f sake REFACTOR THIS VIPER'S NEST OF MISERY so that
@@ -2556,6 +2569,10 @@ def load_salmon(count_dir, meta_fn, samples=None, units='tpm'):
             the_dat = the_dat.loc[:, 'TPM']
         elif units == 'estimated_counts':
             the_dat = the_dat.loc[:, 'NumReads']
+        elif units == 'effective_length':
+            the_dat = the_dat.loc[:, 'EffectiveLength']
+        elif units == 'length':
+            the_dat = the_dat.loc[:, 'Length']
         if data is None:
             data = pd.DataFrame(index=the_dat.index, columns=samples)
         data.loc[:, sn] = the_dat
@@ -2564,7 +2581,7 @@ def load_salmon(count_dir, meta_fn, samples=None, units='tpm'):
 
 
 def load_salmon_by_patient_id(patient_ids, units='tpm', include_control=True, type='cell_culture'):
-    if units not in ['tpm', 'estimated_counts']:
+    if units not in ['tpm', 'estimated_counts', 'effective_length', 'length']:
         raise ValueError("Units unrecognised")
 
     if type == "cell_culture":
