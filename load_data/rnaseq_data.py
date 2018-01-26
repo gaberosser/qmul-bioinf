@@ -2223,8 +2223,8 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
 def mouse_gbm_pten_p53(source='star', annotate_by='all', **kwargs):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GBM_Pten_P53')
     metafn = os.path.join(indir, 'sources.csv')
-    count_dir = os.path.join(indir, 'mouse', 'star_alignment')
     if source == 'star':
+        count_dir = os.path.join(indir, 'mouse', 'star_alignment')
         obj = StarCountLoader(
             count_dir=count_dir,
             meta_fn=metafn,
@@ -2233,6 +2233,9 @@ def mouse_gbm_pten_p53(source='star', annotate_by='all', **kwargs):
             tax_id=10090,
             **kwargs
         )
+    elif source == 'salmon':
+        count_dir = os.path.join(indir, 'mouse', 'salmon')
+        return load_salmon(count_dir, metafn, **kwargs)
     else:
         raise ValueError("Unrecognised source")
 
