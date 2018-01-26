@@ -24,7 +24,7 @@ class CufflinksBase(jobs.ArrayJob, jobs.BamFileIteratorMixin):
     ]
     param_delim = ':'
 
-    core_cmd = "cufflinks -G {gtf} -p {threads} -o $SUBDIR --library-type {library_type} $BAM"
+    core_cmd = "cufflinks {extra} -G {gtf} -p {threads} -o $SUBDIR --library-type {library_type} $BAM"
 
     def set_default_extras(self):
         if '--no-update-check' not in self.extra_args:
