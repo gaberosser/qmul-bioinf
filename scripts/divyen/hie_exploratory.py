@@ -71,6 +71,10 @@ if __name__ == "__main__":
     bm_peaks = pd.concat((bm_peaks, outcomes), axis=1)
     bm_peaks.columns = bm_peaks.columns.str.replace(' peak', '')
 
+    ## TODO: pair plot and pairwise correlation
+    ax = sns.heatmap(peaks_dat.corr())
+    # FIXME: rotate axes ticklabels and tidy up
+
     # pairplot by batch
     xx = pd.concat((peaks_dat, dat.loc[:, 'batch']), axis=1)
 
@@ -134,8 +138,6 @@ if __name__ == "__main__":
             sns.boxplot(data=this_dat, x='batch', y=col, ax=ax, color='w')
             sns.swarmplot(data=this_dat, y=col, x='batch', ax=ax)
             fig.savefig(os.path.join(outdir, "sign_diff_by_anova_%s.png" % col), dpi=200)
-
-
 
 
     # does peak/trough value correlate with age?
