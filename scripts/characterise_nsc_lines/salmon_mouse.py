@@ -1,5 +1,7 @@
 from load_data import rnaseq_data
 from plotting import clustering
+import references
+from rnaseq import general
 from scripts.rnaseq import gtf_reader
 import numpy as np
 import pandas as pd
@@ -72,29 +74,9 @@ if __name__ == '__main__':
         mt_ensg = set(gtf_reader.get_mitochondrial('GRCm38r88'))
 
     mouse_data = rnaseq_data.mouse_nsc_salmon(units=units)
-    idx = mouse_data.index.str.replace(r'.[0-9]+$', '')
-    mouse_data.index = idx
 
-    # now aggregate to gene level and repeat
-    # TODO: move to rnaseq module or similar
-
-    fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'mouse', 'ensembl', 'GRCm38.p5.r90', 'gene_to_transcript.txt')
-    gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
-
-    # shouldn't be necessary, but remove transcripts that have no translation
-    to_keep = mouse_data.index.intersection(gene_transcript.index)
-    if len(to_keep) != mouse_data.shape[0]:
-        to_drop = mouse_data.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
-        print "Discarding %d transcripts that have no associated gene: %s" % (
-            len(to_drop), ', '.join(to_drop)
-        )
-        mouse_data = mouse_data.loc[to_keep]
-
-    # gene list in same order as data
-    genes = gene_transcript.loc[mouse_data.index, 'Gene stable ID']
-
-    mouse_data_by_gene = mouse_data.groupby(genes).sum()
-
+    # aggregate to gene level
+    mouse_data_by_gene = general.ensembl_transcript_quant_to_gene(mouse_data, tax_id=10090)
 
     # discard mitochondrial genes
     if remove_mt:
@@ -107,16 +89,16 @@ if __name__ == '__main__':
         mdbg = mouse_data_by_gene
 
     # discard genes expressed at low values
-    idx = (mdbg > min_val).sum(axis=1) > min_n
-    mdbg = mdbg.loc[idx]
+    # idx = (mdbg > min_val).sum(axis=1) > min_n
+    # mdbg = mdbg.loc[idx]
 
     if units == 'estimated_counts':
         # here we can normalise by library size if desired
         pass
 
-    ax = hist_logvalues(mouse_data_by_gene, thresholds=[min_val])
-    ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
-    ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.pdf"))
+    # ax = hist_logvalues(mouse_data_by_gene, thresholds=[min_val])
+    # ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
+    # ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.pdf"))
 
     mad = transformations.median_absolute_deviation(mdbg).sort_values(ascending=False)
     mdbg_log = np.log2(mdbg + eps)
@@ -139,6 +121,7 @@ if __name__ == '__main__':
 
     # bring in reference data
     ref_dats = [
+        ('Pten/P53 study', rnaseq_data.mouse_gbm_pten_p53(source='salmon', units=units)),
         # ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
         ('Liu et al.', rnaseq_data.gse96950_salmon(units=units)),
         ('Wapinski et al.', rnaseq_data.gse43916_salmon(units=units)),
@@ -179,7 +162,13 @@ if __name__ == '__main__':
         ref_dats[i] = (auth, rd)
 
     ref = pd.concat([t[1] for t in ref_dats], axis=1)
-    ref.index = ref.index.str.replace(r'.[0-9]+$', '')
+
+    # just in case it's useful, stitch the data together and export before we do any removal
+    tmp_ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
+    tmp_abg = pd.concat((mouse_data_by_gene, tmp_ref_by_gene), axis=1)
+    tmp_abg.to_excel(os.path.join(outdir, "tpm_values.xlsx"))
+
+    # ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
     ref = ref.loc[:, ~ref.columns.str.contains('Normal brain')]
     ref = ref.loc[:, ~ref.columns.str.contains('GBM')]
@@ -190,7 +179,8 @@ if __name__ == '__main__':
     ref = ref.loc[:, ~ref.columns.str.contains('LPS')]
     ref = ref.loc[:, ~ref.columns.str.contains(r'day [148]')]
 
-    ref_by_gene = ref.groupby(genes).sum()
+    # ref_by_gene = ref.groupby(genes).sum()
+    ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
 
     # now let's try clustering everything together
     abg = pd.concat((mouse_data_by_gene, ref_by_gene), axis=1)
@@ -202,10 +192,6 @@ if __name__ == '__main__':
         # renorm
         if units == 'tpm':
             abg = abg.divide(abg.sum(), axis=1) * 1e6
-
-    # discard genes expressed at low values
-    idx = (abg > min_val).sum(axis=1) > min_n
-    abg = abg.loc[idx]
 
     abg_log = np.log2(abg + eps)
     amad_log = transformations.median_absolute_deviation(abg_log).sort_values(ascending=False)
@@ -236,18 +222,12 @@ if __name__ == '__main__':
     row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*mouse'), 'Cell type'] = '#3543ff' # dark blue
     row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*human'), 'Cell type'] = '#c4c8ff' # pale blue
 
-    # study
-    # row_colours_all.loc[:, 'Study'] = '#96ff9d'
-    # for i in range(len(ref_dats)):
-    #     row_colours_all.loc[row_colours_all.index.str.contains(ref_dats[i][0]), 'Study'] = \
-    #         "%.3f" % np.linspace(0, 1, len(ref_dats))[i]
-
     for n_t in n_gene_try + [abg.shape[0]]:
         fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
 
         # don't plot the clustermap with all genes
         if n_t < abg.shape[0]:
-            cm, mad_all = cluster_logdata_with_threshold(abg, n=n_t, eps=eps, col_colors=row_colours_all)
+            cm, _= cluster_data_with_threshold(abg_log.loc[amad_log.index[:n_t]], col_colors=row_colours_all)
             cm.gs.update(bottom=0.3)
             cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
@@ -264,6 +244,126 @@ if __name__ == '__main__':
         cm = clustering.plot_correlation_clustermap(
             abg_log.loc[amad_log.index[:n_t]],
             row_colors=row_colours_all,
+            n_gene=n_t,
+        )
+        plt.setp(cm.ax_heatmap.get_xticklabels(), rotation=90, fontsize=10)
+        plt.setp(cm.ax_heatmap.get_yticklabels(), rotation=0, fontsize=10)
+        cm.gs.update(bottom=0.35, right=0.65)
+        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # data subset: our data and Pten/P53 samples
+
+    mouse_data = rnaseq_data.mouse_nsc_salmon(units=units)
+    mouse_data_by_gene = general.ensembl_transcript_quant_to_gene(mouse_data, tax_id=10090)
+
+    dat_pten = general.ensembl_transcript_quant_to_gene(
+        rnaseq_data.mouse_gbm_pten_p53(source='salmon', units=units),
+        tax_id=10090
+    )
+    abg = pd.concat((mouse_data_by_gene, dat_pten), axis=1)
+    abg = abg.loc[:, ~abg.columns.str.contains(r'mDura[1-9NA]+mouse')]
+    abg = abg.loc[:, ~abg.columns.str.contains(r'eNSC[356]mouse')]
+    abg = abg.loc[:, ~abg.columns.str.contains(r'TG')]
+    abg_log = np.log2(abg + eps)
+    amad_log = transformations.median_absolute_deviation(abg_log).sort_values(ascending=False)
+
+    if remove_mt:
+        idx = ~abg.index.isin(mt_ensg)
+        abg = abg.loc[idx]
+        # renorm
+        if units == 'tpm':
+            abg = abg.divide(abg.sum(), axis=1) * 1e6
+
+    row_colours_all = pd.DataFrame('gray', index=abg.columns, columns=['Cell type', ])
+
+    # cell type
+    row_colours_all.loc[row_colours_all.index.str.contains(r'WT'), 'Cell type'] = '#a5fff9'  # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'TG'), 'Cell type'] = '#a5fff9'  # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM'), 'Cell type'] = '#ffa8b3'  # pale red
+    # these override previously-defined colours
+    row_colours_all.loc[row_colours.index.str.contains(r'eNSC[0-9]med'), 'Cell type'] = '#96ff9d'  # pale green
+    # row_colours_all.loc[row_colours.index.str.contains(r'eNSC[0-9]mouse'), 'Cell type'] = '#008408'  # dark green
+    row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*mouse'), 'Cell type'] = '#3543ff'  # dark blue
+    # row_colours_all.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*human'), 'Cell type'] = '#c4c8ff'  # pale blue
+
+    abg_log = np.log2(abg + eps)
+    amad_log = transformations.median_absolute_deviation(abg_log).sort_values(ascending=False)
+
+    if units == 'estimated_counts':
+        # optionally could normalise here?
+        pass
+
+    for n_t in n_gene_try + [abg.shape[0]]:
+        fname = "nsc_gbm_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+
+        # don't plot the clustermap with all genes
+        if n_t < abg.shape[0]:
+            cm, _ = cluster_data_with_threshold(abg_log.loc[amad_log.index[:n_t]], col_colors=row_colours_all)
+            cm.gs.update(bottom=0.3)
+            cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "nsc_gbm_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+        d = clustering.dendrogram_with_colours(
+            abg_log.loc[amad_log.index[:n_t]],
+            row_colours_all,
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
+        )
+        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "nsc_gbm_corrplot_log_top%d_by_mad.{ext}" % n_t
+        cm = clustering.plot_correlation_clustermap(
+            abg_log.loc[amad_log.index[:n_t]],
+            row_colors=row_colours_all,
+            n_gene=n_t,
+        )
+        plt.setp(cm.ax_heatmap.get_xticklabels(), rotation=90, fontsize=10)
+        plt.setp(cm.ax_heatmap.get_yticklabels(), rotation=0, fontsize=10)
+        cm.gs.update(bottom=0.35, right=0.65)
+        cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    # same samples but aggegate wherever possible
+    abg.insert(0, 'mDura_mouse', abg.loc[:, abg.columns.str.contains('mDura')].mean(axis=1))
+    abg.insert(0, 'eNSC_med', abg.loc[:, abg.columns.str.contains('eNSC')].mean(axis=1))
+    abg.insert(0, 'GBM', abg.loc[:, abg.columns.str.contains('GBM')].mean(axis=1))
+    abg.insert(0, 'WT', abg.loc[:, abg.columns.str.contains('WT')].mean(axis=1))
+
+    abg_avg = abg.iloc[:, :4]
+
+    # cell type
+    row_colours_avg = pd.DataFrame('gray', index=abg_avg.columns, columns=['Cell type', ])
+    row_colours_avg.loc[row_colours_avg.index.str.contains(r'WT'), 'Cell type'] = '#a5fff9'  # pale turquoise(?)
+    row_colours_avg.loc[row_colours_avg.index.str.contains(r'GBM'), 'Cell type'] = '#ffa8b3'  # pale red
+    row_colours_avg.loc[row_colours_avg.index.str.contains(r'eNSC'), 'Cell type'] = '#96ff9d'  # pale green
+    row_colours_avg.loc[row_colours_avg.index.str.contains(r'mDura'), 'Cell type'] = '#3543ff'  # dark blue
+
+    abg_avg_log = np.log2(abg_avg + eps)
+    amad_avg_log = transformations.median_absolute_deviation(abg_avg_log).sort_values(ascending=False)
+
+    for n_t in n_gene_try + [abg_avg_log.shape[0]]:
+        fname = "nsc_gbm_avg_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
+
+        # don't plot the clustermap with all genes
+        if n_t < abg_avg_log.shape[0]:
+            cm, _ = cluster_data_with_threshold(abg_avg_log.loc[amad_avg_log.index[:n_t]], col_colors=row_colours_avg)
+            cm.gs.update(bottom=0.3)
+            cm.savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "nsc_gbm_avg_dendrogram_log_corr_top%d_by_mad.{ext}" % n_t
+        d = clustering.dendrogram_with_colours(
+            abg_avg_log.loc[amad_avg_log.index[:n_t]],
+            row_colours_avg,
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
+        )
+        d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+        fname = "nsc_gbm_avg_corrplot_log_top%d_by_mad.{ext}" % n_t
+        cm = clustering.plot_correlation_clustermap(
+            abg_avg_log.loc[amad_avg_log.index[:n_t]],
+            row_colors=row_colours_avg,
             n_gene=n_t,
         )
         plt.setp(cm.ax_heatmap.get_xticklabels(), rotation=90, fontsize=10)

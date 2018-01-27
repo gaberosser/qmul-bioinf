@@ -51,36 +51,41 @@ if __name__ == '__main__':
     groups[dat.columns.str.contains('GBM')] = 'GBM'
     groups[dat.columns.str.contains('WT')] = 'eNSC2'
 
+    comparisons = [
+        ('iNSC', 'eNSC'),
+        ('GBM', 'eNSC2'),
+        ('GBM', 'eNSC'),
+        ('GBM', 'iNSC'),
+        ('eNSC', 'eNSC2'),
+        ('iNSC', 'eNSC2'),
+    ]
+
     res = {}
 
-    # expt 1: eNSC vs iNSC
-    res['iNSC_vs_eNSC'] = run_one_de(dat, groups, ('iNSC', 'eNSC'), **de_params)
-    print "%d DE genes\n" % (res['iNSC_vs_eNSC'].FDR <= de_params['fdr']).sum()
-
-    # expt 2: GBM (Pten/P53) vs WT NSC
-    res['GBM_vs_eNSC_WT'] = run_one_de(dat, groups, ('GBM', 'eNSC2'), **de_params)
-    print "%d DE genes\n" % (res['GBM_vs_eNSC_WT'].FDR <= de_params['fdr']).sum()
-
-    # expt 3: GBM (Pten/P53) vs our eNSC
-    res['GBM_vs_eNSC'] = run_one_de(dat, groups, ('GBM', 'eNSC'), **de_params)
-    print "%d DE genes\n" % (res['GBM_vs_eNSC'].FDR <= de_params['fdr']).sum()
-
-    # expt 4: GBM (Pten/P53) vs our iNSC
-    res['GBM_vs_iNSC'] = run_one_de(dat, groups, ('GBM', 'iNSC'), **de_params)
-    print "%d DE genes\n" % (res['GBM_vs_iNSC'].FDR <= de_params['fdr']).sum()
-
-    # expt 5: Our eNSC vs WT eNSC
-    res['eNSC_vs_eNSC_WT'] = run_one_de(dat, groups, ('eNSC', 'eNSC2'), **de_params)
-    print "%d DE genes\n" % (res['eNSC_vs_eNSC_WT'].FDR <= de_params['fdr']).sum()
+    for cmp in comparisons:
+        lbl = "%s_vs_%s" % cmp
+        res[lbl] = run_one_de(dat, groups, cmp, **de_params)
+        print "%d DE genes\n" % (res[lbl].FDR <= de_params['fdr']).sum()
 
     res_sign = {}
     for k, v in res.items():
         general.add_gene_symbols_to_ensembl_data(v, tax_id=10090)
-        res_sign[k] = v.loc[v.FDR <= de_params['lfc']]
+        res_sign[k] = v.loc[v.FDR <= de_params['fdr']]
 
     excel.pandas_to_excel(res, os.path.join(outdir, "mouse_GBM_NSC_DE_all.xlsx"))
     excel.pandas_to_excel(res_sign, os.path.join(outdir, "mouse_GBM_NSC_DE_significant.xlsx"))
 
+    # finally, re-run with a lfc of zero
+    de_params['lfc'] = 0
+    res_lfc0 = {}
+    for cmp in comparisons:
+        lbl = "%s_vs_%s" % cmp
+        res_lfc0[lbl] = run_one_de(dat, groups, cmp, **de_params)
+        print "%d DE genes\n" % (res[lbl].FDR <= de_params['fdr']).sum()
+
+    excel.pandas_to_excel(res_lfc0, os.path.join(outdir, "mouse_GBM_NSC_DE_all_nologfc.xlsx"))
+
     for_export = dat.copy()
     general.add_gene_symbols_to_ensembl_data(for_export, tax_id=10090)
     for_export.to_excel(os.path.join(outdir, 'gene_counts.xlsx'))
+

@@ -88,6 +88,7 @@ def ensembl_transcript_quant_to_gene(dat, tax_id=9606, remove_ver=True):
     :return: Pandas DataFrame aggregated to gene level, indexed by Ensembl Gene ID.
     """
     if remove_ver:
+        dat = dat.copy()
         dat.index = dat.index.str.replace(r'.[0-9]+$', '')
 
     if tax_id in GENE_TO_TRANSCRIPT_FILES:
