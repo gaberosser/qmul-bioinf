@@ -37,6 +37,17 @@ def get_one_coverage(bam_fn, region, region_pad=500, n_perm=100):
     return region_depth, perm_depths
 
 
+def save_results(cov_cpg_islands, cov_perms, outfn):
+    to_write = {
+        'cpg_islands': cov_cpg_islands,
+        'permutations': cov_perms,
+    }
+    flogger.info("Dumping %d results to JSON file %s", len(cov_cpg_islands), outfn)
+    with open(outfn, 'wb') as fout:
+        json.dump(to_write, fout)
+    flogger.info("Wrote file %s successfully.", outfn)
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -57,6 +68,7 @@ if __name__ == "__main__":
 
     flogger.info("Output to directory %s", outdir)
 
+    save_every_n = 300  # number of iterations to save between
     region_pad = 500  # number of BP to pad each region by
     n_perm = 10  # number of times to draw each region size at random
 
@@ -81,6 +93,8 @@ if __name__ == "__main__":
     fstem = fstem.replace('.sorted', '')
     fstem = re.sub(r'_pe$', '', fstem)
 
+    outfn = os.path.join(outdir, "%s.cpg_coverage.json" % fstem)
+
     fn = os.path.join(indir, f)
     flogger.info("Starting analysis of %s.", fn)
     s = pysam.AlignmentFile(fn, 'rb')
@@ -94,6 +108,7 @@ if __name__ == "__main__":
 
     cov_cpg_islands = []
     cov_perms = []
+    n_since_save = 0
 
     for i, row in cpg_regions.iterrows():
         region = (row.chrom, row.chromStart, row.chromEnd)
@@ -109,29 +124,27 @@ if __name__ == "__main__":
                 res = get_one_coverage(fn, region, **kwds)
                 cov_cpg_islands.append(res[0])
                 cov_perms.append(res[1])
+                n_since_save += 1
+                if n_since_save == save_every_n:
+                    save_results(cov_cpg_islands, cov_perms, outfn)
+                    n_since_save = 0
             except Exception:
                 flogger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
 
+    n_since_save = 0
     if ncpu > 1:
         pool.close()
         for i, row in cpg_regions.iterrows():
-            if (i % 1000) == 0:
-                flogger.info("Region %d / %d", i, cpg_regions.shape[0])
             try:
                 res = jobs[i].get(1e6)
                 cov_cpg_islands.append(res[0])
                 cov_perms.append(res[1])
+                n_since_save += 1
+                if n_since_save == save_every_n:
+                    save_results(cov_cpg_islands, cov_perms, outfn)
+                    n_since_save = 0
             except Exception:
                 flogger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
 
-    # save results
-    to_write = {
-        'cpg_islands': cov_cpg_islands,
-        'permutations': cov_perms,
-    }
-
-    outfn = os.path.join(outdir, "%s.cpg_coverage.json" % fstem)
-    flogger.info("Writing JSON results to %s", outfn)
-    with open(outfn, 'wb') as fout:
-        json.dump(to_write, fout)
-    flogger.info("Completed file %s.", fn)
+    # save full results
+    save_results(cov_cpg_islands, cov_perms, outfn)
