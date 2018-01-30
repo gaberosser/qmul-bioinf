@@ -8,6 +8,7 @@ import references
 from rnaseq import differential_expression, general
 from utils import output, setops, excel, ipa
 from load_data import rnaseq_data
+from scripts.hgic_de.compare_hgic_vs_paired_insc import venn_set_to_dataframe
 
 
 if __name__ == "__main__":
@@ -57,6 +58,7 @@ if __name__ == "__main__":
     )
     cols = pids + [t[0] for t in external_refs]
     de_res = differential_expression.compute_cross_de(rnaseq_obj, pids, external_references=external_refs, **de_params)
+    de_res_full = differential_expression.compute_cross_de(rnaseq_obj, pids, external_references=external_refs, return_full=True, **de_params)
 
     pair_only = pd.DataFrame(index=pids, columns=cols)
     # ref_only = pd.DataFrame(index=pids, columns=cols)
@@ -139,6 +141,12 @@ if __name__ == "__main__":
         po_de_export[pid] = de_res[(pid, pid)].loc[this_genes]
 
     excel.pandas_to_excel(po_de_export, os.path.join(outdir, 'pair_only_de_lists_corrected.xlsx'))
+
+    # export with a different layout, analogous to trial 2
+    venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
+    po_combination_export = venn_set_to_dataframe(po_de_export, venn_set, pids)
+    po_combination_export.to_excel(os.path.join(outdir, 'pair_only_de_lists_combined_corrected.xlsx'))
+
 
     # plot: how many DE genes are present in each reference comparison?
 

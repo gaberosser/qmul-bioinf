@@ -147,6 +147,7 @@ def compute_cross_de(
         tax_id=9606,
         type_field='type',
         default_types=('GBM', 'iNSC'),
+        return_full=False,
 ):
     """
     Compute DE between every patient GBM sample and every _other_ healthy patient sample, in addition to paired DE.
@@ -188,13 +189,14 @@ def compute_cross_de(
                     lfc=lfc,
                     fdr=fdr,
                     method=method,
-                    tax_id=tax_id
+                    tax_id=tax_id,
+                    return_full=return_full
                 )
             else:
                 jobs[(pid, pid2)] = pool.apply_async(
                     run_one_de,
                     args=(the_data, the_groups, the_comparison),
-                    kwds=dict(lfc=lfc, fdr=fdr, method=method, tax_id=tax_id)
+                    kwds=dict(lfc=lfc, fdr=fdr, method=method, tax_id=tax_id, return_full=return_full)
                 )
 
         # external reference comparison
@@ -212,13 +214,14 @@ def compute_cross_de(
                     lfc=lfc,
                     fdr=fdr,
                     method=method,
-                    tax_id=tax_id
+                    tax_id=tax_id,
+                    return_full=return_full,
                 )
             else:
                 jobs[(pid, er)] = pool.apply_async(
                     run_one_de,
                     args=(the_data, the_groups, the_comparison),
-                    kwds=dict(lfc=lfc, fdr=fdr, method=method, tax_id=tax_id)
+                    kwds=dict(lfc=lfc, fdr=fdr, method=method, tax_id=tax_id, return_full=return_full)
                 )
 
     if njob != 1:
