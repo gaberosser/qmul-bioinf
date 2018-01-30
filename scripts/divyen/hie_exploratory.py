@@ -16,7 +16,7 @@ BIOMARKERS = [
     'Plt',
     'Neutrophil',
     'Lymphocyte',
-    # 'PT',  # PT test and INR are highly related
+    'PT',  # PT test and INR are highly related
     'INR',
     'APTT',
     'Urea',
@@ -35,7 +35,7 @@ OUTCOME_COL = 'Outcome'
 
 def load_cleaned_data():
     # fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_sep_2017.csv')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_jan_2018.csv')
     return pd.read_csv(fn, header=0, na_values='-', index_col=0)
 
 
@@ -58,11 +58,24 @@ if __name__ == "__main__":
         + BIOMARKER_TROUGH_COLS
         + BIOMARKER_PEAK_AGE_COLS
         + BIOMARKER_TROUGH_AGE_COLS
-        # + [OUTCOME_COL]
     )]
     outcomes = dat.loc[:, OUTCOME_COL]
 
-    # vals_outcomes = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS + [OUTCOME_COL]]
+    ## 1) Correlation between variables
+    peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
+    corr = peaks_dat.corr(method='spearman')
+    fig = plt.figure(figsize=(6.7, 5.5))
+    ax = fig.add_subplot(111)
+    sns.heatmap(corr, ax=ax, cmap='RdBu_r')
+    ax.set_aspect('equal')
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "spearman_correlation_plot.png"), dpi=200)
+
+    # CONCLUSION: PT and INR peaks are highly correlated -> remove PT
+    peaks_dat = peaks_dat.loc[:, peaks_dat.columns != 'PT peak']
+    nvar = peaks_dat.shape[1]
 
     # standardize - necessary when using array plots to keep the range the same
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
@@ -110,7 +123,8 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "pca_by_batch.pdf"))
     fig.savefig(os.path.join(outdir, "pca_by_batch.png"), dpi=200)
 
-    # look for sign differences in the distribution of individual variables
+    # one way ANOVA
+    # look for sign differences in the distribution of individual variables between batches
     p_anova = {}
     for col in peaks_dat.columns:
         this_dat = peaks_dat.loc[:, col].groupby(dat.batch).apply(lambda x: list(x.dropna()))
@@ -129,8 +143,10 @@ if __name__ == "__main__":
         p_anova[col] = this_res.pvalue
 
     # for each significantly different biomarker, plot a histogram
+    b_sign = False
     for col, p in p_anova.items():
         if p < 0.05:
+            b_sign = True
             print "Variable %s has a significant one-way ANOVA result (p<%.3e)" % (col, p)
             this_dat = pd.concat((peaks_dat.loc[:, col], dat.batch), axis=1)
             fig = plt.figure()
@@ -138,6 +154,26 @@ if __name__ == "__main__":
             sns.boxplot(data=this_dat, x='batch', y=col, ax=ax, color='w')
             sns.swarmplot(data=this_dat, y=col, x='batch', ax=ax)
             fig.savefig(os.path.join(outdir, "sign_diff_by_anova_%s.png" % col), dpi=200)
+
+    if not b_sign:
+        print "No significant differences detected between batches (one-way ANOVA)"
+
+    # t test
+    # look for differences in the distribution of individual variables between outcomes
+    p_ttest = {}
+
+    for col in peaks_dat.columns:
+        this_dat = peaks_dat.loc[:, col].groupby(outcomes).apply(lambda x: list(x.dropna()))
+        args = []
+        this_dropped = []
+        for k, t in this_dat.iteritems():
+            if len(t) == 0:
+                print "One of the 2 outcome groups is missing variable %s. Skipping" % col
+                continue
+            else:
+                args.append(t)
+        this_res = stats.ttest_ind(*args)
+        p_ttest[col] = this_res.pvalue
 
 
     # does peak/trough value correlate with age?
@@ -206,24 +242,13 @@ if __name__ == "__main__":
         bwu.append(dat.loc[dat.loc[:, OUTCOME_COL] == 1, c].dropna())  # unfavourable outcome
         ttls.append(c.replace(' peak', ''))
 
-    # set positions
-    xf = range(1, len(bwf) * 3, 3)
-    xu = range(2, len(bwf) * 3, 3)
-
-    fig, axs = plt.subplots(nrows=1, ncols=len(BIOMARKER_PEAK_COLS) + len(BIOMARKER_TROUGH_COLS), sharex=True, figsize=(15, 5))
-    for i in range(len(bwf)):
-        ax = axs[i]
-        ax.boxplot([bwf[i], bwu[i]], widths=0.5)
-        ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
-        ax.set_title(ttls[i])
-
-    fig.subplots_adjust(left=0.05, right=0.99)
-    fig.savefig(os.path.join(outdir, 'box_whisker_basic.png'), dpi=200)
-    fig.savefig(os.path.join(outdir, 'box_whisker_basic.pdf'))
-
     jitter = 0.2
-    fig, axs = plt.subplots(nrows=1, ncols=len(BIOMARKER_PEAK_COLS) + len(BIOMARKER_TROUGH_COLS), sharex=True,
-                            figsize=(15, 5))
+    if nvar % 2 == 0:
+        fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
+        axs = axs.flat
+    else:
+        fig, axs = plt.subplots(nrows=1, ncols=nvar, sharex=True, figsize=(15, 5))
+
     for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
         ax = axs[i]
 
@@ -245,7 +270,8 @@ if __name__ == "__main__":
         if ylim[0] < 0:
             ylim[0] = 0.
             ax.set_ylim(ylim)
-    fig.subplots_adjust(left=0.025, right=0.99, wspace=0.4, bottom=0.2)
+    # fig.subplots_adjust(left=0.025, right=0.99, wspace=0.4, bottom=0.2)
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.pdf'))
 
@@ -295,11 +321,14 @@ if __name__ == "__main__":
     ax.scatter(y[unfav_idx, 0], y[unfav_idx, 1], c='g')
 
     # statsmodels logistic regression
-
-    peaks_dat_const = sm.add_constant(peaks_dat)
-    est = sm.OLS(outcomes, peaks_dat_const)
-    est2 = est.fit()
-    print est2.summary()
+    try:
+        peaks_dat_const = sm.add_constant(peaks_dat)
+        est = sm.OLS(outcomes, peaks_dat_const)
+        est2 = est.fit()
+        print est2.summary()
+    except Exception as exc:
+        print "Failed to fit statsmodels logistic regression model"
+        print repr(exc)
 
     # decision tree classifier
     from sklearn import tree
@@ -307,7 +336,7 @@ if __name__ == "__main__":
     clf = tree.DecisionTreeClassifier()
     clf = clf.fit(peaks_dat, outcomes)
     dot_data = tree.export_graphviz(clf, out_file=None, feature_names=peaks_dat.columns, class_names=['Unfav', 'Fav'],
-                                    filled = True, rounded = True)
+                                    filled=True, rounded=True)
     graph = graphviz.Source(dot_data)
     graph.render(os.path.join(outdir, 'decision_tree_graph'))# TODO
 
