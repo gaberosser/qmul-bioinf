@@ -231,3 +231,88 @@ def compute_cross_de(
             de[k] = j.get(1e6)
 
     return de
+
+
+def venn_set_to_dataframe(
+        data,
+        venn_set,
+        set_labels,
+        include_sets=None,
+        full_data=None,
+        logfc_col='logFC',
+        fdr_col='FDR',
+):
+    """
+    Given the input DE data and Venn sets, generate a long format dataframe containing all the data, one column
+    per patient and one row per gene.
+    Optionally filter the sets to include only a subset.
+    Optionally include non-significant results too.
+    :param data: Dict containing DE results, keyed by the entries of set_labels
+    :param venn_set:
+    :param set_labels:
+    :param include_sets:
+    :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
+    significant results can be accessed.
+    :param logfc_col: The name of the log fold change column in the input data. Also used to name columns in the df.
+    :param fdr_col: The name of the FDR column in the input data. Also used to name columns in the df.
+    :return:
+    """
+    if include_sets is not None:
+        venn_set = dict([
+            (k, v) for k, v in venn_set.items() if k in include_sets
+        ])
+
+    res = []
+    for k in venn_set:
+        the_genes = venn_set[k]
+        # populate with individual patient results
+        blocks = []
+        consistency_check = []
+        for i, t in enumerate(k):
+            pid = set_labels[i]
+            this_datum = pd.DataFrame(
+                index=the_genes,
+                columns=[pid, "%s_%s" % (pid, logfc_col), "%s_%s" % (pid, fdr_col)]
+            )
+            if t == '1':
+                this_datum.loc[the_genes, pid] = 'Y'
+                this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = data[pid].loc[the_genes, logfc_col]
+                this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = data[pid].loc[the_genes, fdr_col]
+                cc = data[pid].loc[the_genes, 'Direction']
+                cc.name = pid
+                consistency_check.append(cc)
+            else:
+                this_datum.loc[the_genes, pid] = 'N'
+                if full_data is not None:
+                    this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes, logfc_col]
+                    this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes, fdr_col]
+
+            blocks.append(this_datum)
+
+        core_block = pd.concat(blocks, axis=1)
+        # assess consistency of DE direction
+        consist = pd.Series(index=the_genes)
+
+        if len(consistency_check) > 0:
+            consistency_check = pd.concat(consistency_check, axis=1)
+            idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+            consist.loc[idx] = 'Y'
+            consist.loc[~idx] = 'N'
+
+        core_block.insert(core_block.shape[1], 'consistent', consist)
+        res.append(core_block)
+
+    # check: no genes should be in more than one data entry
+    for i, k in enumerate(venn_set):
+        for j, k2 in enumerate(venn_set):
+            if k == k2: continue
+            bb = len(res[i].index.intersection(res[j].index))
+            if bb > 0:
+                raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
+
+    res = pd.concat(res, axis=0)
+
+    # add gene symbols
+    general.add_gene_symbols_to_ensembl_data(res)
+
+    return res

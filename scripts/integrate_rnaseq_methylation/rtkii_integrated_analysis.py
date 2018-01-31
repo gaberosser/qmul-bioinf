@@ -1,9 +1,10 @@
 from load_data import rnaseq_data, methylation_array
-from rnaseq import differential_expression
+from rnaseq import differential_expression, general
 from rnaseq.filter import filter_by_cpm
 from methylation import process, dmr
 from methylation import plots as me_plots
 from integrator.rnaseq_methylationarray import compute_joint_de_dmr
+from utils import excel, ipa
 from integrator import plots
 import copy
 import pandas as pd
@@ -36,23 +37,6 @@ class TestResultEncoder(json.JSONEncoder):
         return super(TestResultEncoder, self).default(o)
 
 
-def add_gene_symbols(df):
-    """
-    Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
-    """
-    gs = references.ensembl_to_gene_symbol(df.index)
-    # resolve any duplicates arbitrarily (these should be rare)
-    gs = gs.loc[~gs.index.duplicated()]
-    df.insert(0, 'Gene Symbol', gs)
-
-
-def add_fc_direction(df):
-    direction = pd.Series(index=df.index, name='Direction')
-    direction.loc[df.logFC < 0] = 'down'
-    direction.loc[df.logFC > 0] = 'up'
-    df.insert(df.shape[1], 'Direction', direction)
-
-
 def compute_de(rnaseq_obj, pids, lfc=1, fdr=0.01, method='QLGLM'):
     if method not in {'QLGLM', 'GLM', 'exact'}:
         raise NotImplementedError("Unsupported method.")
@@ -81,8 +65,8 @@ def compute_de(rnaseq_obj, pids, lfc=1, fdr=0.01, method='QLGLM'):
             elif method == 'exact':
                 de_matched[pid] = differential_expression.edger_exacttest(the_data, the_groups, pair=the_pair, lfc=lfc, fdr=fdr)
 
-            add_gene_symbols(de_matched[pid])
-            add_fc_direction(de_matched[pid])
+            general.add_gene_symbols_to_ensembl_data(de_matched[pid])
+            general.add_fc_direction(de_matched[pid])
 
             # repeat with gibco reference
             # use the same genes, rather than filtering again
@@ -99,8 +83,8 @@ def compute_de(rnaseq_obj, pids, lfc=1, fdr=0.01, method='QLGLM'):
             elif method == 'exact':
                 de_gibco[pid] = differential_expression.edger_exacttest(the_data, the_groups, pair=the_pair, lfc=lfc, fdr=fdr)
 
-            add_gene_symbols(de_gibco[pid])
-            add_fc_direction(de_gibco[pid])
+            general.add_gene_symbols_to_ensembl_data(de_gibco[pid])
+            general.add_fc_direction(de_gibco[pid])
 
             # Separate into sets
             de[pid], _ = setops.venn_from_arrays(de_matched[pid].index, de_gibco[pid].index)
@@ -613,54 +597,6 @@ def joint_de_dmr_table2(joint_de_dmr_result, associated_result=None):
     return out
 
 
-
-def results_to_excel(blocks, fn, write_index=True):
-    """
-
-    :param blocks: Dictionary containing the different comparisons to save. Values are pandas dataframes.
-    :param fn: Output file
-    :param write_index: If True (default) then the index is written as the first column. May wish to disable this if it
-    has no meaning.
-    :return:
-    """
-    xl_writer = pd.ExcelWriter(fn)
-    # sort the keys for a more sensible order
-    keys = sorted(blocks.keys())
-    for k in keys:
-        bl = blocks[k]
-        bl.to_excel(xl_writer, k, index=write_index)
-    xl_writer.save()
-
-
-def results_to_ipa_format(
-        blocks,
-        outdir,
-        incl_cols=('logFC', 'FDR'),
-        identifier='Ensembl',
-):
-    incl_cols = list(incl_cols)
-
-    for k, bl in blocks.iteritems():
-        fn = os.path.join(outdir, "%s.txt" % k)
-        header = [
-            ['Key', 'Value'],
-            ['observation_name', k],
-            ['date_created', datetime.datetime.now().isoformat()]
-        ]
-        if identifier is not None:
-            header += [['identifier_types', identifier]]
-        with open(fn, 'wb') as f:
-            c = csv.writer(f, delimiter='\t')
-            # meta header
-            c.writerows(header)
-            c.writerow(['Data_begins_here'])
-            # data column header
-            c.writerow(['ID'] + incl_cols)
-            # reduced block
-            reduced_block = bl.loc[:, incl_cols]
-            c.writerows(reduced_block.itertuples())
-
-
 if __name__ == "__main__":
     # if this is specified, we load the DMR results from a JSON rather than recomputing them to save time
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'integrate_rnaseq_methylation')
@@ -670,7 +606,8 @@ if __name__ == "__main__":
     # RTK II
     rtkii_pids = ['017', '050', '054']
     # all n=2 samples and RTK II samples
-    pids = ['017', '018', '019', '030', '031', '044', '050', '052', '054', '061']
+    # pids = ['017', '018', '019', '030', '031', '044', '050', '052', '054', '061']
+    pids = ['017', '019', '030', '031', '050', '054']
 
     de_params = {
         'lfc': 1,
@@ -686,7 +623,7 @@ if __name__ == "__main__":
         'fdr': 0.01,
         'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
         'test_kwargs': {},
-        'n_jobs': 8,
+        'n_jobs': 16,
     }
 
     # Load RNA-Seq
@@ -731,16 +668,17 @@ if __name__ == "__main__":
 
     # single Excel workbook
     outfile = os.path.join(outdir, 'individual_gene_lists_de.xlsx')
-    results_to_excel(blocks, outfile)
+    excel.pandas_to_excel(blocks, outfile)
 
     # IPA lists, one per file
     ipa_outdir = os.path.join(outdir, 'ipa_de')
     if not os.path.exists(ipa_outdir):
         os.makedirs(ipa_outdir)
 
-    results_to_ipa_format(blocks, ipa_outdir)
+    ipa.results_to_ipa_format(blocks, ipa_outdir)
 
     # Load DNA Methylation
+    ## FIXME: drop unneeded FB and IPSC or we get an error later
     me_data, me_meta = methylation_array.load_by_patient(pids)
     me_data.dropna(inplace=True)
     me_data = process.m_from_beta(me_data)
@@ -968,7 +906,7 @@ if __name__ == "__main__":
 
     outfile = os.path.join(outdir, 'individual_gene_lists_de_dmr.xlsx')
     # have to write the index as MultiIndex requires it
-    results_to_excel(blocks, outfile, write_index=True)
+    excel.pandas_to_excel(blocks, outfile, write_index=True)
 
     # 2. IPA format
     # Here, we reduce the output to genes.
@@ -1013,21 +951,21 @@ if __name__ == "__main__":
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
     blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets)
-    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
+    ipa.results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
     # # b) TSS, providing they are concordant
     ipa_subdir = os.path.join(ipa_outdir, "tss_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
     blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets, cls='tss')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
+    ipa.results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
     # c) CpG island, providing they are concordant
     ipa_subdir = os.path.join(ipa_outdir, "island_concordant")
     if not os.path.exists(ipa_subdir):
         os.makedirs(ipa_subdir)
     blocks, id_type = prepare_de_dmr_concordant_blocks(joint_de_dmr_sets, cls='island')
-    results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
+    ipa.results_to_ipa_format(blocks, ipa_subdir, identifier=id_type)
 
     # TODO: update from here
 

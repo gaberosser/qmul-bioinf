@@ -24,6 +24,7 @@ project_dirs = {
     "2017-05-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12'),
     "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
     "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
+    "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
 }
 
 PATIENT_LOOKUP_FFPE = {}  # TODO?
@@ -33,6 +34,7 @@ PATIENT_LOOKUP_CELL = {
         ('GBM017_P3', "2017-09-19"),
         ('GBM017_P4', "2017-09-19"),
         ('DURA017_NSC_N3C5_P4', "2017-09-19"),
+        ('DURA017_FB_P7', '2018-01-12'),
     ],
     '018': [
         ('GBM018_P12', '2017-05-12'),
@@ -44,6 +46,8 @@ PATIENT_LOOKUP_CELL = {
         ('GBM019_P4', '2016-12-19_ucl_genomics'),
         ('GBM019_P3n6', "2017-09-19"),
         ('DURA019_NSC_N8C_P2', '2016-12-19_ucl_genomics'),
+        ('DURA019_NSC_N5C1_P2', '2018-01-12'),
+        ('DURA019_FB_P7', '2018-01-12')
     ],
     '026': [
         ('GBM026_P8', '2016-12-19_ucl_genomics'),
@@ -54,11 +58,15 @@ PATIENT_LOOKUP_CELL = {
         ('GBM030_P9', "2017-09-19"),
         ('GBM030_P5', '2017-05-12'),
         ('DURA030_NSC_N16B6_P1', '2017-05-12'),
+        ('DURA030_NSC_N9_P2', '2018-01-12'),
+        ('DURA030_FB_P8', '2018-01-12'),
     ],
     '031': [
         ('GBM031_P7', "2017-09-19"),
         ('GBM031_P4', '2016-12-19_ucl_genomics'),
         ('DURA031_NSC_N44B_P2', '2016-12-19_ucl_genomics'),
+        ('DURA031_NSC_N44F_P3', '2018-01-12'),
+        ('DURA031_FB_P7', '2018-01-12'),
     ],
     '044': [
         ('GBM044_P4', '2017-05-12'),
@@ -71,12 +79,15 @@ PATIENT_LOOKUP_CELL = {
         ('GBM049_P6', "2017-08-23"),
         ('DURA049_NSC_N19_P4', "2017-08-23"),
         ('DURA049_NSC_N5_P2', "2017-08-23"),
+        ('DURA049_IPSC_ N5_P10', '2018-01-12'),
     ],
     '050': [
         ('GBM050_P7n8', "2017-08-23"),
         ('GBM050_P9', "2017-08-23"),
         ('DURA050_NSC_N12_P3', "2017-08-23"),
         ('DURA050_NSC_N16_P4', "2017-08-23"),
+        ('DURA050_IPSC_N12_P5', "2018-01-12"),
+        ('DURA050_FB_P7', "2018-01-12"),
     ],
     '052': [
         ('GBM052_P6n7', "2017-09-19"),
@@ -89,6 +100,8 @@ PATIENT_LOOKUP_CELL = {
         ('GBM054_P6', "2017-08-23"),
         ('DURA054_NSC_N3C_P2', "2017-08-23"),
         ('DURA054_NSC_N2E_P1', "2017-08-23"),
+        ('DURA054_IPSC_N3C_P11', '2018-01-12'),
+        ('DURA054_FB_P5', '2018-01-12'),
     ],
     '061': [
         ('GBM061_P3', "2017-08-23"),

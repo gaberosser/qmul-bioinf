@@ -8,7 +8,6 @@ import references
 from rnaseq import differential_expression, general
 from utils import output, setops, excel, ipa
 from load_data import rnaseq_data
-from scripts.hgic_de.compare_hgic_vs_paired_insc import venn_set_to_dataframe
 
 
 if __name__ == "__main__":
@@ -144,7 +143,7 @@ if __name__ == "__main__":
 
     # export with a different layout, analogous to trial 2
     venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
-    po_combination_export = venn_set_to_dataframe(po_de_export, venn_set, pids)
+    po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
     po_combination_export.to_excel(os.path.join(outdir, 'pair_only_de_lists_combined_corrected.xlsx'))
 
 

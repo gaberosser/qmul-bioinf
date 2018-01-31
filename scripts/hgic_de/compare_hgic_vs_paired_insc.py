@@ -10,78 +10,6 @@ from utils import output, setops, excel, ipa
 from load_data import rnaseq_data
 
 
-def venn_set_to_dataframe(data, venn_set, set_labels, include_sets=None, full_data=None):
-    """
-    Given the input DE data and Venn sets, generate a long format dataframe containing all the data, one column
-    per patient and one row per gene.
-    Optionally filter the sets to include only a subset.
-    Optionally include non-significant results too.
-    :param data: Dict containing DE results, keyed by the entries of set_labels
-    :param venn_set:
-    :param set_labels:
-    :param include_sets:
-    :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
-    significant results can be accessed.
-    :return:
-    """
-    if include_sets is not None:
-        venn_set = dict([
-            (k, v) for k, v in venn_set.items() if k in include_sets
-        ])
-
-    res = []
-    for k in venn_set:
-        the_genes = venn_set[k]
-        # populate with individual patient results
-        blocks = []
-        consistency_check = []
-        for i, t in enumerate(k):
-            pid = set_labels[i]
-            this_datum = pd.DataFrame(index=the_genes, columns=[pid, "%s_logFC" % pid, "%s_FDR" % pid])
-            if t == '1':
-                this_datum.loc[the_genes, pid] = 'Y'
-                this_datum.loc[the_genes, "%s_logFC" % pid] = data[pid].loc[the_genes, 'logFC']
-                this_datum.loc[the_genes, "%s_FDR" % pid] = data[pid].loc[the_genes, 'FDR']
-                cc = data[pid].loc[the_genes, 'Direction']
-                cc.name = pid
-                consistency_check.append(cc)
-            else:
-                this_datum.loc[the_genes, pid] = 'N'
-                if full_data is not None:
-                    this_datum.loc[the_genes, "%s_logFC" % pid] = full_data[pid].loc[the_genes, 'logFC']
-                    this_datum.loc[the_genes, "%s_FDR" % pid] = full_data[pid].loc[the_genes, 'FDR']
-
-            blocks.append(this_datum)
-
-        core_block = pd.concat(blocks, axis=1)
-        # assess consistency of DE direction
-        consist = pd.Series(index=the_genes)
-
-        if len(consistency_check) > 0:
-            consistency_check = pd.concat(consistency_check, axis=1)
-            idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
-            consist.loc[idx] = 'Y'
-            consist.loc[~idx] = 'N'
-
-        core_block.insert(core_block.shape[1], 'consistent', consist)
-        res.append(core_block)
-
-    # check: no genes should be in more than one data entry
-    for i, k in enumerate(venn_set):
-        for j, k2 in enumerate(venn_set):
-            if k == k2: continue
-            bb = len(res[i].index.intersection(res[j].index))
-            if bb > 0:
-                raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
-
-    res = pd.concat(res, axis=0)
-
-    # add gene symbols
-    general.add_gene_symbols_to_ensembl_data(res)
-
-    return res
-
-
 if __name__ == "__main__":
     outdir = output.unique_output_dir("compare_paired_de", reuse_empty=True)
 
@@ -142,7 +70,7 @@ if __name__ == "__main__":
         venn_set_inconsistent[k] = the_de_direction.loc[~idx].index
 
     # generate list and save to Excel file
-    data = venn_set_to_dataframe(de_res, venn_set, pids, full_data=de_res_full)
+    data = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, full_data=de_res_full)
 
     # save
     data.to_excel(os.path.join(outdir, 'de_list_compare_patients.xlsx'))
@@ -162,7 +90,7 @@ if __name__ == "__main__":
             # add to the expanded core set
             expanded_core_sets.append(k)
 
-    expanded_core = venn_set_to_dataframe(de_res, venn_set, pids, include_sets=expanded_core_sets)
+    expanded_core = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=expanded_core_sets)
 
     # save
     expanded_core.to_excel(os.path.join(outdir, 'expanded_core_gene_list.xlsx'))
@@ -173,7 +101,7 @@ if __name__ == "__main__":
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         sg_specific_sets[grp] = k
 
-    subgroup_specific = venn_set_to_dataframe(de_res, venn_set, pids, include_sets=sg_specific_sets.values())
+    subgroup_specific = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=sg_specific_sets.values())
     subgroup_specific.to_excel(os.path.join(outdir, 'subgroup_specific_gene_list.xlsx'))
 
 
