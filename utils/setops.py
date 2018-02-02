@@ -121,3 +121,13 @@ def pairwise_similarity(arr, method='intersection'):
                 raise ValueError("Unrecognised method %s" % method)
 
     return res
+
+
+def reduce_intersection(*args):
+    intersecter = lambda x, y: set(x).intersection(y)
+    return reduce(intersecter, args)
+
+
+def reduce_union(*args):
+    unioner = lambda x, y: set(x).union(y)
+    return reduce(unioner, args)

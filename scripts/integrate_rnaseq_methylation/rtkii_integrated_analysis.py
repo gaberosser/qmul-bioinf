@@ -222,11 +222,6 @@ def compute_dmr(me_data, me_meta, anno, pids, dmr_params, ref_name_contains='GIB
     }
 
 
-def save_dmr_results(dmr_results, fn):
-    with open(fn, 'wb') as f:
-        json.dump(dmr_results['all'], f, cls=TestResultEncoder)
-
-
 def load_dmr_results(fn):
     test_results = {}
     with open(fn, 'wb') as f:

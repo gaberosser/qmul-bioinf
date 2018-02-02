@@ -1,8 +1,8 @@
 import pandas as pd
-import numpy as np
 import os
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 from utils.log import get_console_logger
+from utils import setops
 logger = get_console_logger(__name__)
 
 
@@ -299,7 +299,8 @@ def load_by_patient(patient_ids, norm_method='swan', include_control=True):
         metas.append(m)
 
     # combine them, keeping only matching probes
-    probes = reduce(lambda x, y: x.intersection(y), [t.index for t in data])
+    probes = setops.reduce_intersection(*[t.index for t in data])
+
     # report dropped probes
     dropped_probes = [t.index.difference(probes).size for t in data]
     if any([t > 0 for t in dropped_probes]):

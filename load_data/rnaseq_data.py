@@ -3,6 +3,7 @@ import re
 import os
 import glob
 import references
+import loader
 from rnaseq import normalisation, tcga
 from utils.log import get_console_logger
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2

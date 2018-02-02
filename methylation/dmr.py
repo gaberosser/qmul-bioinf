@@ -19,6 +19,7 @@ from utils.output import unique_output_dir
 import numpy as np
 import logging
 import multiprocessing as mp
+import types
 from statsmodels.sandbox.stats import multicomp
 from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary
 
@@ -750,7 +751,6 @@ class DmrResults(object):
             dest[cls] = dict([t for t in lookup.items() if cls in convert[t[0]].cls])
         return dest
 
-    # @callable_from_collection
     def clusters_by_class(self, cls=None):
         if self._clusters_by_class is None:
             self._clusters_by_class = self.separate_by_class(self.clusters)
@@ -758,7 +758,6 @@ class DmrResults(object):
             return self._clusters_by_class
         return self._clusters_by_class[cls]
 
-    # @callable_from_collection
     def results_by_class(self, cls=None):
         if self._results_by_class is None:
             self._results_by_class = self.separate_by_class(self.results, convert=self.clusters)
@@ -790,7 +789,6 @@ class DmrResults(object):
             self._results_significant = filter_dictionary(self.results, lambda x: x.get('rej_h0', False), n_level=1)
         return self._results_significant
 
-    # @callable_from_collection
     def results_relevant_by_class(self, cls=None):
         if self._results_relevant_by_class is None:
             self._results_relevant_by_class = self.separate_by_class(self.results_relevant, convert=self.clusters)
@@ -798,7 +796,6 @@ class DmrResults(object):
             return self._results_relevant_by_class
         return self._results_relevant_by_class[cls]
 
-    # @callable_from_collection
     def results_significant_by_class(self, cls=None):
         if self._results_significant_by_class is None:
             self._results_significant_by_class = self.separate_by_class(self.results_significant, convert=self.clusters)
@@ -857,6 +854,9 @@ class DmrResultCollection(object):
     Represents a collection of DmrResult objects. All objects must share the same clusters and anno attributes,
     but can differ in the results dictionary.
     """
+    # TODO?
+    # __metaclass__ = _DmrResultCollection
+
     def __init__(self, **objs):
         """
         :param objs: The DmrResults objects. These can be bundled into a nested dictionary structure
@@ -902,7 +902,7 @@ class DmrResultCollection(object):
     def iterkeys(self):
         return self.objects.iterkeys()
 
-    def apply(self, func):
+    def apply(self, func, *args, **kwargs):
         # TODO: test thoroughly
         if isinstance(func, str):
             s = func
@@ -913,16 +913,17 @@ class DmrResultCollection(object):
                     if isinstance(inst, property):
                         return getattr(x, s)
                     elif isinstance(inst, types.MethodType):
-                        return getattr(x, s)()
+                        return getattr(x, s)(*args, **kwargs)
                     else:
                         # what is this? a static data object?
                         raise NotImplementedError()
                 else:
+                    # attribute or function
                     inst = getattr(x, s)
                     if not hasattr(inst, '__call__'):
                         return inst
                     else:
-                        return inst()
+                        return inst(*args, **kwargs)
 
         flat_apply = dict([
             (k, func(v)) for k, v in self._flat.items()
@@ -957,41 +958,41 @@ class DmrResultCollection(object):
     def results_significant_by_class(self, cls=None):
         return self.apply(lambda x: x.results_significant_by_class(cls=cls))
 
-    def to_json(self, fn):
-        """
-        Save this collection to a JSON file. We don't store the annotation, as it can be reloaded from elsewhere.
-        """
-        ## FIXME: using tuples as a dict key breaks JSON support
-        # extract results from flat dict
-        results = dict([(k, v.results) for k, v in self._flat.items()])
-        # convert clusters to a serializable form
-        clusters = dict([
-            (k, v.summary_dict) for k, v in self.clusters.items()
-        ])
-        x = dict(clusters=clusters, results=results)
-        with open(fn, 'wb') as f:
-            json.dump(x, f, cls=TestResultEncoder)
+    # FIXME: JSON components disabled for now, because using tuples as a dict key breaks JSON support
 
-    @classmethod
-    def from_json(cls, fn, anno):
-        """
-        Load from a json file previously saved with to_json
-        """
-        ## FIXME: using tuples as a dict key breaks JSON support
-        with open(fn, 'rb') as f:
-            x = json.load(f)
-        # recreate clusters
-        clusters = dict([
-            (k, ProbeCluster.from_dict(v, anno)) for k, v in x['clusters'].items()
-        ])
-
-        # recreate objects
-        objects = {}
-        for k, v in x['results'].items():
-            objects[k] = DmrResults(clusters=clusters, anno=anno)
-            objects[k].results = v
-
-        return cls(**flat_dict_to_nested(objects))
+    # def to_json(self, fn):
+    #     """
+    #     Save this collection to a JSON file. We don't store the annotation, as it can be reloaded from elsewhere.
+    #     """
+    #     # extract results from flat dict
+    #     results = dict([(k, v.results) for k, v in self._flat.items()])
+    #     # convert clusters to a serializable form
+    #     clusters = dict([
+    #         (k, v.summary_dict) for k, v in self.clusters.items()
+    #     ])
+    #     x = dict(clusters=clusters, results=results)
+    #     with open(fn, 'wb') as f:
+    #         json.dump(x, f, cls=TestResultEncoder)
+    #
+    # @classmethod
+    # def from_json(cls, fn, anno):
+    #     """
+    #     Load from a json file previously saved with to_json
+    #     """
+    #     with open(fn, 'rb') as f:
+    #         x = json.load(f)
+    #     # recreate clusters
+    #     clusters = dict([
+    #         (k, ProbeCluster.from_dict(v, anno)) for k, v in x['clusters'].items()
+    #     ])
+    #
+    #     # recreate objects
+    #     objects = {}
+    #     for k, v in x['results'].items():
+    #         objects[k] = DmrResults(clusters=clusters, anno=anno)
+    #         objects[k].results = v
+    #
+    #     return cls(**flat_dict_to_nested(objects))
 
     def to_pickle(self, fn, include_annotation=True):
         """
@@ -1029,6 +1030,38 @@ class DmrResultCollection(object):
             objects[k].results = v
 
         return cls(**flat_dict_to_nested(objects))
+
+
+# TODO: work in progress!!
+# class _DmrResultCollection(type):
+#     """
+#     Class factory that programmatically adds properties to the base _DmrResultsCollection class
+#     This is useful so that we can have an arbitrary number of recursive methods that can be applied using `apply`.
+#     """
+#
+#     def __init__(cls, name, bases, namespace):
+#         super(_DmrResultCollection, cls).__init__(name, bases, namespace)
+#         recursive_props = (
+#             'clusters_relevant',
+#             'clusters_significant',
+#             'results_relevant',
+#             'results_significant',
+#         )
+#
+#         recursive_methods_by_cls = (
+#             'clusters_relevant_by_class',
+#             'clusters_significant_by_class',
+#             'results_relevant_by_class',
+#             'results_significant_by_class',
+#         )
+#
+#         for rp in recursive_props:
+#             setattr(cls, rp, property(lambda x: x.apply(rp)))
+#
+#         for rm in recursive_methods_by_cls:
+#             def the_func(obj, cls=None):
+#                 return obj.apply(lambda x: x.results_relevant_by_class(cls=cls))
+#             setattr(cls, rm, the_func)
 
 
 def region_count(dmr_probes):
@@ -1287,61 +1320,63 @@ def wilcoxon_rank_sum_permutation(x, y, n_max=1999, return_stats=False):
 #     n_lbl[cl] = len(set(fit.labels_).difference({-1}))
 
 
-def compute_dmr(
-        mvals,
-        clusters,
-        sample_name_tuples,
-        n_jobs=None,
-        min_median_change=1.4,
-        dmr_test_method="mwu",
-        fdr=0.05,
-        **test_kwargs
+def compute_cross_dmr(
+        me_data,
+        me_meta,
+        anno,
+        pids,
+        dmr_params,
+        external_references=(('GIBCO', 'NSC'),),
 ):
     """
-    Test DMR for the supplied data and clusters
-    :param mvals: A DataFrame of M values, with rows corresponding to probes and columns to samples
-    :param clusters: Computed using `identify_clusters`
-    :param sample_name_tuples: An iterable of 2 iterables giving the groups of samples to compare.
-    These must match the column names of `mvals`.
-    :param n_jobs: Number of parallel workers to use. Default: number available.
-    :param test_kwargs: Other test kwargs passed to test_clusters
-    :return:
+    Compute every possible DMR permutation in the available data.
+    This function is quite specific to our setup, so might not be easily generalised (TODO)
+    It computes every possible combination of GBM vs iNSC and GBM vs ref NSC.
+    :return DmrResultCollection
     """
-    if dmr_test_method not in TEST_METHODS:
-        raise AttributeError("DMR test method not recognised: %s" % dmr_test_method)
-    n_jobs = n_jobs or mp.cpu_count()
 
-    test_results = test_clusters_in_place(
-        clusters,
-        mvals,
-        samples=sample_name_tuples,
-        min_median_change=min_median_change,
-        n_jobs=n_jobs,
-        method=dmr_test_method,
-        **test_kwargs
-    )
+    obj = DmrResults(anno=anno)
+    obj.identify_clusters(**dmr_params)
+    res = {}
 
-    test_results_relevant = mht_correction(
-        test_results,
-        alpha=fdr
-    )
-    test_results_significant = filter_dictionary(
-        test_results_relevant,
-        filt=lambda x: x['rej_h0'],
-        n_level=3
-    )
+    # loop over GBM groups
+    for pid1 in pids:
+        res.setdefault(pid1, {})
+        the_idx1 = me_meta.index.str.contains(pid1) & (me_meta.loc[:, 'type'] == 'GBM')
+        # loop over iNSC groups
+        for pid2 in pids:
+            the_idx2 = me_meta.index.str.contains(pid2) & (me_meta.loc[:, 'type'] == 'iNSC')
+            the_idx = the_idx1 | the_idx2
+            the_groups = me_meta.loc[the_idx, 'type'].values
+            the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+            the_obj = obj.copy()
+            the_obj.test_clusters(me_data,
+                                  samples=the_samples,
+                                  n_jobs=dmr_params['n_jobs'],
+                                  min_median_change=dmr_params['delta_m_min'],
+                                  method=dmr_params['dmr_test_method'],
+                                  **dmr_params['test_kwargs']
+                                  )
+            res[pid1][pid2] = the_obj
 
-    # add list of annotated genes
-    for (chr, cls, cid), attrs in dict_iterator(test_results, n_level=3):
-        genes = anno.loc[attrs['probes']].UCSC_RefGene_Name.dropna()
-        geneset = reduce(lambda x, y: x.union(y), genes, set())
-        attrs['genes'] = geneset
+        # loop over external reference NSC groups
+        for er, er_type in external_references:
+            the_idx2 = me_meta.index.str.contains(er) & (me_meta.loc[:, 'type'] == er_type)
+            the_idx = the_idx1 | the_idx2
+            the_groups = me_meta.loc[the_idx, 'type'].values
+            the_samples = me_meta.index[the_idx].groupby(the_groups).values()
 
-    return {
-        'test_results': test_results,
-        'test_results_relevant': test_results_relevant,
-        'test_results_significant': test_results_significant,
-    }
+            the_obj = obj.copy()
+            the_obj.test_clusters(me_data,
+                                  samples=the_samples,
+                                  n_jobs=dmr_params['n_jobs'],
+                                  min_median_change=dmr_params['delta_m_min'],
+                                  method=dmr_params['dmr_test_method'],
+                                  **dmr_params['test_kwargs']
+                                  )
+            res[pid1][er] = the_obj
+
+    return DmrResultCollection(**res)
 
 
 def count_dmr_genes(res):

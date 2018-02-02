@@ -8,6 +8,7 @@ import references
 from rnaseq import differential_expression, general
 from utils import output, setops, excel, ipa
 from load_data import rnaseq_data
+from analysis import cross_comparison
 
 
 if __name__ == "__main__":
@@ -57,40 +58,17 @@ if __name__ == "__main__":
     )
     cols = pids + [t[0] for t in external_refs]
     de_res = differential_expression.compute_cross_de(rnaseq_obj, pids, external_references=external_refs, **de_params)
-    de_res_full = differential_expression.compute_cross_de(rnaseq_obj, pids, external_references=external_refs, return_full=True, **de_params)
+    # this is useful for volcano plots, but otherwise not worth computing?
+    # de_res_full = differential_expression.compute_cross_de(rnaseq_obj, pids, external_references=external_refs, return_full=True, **de_params)
 
-    pair_only = pd.DataFrame(index=pids, columns=cols)
-    # ref_only = pd.DataFrame(index=pids, columns=cols)
-
-    # loop over GBM samples
-    for pid in pids:
-        # syngeneic comparison
-        the_pair = de_res[(pid, pid)]
-
-        # loop over refs
-        # when this is the same as the syngeneic comparison, there will (obviously) be no 'pair only' or 'ref only'
-        # genes!
-        for pid2 in cols:
-            the_ref = de_res[(pid, pid2)]
-            the_sets, _ = setops.venn_from_arrays(the_pair.index, the_ref.index)
-            pair_only.loc[pid, pid2] = the_sets['10']
-            # ref_only.loc[pid, pid2] = the_sets['01']
-    po_counts = pair_only.applymap(len)
-
-    # For each reference, get the DE genes that are pair only in that reference and not in any of the iNSC
-    po_diff = pd.DataFrame(index=pair_only.index, columns=external_ref_labels)
-    for pid in pids:
-        for pid2 in external_ref_labels:
-            the_ref = pair_only.loc[pid, pid2]
-            all_else = pair_only.loc[pid, pids]
-            union_all_else = reduce(set.union, all_else, set())
-            po_diff.loc[pid, pid2] = sorted(set(the_ref).difference(union_all_else))
-
-    # Intersection down the columns gives us a correction list for each reference
-    po_specific_to_ref = po_diff.apply(lambda x: reduce(intersecter, x))
-
-    # Intersection across the references gives us a final list that need correcting
-    po_specific_to_all_refs = sorted(reduce(intersecter, po_specific_to_ref))
+    cc_dict = cross_comparison.compute_cross_comparison_correction(
+        dict([(k, v.index) for k, v in de_res.items()]),
+        pids,
+        external_ref_labels,
+        set_type='pair_only'
+    )
+    po_specific_to_all_refs = sorted(cc_dict['specific_to_all_refs'])
+    pair_only = cc_dict['venn_set']
 
     # get the genes that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
     # these will have an expression pattern in Gibco similar to GBM, so that they do NOT appear
@@ -203,6 +181,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, 'number_po_de_multiple_references.tiff'), dpi=200)
 
     # plot: overlap between individual references in terms of PO genes shared
+    po_counts = pair_only.applymap(len)
     pct_pair_only_3 = n_pair_only_3 / po_counts.loc[:, external_ref_labels] * 100.
     pct_pair_only_2 = n_pair_only_2 / po_counts.loc[:, external_ref_labels] * 100.
 
