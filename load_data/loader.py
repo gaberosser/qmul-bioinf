@@ -235,6 +235,7 @@ class MultipleFileLoader(DatasetLoader):
 
 
 class MultipleBatchLoader(object):
+    ## FIXME: respect the batch ID somehow - so that MultipleBatch instances can also be combined
     def __init__(self, loaders, intersection_only=True):
         """
         Class to combine multiple loader objects.
@@ -254,6 +255,12 @@ class MultipleBatchLoader(object):
         else:
             idx = setops.reduce_union(*[t.data.index for t in loaders])
 
+        # we can only claim the meta data is linked here if all loaders have this property
+        self.meta_is_linked = True
+        for l in loaders:
+            if not l.meta_is_linked:
+                self.meta_is_linked = False
+
         # set the batch  column name avoiding clashes
         batch_col = 'batch'
         meta_cols = sorted(setops.reduce_union(*[t.meta.columns for t in loaders if t.meta is not None]))
@@ -269,6 +276,8 @@ class MultipleBatchLoader(object):
             raise AttributeError(
                 "The tax_id of the samples differ between loaders: %s" % ', '.join([str(t.tax_id) for t in loaders])
             )
+        else:
+            self.tax_id = loaders[0].tax_id
 
         dat = pd.DataFrame(index=idx, dtype=float)
         meta_values = []
@@ -284,9 +293,11 @@ class MultipleBatchLoader(object):
 
         for l in loaders:
             this_batch = l.batch_id
-            if l.batch_id is None:
-                this_batch = auto_batch
-                auto_batch += 1
+            if not hasattr(this_batch, '__iter__'):
+                if l.batch_id is None:
+                    this_batch = auto_batch
+                    auto_batch += 1
+                this_batch = pd.Series(this_batch, index=l.data.columns)
 
             this_samples = l.data.columns.tolist()
             # get a copy of the data
@@ -319,6 +330,8 @@ class MultipleBatchLoader(object):
                     this_meta.index = this_samples
                 # relabel the data
                 this_dat.columns = this_samples
+                # relabel the batch IDs
+                this_batch.index = this_samples
 
             # data
             for c in this_dat.columns:
@@ -330,7 +343,7 @@ class MultipleBatchLoader(object):
                 for i in this_meta.index:
                     this_row = dict(blank_meta_row)
                     this_row.update(this_meta.loc[i].to_dict())
-                    this_row[batch_col] = this_batch
+                    this_row[batch_col] = this_batch[i]
                     meta_values.append(this_row)
                     if l.meta_is_linked:
                         meta_index.append(i)
@@ -340,11 +353,11 @@ class MultipleBatchLoader(object):
             else:
                 for c in this_dat.columns:
                     this_row = dict(blank_meta_row)
-                    this_row[batch_col] = this_batch
+                    this_row[batch_col] = this_batch[c]
                     meta_values.append(this_row)
                     meta_index.append(meta_auto_idx)
                     meta_auto_idx += 1
-                    # meta.loc[c, batch_col] = this_batch
 
         self.meta = pd.DataFrame(meta_values, index=meta_index, columns=meta_cols)
         self.data = dat
+        self.batch_id = self.meta.loc[:, batch_col]

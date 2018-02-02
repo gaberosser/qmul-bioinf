@@ -169,7 +169,11 @@ def compute_cross_de(
         raise NotImplementedError("Unsupported method.")
     de = {}
 
-    pool = mp.Pool()
+    if njob is None:
+        njob = mp.cpu_count()
+
+    if njob != 1:
+        pool = mp.Pool(processes=njob)
     jobs = {}
 
     for pid in pids:
@@ -243,7 +247,7 @@ def venn_set_to_dataframe(
         fdr_col='FDR',
 ):
     """
-    Given the input DE data and Venn sets, generate a long format dataframe containing all the data, one column
+    Given the input DE data and Venn sets, generate a wide format dataframe containing all the data, one column
     per patient and one row per gene.
     Optionally filter the sets to include only a subset.
     Optionally include non-significant results too.

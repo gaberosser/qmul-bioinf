@@ -32,6 +32,7 @@ class RnaSeqFileLocations(object):
         self.meta_file = os.path.join(self.root_dir, 'sources.csv')
 
         common_kwds = {
+            'strandedness': 'r',
             'tax_id': self.tax_id,
             'batch_id': self.batch_id,
             'meta_fn': self.meta_file

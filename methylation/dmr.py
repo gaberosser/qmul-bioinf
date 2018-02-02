@@ -545,7 +545,7 @@ class ProbeCluster(object):
         return (min(cs), max(cs))
 
 
-def test_results_to_table(dat):
+def test_results_to_table(dat, exclude_clusters_with_no_genes=True):
     """
     Convert the nested dictionary structure to a flat table.
     :param dat: Nested dictionary, as output by test_clusters. Assumed structure:
@@ -564,8 +564,9 @@ def test_results_to_table(dat):
 
     the_dict = dict_by_sublevel(dat, 2, 'all')
     for (pid, cluster_id), attrs in dict_iterator(the_dict, n_level=2):
-        # don't add if this DMR has no associated genes
-        if len(attrs['genes']) == 0:
+
+        if (len(attrs['genes']) == 0) and exclude_clusters_with_no_genes:
+            # don't add this DMR with no associated genes
             continue
 
         # check whether we have already processed this result
@@ -589,18 +590,6 @@ def test_results_to_table(dat):
             raise BasicLogicException("Duplicate rows found with PID %s" % pid)
 
     return tbl
-
-
-# TODO: can we use this kind of decorator to programmatically attach methods to the DmrResultsCollection class?
-# def callable_from_collection(func):
-#     """
-#     Decorator that annotates DmrResults classes that may be called from an encasulating DmrResultsCollection object.
-#     This is done (in practice) via the apply command from the parent object.
-#     :param func:
-#     :return:
-#     """
-#     func.__dict__['callable_from_collection'] = True
-#     return func
 
 
 class DmrResults(object):
@@ -1390,6 +1379,93 @@ def count_dmr_genes(res):
     for x in res.values():
         the_genes.update(x['genes'])
     return len(the_genes)
+
+
+def venn_set_to_wide_dataframe(
+    data,
+    venn_set,
+    set_labels,
+    include_sets=None,
+    full_data=None,
+    cols_to_include=('median_delta', 'padj'),
+    direction_col='median_delta'
+):
+    """
+    Given the input DMR data and Venn sets, generate a wide format dataframe containing all the data, one column
+    per patient and one row per gene.
+    Optionally filter the sets to include only a subset.
+    Optionally include non-significant results too.
+    :param data: Dict containing DMR results, keyed by the entries of set_labels.
+    These are produced using DmrResults.to_table(), i.e. they are pd.DataFrames
+    :param venn_set:
+    :param set_labels:
+    :param include_sets:
+    :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
+    significant results can be accessed.
+    :param cols_to_include: Iterable of columns to include in the output
+    :param direction_col: The name of the column in the input data to use for determing direction of change.
+    :return:
+    """
+    if include_sets is not None:
+        venn_set = dict([
+            (k, v) for k, v in venn_set.items() if k in include_sets
+        ])
+
+    res = []
+    for k in venn_set:
+        ids = venn_set[k]
+        # populate with individual patient results
+        blocks = []
+        consistency_check = []
+        for i, t in enumerate(k):
+            pid = set_labels[i]
+            cols = [pid] + ["%s_%s" % (pid, lbl) for lbl in cols_to_include]
+            this_datum = pd.DataFrame(
+                index=ids,
+                columns=cols
+            )
+            if t == '1':
+                # this member is included here
+                this_datum.loc[ids, pid] = 'Y'
+                for c in cols_to_include:
+                    this_datum.loc[ids, "%s_%s" % (pid, c)] = data[pid].loc[ids, c]
+                # consistency check
+                cc = data[pid].loc[ids, direction_col]
+                cc.name = pid
+                consistency_check.append(cc)
+            else:
+                this_datum.loc[ids, pid] = 'N'
+                if full_data is not None:
+                    for c in cols_to_include:
+                        this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].loc[ids, c]
+
+            blocks.append(this_datum)
+
+        core_block = pd.concat(blocks, axis=1)
+        # assess consistency of direction
+        consist = pd.Series(index=ids)
+
+        if len(consistency_check) > 0:
+            consistency_check = pd.concat(consistency_check, axis=1)
+            idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+            consist.loc[idx] = 'Y'
+            consist.loc[~idx] = 'N'
+
+        core_block.insert(core_block.shape[1], 'consistent', consist)
+        res.append(core_block)
+
+    # check: no features should be in more than one data entry
+    for i, k in enumerate(venn_set):
+        for j, k2 in enumerate(venn_set):
+            if k == k2: continue
+            bb = len(res[i].index.intersection(res[j].index))
+            if bb > 0:
+                raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
+
+    res = pd.concat(res, axis=0)
+
+    return res
+
 
 
 if __name__ == "__main__":

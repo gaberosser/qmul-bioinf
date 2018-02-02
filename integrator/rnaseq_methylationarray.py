@@ -7,12 +7,14 @@ def compute_joint_de_dmr(
         dmr_results,
         de_results,
         de_gene_column='Gene Symbol',
+        dmr_include='significant',
 ):
     """
 
     :param dmr_results: Dictionary containing DmrResults objects. Keyed by pid.
     :param de_results: Dictionary keyed by PID giving pd.DataFrame instances containing results.
     :param de_gene_column:
+    :param dmr_include: Which results to include from the DMR results
     :return:
     """
 
@@ -32,7 +34,7 @@ def compute_joint_de_dmr(
         res[sid] = {}
 
         this_classes = sorted(dmr_results[sid].classes)
-        this_dmr = dmr_results[sid].to_table(include='significant')
+        this_dmr = dmr_results[sid].to_table(include=dmr_include)
         this_de = de_results[sid]
 
         # use apply to get the matching DE lines for each DMR entry to filter
