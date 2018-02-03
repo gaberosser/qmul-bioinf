@@ -146,10 +146,19 @@ def de_dmr_hash(dat, cols=('gene', 'dmr_cid')):
     return list(dat.loc[:, cols].itertuples(index=False, name=None))
 
 
+def annotate_de_dmr_wide_form(data):
+    data.insert(0, 'dmr_cluster_id', [t[1] for t in data.index])
+    data.insert(0, 'gene', [t[0] for t in data.index])
+
+
 if __name__ == "__main__":
     outdir = output.unique_output_dir("hgic_de_dmr_two_strategies", reuse_empty=True)
-    outdir_s1 = output.unique_output_dir("s1", root_output_dir=outdir, reuse_empty=True)
-    outdir_s2 = output.unique_output_dir("s2", root_output_dir=outdir, reuse_empty=True)
+    outdir_s1 = os.path.join(outdir, 's1')
+    outdir_s2 = os.path.join(outdir, 's2')
+    if not os.path.isdir(outdir_s1):
+        os.makedirs(outdir_s1)
+    if not os.path.isdir(outdir_s2):
+        os.makedirs(outdir_s2)
 
     de_params = {
         'lfc': 1,
@@ -298,13 +307,13 @@ if __name__ == "__main__":
     for grp in subgroup_ind:
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         ss_sets.append(k)
-    data_ss = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=ss_sets)
-    data_ss.to_excel(os.path.join(outdir, 'subgroup_specific_de.xlsx'))
+    data_ss = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ss_sets)
+    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de.xlsx'))
 
     # patient unique
     pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
-    data_pu = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=pu_sets)
-    data_pu.to_excel(os.path.join(outdir, 'patient_unique_de.xlsx'))
+    data_pu = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pu_sets)
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de.xlsx'))
 
     # b) DMR only
     dmr_res_sign_s1 = dict([
@@ -416,13 +425,6 @@ if __name__ == "__main__":
     # venn_set[k_null] = list(set(dmr_res_full_s1[pids[0]].keys()).difference(dmr_id_all))
     # venn_ct[k_null] = len(venn_set[k_null])
 
-    upset1 = upset_plot_dmr(
-        de_dmr_by_member, venn_set, subgroup_ind, pids
-    )
-
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
-
     # generate wide-form lists and save to Excel file
     # change the DE DMR table index for something uniquely identifying
     for pid in pids:
@@ -434,29 +436,70 @@ if __name__ == "__main__":
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
         direction_col='de_logfc'
     )
-    ## FIXME: 50% are not consistent?? Check this.
-    data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
+    # add gene symbol and cluster ID back in
+    annotate_de_dmr_wide_form(data)
+    data.to_excel(os.path.join(outdir_s1, 'full_de_dmr.xlsx'), index=False)
 
-    ## TODO: finish these lines
     # expanded core
-    # ec_sets = expanded_core_sets(venn_set, subgroup_ind)
-    # data_ec = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ec_sets)
-    # data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
+    ec_sets = expanded_core_sets(venn_set, subgroup_ind)
+    data_ec = dmr.venn_set_to_wide_dataframe(
+        joint_de_dmr_tss_island_s1,
+        venn_set,
+        pids,
+        include_sets=ec_sets,
+        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+        direction_col='de_logfc'
+    )
+    annotate_de_dmr_wide_form(data_ec)
+    data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr.xlsx'))
 
     # subgroup-specific
-    # ss_sets = []
-    # for grp in subgroup_ind:
-    #     k = ''.join(subgroup_ind[grp].astype(int).astype(str))
-    #     ss_sets.append(k)
-    # data_ss = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=ss_sets)
-    # data_ss.to_excel(os.path.join(outdir, 'subgroup_specific_de.xlsx'))
+    ss_sets = []
+    for grp in subgroup_ind:
+        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        ss_sets.append(k)
+    data_ss = dmr.venn_set_to_wide_dataframe(
+        joint_de_dmr_tss_island_s1,
+        venn_set,
+        pids,
+        include_sets=ss_sets,
+        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+        direction_col='de_logfc'
+    )
+    annotate_de_dmr_wide_form(data_ss)
+    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr.xlsx'))
 
     # patient unique
-    # pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
-    # data_pu = differential_expression.venn_set_to_dataframe(de_res, venn_set, pids, include_sets=pu_sets)
-    # data_pu.to_excel(os.path.join(outdir, 'patient_unique_de.xlsx'))
+    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
+    data_pu = dmr.venn_set_to_wide_dataframe(
+        joint_de_dmr_tss_island_s1,
+        venn_set,
+        pids,
+        include_sets=pu_sets,
+        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+        direction_col='de_logfc'
+    )
+    annotate_de_dmr_wide_form(data_pu)
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr.xlsx'))
 
+    # upset plot: include only the concordant results
+    joint_de_dmr_tss_island_concordant_s1 = {}
+    for pid in pids:
+        a = joint_de_dmr_tss_island_s1[pid].de_direction
+        b = joint_de_dmr_tss_island_s1[pid].dmr_direction
+        idx = (a != b)
+        joint_de_dmr_tss_island_concordant_s1[pid] = joint_de_dmr_tss_island_s1[pid].loc[idx]
+        print "Patient %s has %d combined DE / DMR results, of which %d are concordant" % (
+            pid, idx.size, idx.sum()
+        )
 
+    de_dmr_by_member = [de_dmr_hash(joint_de_dmr_tss_island_concordant_s1[pid]) for pid in pids]
+    upset1 = upset_plot_de(
+        de_dmr_by_member, venn_set, subgroup_ind, pids
+    )
+
+    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
+    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
 
     # Compute DMR cross-comparison correction
     dm_specific_to_all_refs = cross_comparison.compute_cross_comparison_correction(

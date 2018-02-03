@@ -1447,7 +1447,13 @@ def venn_set_to_wide_dataframe(
 
         if len(consistency_check) > 0:
             consistency_check = pd.concat(consistency_check, axis=1)
-            idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+            # figure out what kind of consistency check is required based on data type
+            if isinstance(consistency_check.values[0, 0], str):
+                idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+            else:
+                idx = consistency_check.apply(
+                    lambda col: np.sign(col) == np.sign(consistency_check.iloc[:, 0])
+                ).all(axis=1)
             consist.loc[idx] = 'Y'
             consist.loc[~idx] = 'N'
 
