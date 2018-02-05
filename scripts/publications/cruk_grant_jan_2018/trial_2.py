@@ -92,8 +92,7 @@ if __name__ == "__main__":
         sg_specific_sets[grp] = k
 
     # UpsetR attribute plots
-    set_labels = ['019', '030', '031', '017', '050', '054']
-    data_for_upset = [de_res[pid].index for pid in set_labels]  # this will be supplied to the function
+    data_for_upset = [de_res[pid].index for pid in pids]  # this will be supplied to the function
 
     # set colours for UpsetR plot
     sets_full = {}
@@ -125,7 +124,7 @@ if __name__ == "__main__":
     # 1. Descending order
     upset1 = venn.upset_set_size_plot(
         data_for_upset,
-        set_labels,
+        set_labels=pids,
         set_colours=set_colours,
         min_size=10,
         n_plot=30,

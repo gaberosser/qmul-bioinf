@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import collections
 
 
@@ -131,3 +132,118 @@ def reduce_intersection(*args):
 def reduce_union(*args):
     unioner = lambda x, y: set(x).union(y)
     return reduce(unioner, args)
+
+
+def venn_set_to_wide_dataframe(
+    data,
+    venn_set,
+    set_labels,
+    include_sets=None,
+    full_data=None,
+    cols_to_include=None,
+    consistency_check_col=None,
+    consistency_check_method=None,
+    run_sanity_check=True
+):
+    """
+    Given the input DMR data and Venn sets, generate a wide format dataframe containing all the data, one column
+    per patient and one row per gene.
+    Optionally filter the sets to include only a subset.
+    Optionally include non-significant results too.
+    :param data: Dict containing DMR results, keyed by the entries of set_labels.
+    These are produced using DmrResults.to_table(), i.e. they are pd.DataFrames
+    :param venn_set:
+    :param set_labels:
+    :param include_sets:
+    :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
+    significant results can be accessed.
+    :param cols_to_include: Iterable of columns to include in the output
+    :param consistency_check_col: The name of the column in the input data to use for determing consistency among
+    members.
+    :param consistency_check_method: Supported options ('sign', 'equal'). This is the method used to assess consistency.
+    If None (default), use the data type to guess the best comparison.
+    :param run_sanity_check: If True (default), apply sanity checks to the results before returning.
+    :return:
+    """
+    if cols_to_include is None:
+        cols_to_include = []
+
+    if include_sets is not None:
+        venn_set = dict([
+            (k, v) for k, v in venn_set.items() if k in include_sets
+        ])
+
+    res = []
+    for k in venn_set:
+        ids = venn_set[k]
+        # populate with individual patient results
+        blocks = []
+        consistency_check = []
+        for i, t in enumerate(k):
+            pid = set_labels[i]
+            cols = [pid] + ["%s_%s" % (pid, lbl) for lbl in cols_to_include]
+            this_datum = pd.DataFrame(
+                index=ids,
+                columns=cols
+            )
+            if t == '1':
+                # this member is included here
+                this_datum.loc[ids, pid] = 'Y'
+                for c in cols_to_include:
+                    this_datum.loc[ids, "%s_%s" % (pid, c)] = data[pid].loc[ids, c]
+                # consistency check
+                if consistency_check_col is not None:
+                    cc = data[pid].loc[ids, consistency_check_col]
+                    cc.name = pid
+                    consistency_check.append(cc)
+            else:
+                this_datum.loc[ids, pid] = 'N'
+                if full_data is not None:
+                    for c in cols_to_include:
+                        this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].loc[ids, c]
+
+            blocks.append(this_datum)
+
+        core_block = pd.concat(blocks, axis=1)
+
+        if consistency_check_col is not None:
+            # assess consistency
+            consist = pd.Series(index=ids)
+
+            if len(consistency_check) > 0:
+                consistency_check = pd.concat(consistency_check, axis=1)
+
+                if consistency_check_method is None:
+                    # figure out what kind of consistency check is required based on data type
+                    if isinstance(consistency_check.values[0, 0], str):
+                        consistency_check_method = 'equal'
+                    else:
+                        consistency_check_method = 'sign'
+
+                if consistency_check_method == 'sign':
+                    idx = consistency_check.apply(
+                        lambda col: np.sign(col) == np.sign(consistency_check.iloc[:, 0])
+                    ).all(axis=1)
+                elif consistency_check_method == 'equal':
+                    idx = consistency_check.apply(lambda col: col == consistency_check.iloc[:, 0]).all(axis=1)
+                else:
+                    raise NotImplementedError("Unsupported consistency check method %s." % consistency_check_method)
+
+                consist.loc[idx] = 'Y'
+                consist.loc[~idx] = 'N'
+
+            core_block.insert(core_block.shape[1], 'consistent', consist)
+        res.append(core_block)
+
+    if run_sanity_check:
+        # check: no features should be in more than one data entry
+        for i, k in enumerate(venn_set):
+            for j, k2 in enumerate(venn_set):
+                if k == k2: continue
+                bb = len(res[i].index.intersection(res[j].index))
+                if bb > 0:
+                    raise AttributeError("Identified %d features that are in BOTH %s and %s" % (bb, k, k2))
+
+    res = pd.concat(res, axis=0)
+
+    return res
