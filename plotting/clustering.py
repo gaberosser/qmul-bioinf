@@ -255,7 +255,13 @@ def dendrogram_with_colours(
     }
 
 
-def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='average', metric='correlation', **kwargs):
+def plot_correlation_clustermap(data,
+                                row_colors=None,
+                                n_gene=None,
+                                method='average',
+                                metric='correlation',
+                                distance=None,
+                                **kwargs):
     """
     :param n_gene: If supplied, this is the number of genes to use, ordered by descending MAD
     :param kwargs: Passed to seaborn's `clustermap`
@@ -265,16 +271,22 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
         mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
         genes = mad.index[:n_gene]
         data = data.loc[genes]
-    z = hc.linkage(data.transpose(), method=method, metric=metric)
-    sq = hc.distance.squareform(
-        hc.distance.pdist(data.transpose(), metric=metric)
-    )
-    # invert distance so that closer samples have a larger number
-    if metric == 'correlation':
-        sq = 1 - sq
+    rl = None
+    if distance is not None:
+        rl = hc.linkage(distance)
+        sq = hc.distance.squareform(distance)
     else:
-        # TODO: add specific versions for other metrics if required
-        sq = max(sq.flat) - sq
+        rl = hc.linkage(data.transpose(), method=method, metric=metric)
+        sq = hc.distance.squareform(
+            hc.distance.pdist(data.transpose(), metric=metric)
+        )
+
+        # invert distance so that closer samples have a larger number
+        if metric == 'correlation':
+            sq = 1 - sq
+        else:
+            # TODO: add specific versions for other metrics if required
+            sq = max(sq.flat) - sq
 
     # make a dataframe for clustering so that the plot has correct labels
     sq = pd.DataFrame(data=sq, index=data.columns, columns=data.columns)
@@ -284,8 +296,8 @@ def plot_correlation_clustermap(data, row_colors=None, n_gene=None, method='aver
         cmap='RdBu_r',
         row_colors=row_colors,
         col_colors=row_colors,
-        row_linkage=z,
-        col_linkage=z,
+        row_linkage=rl,
+        col_linkage=rl,
         **kwargs
     )
     plt.setp(cg.ax_heatmap.get_xticklabels(), rotation=90, fontsize=14)

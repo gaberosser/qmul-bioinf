@@ -147,6 +147,23 @@ def load_illumina_methylationepic_annotation(split_genes=True):
         dat.loc[:, 'UCSC_RefGene_Name'] = \
             dat.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
 
+    # TODO: correct gene symbols - look up what these should be - some kind of Excel fail?
+    ['1-Mar',
+     '1-Sep',
+     '10-Mar',
+     '11-Mar',
+     '11-Sep',
+     '13-Sep',
+     '2-Mar',
+     '3-Mar',
+     '4-Mar',
+     '5-Sep',
+     '6-Mar',
+     '7-Mar',
+     '8-Mar',
+     '9-Sep',
+     ]
+
     return dat
 
 

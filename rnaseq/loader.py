@@ -60,7 +60,7 @@ class RnaSeqFileLocations(object):
             return self.params['star']
         elif typ == 'salmon':
             return self.params['salmon']
-        elif type == 'star/cufflinks':
+        elif typ == 'star/cufflinks':
             return self.params['star_cufflinks']
         else:
             raise NotImplementedError("Unrecognised type: %s" % typ)
@@ -314,26 +314,28 @@ class SalmonQuantLoader(loader.MultipleFileLoader):
             self.effective_transcript_lengths = dat.loc[:, 'EffectiveLength']
 
 
-class CufflinksLoader(loader.MultipleFileLoader):
-    ## TODO: load the confidence interval
+class StarCufflinksLoader(loader.MultipleFileLoader):
     file_pattern = "genes.fpkm_tracking"
 
     def __init__(self, remove_non_canonical=True, *args, **kwargs):
         self.gene_lengths = None
         self.remove_non_canonical = remove_non_canonical
-        super(CufflinksLoader, self).__init__(*args, **kwargs)
+        super(StarCufflinksLoader, self).__init__(*args, **kwargs)
 
     def generate_input_path(self, fname):
         """
         Given the filename from the meta file, generate the path to the actual data (e.g. constructing subdir structure)
         """
-        return os.path.join(self.base_dir, fname, "genes.fpkm_tracking")
+        res = os.path.join(self.base_dir, "%sAligned.sortedByCoord.out" % fname, "genes.fpkm_tracking")
+        return res
 
     def generate_sample_name(self, file_path):
         # first split off the genes.fpkm_tracking filename
         ff, _ = os.path.split(file_path)
         # now look at the subdirectory name
-        return os.path.split(ff)[-1]
+        ff = os.path.split(ff)[-1]
+        res = ff.replace("Aligned.sortedByCoord.out", "")
+        return res
 
     def load_one_file(self, fn):
         dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
@@ -346,7 +348,7 @@ class CufflinksLoader(loader.MultipleFileLoader):
         return pd.concat((unique_fpkm, dupe_fpkm))
 
     def post_process(self):
-        super(CufflinksLoader, self).post_process()
+        super(StarCufflinksLoader, self).post_process()
         if self.remove_non_canonical:
             # only keep known genes
             self.data = self.data.loc[~self.data.index.str.contains('CUFF.')]
@@ -381,8 +383,8 @@ def load_by_patient(
         cls = StarCountLoader
     elif source == 'salmon':
         cls = SalmonQuantLoader
-    elif source == 'star_cufflinks':
-        cls = CufflinksLoader
+    elif source == 'star/cufflinks':
+        cls = StarCufflinksLoader
     else:
         raise NotImplementedError()
 
@@ -445,8 +447,8 @@ def load_references(
         cls = StarCountLoader
     elif source == 'salmon':
         cls = SalmonQuantLoader
-    elif source == 'star_cufflinks':
-        cls = CufflinksLoader
+    elif source == 'star/cufflinks':
+        cls = StarCufflinksLoader
     else:
         raise NotImplementedError()
 

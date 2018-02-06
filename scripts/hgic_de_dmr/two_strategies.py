@@ -151,6 +151,29 @@ def annotate_de_dmr_wide_form(data):
     data.insert(0, 'gene', [t[0] for t in data.index])
 
 
+def expand_dmr_results_table_by_gene(tbl):
+
+    this_keep = tbl.loc[tbl.genes.apply(len) == 1]
+    this_keep.insert(0, 'gene_symbol', tbl.genes.apply(lambda t: t[0]))
+    this_keep = this_keep.drop('genes', axis=1)
+    this_keep.index = zip(this_keep.index, this_keep.gene_symbol)
+
+    to_expand = tbl.loc[tbl.genes.apply(len) > 1]
+    expanded = []
+    for cl_id, row in to_expand.iterrows():
+        the_genes = row.genes
+        row = row.drop('genes')
+        for g in the_genes:
+            new_row = row.copy()
+            new_row.loc['gene_symbol'] = g
+            expanded.append(new_row)
+
+    expanded = pd.DataFrame(expanded)
+    expanded.index = zip(expanded.index, expanded.gene_symbol)
+
+    return pd.concat((this_keep, expanded), axis=0)
+
+
 if __name__ == "__main__":
     outdir = output.unique_output_dir("hgic_de_dmr_two_strategies", reuse_empty=True)
     outdir_s1 = os.path.join(outdir, 's1')
@@ -176,10 +199,10 @@ if __name__ == "__main__":
         'n_jobs': mp.cpu_count(),
     }
 
-    pids = ['019', '030', '031', '017', '050', '054']
+    pids = ['018', '019', '031', '017', '050', '054']
 
     subgroups = {
-        'RTK I': ['019', '030', '031'],
+        'RTK I': ['018', '019', '031'],
         'RTK II': ['017', '050', '054'],
     }
     # indicator showing which groups the PIDs belong to
@@ -257,15 +280,7 @@ if __name__ == "__main__":
         **de_params
     )
 
-    # no need to do this
-    # de_res = differential_expression.compute_cross_de(
-    #     rnaseq_obj,
-    #     pids,
-    #     external_references=external_refs_de,
-    #     **de_params
-    # )
-
-    # have checked and it's identical to this faster option
+    # extract the subset of significant results from the full dataframes
     de_res = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full.items()])
 
     # STRATEGY 1: No references, just compare GBM-iNSC for each patient
@@ -297,7 +312,7 @@ if __name__ == "__main__":
     data = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, full_data=de_res_full_s1)
     data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
 
-    # expanded core
+    # expanded core (genes DE in multiple subgroups)
     ec_sets = expanded_core_sets(venn_set, subgroup_ind)
     data_ec = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ec_sets)
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
@@ -331,7 +346,6 @@ if __name__ == "__main__":
     venn_set[k_null] = list(set(dmr_res_full_s1[pids[0]].keys()).difference(dmr_id_all))
     venn_ct[k_null] = len(venn_set[k_null])
 
-    # generate an expanded core gene set, defined as DMRs that are DM in both RTK I and RTK II (any number of patients)
     upset1 = upset_plot_dmr(
         dmr_by_member, venn_set, subgroup_ind, pids
     )
@@ -340,14 +354,32 @@ if __name__ == "__main__":
     upset1['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.tiff"), dpi=200)
 
     # generate wide-form lists and save to Excel file
-    data_for_dmr_table = dict([
-        (pid, dmr_res[pid][pid].to_table(include='significant', skip_geneless=False)) for pid in pids
-    ])
-    data_for_dmr_table_full = dict([
-        (pid, dmr_res[pid][pid].to_table(include='all',skip_geneless=False)) for pid in pids
-    ])
+    data_for_dmr_table = {}
+    data_for_dmr_table_full = {}
+    for pid in pids:
+        this_sign = dmr_res[pid][pid].to_table(include='significant', skip_geneless=True)
+        data_for_dmr_table[pid] = expand_dmr_results_table_by_gene(this_sign)
+
+        this_full = dmr_res[pid][pid].to_table(include='all',skip_geneless=True)
+        data_for_dmr_table_full[pid] = expand_dmr_results_table_by_gene(this_full)
+
+    # data_for_dmr_table_full = dict([
+    #     (pid, dmr_res[pid][pid].to_table(include='all',skip_geneless=False)) for pid in pids
+    # ])
+
+    # recalculate venn set
+    dmr_by_member = [data_for_dmr_table[pid].index for pid in pids]
+    venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
+
+    # add null set manually from full DMR results
+    dmr_id_all = setops.reduce_union(*venn_set.values())
+    k_null = ''.join(['0'] * len(pids))
+    venn_set[k_null] = list(data_for_dmr_table_full[pids[0]].index.difference(dmr_id_all))
+    venn_ct[k_null] = len(venn_set[k_null])
 
     data = dmr.venn_set_to_wide_dataframe(data_for_dmr_table, venn_set, pids, full_data=data_for_dmr_table_full)
+    data.insert(0, 'gene_symbol', [t[1] for t in data.index])
+    data.insert(0, 'cluster_id', [t[0] for t in data.index])
 
     # quick sanity check
     for pid in pids:
@@ -414,16 +446,7 @@ if __name__ == "__main__":
     de_dmr_by_member = [de_dmr_hash(joint_de_dmr_tss_island_s1[pid]) for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member)
 
-    ## TODO
-
-    # is this necessary? It takes AGES
-    # joint_de_dmr_s1_full = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_full_s1, dmr_include='all')
-
-    # add null set manually from full DMR results
-    # de_dmr_id_all = setops.reduce_union(*venn_set.values())
-    # k_null = ''.join(['0'] * len(pids))
-    # venn_set[k_null] = list(set(dmr_res_full_s1[pids[0]].keys()).difference(dmr_id_all))
-    # venn_ct[k_null] = len(venn_set[k_null])
+    # we don't add the null set here - it takes too long
 
     # generate wide-form lists and save to Excel file
     # change the DE DMR table index for something uniquely identifying
@@ -497,6 +520,9 @@ if __name__ == "__main__":
     upset1 = upset_plot_de(
         de_dmr_by_member, venn_set, subgroup_ind, pids
     )
+    upset1['axes']['main'].set_ylabel('Number of DM-concordant DE genes in set')
+    upset1['axes']['set_size'].set_xlabel('Number of DM-concordant DE genes\nin single comparison')
+    upset1['gs'].update(bottom=0.11)
 
     upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
     upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)

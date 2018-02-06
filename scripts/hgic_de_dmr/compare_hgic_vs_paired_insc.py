@@ -46,7 +46,7 @@ if __name__ == "__main__":
         the_groups = rnaseq_obj.meta.loc[hgic_samples, 'type']
         the_comparison = ['GBM', 'iNSC']
         de_res[pid] = differential_expression.run_one_de(the_data, the_groups, the_comparison, **de_params)
-        de_res_full[pid] = differential_expression.run_one_de(the_data, the_groups, the_comparison, return_full=True, **de_params)
+        # de_res_full[pid] = differential_expression.run_one_de(the_data, the_groups, the_comparison, return_full=True, **de_params)
         print "GBM %s paired comparison, %d DE genes" % (pid, de_res[pid].shape[0])
 
     venn_set, venn_ct = setops.venn_from_arrays(*[de_res[pid].index for pid in pids])
