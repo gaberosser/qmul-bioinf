@@ -62,6 +62,7 @@ def dmr_results_hash(pids, dmr_params):
         dmr_params['n_min'],
         dmr_params['delta_m_min'],
         dmr_params['dmr_test_method'],
+        dmr_params['alpha']
     ) + tuple(dmr_params['test_kwargs'].items())
     return hash(hash_elements)
 
@@ -193,7 +194,7 @@ if __name__ == "__main__":
         'd_max': 400,
         'n_min': 6,
         'delta_m_min': 1.4,
-        'fdr': 0.01,
+        'alpha': 0.01,
         'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
         'test_kwargs': {},
         'n_jobs': mp.cpu_count(),
@@ -377,31 +378,44 @@ if __name__ == "__main__":
     venn_set[k_null] = list(data_for_dmr_table_full[pids[0]].index.difference(dmr_id_all))
     venn_ct[k_null] = len(venn_set[k_null])
 
-    data = dmr.venn_set_to_wide_dataframe(data_for_dmr_table, venn_set, pids, full_data=data_for_dmr_table_full)
+    data = setops.venn_set_to_wide_dataframe(
+        data_for_dmr_table,
+        venn_set,
+        pids,
+        full_data=data_for_dmr_table_full,
+        cols_to_include=('median_delta', 'padj'),
+        consistency_check_col='median_delta',
+        consistency_check_method='sign'
+    )
     data.insert(0, 'gene_symbol', [t[1] for t in data.index])
     data.insert(0, 'cluster_id', [t[0] for t in data.index])
 
-    # quick sanity check
+    # quick (bespoke) sanity check
     for pid in pids:
         xx = data.loc[:, data.columns.str.contains(pid)]
         x1 = xx.loc[xx.loc[:, pid] == 'Y']
         x0 = xx.loc[xx.loc[:, pid] == 'N']
         if x1.loc[:, "%s_padj" % pid].isnull().sum() != 0:
             print "PID %s has failing entries in x1" % pid
-        if (x0.loc[:, "%s_padj" % pid] < dmr_params['fdr']).sum() != 0:
+        if (x0.loc[:, "%s_padj" % pid] < dmr_params['alpha']).sum() != 0:
             print "PID %s has failing entries in x0" % pid
 
     data.to_excel(os.path.join(outdir_s1, 'full_dmr.xlsx'))
 
     # expanded core
     ec_sets = expanded_core_sets(venn_set, subgroup_ind)
-    data_ec = dmr.venn_set_to_wide_dataframe(
+    data_ec = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
         pids,
         full_data=data_for_dmr_table_full,
-        include_sets=ec_sets
+        include_sets=ec_sets,
+        cols_to_include=('median_delta', 'padj'),
+        consistency_check_col='median_delta',
+        consistency_check_method='sign'
     )
+    data_ec.insert(0, 'gene_symbol', [t[1] for t in data_ec.index])
+    data_ec.insert(0, 'cluster_id', [t[0] for t in data_ec.index])
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_dmr.xlsx'))
 
     # subgroup-specific
@@ -409,24 +423,34 @@ if __name__ == "__main__":
     for grp in subgroup_ind:
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         ss_sets.append(k)
-    data_ss = dmr.venn_set_to_wide_dataframe(
+    data_ss = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
         pids,
         full_data=data_for_dmr_table_full,
-        include_sets=ss_sets
+        include_sets=ss_sets,
+        cols_to_include=('median_delta', 'padj'),
+        consistency_check_col='median_delta',
+        consistency_check_method='sign'
     )
+    data_ss.insert(0, 'gene_symbol', [t[1] for t in data_ss.index])
+    data_ss.insert(0, 'cluster_id', [t[0] for t in data_ss.index])
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_dmr.xlsx'))
 
     # patient unique
     pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
-    data_pu = dmr.venn_set_to_wide_dataframe(
+    data_pu = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
         pids,
         full_data=data_for_dmr_table_full,
-        include_sets=pu_sets
+        include_sets=pu_sets,
+        cols_to_include=('median_delta', 'padj'),
+        consistency_check_col='median_delta',
+        consistency_check_method='sign'
     )
+    data_pu.insert(0, 'gene_symbol', [t[1] for t in data_pu.index])
+    data_pu.insert(0, 'cluster_id', [t[0] for t in data_pu.index])
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_dmr.xlsx'))
 
     # c) Layered DE and DMR

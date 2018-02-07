@@ -1344,6 +1344,7 @@ def compute_cross_dmr(
                                   n_jobs=dmr_params['n_jobs'],
                                   min_median_change=dmr_params['delta_m_min'],
                                   method=dmr_params['dmr_test_method'],
+                                  alpha=dmr_params['alpha'],
                                   **dmr_params['test_kwargs']
                                   )
             res[pid1][pid2] = the_obj

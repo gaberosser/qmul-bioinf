@@ -1,9 +1,10 @@
 from load_data import loader
 import pandas as pd
 import os
+import re
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 from utils.log import get_console_logger
-from utils import setops
+from utils import setops, string_manipulation
 
 
 NORM_METHODS = {
@@ -143,26 +144,31 @@ def load_illumina_methylationepic_annotation(split_genes=True):
     dat = dat.loc[~dat.loc[:, 'MAPINFO'].isnull()]
     dat.loc[:, 'MAPINFO'] = dat.loc[:, 'MAPINFO'].astype(int)
 
+    # correct gene symbols - look up what these should be - some kind of Excel fail?
+    correction = {
+        '1-Mar': 'MARCH1',
+        '1-Sep': 'SEPT1',
+        '10-Mar': 'MARCH10',
+        '11-Mar': 'MARCH11',
+        '11-Sep': 'SEPT11',
+        '13-Sep': 'SEPT13',
+        '2-Mar': 'MARCH2',
+        '3-Mar': 'MARCH3',
+        '4-Mar': 'MARCH4',
+        '5-Sep': 'SEPT5',
+        '6-Mar': 'MARCH6',
+        '7-Mar': 'MARCH7',
+        '8-Mar': 'MARCH8',
+        '9-Sep': 'SEPT9',
+    }
+    regex = re.compile('|'.join(correction.keys()))
+    corr_idx = dat.loc[:, 'UCSC_RefGene_Name'].dropna().str.contains(regex)
+    corr_idx = corr_idx.index[corr_idx]
+    dat.loc[corr_idx, 'UCSC_RefGene_Name'] = dat.loc[corr_idx, 'UCSC_RefGene_Name'].apply(lambda x: correction[x])
+
     if split_genes:
         dat.loc[:, 'UCSC_RefGene_Name'] = \
             dat.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
-
-    # TODO: correct gene symbols - look up what these should be - some kind of Excel fail?
-    ['1-Mar',
-     '1-Sep',
-     '10-Mar',
-     '11-Mar',
-     '11-Sep',
-     '13-Sep',
-     '2-Mar',
-     '3-Mar',
-     '4-Mar',
-     '5-Sep',
-     '6-Mar',
-     '7-Mar',
-     '8-Mar',
-     '9-Sep',
-     ]
 
     return dat
 
