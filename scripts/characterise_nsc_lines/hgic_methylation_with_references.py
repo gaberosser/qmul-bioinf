@@ -56,7 +56,7 @@ if __name__ == "__main__":
         ('Morey et al.', loader.gse67283(norm_method=norm_method, samples=['NPC_wt'])),
         ('Zimmerlin et al.', loader.gse65214(norm_method=norm_method)),
         ('Encode EPIC', loader.encode_epic(norm_method=norm_method)),
-        # ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
+        ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
     ]
 
     to_aggr = [
@@ -88,13 +88,11 @@ if __name__ == "__main__":
 
     bdat = obj.data
     mdat = process.m_from_beta(bdat)
-    # bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
+    bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
     mmad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
 
     row_colours_all = pd.DataFrame('gray', index=mdat.columns, columns=[''])
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = 'blue'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = 'blue'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'
+
     row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = '#fff89e'
     row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = '#fff89e'
 
@@ -103,15 +101,43 @@ if __name__ == "__main__":
     row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('ESO3')] = '#ff7777'
 
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = 'blue'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = 'blue'
+
     row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
     row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'
 
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'  # light blue
 
     n_ftr = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000, 1000000]
     plt_dict = hc_plot_dendrogram_vary_n_gene(mdat, row_colours_all, mad=mmad, n_ftr=n_ftr)
     for ng, x in plt_dict.items():
-        fname = "dendrogram_M_corr_top%d_by_mad.{ext}" % ng
+        if ng > bdat.shape[0]:
+            fname = "dendrogram_M_corr_all.{ext}"
+        else:
+            fname = "dendrogram_M_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
         # x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(bdat, row_colours_all, mad=bmad, n_ftr=n_ftr)
+    for ng, x in plt_dict.items():
+        if ng > bdat.shape[0]:
+            fname = "dendrogram_B_corr_all.{ext}"
+        else:
+            fname = "dendrogram_B_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+
+    bdat_nogbm = bdat.loc[:, ~bdat.columns.str.contains('GBM')]
+    bmad_nogbm = transformations.median_absolute_deviation(bdat_nogbm)
+    row_colours_nogbm = row_colours_all.loc[bdat_nogbm.columns]
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(bdat_nogbm, row_colours_nogbm, mad=bmad_nogbm, n_ftr=n_ftr)
+    for ng, x in plt_dict.items():
+        if ng > bdat.shape[0]:
+            fname = "nogbm_dendrogram_B_corr_all.{ext}"
+        else:
+            fname = "nogbm_dendrogram_B_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
