@@ -26,6 +26,7 @@ def compute_joint_de_dmr(
         ('de_padj', 'FDR', 'float'),
     ]
     de_cols = [t[0] for t in de_map]
+    de_lookup_cols = [t[1] for t in de_map]
     de_col_dtypes = pd.Series([t[2] for t in de_map], index=de_cols)
 
     res = {}
@@ -43,6 +44,11 @@ def compute_joint_de_dmr(
         this_dmr = this_dmr.loc[n_match > 0]
         m = m.loc[n_match > 0]
 
+        # we can now form the index from gene symbol and cluster ID
+        # new_idx = []
+        # for cl_id, the_de_df in m.iteritems():
+        #     new_idx.extend([(cl_id, t) for t in the_de_df.loc[:, de_gene_column]])
+
         # DMR map: (name in combined_list, name in original DMR list, datatype)
         dmr_map = [
             ('dmr_chr', 'chr', 'object'),
@@ -52,27 +58,37 @@ def compute_joint_de_dmr(
             ('dmr_padj', 'padj', 'float'),
         ] + [('dmr_class_%s' % t, 'class_%s' % t, 'bool') for t in this_classes]
         dmr_cols = ['dmr_cid'] + [t[0] for t in dmr_map]
+        dmr_lookup_cols = [t[1] for t in dmr_map]
         dmr_col_dtypes = pd.Series(
             ['int'] + [t[2] for t in dmr_map],
             index=dmr_cols
         )
 
-        this_df = pd.DataFrame(columns=de_cols + dmr_cols)
-        this_df = this_df.astype(pd.concat((de_col_dtypes, dmr_col_dtypes)).to_dict())
+        this_dict = {}
+
+        # this_df = pd.DataFrame(columns=de_cols + dmr_cols, index=new_idx)
+        # this_df = this_df.astype(pd.concat((de_col_dtypes, dmr_col_dtypes)).to_dict())
+
 
         for cluster_id, row in this_dmr.iterrows():
             # matching entry in DE (by gene name)
             # select and change the DE column names
-            de_match = m.loc[cluster_id].loc[:, [t[1] for t in de_map]]
+            de_match = m.loc[cluster_id].loc[:, de_lookup_cols]
             de_match.columns = de_cols
             n = de_match.shape[0]
 
             # form the DMR data block by repeating the same row
-            row_for_rpt = [cluster_id] + row.loc[[t[1] for t in dmr_map]].tolist()
-            dmr_match = pd.DataFrame([row_for_rpt] * n, columns=dmr_cols, index=de_match.index).astype(dmr_col_dtypes.to_dict())
+            row_for_rpt = [cluster_id] + row.loc[dmr_lookup_cols].tolist()
 
-            this_match = pd.concat((de_match, dmr_match), axis=1)
-            this_df = this_df.append(this_match, ignore_index=True)
+            for _, r in de_match.iterrows():
+                this_dict[(cluster_id, r.loc['gene'])] = row_for_rpt + r.tolist()
+
+            # dmr_match = pd.DataFrame([row_for_rpt] * n, columns=dmr_cols, index=de_match.index).astype(dmr_col_dtypes.to_dict())
+            #
+            # this_match = pd.concat((de_match, dmr_match), axis=1)
+            # this_df = this_df.append(this_match, ignore_index=True)
+        this_df = pd.DataFrame.from_dict(this_dict, orient='index')
+        this_df.columns = dmr_cols + de_cols
 
         # add direction columns
         this_df.loc[:, 'de_direction'] = ['U' if t > 0 else 'D' for t in this_df.loc[:, 'de_logfc']]

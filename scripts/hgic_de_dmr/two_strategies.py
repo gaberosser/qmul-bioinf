@@ -453,31 +453,30 @@ if __name__ == "__main__":
     data_pu.insert(0, 'cluster_id', [t[0] for t in data_pu.index])
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_dmr.xlsx'))
 
-    # c) Layered DE and DMR
+    ####
+    #### c) Layered DE and DMR
+    ####
+
     dmr_res_s1 = dict([(pid, dmr_res[pid][pid]) for pid in pids])
 
     # get the joint table
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
-
     # filter - only DMRs with TSS or island class
-    joint_de_dmr_tss_island_s1 = {}
     for pid in pids:
         idx = joint_de_dmr_s1[pid].dmr_class_island | joint_de_dmr_s1[pid].dmr_class_tss
-        joint_de_dmr_tss_island_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
-        print "Patient %s. %d DE & DMR rows, %d are gene only" % (pid, idx.size, (~idx).sum())
+        joint_de_dmr_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
+        joint_de_dmr_s1[pid].index = de_dmr_hash(joint_de_dmr_s1[pid])
+        print "Patient %s. %d DE & DMR rows, %d are gene only, keeping %d." % (pid, idx.size, (~idx).sum(), idx.sum())
 
-
-    de_dmr_by_member = [de_dmr_hash(joint_de_dmr_tss_island_s1[pid]) for pid in pids]
+    de_dmr_by_member = [joint_de_dmr_s1[pid].index for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member)
 
     # we don't add the null set here - it takes too long
 
     # generate wide-form lists and save to Excel file
-    # change the DE DMR table index for something uniquely identifying
-    for pid in pids:
-        joint_de_dmr_tss_island_s1[pid].index = de_dmr_hash(joint_de_dmr_tss_island_s1[pid])
+    # first, export everything (concordant and discordant)
     data = dmr.venn_set_to_wide_dataframe(
-        joint_de_dmr_tss_island_s1,
+        joint_de_dmr_s1,
         venn_set,
         pids,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
@@ -487,10 +486,35 @@ if __name__ == "__main__":
     annotate_de_dmr_wide_form(data)
     data.to_excel(os.path.join(outdir_s1, 'full_de_dmr.xlsx'), index=False)
 
+    # now filter by concordance and recompute venn sets
+    joint_de_dmr_concordant_s1 = {}
+    for pid in pids:
+        a = joint_de_dmr_s1[pid].de_direction
+        b = joint_de_dmr_s1[pid].dmr_direction
+        idx = (a != b)
+        joint_de_dmr_concordant_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
+        print "Patient %s has %d combined DE / DMR results, of which %d are concordant" % (
+            pid, idx.size, idx.sum()
+        )
+    de_dmr_by_member_concordant = [joint_de_dmr_concordant_s1[pid].index for pid in pids]
+    venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member_concordant)
+
+    # export only concordant results
+    data = dmr.venn_set_to_wide_dataframe(
+        joint_de_dmr_concordant_s1,
+        venn_set,
+        pids,
+        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+        direction_col='de_logfc'
+    )
+    # add gene symbol and cluster ID back in
+    annotate_de_dmr_wide_form(data)
+    data.to_excel(os.path.join(outdir_s1, 'full_de_dmr_concordant.xlsx'), index=False)
+
     # expanded core
     ec_sets = expanded_core_sets(venn_set, subgroup_ind)
     data_ec = dmr.venn_set_to_wide_dataframe(
-        joint_de_dmr_tss_island_s1,
+        joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=ec_sets,
@@ -498,7 +522,7 @@ if __name__ == "__main__":
         direction_col='de_logfc'
     )
     annotate_de_dmr_wide_form(data_ec)
-    data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr.xlsx'))
+    data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr_concordant.xlsx'), index=False)
 
     # subgroup-specific
     ss_sets = []
@@ -506,7 +530,7 @@ if __name__ == "__main__":
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         ss_sets.append(k)
     data_ss = dmr.venn_set_to_wide_dataframe(
-        joint_de_dmr_tss_island_s1,
+        joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=ss_sets,
@@ -514,12 +538,12 @@ if __name__ == "__main__":
         direction_col='de_logfc'
     )
     annotate_de_dmr_wide_form(data_ss)
-    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr.xlsx'))
+    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr_concordant.xlsx'), index=False)
 
     # patient unique
     pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
     data_pu = dmr.venn_set_to_wide_dataframe(
-        joint_de_dmr_tss_island_s1,
+        joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=pu_sets,
@@ -527,22 +551,10 @@ if __name__ == "__main__":
         direction_col='de_logfc'
     )
     annotate_de_dmr_wide_form(data_pu)
-    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr.xlsx'))
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
 
-    # upset plot: include only the concordant results
-    joint_de_dmr_tss_island_concordant_s1 = {}
-    for pid in pids:
-        a = joint_de_dmr_tss_island_s1[pid].de_direction
-        b = joint_de_dmr_tss_island_s1[pid].dmr_direction
-        idx = (a != b)
-        joint_de_dmr_tss_island_concordant_s1[pid] = joint_de_dmr_tss_island_s1[pid].loc[idx]
-        print "Patient %s has %d combined DE / DMR results, of which %d are concordant" % (
-            pid, idx.size, idx.sum()
-        )
-
-    de_dmr_by_member = [de_dmr_hash(joint_de_dmr_tss_island_concordant_s1[pid]) for pid in pids]
     upset1 = upset_plot_de(
-        de_dmr_by_member, venn_set, subgroup_ind, pids
+        de_dmr_by_member_concordant, venn_set, subgroup_ind, pids
     )
     upset1['axes']['main'].set_ylabel('Number of DM-concordant DE genes in set')
     upset1['axes']['set_size'].set_xlabel('Number of DM-concordant DE genes\nin single comparison')

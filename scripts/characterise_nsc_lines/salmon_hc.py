@@ -9,6 +9,7 @@ from utils.output import unique_output_dir
 from stats import transformations
 import os
 from settings import LOCAL_DATA_DIR
+from rnaseq import general
 
 
 def hist_logvalues(data, thresholds=None, eps=1e-6):
@@ -137,29 +138,28 @@ if __name__ == "__main__":
     # discard GBM
     patient_data = patient_data.loc[:, ~patient_data.columns.str.contains('GBM')]
 
+    patient_data_by_gene = general.ensembl_transcript_quant_to_gene(patient_data)
+
     # update index to remove accession version
-    idx = patient_data.index.str.replace(r'.[0-9]+$', '')
-    patient_data.index = idx
-
-    # now aggregate to gene level and repeat
-    # TODO: move to rnaseq module or similar
-
-    fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90', 'gene_to_transcript.txt')
-    gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
-
-    # shouldn't be necessary, but remove transcripts that have no translation
-    to_keep = patient_data.index.intersection(gene_transcript.index)
-    if len(to_keep) != patient_data.shape[0]:
-        to_drop = patient_data.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
-        print "Discarding %d transcripts that have no associated gene: %s" % (
-            len(to_drop), ', '.join(to_drop)
-        )
-        patient_data = patient_data.loc[to_keep]
-
-    # gene list in same order as data
-    genes = gene_transcript.loc[patient_data.index, 'Gene stable ID']
-
-    patient_data_by_gene = patient_data.groupby(genes).sum()
+    # idx = patient_data.index.str.replace(r'.[0-9]+$', '')
+    # patient_data.index = idx
+    #
+    # fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90', 'gene_to_transcript.txt')
+    # gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
+    #
+    # # shouldn't be necessary, but remove transcripts that have no translation
+    # to_keep = patient_data.index.intersection(gene_transcript.index)
+    # if len(to_keep) != patient_data.shape[0]:
+    #     to_drop = patient_data.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
+    #     print "Discarding %d transcripts that have no associated gene: %s" % (
+    #         len(to_drop), ', '.join(to_drop)
+    #     )
+    #     patient_data = patient_data.loc[to_keep]
+    #
+    # # gene list in same order as data
+    # genes = gene_transcript.loc[patient_data.index, 'Gene stable ID']
+    #
+    # patient_data_by_gene = patient_data.groupby(genes).sum()
 
     # discard mitochondrial genes
     if remove_mt:
@@ -241,7 +241,7 @@ if __name__ == "__main__":
     ref.columns = ref_cols
     batches = pd.Series(batches, index=ref_cols)
     labels = pd.Series(ref_labels, ref_cols)
-    ref.index = ref.index.str.replace(r'.[0-9]+$', '')
+    # ref.index = ref.index.str.replace(r'.[0-9]+$', '')
 
     # discard Barres irrelevant samples
     # discard immortalised cell line
@@ -297,7 +297,9 @@ if __name__ == "__main__":
     ref.columns = new_labels
     batches.index = new_labels
 
-    ref_by_gene = ref.groupby(genes).sum()
+    ref_by_gene = general.ensembl_transcript_quant_to_gene(ref)
+
+    # ref_by_gene = ref.groupby(genes).sum()
 
     # now let's try clustering everything together
     abg = pd.concat((patient_data_by_gene, ref_by_gene), axis=1)
