@@ -44,7 +44,7 @@ def hc_plot_dendrogram_vary_n_gene(
 
 
 if __name__ == "__main__":
-    norm_method = 'bmiq'
+    norm_method = 'pbc'
     outdir = unique_output_dir("methylation_insc_characterisation", reuse_empty=True)
     # load 12 patients iNSC, 4 iPSC
     pids = ['017', '018', '019', '030', '031', '026', '044', '049', '050', '052', '054', '061']
@@ -130,8 +130,19 @@ if __name__ == "__main__":
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
 
-    bdat_nogbm = bdat.loc[:, ~bdat.columns.str.contains('GBM')]
+    idx = (
+        (~mdat.columns.str.contains('GBM')) &
+        (~mdat.columns.str.contains('Astrocyte')) &
+        (~mdat.columns.str.contains('_FB')) &
+        (~mdat.columns.str.contains('DURA030_NSC_N9_P2'))
+    )
+
+    mdat_nogbm = mdat.loc[:, idx]
+    bdat_nogbm = bdat.loc[:, idx]
+
+    mmad_nogbm = transformations.median_absolute_deviation(mdat_nogbm)
     bmad_nogbm = transformations.median_absolute_deviation(bdat_nogbm)
+
     row_colours_nogbm = row_colours_all.loc[bdat_nogbm.columns]
 
     plt_dict = hc_plot_dendrogram_vary_n_gene(bdat_nogbm, row_colours_nogbm, mad=bmad_nogbm, n_ftr=n_ftr)
@@ -141,3 +152,15 @@ if __name__ == "__main__":
         else:
             fname = "nogbm_dendrogram_B_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    plt.close('all')
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(mdat_nogbm, row_colours_nogbm, mad=mmad_nogbm, n_ftr=n_ftr)
+    for ng, x in plt_dict.items():
+        if ng > bdat.shape[0]:
+            fname = "nogbm_dendrogram_M_corr_all.{ext}"
+        else:
+            fname = "nogbm_dendrogram_M_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    plt.close('all')

@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 from utils import log
-from utils import setops
+from utils import setops, string_manipulation
 import fnmatch
 import numpy as np
 
@@ -12,6 +12,28 @@ def recursive_file_search(root_dir, pattern):
         for filename in fnmatch.filter(filenames, pattern):
             matches.append(os.path.join(root, filename))
     return matches
+
+
+
+def _filter_by_sample_name_index(sample_names, filt, exact=True):
+    # def filter_by_sample_name(self, filt, exact=True):
+    sn = pd.Index(sample_names)
+
+    if hasattr(filt, "__iter__"):
+        if not exact:
+            filt = string_manipulation.construct_multiple_or_regex(filt)
+    elif exact:
+        filt = [filt]
+
+    if not exact:
+        idx = sn.str.contains(filt)
+    else:
+        idx = sn.isin(filt)
+
+    if idx.sum() == 0:
+        raise AttributeError("The requested filtering operation would remove all samples")
+
+    return idx
 
 
 class DatasetLoader(object):
@@ -107,6 +129,13 @@ class DatasetLoader(object):
         """
         Carry out any processing required after loading, modifying meta and data accordingly
         """
+
+    def filter_by_sample_name(self, filt, exact=True):
+        if not self.meta_is_linked:
+            raise NotImplementedError("Meta data are not linked to the data, so we can't filter. Run it manually on the data attribute.")
+        idx = _filter_by_sample_name_index(self.meta.index, filt, exact=exact)
+        self.meta = self.meta.loc[idx]
+        self.data = self.data.loc[:, self.meta.index]
 
 
 class SingleFileLoader(DatasetLoader):
@@ -361,3 +390,12 @@ class MultipleBatchLoader(object):
         self.meta = pd.DataFrame(meta_values, index=meta_index, columns=meta_cols)
         self.data = dat
         self.batch_id = self.meta.loc[:, batch_col]
+
+
+    def filter_by_sample_name(self, filt, exact=True):
+        if not self.meta_is_linked:
+            raise NotImplementedError("Meta data are not linked to the data, so we can't filter. Run it manually on the data attribute.")
+        idx = _filter_by_sample_name_index(self.meta.index, filt, exact=exact)
+        self.meta = self.meta.loc[idx]
+        self.data = self.data.loc[:, self.meta.index]
+        self.batch_id = self.batch_id.loc[idx]

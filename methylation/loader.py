@@ -26,6 +26,9 @@ project_dirs = {
     "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
     "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
     "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
+    "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
+    "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
+    "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
 }
 
 PATIENT_LOOKUP_FFPE = {}  # TODO?
@@ -288,6 +291,39 @@ def load_by_patient(
     # apply original ordering
     res.meta = res.meta.loc[sample_order]
     res.data = res.data.loc[:, res.meta.index]
+
+    return res
+
+
+def load_reference(ref_names, norm_method='pbc', samples=None):
+    ## TODO: support specifying samples in input?
+    # ensure ref names are in a list (or iterable)
+    if not hasattr(ref_names, '__iter__'):
+        ref_names = [ref_names]
+
+    objs = []
+    for rid in ref_names:
+        base_dir = project_dirs[rid]
+        if not os.path.isdir(base_dir):
+            raise ValueError("Directory %s for ref %s does not exist." % (base_dir, rid))
+
+        beta_dir = os.path.join(base_dir, 'beta')
+        meta_fn = os.path.join(base_dir, 'sources.csv')
+        ldr = IlluminaHumanMethylationLoader(
+            base_dir=beta_dir,
+            meta_fn=meta_fn,
+            batch_id=rid,
+            norm_method=norm_method,
+        )
+        objs.append(ldr)
+
+    if len(objs) > 1:
+        res = loader.MultipleBatchLoader(objs)
+    else:
+        res = objs[0]
+
+    if samples is not None:
+        res = res.filter_by_sample_name(samples)
 
     return res
 

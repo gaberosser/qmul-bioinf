@@ -79,7 +79,7 @@ if __name__ == '__main__':
     cc = cc.loc[cc.index.str.contains('FFPE'), ~cc.columns.str.contains('FFPE')]
     cc = cc.loc[~cc.index.str.contains('GBM050')]
     cc = cc.loc[:, ~cc.columns.str.contains('GBM050')]
-    fig = plt.figure(figsize=(8, 4.5))
+    fig = plt.figure(figsize=(9, 4.5))
     ax = fig.add_subplot(111)
     ax = sns.heatmap(cc, cmap='RdBu_r', ax=ax)
     plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
@@ -87,6 +87,7 @@ if __name__ == '__main__':
     ax.set_aspect('equal')
     ax.figure.tight_layout()
     fig.savefig(os.path.join(outdir, "%s_correlation_top_%d_genes.png" % (meth, ng)), dpi=200)
+    fig.savefig(os.path.join(outdir, "%s_correlation_top_%d_genes.tiff" % (meth, ng)), dpi=200)
 
     # same but using only the Verhaak genes
     cc = lcpm_gene.loc[cl + mes + pn].corr(method=meth)

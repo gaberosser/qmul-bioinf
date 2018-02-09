@@ -2,27 +2,36 @@ import multiprocessing as mp
 import os
 import pandas as pd
 import numpy as np
-from utils import output, setops
+from utils import output, setops, excel
 from methylation import dmr, process, loader as methylation_loader
-from rnaseq import loader as rnaseq_loader, differential_expression
+from rnaseq import loader as rnaseq_loader, differential_expression, general
 from integrator import rnaseq_methylationarray
 from analysis import cross_comparison
 from load_data import loader
 from plotting import venn
 
 
-def load_methylation(pids, norm_method='swan'):
+def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None):
     """
     Load and prepare the Illumina methylation data
     """
+    # patient data
     obj = methylation_loader.load_by_patient(pids, norm_method=norm_method)
-    me_data = obj.data
-    me_data.dropna(inplace=True)
-    me_data = process.m_from_beta(me_data)
     anno = methylation_loader.load_illumina_methylationepic_annotation()
+
+    # reference data
+    if ref_names is not None:
+        ref_obj = methylation_loader.load_reference(ref_names, norm_method=norm_method)
+        if ref_name_filter is not None:
+            ref_obj.filter_by_sample_name(ref_name_filter, exact=True)
+        obj = loader.MultipleBatchLoader([obj, ref_obj])
+
+    me_data = obj.data.dropna()
+    me_data = process.m_from_beta(me_data)
 
     # reduce anno and data down to common probes
     common_probes = anno.index.intersection(me_data.index)
+
     anno = anno.loc[common_probes]
     dmr.add_merged_probe_classes(anno)
     me_data = me_data.loc[common_probes]
@@ -56,13 +65,40 @@ def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC'):
     return obj
 
 
+def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
+    # Compute DMR for paired comparisons (only - no other comparisons needed at present)
+    dmr_res_obj = dmr.DmrResults(anno=anno)
+    dmr_res_obj.identify_clusters(**dmr_params)
+    dmr_res = {}
+
+    for pid in pids:
+        the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'GBM')
+        the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'iNSC')
+        the_idx = the_idx1 | the_idx2
+        the_groups = me_meta.loc[the_idx, 'type'].values
+        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+        the_obj = dmr_res_obj.copy()
+        the_obj.test_clusters(me_data,
+                              samples=the_samples,
+                              n_jobs=dmr_params['n_jobs'],
+                              min_median_change=dmr_params['delta_m_min'],
+                              method=dmr_params['dmr_test_method'],
+                              alpha=dmr_params['alpha'],
+                              **dmr_params['test_kwargs']
+                              )
+        dmr_res[pid] = the_obj
+
+    return dmr.DmrResultCollection(**dmr_res)
+
+
 def dmr_results_hash(pids, dmr_params):
     hash_elements = tuple(sorted(pids)) + (
         dmr_params['d_max'],
         dmr_params['n_min'],
         dmr_params['delta_m_min'],
         dmr_params['dmr_test_method'],
-        dmr_params['alpha']
+        dmr_params['alpha'],
+        dmr_params['norm_method']
     ) + tuple(dmr_params['test_kwargs'].items())
     return hash(hash_elements)
 
@@ -199,6 +235,7 @@ if __name__ == "__main__":
         'test_kwargs': {},
         'n_jobs': mp.cpu_count(),
     }
+    norm_method_s1 = 'swan'
 
     pids = ['018', '019', '031', '017', '050', '054']
 
@@ -211,16 +248,17 @@ if __name__ == "__main__":
         (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
     ])
 
-    external_ref_names_de = ['GSE61794', 'GSE38993']
+    external_ref_names_de = ['GSE61794']
+    external_ref_names_dm = ['gse38216']
+    external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
 
     external_refs_de = [
         ('GIBCO', 'NSC'),
         ('H9', 'NSC'),
-        ('H1', 'NSC'),
     ]
-
     external_refs_dm = [
-        'GIBCO'
+        ('GIBCO', 'NSC'),
+        ('H9', 'NSC'),
     ]
 
     # plotting parameters
@@ -229,45 +267,54 @@ if __name__ == "__main__":
     # file location parameters
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
 
-    # load methylation
-    me_obj, anno = load_methylation(pids)
-    me_data = me_obj.data
+    ##################
+    ### Strategy 1 ###
+    ##################
 
-    # Compute DMR cross-comparison
+    # load methylation
+    # For S1, we just need the paired comparison. This is important - any other samples lead to a change in the final
+    # probe list (any NA rows are dropped from ALL samples).
+
+    me_obj, anno = load_methylation(pids, norm_method=norm_method_s1)
+    me_data = me_obj.data
+    me_meta = me_obj.meta
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results
 
     # use a hash on the PIDs and parameters to ensure we're looking for the right results
-    the_hash = dmr_results_hash(pids, dmr_params)
-    filename = 'dmr_results.%d.pkl' % the_hash
+    dmr_hash_dict = dict(dmr_params)
+    dmr_hash_dict['norm_method'] = norm_method_s1
+
+    the_hash = dmr_results_hash(me_obj.meta.index.tolist(), dmr_hash_dict)
+    filename = 'dmr_results_paired_comparison.%d.pkl' % the_hash
     fn = os.path.join(DMR_LOAD_DIR, filename)
 
-    loaded = False
     if os.path.isfile(fn):
-        dmr_res = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
+        dmr_res_s1 = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
     else:
-        dmr_res = dmr.compute_cross_dmr(me_data, me_obj.meta, anno, pids, dmr_params)
+        dmr_res_s1 = paired_dmr(me_data, me_meta, anno, pids, dmr_params)
         # Save DMR results to disk
-        dmr_res.to_pickle(fn, include_annotation=False)
+        dmr_res_s1.to_pickle(fn, include_annotation=False)
         print "Saved DMR results to %s" % fn
 
     dmr_classes = ['tss', 'island']
 
     # extract combined significant results for tss and island
-    dmr_res_all_cls = dmr_res.results_by_class()
-    dmr_res_sign_all_cls = dmr_res.results_significant_by_class()
+    dmr_res_all_cls = dmr_res_s1.results_by_class()
+    dmr_res_sign_all_cls = dmr_res_s1.results_significant_by_class()
 
-    dmr_res_full = {}
-    dmr_res_sign = {}
+    dmr_res_full_s1 = {}
+    dmr_res_sign_s1 = {}
     for k1 in dmr_res_sign_all_cls:
-        for k2 in dmr_res_sign_all_cls[k1]:
-            dmr_res_sign[(k1, k2)] = {}
-            dmr_res_full[(k1, k2)] = {}
-            for dc in dmr_classes:
-                dmr_res_sign[(k1, k2)].update(dmr_res_sign_all_cls[k1][k2][dc])
-                dmr_res_full[(k1, k2)].update(dmr_res_all_cls[k1][k2][dc])
-            dmr_res_sign[(k1, k2)] = dmr_res_sign[(k1, k2)].keys()
+        # for k2 in dmr_res_sign_all_cls[k1]:
+        dmr_res_sign_s1[k1] = {}
+        dmr_res_full_s1[k1] = {}
+        for dc in dmr_classes:
+            dmr_res_sign_s1[k1].update(dmr_res_sign_all_cls[k1][dc])
+            dmr_res_full_s1[k1].update(dmr_res_all_cls[k1][dc])
+        # only need the keys for the significant DMR list
+        dmr_res_sign_s1[k1] = dmr_res_sign_s1[k1].keys()
 
     rnaseq_obj = load_rnaseq(pids, external_ref_names_de)
 
@@ -332,12 +379,14 @@ if __name__ == "__main__":
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de.xlsx'))
 
     # b) DMR only
-    dmr_res_sign_s1 = dict([
-        (pid, dmr_res_sign[(pid, pid)]) for pid in pids
-    ])
-    dmr_res_full_s1 = dict([
-        (pid, dmr_res_full[(pid, pid)]) for pid in pids
-    ])
+
+    # dmr_res_sign_s1 = dict([
+    #     (pid, dmr_res_sign[(pid, pid)]) for pid in pids
+    # ])
+    # dmr_res_full_s1 = dict([
+    #     (pid, dmr_res_full[(pid, pid)]) for pid in pids
+    # ])
+
     dmr_by_member = [dmr_res_sign_s1[pid] for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
 
@@ -358,10 +407,10 @@ if __name__ == "__main__":
     data_for_dmr_table = {}
     data_for_dmr_table_full = {}
     for pid in pids:
-        this_sign = dmr_res[pid][pid].to_table(include='significant', skip_geneless=True)
+        this_sign = dmr_res_s1[pid].to_table(include='significant', skip_geneless=True)
         data_for_dmr_table[pid] = expand_dmr_results_table_by_gene(this_sign)
 
-        this_full = dmr_res[pid][pid].to_table(include='all',skip_geneless=True)
+        this_full = dmr_res_s1[pid].to_table(include='all',skip_geneless=True)
         data_for_dmr_table_full[pid] = expand_dmr_results_table_by_gene(this_full)
 
     # data_for_dmr_table_full = dict([
@@ -457,9 +506,8 @@ if __name__ == "__main__":
     #### c) Layered DE and DMR
     ####
 
-    dmr_res_s1 = dict([(pid, dmr_res[pid][pid]) for pid in pids])
-
     # get the joint table
+    # joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
     # filter - only DMRs with TSS or island class
     for pid in pids:
@@ -563,10 +611,184 @@ if __name__ == "__main__":
     upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
     upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
 
-    # Compute DMR cross-comparison correction
-    dm_specific_to_all_refs = cross_comparison.compute_cross_comparison_correction(
-        dmr_res_sign,
+    ##################
+    ### Strategy 2 ###
+    ##################
+
+    norm_method_s2 = 'pbc'
+
+    # load methylation with external references
+    me_obj_with_ref, anno = load_methylation(
         pids,
-        external_refs=external_refs_dm,
+        ref_names=external_ref_names_dm,
+        ref_name_filter=external_ref_samples_dm,
+        norm_method=norm_method_s2
+    )
+    me_data_with_ref = me_obj_with_ref.data
+
+    # Compute DMR cross-comparison
+
+    # We load pre-computed results if a file with the correct filename is found
+    # Otherwise this is written after computing the results
+
+    # use a hash on the PIDs and parameters to ensure we're looking for the right results
+    dmr_hash_dict = dict(dmr_params)
+    dmr_hash_dict['norm_method'] = norm_method_s2
+
+    the_hash = dmr_results_hash(me_obj_with_ref.meta.index.tolist(), dmr_hash_dict)
+    filename = 'dmr_results_cross_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DMR_LOAD_DIR, filename)
+
+    if os.path.isfile(fn):
+        dmr_res_s2 = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
+    else:
+        dmr_res_s2 = dmr.compute_cross_dmr(
+            me_data_with_ref,
+            me_obj_with_ref.meta,
+            anno,
+            pids,
+            dmr_params,
+            external_references=external_refs_dm
+        )
+        # Save DMR results to disk
+        dmr_res_s2.to_pickle(fn, include_annotation=False)
+        print "Saved DMR results to %s" % fn
+
+    dmr_classes = ['tss', 'island']
+
+    # extract combined significant results for tss and island
+
+    dmr_res_all_cls = dmr_res_s2.results_by_class()
+    dmr_res_sign_all_cls = dmr_res_s2.results_significant_by_class()
+
+    dmr_res_full_s2 = {}
+    dmr_res_sign_s2 = {}
+    for k1 in dmr_res_sign_all_cls:
+        for k2 in dmr_res_sign_all_cls[k1]:
+            dmr_res_sign_s2[(k1, k2)] = {}
+            dmr_res_full_s2[(k1, k2)] = {}
+            for dc in dmr_classes:
+                dmr_res_sign_s2[(k1, k2)].update(dmr_res_sign_all_cls[k1][k2][dc])
+                dmr_res_full_s2[(k1, k2)].update(dmr_res_all_cls[k1][k2][dc])
+            dmr_res_sign_s2[(k1, k2)] = dmr_res_sign_s2[(k1, k2)].keys()
+
+    ## a) Pair-only DE
+
+    de_res_s2_idx = dict([
+        (k, v.index) for k, v in de_res.items()
+    ])
+
+    cc_dict_de = cross_comparison.compute_cross_comparison_correction(
+        de_res_s2_idx,
+        pids,
+        external_refs=[t[0] for t in external_refs_de],
         set_type='pair_only'
     )
+    po_specific_to_all_refs_de = sorted(cc_dict_de['specific_to_all_refs'])
+    pair_only_de = cc_dict_de['venn_set']
+
+    for_export = rnaseq_obj.data.loc[po_specific_to_all_refs_de]
+    general.add_gene_symbols_to_ensembl_data(for_export)
+    for_export.to_excel(os.path.join(outdir_s2, 'consistently_in_pair_only_across_all_refs_de.xlsx'))
+
+    # take the intersection of the PO lists, then export to a file
+    po_de_export = {}
+    po_de_export_full = {}
+    for pid in pids:
+        po_de_export_full[pid] = de_res_full[(pid, pid)].copy()
+
+        this_row = pair_only_de.loc[pid, [t[0] for t in external_refs_de]]
+        this_genes_pre = setops.reduce_intersection(*this_row)
+
+        # can correct as follows
+        # this_genes = sorted(this_genes_pre.difference(po_specific_to_all_refs))
+        # print "PID %s. Subtracted %d correction genes from the %d PO intersection genes to leave %d PO genes" % (
+        #     pid, len(po_specific_to_all_refs), len(this_genes_pre), len(this_genes)
+        # )
+
+        # we won't, to avoid cross-comparison issues
+        this_genes = this_genes_pre
+
+        po_col = pd.Series('N', index=po_de_export_full[pid].index)
+        po_col.loc[this_genes] = 'Y'
+        po_de_export_full[pid].insert(po_de_export_full[pid].shape[1], 'pair_only', po_col)
+
+        po_de_export[pid] = de_res[(pid, pid)].loc[this_genes]
+
+    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, 'pair_only_de.xlsx'))
+    excel.pandas_to_excel(po_de_export_full, os.path.join(outdir_s2, 'pair_only_de_full.xlsx'))
+
+    # export with a different layout, analogous to strategy 1
+    venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
+    po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
+
+    po_combination_export = setops.venn_set_to_wide_dataframe(
+        po_de_export,
+        venn_set,
+        pids,
+        cols_to_include=('logFC', 'FDR'),
+        consistency_check_col='logFC',
+        consistency_check_method="sign"
+    )
+
+    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
+
+    ## b) Pair-only DMR
+
+    # Compute cross-comparison correction
+    cc_dict_dmr = cross_comparison.compute_cross_comparison_correction(
+        dmr_res_sign_s2,
+        pids,
+        external_refs=[t[0] for t in external_refs_dm],
+        set_type='pair_only'
+    )
+
+    po_specific_to_all_refs_dmr = sorted(cc_dict_dmr['specific_to_all_refs'])
+    pair_only_dmr = cc_dict_dmr['venn_set']
+
+    #for DMR, just dump some information to a file
+
+    for_export = []
+    for i in po_specific_to_all_refs_dmr:
+        t = dmr_res_s2.clusters[i].summary_dict
+        for_export.append('\n'.join(["%s: %s" % (k, str(v)) for k, v in t.items()]))
+    with open(os.path.join(outdir_s2, 'consistently_in_pair_only_across_all_refs_dmr.txt'), 'wb') as f:
+        f.write("\n\n***\n\n".join(for_export))
+
+    # take the intersection of the PO lists, then export to a file
+    po_dmr_export = {}
+    po_dmr_export_full = {}
+    for pid in pids:
+        po_dmr_export_full[pid] = dmr_res_full_s2[(pid, pid)].copy()
+
+        this_row = pair_only_dmr.loc[pid, [t[0] for t in external_refs_dm]]
+        this_genes_pre = setops.reduce_intersection(*this_row)
+
+        # no correction, to avoid cross-comparison issues
+        this_genes = this_genes_pre
+
+        po_col = pd.Series('N', index=po_dmr_export_full[pid].index)
+        po_col.loc[this_genes] = 'Y'
+        po_dmr_export_full[pid].insert(po_dmr_export_full[pid].shape[1], 'pair_only', po_col)
+
+        ## TODO: the results are currently in a dictionary - can we export them to a table (or did we already??)
+        # po_dmr_export[pid] = dmr_res_s2[(pid, pid)].loc[this_genes]
+
+    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, 'pair_only_dmr.xlsx'))
+    excel.pandas_to_excel(po_de_export_full, os.path.join(outdir_s2, 'pair_only_dmr_full.xlsx'))
+
+    # export with a different layout, analogous to strategy 1
+    venn_set, venn_ct = setops.venn_from_arrays(*[po_dmr_export[pid].index for pid in pids])
+    po_combination_export = setops.venn_set_to_wide_dataframe(
+        po_dmr_export,
+        venn_set,
+        pids,
+        cols_to_include=('median_delta', 'padj'),
+        consistency_check_col='median_delta',
+        consistency_check_method="sign"
+    )
+
+    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_dmr_wideform.xlsx'))
+
+    ## c) DE / DMR combined
+    # TODO
