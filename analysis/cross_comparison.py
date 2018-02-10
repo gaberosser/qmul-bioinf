@@ -2,6 +2,7 @@ from utils import setops
 import pandas as pd
 
 
+# TODO: this is named inaccurately - it does a lot more!
 def compute_cross_comparison_correction(res, samples, external_refs, set_type='pair_only'):
     """
     Compute the _correction_ list of features for the supplied results. These are the features that are
