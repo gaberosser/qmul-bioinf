@@ -10,6 +10,7 @@ from statsmodels import api as sm
 
 from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
+from plotting import common
 
 BIOMARKERS = [
     'Hb',
@@ -76,13 +77,6 @@ if __name__ == "__main__":
     # CONCLUSION: PT and INR peaks are highly correlated -> remove PT
     peaks_dat = peaks_dat.loc[:, peaks_dat.columns != 'PT peak']
     nvar = peaks_dat.shape[1]
-
-    # standardize - necessary when using array plots to keep the range the same
-    peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
-    bm_peaks = standardise(peaks_dat)
-    # bm_peaks = peaks_dat.subtract(peaks_dat.mean(axis=0), axis=1).divide(peaks_dat.std(axis=0), axis=1)
-    bm_peaks = pd.concat((bm_peaks, outcomes), axis=1)
-    bm_peaks.columns = bm_peaks.columns.str.replace(' peak', '')
 
     ## TODO: pair plot and pairwise correlation
     ax = sns.heatmap(peaks_dat.corr())
@@ -215,33 +209,6 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, 'linregress_value_with_age.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'linregress_value_with_age.pdf'))
 
-    if False:
-        # we need to set the range so that the hist function doesn't complain about NaNs
-        hist_kws = {'range': (-2, 6)}
-        g = sns.pairplot(bm_peaks, hue='Outcome', diag_kws=hist_kws)
-        for ax in g.fig.get_axes():
-            ax.set_xticks([])
-            ax.set_yticks([])
-        g.fig.subplots_adjust(left=0.04, bottom=0.04)
-        g.fig.legends[0].set_visible(False)
-
-
-    from scripts.mb_subgroup_classifier.shrunken_centroids import run_validation
-
-    deltas = np.linspace(0., 1.5, 30)
-    # use all for training
-    training_data = bm_peaks.loc[:, bm_peaks.columns.difference(['Outcome'])].transpose()
-    train_err = run_validation(deltas, training_data, bm_peaks.Outcome)
-
-    # box and whisker for each variable by outcome
-    bwf = []
-    bwu = []
-    ttls = []
-    for c in BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS:
-        bwf.append(dat.loc[dat.loc[:, OUTCOME_COL] == 2, c].dropna())  # favourable outcome
-        bwu.append(dat.loc[dat.loc[:, OUTCOME_COL] == 1, c].dropna())  # unfavourable outcome
-        ttls.append(c.replace(' peak', ''))
-
     jitter = 0.2
     if nvar % 2 == 0:
         fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
@@ -249,7 +216,7 @@ if __name__ == "__main__":
     else:
         fig, axs = plt.subplots(nrows=1, ncols=nvar, sharex=True, figsize=(15, 5))
 
-    for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
+    for i, c in enumerate(peaks_dat.columns):
         ax = axs[i]
 
         this_dat = dat.loc[:, [c, 'Outcome']]
@@ -277,7 +244,8 @@ if __name__ == "__main__":
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for i, c in enumerate(BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS):
+
+    for i, c in enumerate(peaks_dat.columns):
         ttl = c.lower().replace(' ', '_')
         ax.cla()
 
@@ -298,12 +266,136 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "scatter_marker_%s_vs_age.pdf" % ttl))
 
     # TODO: scatterplots of peak/trough vs age for each variable, coloured by outcome
+
+    gs = plt.GridSpec(nvar - 1, nvar - 1)
+    fig = plt.figure(figsize=(12, 12))
+    ms = 10
+
+    row_axs = []
+    col_axs = []
+    for i, row_lbl in enumerate(peaks_dat.columns):
+        if i == 0:
+            continue
+        rax = fig.add_subplot(gs[i - 1, 0])
+        rax.set_ylabel(row_lbl.replace(' peak', ''))
+        row_axs.append(rax)
+    for j, col_lbl in enumerate(peaks_dat.columns):
+        if j == (nvar - 1):
+            continue
+        cax = fig.add_subplot(gs[nvar - 2, j])
+        cax.set_xlabel(col_lbl.replace(' peak', ''))
+        col_axs.append(cax)
+
+    for i, row_lbl in enumerate(peaks_dat.columns):
+        for j, col_lbl in enumerate(peaks_dat.columns):
+            if i == 0:
+                continue
+            if j == (nvar - 1):
+                continue
+            cax = col_axs[j]
+            rax = row_axs[i - 1]
+            ax = None
+            sharex = None
+            sharey = None
+
+            if i == (nvar - 1):
+                ax = cax
+                if j != 0:
+                    ax.yaxis.set_visible(False)
+            else:
+                sharex = cax
+
+            if j == 0:
+                ax = rax
+                if i != (nvar - 1):
+                    ax.xaxis.set_visible(False)
+            else:
+                sharey = rax
+
+            if ax is None:
+                ax = fig.add_subplot(gs[i - 1, j], sharex=sharex, sharey=sharey)
+                ax.xaxis.set_visible(False)
+                ax.yaxis.set_visible(False)
+
+            if j < i:
+                x = peaks_dat.loc[:, col_lbl]
+                y = peaks_dat.loc[:, row_lbl]
+                z = outcomes
+                ax.scatter(x[z == 2], y[z == 2], color='b', s=ms, alpha=0.6, label='Favourable')
+                ax.scatter(x[z == 1], y[z == 1], color='g', s=ms, alpha=0.6, label='Unfavourable')
+                ax.grid(False)
+            else:
+                ax.grid(False)
+                ax.set_facecolor('none')
+
+    gs.update(bottom=0.07, left=0.06, top=.99, right=.99, hspace=0.02, wspace=0.02)
+    # FIXME: this need to be run manually, presumably due to some buffer not flushing until the plot is fully plotted?
+    # common.align_labels(row_axs, axis='y')
+    fig.savefig(os.path.join(outdir, "pairplot.png"), dpi=200)
+
+    # based on this, it's worth plotting Plt peak vs Plt trough on its own
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.scatter(peaks_dat.loc[outcomes==2, 'Plt peak'], peaks_dat.loc[outcomes==2, 'Plt trough'], c='b', label='Favourable')
+    ax.scatter(peaks_dat.loc[outcomes==1, 'Plt peak'], peaks_dat.loc[outcomes==1, 'Plt trough'], c='g', label='Unfavourable')
+    ax.legend(loc='upper right')
+    ax.set_xlabel("Plt peak")
+    ax.set_ylabel("Plt trough")
+    fig.savefig(os.path.join(outdir, "plt_peak_vs_trough.png"), dpi=200)
+
+    # build a simple logistic regression model
+    from statsmodels import api as sm
+    from sklearn.preprocessing import Imputer
+    # fill nan with median for that variable
+    X = peaks_dat.copy()
+    imp = Imputer(missing_values='NaN', strategy='median', axis=0)
+    X = imp.fit_transform(X)
+    X = pd.DataFrame(X, index=peaks_dat.index, columns=peaks_dat.columns)
+
+    # add a constant and fit
+    logit_model = sm.Logit(outcomes == 2, sm.add_constant(X))  # outcome is FAVOURABLE
+    result = logit_model.fit()
+    print "statsmodels.Logit model fitted:"
+    print result.summary()
+    ci = result.conf_int()
+    ci.columns = ["2.5%", "97.5%"]
+    ci.insert(0, "Odds ratio", result.params)
+    ci = np.exp(ci)
+    ci.insert(0, "P value", result.pvalues)
+
+    # plot the decision boundary for model with Plt peak and Plt trough (only)
+    plt_dat = X.loc[:, ['Plt peak', 'Plt trough']]
+    logit_model_plt = sm.Logit(outcomes == 2, sm.add_constant(plt_dat))
+    result_plt = logit_model_plt.fit()
+    coeff = result_plt.params
+    intercept = -coeff['const'] / coeff['Plt peak']
+    slope = -coeff['Plt trough'] / coeff['Plt peak']
+    fit_x = np.linspace(
+        peaks_dat.loc[:, 'Plt trough'].min(),
+        peaks_dat.loc[:, 'Plt trough'].max(),
+        20
+    )
+    fit_y = intercept + slope * fit_x
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.scatter(peaks_dat.loc[outcomes==2, 'Plt trough'], peaks_dat.loc[outcomes==2, 'Plt peak'], c='b', label='Favourable')
+    ax.scatter(peaks_dat.loc[outcomes==1, 'Plt trough'], peaks_dat.loc[outcomes==1, 'Plt peak'], c='g', label='Unfavourable')
+    ax.plot(fit_x, fit_y, 'r--', label='Model decision boundary')
+    ax.legend(loc='upper left')
+    ax.set_xlabel('Plt trough')
+    ax.set_ylabel('Plt peak')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "logit_plt_peak_trough_decision_boundary.png"), dpi=200)
+
+
+
     # TODO: add statistical significance of difference between groups in boxplot
 
     # PCA
 
     X = peaks_dat.copy()
-    from sklearn.preprocessing import Imputer
+
     imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
     imp.fit(X)
     X = imp.transform(X)
