@@ -265,10 +265,13 @@ if __name__ == "__main__":
         ('GIBCO', 'NSC'),
         ('H9', 'NSC'),
     ]
+    external_refs_de_labels = [t[0] for t in external_refs_de]
+
     external_refs_dm = [
         ('GIBCO', 'NSC'),
         ('H9', 'NSC'),
     ]
+    external_refs_dm_labels = [t[0] for t in external_refs_dm]
 
     # plotting parameters
     cmap = 'RdYlGn_r'
@@ -739,8 +742,6 @@ if __name__ == "__main__":
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
 
-    external_refs_de_labels = [t[0] for t in external_refs_de]
-
     fig, axs = plt.subplots(nrows=2, ncols=3)
     for pid in pids:
         if pid in subgroups['RTK I']:
@@ -764,7 +765,6 @@ if __name__ == "__main__":
     # NB apply correction
 
     # at the same time, get numbers for a bar chart about % overlap
-    n_pair_only = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
     n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
 
     fig, axs = plt.subplots(nrows=2, ncols=3)
@@ -810,7 +810,7 @@ if __name__ == "__main__":
     cc_dict_dmr = cross_comparison.compute_cross_comparison_correction(
         dmr_res_sign_s2,
         pids,
-        external_refs=[t[0] for t in external_refs_dm],
+        external_refs=external_refs_dm_labels,
         set_type='pair_only'
     )
 
@@ -832,7 +832,7 @@ if __name__ == "__main__":
     for pid in pids:
 
         # identify pair only
-        this_row = pair_only_dmr.loc[pid, [t[0] for t in external_refs_dm]]
+        this_row = pair_only_dmr.loc[pid, external_refs_dm_labels]
         this_dmr_pre = setops.reduce_intersection(*this_row)
 
         # no correction, to avoid cross-comparison issues
@@ -889,10 +889,9 @@ if __name__ == "__main__":
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_dmr_wideform.xlsx'))
 
-    external_refs_dmr_labels = [t[0] for t in external_refs_dm]
     dmr_members = {}
     for pid in pids:
-        for r in external_refs_dmr_labels:
+        for r in external_refs_dm_labels:
             this_tbl = dmr_res_s2[pid][r].to_table(include='significant', skip_geneless=False)
             this_tbl = this_tbl.loc[this_tbl.class_island | this_tbl.class_tss]
             dmr_members[(pid, r)] = this_tbl.index
@@ -907,21 +906,19 @@ if __name__ == "__main__":
             sg = subgroups['RTK II']
         j = sg.index(pid)
         the_lists = [
-            dmr_members[(pid, r)] for r in external_refs_dmr_labels
+            dmr_members[(pid, r)] for r in external_refs_dm_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
-        venn.venn2(cts, set_labels=external_refs_dmr_labels, ax=axs[i, j])
+        venn.venn2(cts, set_labels=external_refs_dm_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir_s2, 'number_dmr_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_dmr_multiple_references.tiff'), dpi=200)
 
     # plot: how many DE genes are in the pair only comparison when each reference is used?
-    # NB apply correction
 
     # at the same time, get numbers for a bar chart about % overlap
-    n_pair_only = pd.DataFrame(0, index=pids, columns=external_refs_dmr_labels)
-    n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_dmr_labels)
+    n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_dm_labels)
 
     fig, axs = plt.subplots(nrows=2, ncols=3)
     for pid in pids:
@@ -933,14 +930,14 @@ if __name__ == "__main__":
             sg = subgroups['RTK II']
         j = sg.index(pid)
         the_lists = [
-            set(pair_only_dmr.loc[pid, r]) for r in external_refs_dmr_labels
+            set(pair_only_dmr.loc[pid, r]) for r in external_refs_dm_labels
             ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
-        venn.venn2(cts, set_labels=external_refs_dmr_labels, ax=axs[i, j])
+        venn.venn2(cts, set_labels=external_refs_dm_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)
 
-        for i, r in enumerate(external_refs_dmr_labels):
-            n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_dmr_labels))]
+        for i, r in enumerate(external_refs_dm_labels):
+            n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_dm_labels))]
 
     fig.tight_layout()
     fig.savefig(os.path.join(outdir_s2, 'number_po_dmr_multiple_references.png'), dpi=200)
@@ -948,7 +945,7 @@ if __name__ == "__main__":
 
     # plot: overlap between individual references in terms of PO genes shared
     po_counts = pair_only_dmr.applymap(len)
-    pct_pair_only_intersect = n_pair_only_intersect / po_counts.loc[:, external_refs_dmr_labels] * 100.
+    pct_pair_only_intersect = n_pair_only_intersect / po_counts.loc[:, external_refs_dm_labels] * 100.
 
     ax = pct_pair_only_intersect.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k', legend=False)
     ax.set_xlabel('Patient')
@@ -995,13 +992,13 @@ if __name__ == "__main__":
         print "Comparison %s. %d DE & DMR rows, %d are concordant." % (k, idx.size, idx.sum())
 
     # get pair only results
-    # do this using only the gene symbol (??)
+    # do this using only the gene symbol
 
     de_dmr_by_gene = dict([
         (k, set(v.gene.values)) for k, v in joint_de_dmr_s2.items()
     ])
 
-    pair_only_de_dmr = pd.DataFrame(index=pids, columns=[t[0] for t in external_refs_de])
+    pair_only_de_dmr = pd.DataFrame(index=pids, columns=external_refs_de_labels)
     for i in pair_only_de_dmr.index:
         p = de_dmr_by_gene[(i, i)]
         for j in pair_only_de_dmr.columns:
@@ -1034,3 +1031,63 @@ if __name__ == "__main__":
     )
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_dmr_wideform.xlsx'))
+
+    # plot: number of DM-concordant DE genes in each reference comparison
+    fig, axs = plt.subplots(nrows=2, ncols=3)
+    for pid in pids:
+        if pid in subgroups['RTK I']:
+            i = 0
+            sg = subgroups['RTK I']
+        else:
+            i = 1
+            sg = subgroups['RTK II']
+        j = sg.index(pid)
+        the_lists = [
+            de_dmr_by_gene[(pid, r)] for r in external_refs_de_labels
+        ]
+        venn_sets, cts = setops.venn_from_arrays(*the_lists)
+        venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
+        axs[i, j].set_title("GBM%s vs..." % pid)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.png'), dpi=200)
+    fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.tiff'), dpi=200)
+
+    # plot: how many DM-concordant DE genes are in the pair only comparison when each reference is used?
+
+    # at the same time, get numbers for a bar chart about % overlap
+    n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
+
+    fig, axs = plt.subplots(nrows=2, ncols=3)
+    for pid in pids:
+        if pid in subgroups['RTK I']:
+            i = 0
+            sg = subgroups['RTK I']
+        else:
+            i = 1
+            sg = subgroups['RTK II']
+        j = sg.index(pid)
+        the_lists = [
+            set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
+            ]
+        venn_sets, cts = setops.venn_from_arrays(*the_lists)
+        venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
+        axs[i, j].set_title("GBM%s pair only" % pid)
+
+        for i, r in enumerate(external_refs_de_labels):
+            n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_de_labels))]
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.png'), dpi=200)
+    fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.tiff'), dpi=200)
+
+    # plot: overlap between individual references in terms of PO genes shared
+    po_counts = pair_only_de_dmr.applymap(len)
+    pct_pair_only_intersect = n_pair_only_intersect / po_counts.loc[:, external_refs_de_labels] * 100.
+
+    ax = pct_pair_only_intersect.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k', legend=False)
+    ax.set_xlabel('Patient')
+    ax.set_ylabel("% DE genes shared")
+    ax.set_ylim([0, 100])
+    ax.figure.tight_layout()
+    ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.png"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.tiff"), dpi=200)

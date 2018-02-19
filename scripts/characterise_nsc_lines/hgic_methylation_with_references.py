@@ -113,13 +113,14 @@ if __name__ == "__main__":
 
     n_ftr = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000, 1000000]
     plt_dict = hc_plot_dendrogram_vary_n_gene(mdat, row_colours_all, mad=mmad, n_ftr=n_ftr)
+
     for ng, x in plt_dict.items():
         if ng > bdat.shape[0]:
             fname = "dendrogram_M_corr_all.{ext}"
         else:
             fname = "dendrogram_M_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
-        # x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
 
     plt_dict = hc_plot_dendrogram_vary_n_gene(bdat, row_colours_all, mad=bmad, n_ftr=n_ftr)
     for ng, x in plt_dict.items():
@@ -128,7 +129,9 @@ if __name__ == "__main__":
         else:
             fname = "dendrogram_B_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
 
+    ## no GBM, no FB, no astrocytes, various numbers of probes, beta values
 
     idx = (
         (~mdat.columns.str.contains('GBM')) &
@@ -137,12 +140,9 @@ if __name__ == "__main__":
         (~mdat.columns.str.contains('DURA030_NSC_N9_P2'))
     )
 
-    mdat_nogbm = mdat.loc[:, idx]
     bdat_nogbm = bdat.loc[:, idx]
 
-    mmad_nogbm = transformations.median_absolute_deviation(mdat_nogbm)
     bmad_nogbm = transformations.median_absolute_deviation(bdat_nogbm)
-
     row_colours_nogbm = row_colours_all.loc[bdat_nogbm.columns]
 
     plt_dict = hc_plot_dendrogram_vary_n_gene(bdat_nogbm, row_colours_nogbm, mad=bmad_nogbm, n_ftr=n_ftr)
@@ -152,15 +152,39 @@ if __name__ == "__main__":
         else:
             fname = "nogbm_dendrogram_B_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
 
     plt.close('all')
 
-    plt_dict = hc_plot_dendrogram_vary_n_gene(mdat_nogbm, row_colours_nogbm, mad=mmad_nogbm, n_ftr=n_ftr)
-    for ng, x in plt_dict.items():
-        if ng > bdat.shape[0]:
-            fname = "nogbm_dendrogram_M_corr_all.{ext}"
-        else:
-            fname = "nogbm_dendrogram_M_corr_top%d_by_mad.{ext}" % ng
-        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    # heatmap for 3000 probes
+    ng = 3000
+    cm = clustering.plot_clustermap(
+        bdat_nogbm.loc[bmad_nogbm.index[:ng]],
+        # cmap='RdBu_r',
+        cmap='RdYlBu_r',
+        metric='correlation',
+        col_colors=row_colours_nogbm
+    )
+    cm.savefig(os.path.join(outdir, "nogbm_clustermap_B_corr_top%d_by_mad.png" % ng), dpi=200)
+    cm.savefig(os.path.join(outdir, "nogbm_clustermap_B_corr_top%d_by_mad.tiff" % ng), dpi=200)
 
-    plt.close('all')
+    ## our samples only, all probes, beta values
+
+    idx = (
+        (bdat.columns.str.contains('GBM')) |
+        (bdat.columns.str.contains('DURA'))
+    )
+    bdat_ours = bdat.loc[:, idx]
+    bmad_ours = transformations.median_absolute_deviation(bdat_ours)
+
+    row_colours_ours = row_colours_all.loc[bdat_ours.columns]
+    x = clustering.dendrogram_with_colours(
+                                    bdat_ours,
+                                    row_colours_ours,
+                                    fig_kws={'figsize': (5.5, 10)},
+                                    vertical=False,
+                                    metric='correlation'
+    )
+    fname = "ours_dendrogram_B_corr_all.{ext}"
+    x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+    x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
