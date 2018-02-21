@@ -15,7 +15,7 @@ class FastQCSgeRequirements(sge.ApocritaArrayJobMixin):
 
 class FastQCBase(jobs.ArrayJob):
     title = 'fastqc'
-    required_args = ['read_dir']
+    required_args = ['read_dir', 'threads']
 
     ext = r'fastq(\.gz)?'
     cleanup_regex = [
