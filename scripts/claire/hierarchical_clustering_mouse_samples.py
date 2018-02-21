@@ -1,5 +1,6 @@
 from scipy import stats
 from load_data import rnaseq_data
+from rnaseq import loader
 from plotting import corr, clustering
 from stats import transformations
 from matplotlib import pyplot as plt

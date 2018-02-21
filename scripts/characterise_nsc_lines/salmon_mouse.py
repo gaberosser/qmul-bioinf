@@ -1,7 +1,7 @@
 from load_data import rnaseq_data
 from plotting import clustering
 import references
-from rnaseq import general
+from rnaseq import general, loader
 from scripts.rnaseq import gtf_reader
 import numpy as np
 import pandas as pd

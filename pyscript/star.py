@@ -22,6 +22,7 @@ class StarSgeRequirements(sge.ApocritaArrayJobMixin):
 
 
 class StarBase(jobs.ArrayJob):
+    ## FIXME: this is PE specific, add a SE version
     title = 'star_multilane_pe'
     required_args = ['read_dir', 'threads', 'genomeDir']
     parameters = [

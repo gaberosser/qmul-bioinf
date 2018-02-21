@@ -438,10 +438,13 @@ def load_by_patient(
 def load_references(
     ref_names,
     source='star',
-    tax_id=9606
+    tax_id=9606,
+    batch_names=None,
+    **kwargs
 ):
     """
     Load one or more reference samples
+    Optionally add batch names to each
     """
     if source == 'star':
         cls = StarCountLoader
@@ -463,8 +466,12 @@ def load_references(
     if not hasattr(ref_names, '__iter__'):
         ref_names = [ref_names]
 
+    if batch_names is not None:
+        if len(batch_names) != len(ref_names):
+            raise ValueError("If batch_names are supplied, they must be the same length as ref_names.")
+
     objs = []
-    for rid in ref_names:
+    for i, rid in enumerate(ref_names):
         loc = RnaSeqFileLocations(
             root_dir=os.path.join(RNASEQ_DIR, rid),
             alignment_subdir=alignment_subdir,
@@ -472,11 +479,15 @@ def load_references(
         )
         if not os.path.isdir(loc.root_dir):
             raise ValueError("Directory %s for ref %s does not exist." % (loc.root_dir, rid))
-        objs.append(
-            cls(
-                **loc.loader_kwargs(source)
-            )
-        )
+        this_kwargs = dict(loc.loader_kwargs(source))
+        this_kwargs.update(kwargs)
+        this_kwargs['tax_id'] = tax_id
+        this_obj = cls(**this_kwargs)
+        if batch_names is not None:
+            new_idx = ["%s (%s)" % (t, batch_names[i]) for t in this_obj.meta.index]
+            this_obj.meta.index = new_idx
+            this_obj.data.columns = new_idx
+        objs.append(this_obj)
 
     if len(objs) > 1:
         res = loader.MultipleBatchLoader(objs)
