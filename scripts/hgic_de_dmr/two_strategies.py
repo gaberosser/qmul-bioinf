@@ -220,6 +220,48 @@ def expand_dmr_results_table_by_gene(tbl, drop_geneless=False):
         return pd.concat((this_keep, expanded, this_geneless), axis=0)
 
 
+def patient_and_subgroup_specific_set(pids, subgroups):
+    """
+    For each PID, get the list of sets that contains that patient and is specific to the right subgroup
+    :param pids:
+    :param subgroups:
+    :return: Dict, one entry per PID. Values are the lists of corresponding sets.
+    """
+    subgroup_ind = dict([
+        (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
+    ])
+    candidates = list(setops.binary_combinations(len(pids), include_zero=False))
+    # for each PID, what subgroup are they in?
+    subgroup_membership = {}
+    res = {}
+    for i, pid in enumerate(pids):
+        res[pid] = []
+        for sg, arr in subgroup_ind.items():
+            if arr[i]:
+                if pid in subgroup_membership:
+                    raise ValueError("Patient %s matches two or more subgroups: %s %s." % (
+                        str(pid),
+                        subgroup_membership[pid],
+                        sg
+                    ))
+                subgroup_membership[pid] = sg
+        if pid not in subgroup_membership:
+            raise ValueError("Patient %s has no subgroup." % str(pid))
+
+        not_sg_idx = np.where(~subgroup_ind[subgroup_membership[pid]])[0]
+        for c in candidates:
+            c = np.array([t for t in c])
+            if any(c[not_sg_idx] == '1'):
+                # Not subgroup specific
+                continue
+            if c[i] == '1':
+                res[pid].append(''.join(c))
+    return res
+
+
+
+
+
 if __name__ == "__main__":
     outdir = output.unique_output_dir("hgic_de_dmr_two_strategies", reuse_empty=True)
     outdir_s1 = os.path.join(outdir, 's1')
@@ -282,6 +324,18 @@ if __name__ == "__main__":
     ##################
     ### Strategy 1 ###
     ##################
+
+    # some quantities relating to set membership
+    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
+
+    ss_sets = []
+    for grp in subgroup_ind:
+        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        ss_sets.append(k)
+
+    ec_sets = expanded_core_sets(setops.binary_combinations(len(pids), include_zero=False), subgroup_ind)
+
+    pss_sets = patient_and_subgroup_specific_set(pids, subgroups)
 
     # load methylation
     # For S1, we just need the paired comparison. This is important - any other samples lead to a change in the final
@@ -378,22 +432,23 @@ if __name__ == "__main__":
     data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
 
     # expanded core (genes DE in multiple subgroups)
-    ec_sets = expanded_core_sets(venn_set, subgroup_ind)
     data_ec = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ec_sets)
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
 
     # subgroup-specific
-    ss_sets = []
-    for grp in subgroup_ind:
-        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
-        ss_sets.append(k)
     data_ss = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ss_sets)
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de.xlsx'))
 
     # patient unique
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
     data_pu = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pu_sets)
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de.xlsx'))
+
+    # patient and subgroup-specific
+    data_pss = dict([
+        (pid, differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pss_sets[pid]))
+        for pid in pids
+    ])
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de.xlsx'))
 
     ###################
     ### b) DMR only ###
@@ -460,7 +515,6 @@ if __name__ == "__main__":
     data.to_excel(os.path.join(outdir_s1, 'full_dmr.xlsx'))
 
     # expanded core
-    ec_sets = expanded_core_sets(venn_set, subgroup_ind)
     data_ec = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
@@ -476,10 +530,6 @@ if __name__ == "__main__":
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_dmr.xlsx'))
 
     # subgroup-specific
-    ss_sets = []
-    for grp in subgroup_ind:
-        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
-        ss_sets.append(k)
     data_ss = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
@@ -495,7 +545,6 @@ if __name__ == "__main__":
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_dmr.xlsx'))
 
     # patient unique
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
     data_pu = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
@@ -509,6 +558,24 @@ if __name__ == "__main__":
     data_pu.insert(0, 'gene_symbol', [t[1] for t in data_pu.index])
     data_pu.insert(0, 'cluster_id', [t[0] for t in data_pu.index])
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_dmr.xlsx'))
+
+    # patient and subgroup-specific
+    data_pss = {}
+    for pid in pids:
+        this_tbl = setops.venn_set_to_wide_dataframe(
+                data_for_dmr_table,
+                venn_set,
+                pids,
+                full_data=data_for_dmr_table_full,
+                include_sets=pss_sets[pid],
+                cols_to_include=('median_delta', 'padj'),
+                consistency_check_col='median_delta',
+                consistency_check_method='sign'
+            )
+        this_tbl.insert(0, 'gene_symbol', [t[1] for t in this_tbl.index])
+        this_tbl.insert(0, 'cluster_id', [t[0] for t in this_tbl.index])
+        data_pss[pid] = this_tbl
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_dmr.xlsx'))
 
     #############################
     ### c) Layered DE and DMR ###
@@ -567,7 +634,6 @@ if __name__ == "__main__":
     data.to_excel(os.path.join(outdir_s1, 'full_de_dmr_concordant.xlsx'), index=False)
 
     # expanded core
-    ec_sets = expanded_core_sets(venn_set, subgroup_ind)
     data_ec = dmr.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
@@ -580,10 +646,6 @@ if __name__ == "__main__":
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr_concordant.xlsx'), index=False)
 
     # subgroup-specific
-    ss_sets = []
-    for grp in subgroup_ind:
-        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
-        ss_sets.append(k)
     data_ss = dmr.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
@@ -596,7 +658,6 @@ if __name__ == "__main__":
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr_concordant.xlsx'), index=False)
 
     # patient unique
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))
     data_pu = dmr.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
@@ -607,6 +668,22 @@ if __name__ == "__main__":
     )
     annotate_de_dmr_wide_form(data_pu)
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
+
+    # patient and subgroup-specific
+    data_pss = {}
+    for pid in pids:
+        this_tbl =  dmr.venn_set_to_wide_dataframe(
+            joint_de_dmr_concordant_s1,
+            venn_set,
+            pids,
+            include_sets=pss_sets[pid],
+            cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+            direction_col='de_logfc'
+        )
+        annotate_de_dmr_wide_form(this_tbl)
+        data_pss[pid] = this_tbl
+
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de_dmr_concordant.xlsx'))
 
     upset1 = upset_plot_de(
         de_dmr_by_member_concordant, venn_set, subgroup_ind, pids
