@@ -140,3 +140,5 @@ if __name__ == "__main__":
                 c, pr
             )
         cpg_cov[c] = covc + covt
+
+    cpg_cov_all_nz = reduce(lambda x, y: x + y, [[t for t in x if t > 0] for x in cpg_cov.values()])
