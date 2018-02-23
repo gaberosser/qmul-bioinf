@@ -1,31 +1,21 @@
 import os
 import collections
+import numpy as np
 import re
-from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR
+from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 import pysam
-from itertools import groupby
-
-
-def fasta_iter(fasta_name):
-    """
-    given a fasta file. yield tuples of header, sequence
-    """
-    fh = open(fasta_name)
-    # ditch the boolean (x[0]) and just keep the header or sequence since
-    # we know they alternate.
-    faiter = (x[1] for x in groupby(fh, lambda line: line[0] == ">"))
-    for header in faiter:
-        # drop the ">"
-        header = header.next()[1:].strip()
-        # join all sequence lines to one.
-        seq = "".join(s.strip() for s in faiter.next())
-        yield header, seq
+from matplotlib import pyplot as plt
+import pandas as pd
+import multiprocessing as mp
+from utils import log
+logger = log.get_console_logger(__name__)
 
 
 if __name__ == "__main__":
     basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
     fq1_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_1.fastq.gz')
     fq2_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_2.fastq.gz')
+    ncpu = mp.cpu_count()
 
 
     indir = os.path.join(basedir, 'mouse/bismark/GC-CV-7163-1_S1')
@@ -116,10 +106,12 @@ if __name__ == "__main__":
 
     # get location of every CpG
     cpg_coords = {}
+    n_cpg = 0
     for c in chroms:
         this_ref = fa_reader[c]
         it = re.finditer(r'CG', this_ref)
         cpg_coords[c] = [t.start() for t in it]
+        n_cpg += len(cpg_coords[c])
 
     # get coverage of every CpG
     cpg_cov = {}
@@ -141,4 +133,66 @@ if __name__ == "__main__":
             )
         cpg_cov[c] = covc + covt
 
-    cpg_cov_all_nz = reduce(lambda x, y: x + y, [[t for t in x if t > 0] for x in cpg_cov.values()])
+    cpg_cov_all_nz = np.array(reduce(lambda x, y: x + y, [[t for t in x if t > 0] for x in cpg_cov.values()]))
+
+    # make an inverse CDF (is that called a CEDF?)
+    # cc = np.sort(cpg_cov_all_nz)[::-1]
+    cov = []
+    ecdf = []
+    for x in np.unique(cpg_cov_all_nz):
+        cov.append(x)
+        ecdf.append((cpg_cov_all_nz >= x).sum())
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.bar(cov[:25], ecdf[:25])
+    ax.set_xticks(cov[:25])
+    ax.set_xlabel('Minimum coverage')
+    ax.set_ylabel('Number of CpG sites')
+
+    fig = plt.figure(figsize=(8.5, 5))
+    ax1 = fig.add_subplot(111)
+    ax1.bar(cov[:25], np.array(ecdf[:25]) / float(n_cpg) * 100)
+    ax1.set_xticks(cov[:25])
+    ax1.set_xlabel('Minimum coverage')
+    ax1.set_ylabel('% CpG sites')
+    ax2 = ax1.twinx()
+    h = ax2.plot(cov[:25], np.array(ecdf[:25]) / 1e6, 'x')
+    ax2.set_ylim(np.array(ax1.get_ylim()) / 100 * n_cpg / 1e6)
+    ax2.set_ylabel("Number of CpG sites (millions)")
+    h[0].set_visible(False)
+    fig.tight_layout()
+
+    cpg_tsv_fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
+
+    # load tsv
+    cpg_regions = pd.read_csv(cpg_tsv_fn, sep='\t', header=0)
+    region_pad = 2000
+
+    cov_cpg_islands = []
+    from scripts.methylation import rrbs_get_coverage
+
+    if ncpu > 1:
+        pool = mp.Pool(ncpu)
+        jobs = {}
+
+    for i, row in cpg_regions.iterrows():
+        region = (row.chrom, row.chromStart, row.chromEnd)
+        kwds = {'region_pad': region_pad}
+        if ncpu > 1:
+            jobs[i] = pool.apply_async(
+                rrbs_get_coverage.get_one_coverage,
+                args=(bam_fn, region),
+                kwds=kwds
+            )
+        else:
+            res = rrbs_get_coverage.get_one_coverage(bam_fn, region, **kwds)
+            cov_cpg_islands.append(res)
+
+    if ncpu > 1:
+        pool.close()
+        for i, row in cpg_regions.iterrows():
+            try:
+                res = jobs[i].get(1e6)
+                cov_cpg_islands.append(res)
+            except Exception:
+                logger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)

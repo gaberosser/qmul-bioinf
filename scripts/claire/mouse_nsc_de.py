@@ -1,8 +1,10 @@
 from load_data import rnaseq_data
-from rnaseq import differential_expression, general
+from rnaseq import differential_expression, general, loader
 from utils.output import unique_output_dir
 from utils import excel
 import references
+import multiprocessing as mp
+import itertools
 import os
 import pandas as pd
 import numpy as np
@@ -31,43 +33,77 @@ if __name__ == '__main__':
     }
 
     # load our data
-    obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')
+    samples = ['mDura%shuman' % i for i in ('3N1', '5N24A', '6N6')]
+    obj1 = loader.load_references('wtchg_p170390', source='star', tax_id=10090, samples=samples, strandedness='r')
+    obj1_s = loader.load_references('wtchg_p170390', source='salmon', tax_id=10090, samples=samples)
+    samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
+    obj2 = loader.load_references('wtchg_p170506', source='star', tax_id=10090, samples=samples, strandedness='r')
+    obj2_s = loader.load_references('wtchg_p170506', source='salmon', tax_id=10090, samples=samples)
 
     # load the GBM mouse model data and combine
-    obj_gbm = rnaseq_data.mouse_gbm_pten_p53(annotate_by='Ensembl Gene ID')
-    obj = rnaseq_data.MultipleBatchLoader([obj, obj_gbm])
-    dat = obj.data
-    dat = dat.loc[dat.index.str.contains('ENS')]
-
-    idx = (
-        dat.columns.str.contains(r'eNSC[0-9]med')
-        | dat.columns.str.contains(r'mDura[0-9AN]*human')
-        | dat.columns.str.contains(r'GBM')
-        | dat.columns.str.contains(r'WT')
+    samples = ['GBM209', 'GBM328', 'WT383', 'WT384']
+    obj_gbm = loader.load_references(
+        'GBM_Pten_P53', source='star', tax_id=10090, samples=samples, batch_names=['BR'], strandedness='u'
     )
-    dat = dat.loc[:, idx]
+    obj_gbm_s = loader.load_references('GBM_Pten_P53', source='salmon', tax_id=10090, samples=samples, batch_names=['BR'])
+
+    # Ying / Brandner data
+    # samples = ['NSC repl %d' % i for i in range(1, 4)] + \
+    #     ['P53-Pten GIC repl %d' % i for i in range(1, 3)] + \
+    #     ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 3)]
+    samples = ['NSC repl %d' % i for i in range(1, 4)] + \
+        ['P53-Pten GIC repl %d' % i for i in range(1, 4)] + \
+        ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 4)]
+
+    obj_ying = loader.load_references(
+        'brandner_mouse_gic', source='star', tax_id=10090, batch_names=['Ying'], strandedness='u', samples=samples
+    )
+    obj_ying_s = loader.load_references(
+        'brandner_mouse_gic', source='salmon', tax_id=10090, batch_names=['Ying'], samples=samples
+    )
+
+    obj = loader.MultipleBatchLoader([obj1, obj2, obj_gbm, obj_ying])
+    obj_s = loader.MultipleBatchLoader([obj1_s, obj2_s, obj_gbm_s, obj_ying_s])
+
+    dat = obj.data
+
     groups = pd.Series('eNSC', index=dat.columns)
     groups[dat.columns.str.contains('mDura')] = 'iNSC'
-    groups[dat.columns.str.contains('GBM')] = 'GBM'
-    groups[dat.columns.str.contains('WT')] = 'eNSC2'
+    groups[dat.columns.str.contains('GBM') & (obj.batch_id == 'GBM_Pten_P53')] = 'GIC_BR'
+    groups[dat.columns.str.contains('WT') & (obj.batch_id == 'GBM_Pten_P53')] = 'eNSC_BR'
+    groups[dat.columns.str.contains(r'NSC.*\(Ying\)')] = 'eNSC_Ying'
+    groups[dat.columns.str.contains(r'^P53-Pten GIC')] = 'GIC_Ying'
+    groups[dat.columns.str.contains(r'Idh1-P53-Pten GIC')] = 'IDH1_GIC_Ying'
 
-    comparisons = [
+    gic_lines = ['GIC_BR', 'GIC_Ying', 'IDH1_GIC_Ying']
+    nsc_lines = ['eNSC', 'iNSC', 'eNSC_BR', 'eNSC_Ying']
+
+    comparisons = list(itertools.product(gic_lines, nsc_lines)) + [
         ('iNSC', 'eNSC'),
-        ('GBM', 'eNSC2'),
-        ('GBM', 'eNSC'),
-        ('GBM', 'iNSC'),
-        ('eNSC', 'eNSC2'),
-        ('iNSC', 'eNSC2'),
+        ('iNSC', 'eNSC_BR'),
+        ('iNSC', 'eNSC_Ying'),
+        ('eNSC', 'eNSC_BR'),
+        ('eNSC', 'eNSC_Ying')
     ]
 
     res = {}
+    res_sign = {}
+    res_lfc0 = {}
+
+    jobs = {}
+    pool = mp.Pool()
 
     for cmp in comparisons:
         lbl = "%s_vs_%s" % cmp
-        res[lbl] = run_one_de(dat, groups, cmp, **de_params)
+        jobs[lbl] = pool.apply_async(run_one_de, args=(dat, groups, cmp), kwds=de_params)
+        # res[lbl] = run_one_de(dat, groups, cmp, **de_params)
+        # print "%d DE genes\n" % (res[lbl].FDR <= de_params['fdr']).sum()
+
+    for lbl in jobs:
+        res[lbl] = jobs[lbl].get(1e6)
+        print lbl
         print "%d DE genes\n" % (res[lbl].FDR <= de_params['fdr']).sum()
 
-    res_sign = {}
     for k, v in res.items():
         general.add_gene_symbols_to_ensembl_data(v, tax_id=10090)
         res_sign[k] = v.loc[v.FDR <= de_params['fdr']]
@@ -77,15 +113,27 @@ if __name__ == '__main__':
 
     # finally, re-run with a lfc of zero
     de_params['lfc'] = 0
-    res_lfc0 = {}
+
+    jobs2 = {}
+    print "No logFC requirement"
+
     for cmp in comparisons:
         lbl = "%s_vs_%s" % cmp
-        res_lfc0[lbl] = run_one_de(dat, groups, cmp, **de_params)
-        print "%d DE genes\n" % (res[lbl].FDR <= de_params['fdr']).sum()
+        jobs2[lbl] = pool.apply_async(run_one_de, args=(dat, groups, cmp), kwds=de_params)
+
+    for lbl in jobs2:
+        res_lfc0[lbl] = jobs2[lbl].get(1e6)
+        print lbl
+        print "%d DE genes\n" % (res_lfc0[lbl].FDR <= de_params['fdr']).sum()
+        general.add_gene_symbols_to_ensembl_data(res_lfc0[lbl], tax_id=10090)
 
     excel.pandas_to_excel(res_lfc0, os.path.join(outdir, "mouse_GBM_NSC_DE_all_nologfc.xlsx"))
 
     for_export = dat.copy()
     general.add_gene_symbols_to_ensembl_data(for_export, tax_id=10090)
     for_export.to_excel(os.path.join(outdir, 'gene_counts.xlsx'))
+
+    for_export_s = obj_s.data.copy()
+    general.add_gene_symbols_to_ensembl_data(for_export_s, tax_id=10090)
+    for_export_s.to_excel(os.path.join(outdir, 'tpm_values.xlsx'))
 

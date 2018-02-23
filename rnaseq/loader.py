@@ -3,6 +3,7 @@ import re
 import os
 import references
 from load_data import loader
+from load_data.loader import MultipleBatchLoader
 from rnaseq.general import ensembl_transcript_quant_to_gene
 from utils.log import get_console_logger
 from utils import setops
