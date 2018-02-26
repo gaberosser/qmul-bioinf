@@ -15,7 +15,7 @@ class TrimGaloreSgeRequirements(sge.ApocritaArrayJobMixin):
 
 class TrimGaloreBase(jobs.ArrayJob):
     title = 'trim_galore'
-    required_args = ['read_dir']
+    required_args = ['read_dir', 'threads']
 
     ext = r'fastq(\.gz)?'
     cleanup_regex = [
