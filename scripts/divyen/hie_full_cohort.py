@@ -18,7 +18,6 @@ BIOMARKERS = [
     'Plt',
     'Neutrophil',
     'Lymphocyte',
-    'PT',  # PT test and INR are highly related
     'INR',
     'APTT',
     'Urea',
@@ -36,8 +35,7 @@ OUTCOME_COL = 'Outcome'
 
 
 def load_cleaned_data():
-    # fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_feb_2018.csv')
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_full_cohort_feb_2018.csv')
     return pd.read_csv(fn, header=0, na_values='-', index_col=0)
 
 
@@ -58,7 +56,7 @@ def impute_missing(data, strategy='median'):
 
 
 if __name__ == "__main__":
-    outdir = unique_output_dir("hie_results", reuse_empty=True)
+    outdir = unique_output_dir("hie_full_cohort_results", reuse_empty=True)
 
     dat = load_cleaned_data()
     dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
@@ -70,54 +68,39 @@ if __name__ == "__main__":
     )]
     outcomes = dat.loc[:, OUTCOME_COL]
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
-
-    ## 1) Correlation between variables
-    corr = peaks_dat.corr(method='spearman')
-    fig = plt.figure(figsize=(6.7, 5.5))
-    ax = fig.add_subplot(111)
-    sns.heatmap(corr, ax=ax, cmap='RdBu_r')
-    ax.set_aspect('equal')
-    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
-    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "spearman_correlation_plot.png"), dpi=200)
-
-    # CONCLUSION: PT and INR peaks are highly correlated -> remove PT
-    peaks_dat = peaks_dat.loc[:, peaks_dat.columns != 'PT peak']
     nvar = peaks_dat.shape[1]
     X = impute_missing(peaks_dat, strategy='median')
 
-    # Look for batch effects using PCA on biomarker values
-    # this requires us to fill NA values with column mean
+    meconium_idx = dat.loc[:, 'Meconium Aspiration'] == 'Y'
+    culture_idx = dat.loc[:, 'Culture'] == 'Y'
 
-    data_for_pca = peaks_dat.copy()
+    # to what extent do biomarkers predict meconium aspiration / infection?
+    mc_outcome = (meconium_idx | culture_idx).astype(int)
+    logit_model = sm.Logit(mc_outcome, sm.add_constant(X))  # outcome is mec/cult positive
+    result = logit_model.fit()
+    print "Predicting MA/cult. status using biomarkers:"
+    print result.summary()
+    ci = result.conf_int()
+    ci.columns = ["2.5%", "97.5%"]
+    ci.insert(0, "Odds ratio", result.params)
+    ci = np.exp(ci)
+    ci.insert(0, "P value", result.pvalues)
 
-    # use this code to fill missing values with the mean:
-    # for col, colval in data_for_pca.iteritems():
-    #     if colval.isnull().any():
-    #         data_for_pca.loc[:, col] = colval.fillna(colval.mean())
+    # CRP peak is significant: plot the box and whisker
+    jitter = 0.2
+    lbl = 'Meconium aspiration or culture'
+    crp_pk = peaks_dat.loc[:, ['CRP peak']]
+    crp_pk.insert(0, lbl, (meconium_idx | culture_idx))
 
-    # use this code to discard any variables with missing data:
-    data_for_pca = peaks_dat.loc[:, peaks_dat.isnull().sum(axis=0) == 0]
+    crp_pk.loc[(meconium_idx | culture_idx), lbl] = 'Positive'
+    crp_pk.loc[~(meconium_idx | culture_idx), lbl] = 'Negative'
 
-    pca = PCA(n_components=6)
-    pca.fit(data_for_pca)
-    pp = pca.transform(data_for_pca)
-    # scatter, shading by component
     fig = plt.figure()
     ax = fig.add_subplot(111)
-
-    batches = dat.batch.factorize()
-    colours = ['r', 'b', 'g', 'y', 'k']
-    for i, bt in enumerate(batches[1]):
-        idx = batches[0] == i
-        ax.scatter(pp[idx, 0], pp[idx, 1], c=colours[i], label=bt)
-    ax.legend(loc='best', fontsize=14, frameon=True, facecolor='w', fancybox=True)
-    ax.set_xlabel("Principle component 1")
-    ax.set_ylabel("Principle component 2")
+    sns.boxplot(data=crp_pk, x=lbl, y='CRP peak', ax=ax, color='w')
+    sns.swarmplot(data=crp_pk, x=lbl, y='CRP peak', ax=ax)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "pca_by_batch.pdf"))
-    fig.savefig(os.path.join(outdir, "pca_by_batch.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "crp_peak_vs_meconium_or_culture.png"), dpi=200)
 
     # one way ANOVA
     # look for sign differences in the distribution of individual variables between batches
@@ -137,6 +120,8 @@ if __name__ == "__main__":
             print "Running with remaining batches"
         this_res = stats.f_oneway(*args)
         p_anova[col] = this_res.pvalue
+        if this_res.pvalue < 0.05:
+            print "Variable %s has a significant one-way ANOVA result (p<%.3e)" % (col, this_res.pvalue)
 
     # for each significantly different biomarker, plot a histogram
     b_sign = False
@@ -172,45 +157,7 @@ if __name__ == "__main__":
         p_ttest[col] = this_res.pvalue
 
 
-    # does peak/trough value correlate with age?
-    val_age_corr = {
-        'all': {},
-        'fav': {},
-        'unfav': {}
-    }
-    p_threshold = 0.05
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-
-    cols = BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS
-
-    for i, c in enumerate(cols):
-        age_col = "%s age" % c
-
-        all_values = dat.loc[:, [c, age_col]].dropna().values
-        fav = dat.loc[dat.Outcome == 2, [c, age_col]].dropna().values
-        unfav = dat.loc[dat.Outcome == 1, [c, age_col]].dropna().values
-
-        val_age_corr['all'][c] = stats.linregress(*all_values.transpose())
-        val_age_corr['fav'][c] = stats.linregress(*fav.transpose())
-        val_age_corr['unfav'][c] = stats.linregress(*unfav.transpose())
-
-        # plot values
-        colour = 'r' if val_age_corr['all'][c].pvalue < p_threshold else 'gray'
-        ax.plot(i, val_age_corr['all'][c].slope, ls='none', marker='o', c=colour, label='All' if i==0 else None)
-        colour = 'r' if val_age_corr['fav'][c].pvalue < p_threshold else 'gray'
-        ax.plot(i, val_age_corr['fav'][c].slope, ls='none', marker='s', c=colour, label='Favourable' if i==0 else None)
-        colour = 'r' if val_age_corr['unfav'][c].pvalue < p_threshold else 'gray'
-        ax.plot(i, val_age_corr['unfav'][c].slope, ls='none', marker='^', c=colour, label='Unfavourable' if i==0 else None)
-
-    ax.legend()
-    ax.set_ylabel("Regression slope")
-    ax.set_xticks(range(len(cols)))
-    ax.set_xticklabels(cols, rotation=90)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, 'linregress_value_with_age.png'), dpi=200)
-    fig.savefig(os.path.join(outdir, 'linregress_value_with_age.pdf'))
-
+    # for each variable, plot a box and whisker for the two outcome classes
     jitter = 0.2
     if nvar % 2 == 0:
         fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
@@ -267,7 +214,8 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "scatter_marker_%s_vs_age.png" % ttl), dpi=200)
         fig.savefig(os.path.join(outdir, "scatter_marker_%s_vs_age.pdf" % ttl))
 
-    # TODO: scatterplots of peak/trough vs age for each variable, coloured by outcome
+
+    # pair plot
 
     gs = plt.GridSpec(nvar - 1, nvar - 1)
     fig = plt.figure(figsize=(12, 12))
@@ -345,45 +293,7 @@ if __name__ == "__main__":
     ax.set_ylabel("Plt trough")
     fig.savefig(os.path.join(outdir, "plt_peak_vs_trough.png"), dpi=200)
 
-    # build a simple logistic regression model
-
-    # add a constant and fit
-    logit_model = sm.Logit(outcomes == 2, sm.add_constant(X))  # outcome is FAVOURABLE
-    result = logit_model.fit()
-    print "statsmodels.Logit model fitted:"
-    print result.summary()
-    ci = result.conf_int()
-    ci.columns = ["2.5%", "97.5%"]
-    ci.insert(0, "Odds ratio", result.params)
-    ci = np.exp(ci)
-    ci.insert(0, "P value", result.pvalues)
-
-    # plot the decision boundary for model with Plt peak and Plt trough (only)
-    plt_dat = X.loc[:, ['Plt peak', 'Plt trough']]
-    logit_model_plt = sm.Logit(outcomes == 2, sm.add_constant(plt_dat))
-    result_plt = logit_model_plt.fit()
-    coeff = result_plt.params
-    intercept = -coeff['const'] / coeff['Plt peak']
-    slope = -coeff['Plt trough'] / coeff['Plt peak']
-    fit_x = np.linspace(
-        peaks_dat.loc[:, 'Plt trough'].min(),
-        peaks_dat.loc[:, 'Plt trough'].max(),
-        20
-    )
-    fit_y = intercept + slope * fit_x
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.scatter(peaks_dat.loc[outcomes==2, 'Plt trough'], peaks_dat.loc[outcomes==2, 'Plt peak'], c='b', label='Favourable')
-    ax.scatter(peaks_dat.loc[outcomes==1, 'Plt trough'], peaks_dat.loc[outcomes==1, 'Plt peak'], c='g', label='Unfavourable')
-    ax.plot(fit_x, fit_y, 'r--', label='Model decision boundary')
-    ax.legend(loc='upper left')
-    ax.set_xlabel('Plt trough')
-    ax.set_ylabel('Plt peak')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "logit_plt_peak_trough_decision_boundary.png"), dpi=200)
-
-    # now check whether giving platelet blood products affects this outcome
+    # scatter plot with platelet transfusion included
     platelet_idx = dat.loc[:, 'Blood product'].str.contains('Platelets').fillna(False)
     X_platelet = X.copy()
     X_platelet.insert(0, 'platelets', platelet_idx.astype(int))
@@ -416,84 +326,58 @@ if __name__ == "__main__":
     y = lr.intercept + lr.slope * x
     ax.plot(x, y, 'k--')
 
-    ax.legend(loc='upper left')
+    ax.legend(loc='upper right')
     ax.set_xlabel('Plt trough')
     ax.set_ylabel('Plt peak')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "scatter_plt_platelet_products.png"), dpi=200)
 
+    # build a simple logistic regression model
 
+    # add a constant and fit
+    logit_model = sm.Logit(outcomes == 2, sm.add_constant(X))  # outcome is FAVOURABLE
+    result = logit_model.fit()
+    print "Predicting outcome using biomarkers:"
+    print result.summary()
+    ci = result.conf_int()
+    ci.columns = ["2.5%", "97.5%"]
+    ci.insert(0, "Odds ratio", result.params)
+    ci = np.exp(ci)
+    ci.insert(0, "P value", result.pvalues)
+
+    # plot the decision boundary for model with Plt peak and Plt trough (only)
+    # plt_dat = X.loc[:, ['Plt peak', 'Plt trough']]
+    # logit_model_plt = sm.Logit(outcomes == 2, sm.add_constant(plt_dat))
+    # result_plt = logit_model_plt.fit()
+    # coeff = result_plt.params
+    # intercept = -coeff['const'] / coeff['Plt peak']
+    # slope = -coeff['Plt trough'] / coeff['Plt peak']
+    # fit_x = np.linspace(
+    #     peaks_dat.loc[:, 'Plt trough'].min(),
+    #     peaks_dat.loc[:, 'Plt trough'].max(),
+    #     20
+    # )
+    # fit_y = intercept + slope * fit_x
+    #
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # ax.scatter(peaks_dat.loc[outcomes==2, 'Plt trough'], peaks_dat.loc[outcomes==2, 'Plt peak'], c='b', label='Favourable')
+    # ax.scatter(peaks_dat.loc[outcomes==1, 'Plt trough'], peaks_dat.loc[outcomes==1, 'Plt peak'], c='g', label='Unfavourable')
+    # ax.plot(fit_x, fit_y, 'r--', label='Model decision boundary')
+    # ax.legend(loc='upper left')
+    # ax.set_xlabel('Plt trough')
+    # ax.set_ylabel('Plt peak')
+    # fig.tight_layout()
+    # fig.savefig(os.path.join(outdir, "logit_plt_peak_trough_decision_boundary.png"), dpi=200)
+
+    # repeat logit but with platelet variable included
 
     logit_model = sm.Logit(outcomes == 2, sm.add_constant(X_platelet))  # outcome is FAVOURABLE
     result_platelet = logit_model.fit()
-    print "statsmodels.Logit model fitted (with platelets boolean):"
+    print "Predicting outcome using biomarkers and platelets given:"
     print result_platelet.summary()
     ci_platelet = result_platelet.conf_int()
     ci_platelet.columns = ["2.5%", "97.5%"]
     ci_platelet.insert(0, "Odds ratio", result_platelet.params)
     ci_platelet = np.exp(ci_platelet)
     ci_platelet.insert(0, "P value", result_platelet.pvalues)
-
-    # PCA
-    pca = PCA(n_components=10)
-    pca.fit(X)
-    y = pca.transform(X)
-
-    fav_idx = np.where(dat.Outcome==2)[0]
-    unfav_idx = np.where(dat.Outcome==1)[0]
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-
-    ax.scatter(y[fav_idx, 0], y[fav_idx, 1], c='b')
-    ax.scatter(y[unfav_idx, 0], y[unfav_idx, 1], c='g')
-
-    # decision tree classifier
-    from sklearn import tree
-    import graphviz
-    clf = tree.DecisionTreeClassifier()
-    clf = clf.fit(X, outcomes)
-    dot_data = tree.export_graphviz(clf, out_file=None, feature_names=peaks_dat.columns, class_names=['Unfav', 'Fav'],
-                                    filled=True, rounded=True)
-    graph = graphviz.Source(dot_data)
-    graph.render(os.path.join(outdir, 'decision_tree_graph'))
-
-    # decision tree regression
-
-    # TODO: this isn't adding anything, but might want to reuse the bootstrap code
-    # otherwise remove
-
-    from sklearn.linear_model import LogisticRegression
-    logistic = LogisticRegression(C=1)  # what is C?
-    inferred = []
-    true = []
-
-    for i in range(1000):
-
-        idx_shuffle = np.random.permutation(X.index)
-        cutoff = int(X.shape[0] * 0.9)
-        idx_train = idx_shuffle[:cutoff]
-        idx_test = idx_shuffle[cutoff:]
-        X_train = X.loc[idx_train]
-        y_train = outcomes.loc[idx_train]
-        X_test = X.loc[idx_test, :]
-        y_test = outcomes.loc[idx_test]
-
-        logistic.fit(X_train, y_train)
-        y_test_inf = logistic.predict(X_test)
-
-        inferred.append(y_test_inf)
-        true.append(y_test)
-
-    # performance
-    fp = tp = fn = tn = 0
-    n = 0
-    for inf, tr in zip(inferred, true):
-        tn += ((inf == 2) & (tr == 2)).sum()
-        tp += ((inf == 1) & (tr == 1)).sum()
-        fn += ((inf == 2) & (tr == 1)).sum()
-        fp += ((inf == 1) & (tr == 2)).sum()
-    n = tn + tp + fn + fp
-
-    # now fit to the full dataset and analyse the coefficients
-    logistic.fit(X, dat.Outcome.values)
-    odds_coef = np.exp(pd.Series(logistic.coef_.flatten(), index=peaks_dat.columns))
