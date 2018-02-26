@@ -15,6 +15,7 @@ if __name__ == "__main__":
 
     optional.add_argument("--read_dir", help="Directory containing reads", default='./')
     optional.add_argument("-o", "--out_dir", help="Output directory")
+    optional.add_argument("-p", "--threads", help="Number of threads", default='1')
 
     optional.add_argument("--include", help="List of filestems to include (comma separated)")
     optional.add_argument("--exclude", help="List of filestems to exclude (comma separated)")
