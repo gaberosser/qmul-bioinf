@@ -176,6 +176,7 @@ class Job(object):
             c.writerow(['Field', 'Value'])
             c.writerow(['out_dir', self.out_dir])
             c.writerows([(k, str(v)) for k, v in self.args.items()])
+            c.writerow([str(t) for t in self.extra_args])
         self.logger.info("Wrote config file to %s.", self.conf_fn)
 
     def prepare_submission(self, *args, **kwargs):
@@ -645,6 +646,7 @@ class PEFastqBartsMultiLaneMixin(PairedFileIteratorMixin):
             this_param = [base]
             for i in [1, 2]:
                 # join equivalent read files with a space
+                # FIXME: this will error if the filenames contain spaces (but who would DO that?)
                 this_param.append(self.file_sep.join(rec[base][i]))
             this_param.append(out_subdir)
             if re.search(r'\.gz$', rec[base][1][0], flags=re.IGNORECASE):

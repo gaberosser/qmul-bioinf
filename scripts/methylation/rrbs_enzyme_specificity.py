@@ -7,7 +7,7 @@ import pysam
 from matplotlib import pyplot as plt
 import pandas as pd
 import multiprocessing as mp
-from utils import log
+from utils import log, genomics
 logger = log.get_console_logger(__name__)
 
 
@@ -196,3 +196,28 @@ if __name__ == "__main__":
                 cov_cpg_islands.append(res)
             except Exception:
                 logger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
+
+    # get methylation levels in CpG sites in promoters and CpG islands
+    promoters = genomics.get_promoter_regions(tax_id=10090)
+    promoters = [p for p in promoters if p['chr'] in chroms]
+    promoters_by_region = {}
+    for p in promoters:
+        promoters_by_region.setdefault((p['chr'], p['strand']), collections.defaultdict(list))
+        promoters_by_region[(p['chr'], p['strand'])][(p['promoter_region_start'], p['promoter_region_end'])].append(p)
+
+    # get CpG sites associated with the unique promoter regions
+    cpg_coords_promoter_regions = {}
+    for c in chroms:
+        # strand doesn't matter here, but we need to check both
+        the_cpg_coords = np.array(cpg_coords[c])
+        cpg_coords_promoter_regions.setdefault(c, [])
+        for strand in ['+', '-']:
+            if (c, strand) in promoters_by_region:
+                for region in promoters_by_region[(c, strand)]:
+                    reg_min = min(region)
+                    reg_max = max(region)
+                    in_region_idx = (the_cpg_coords >= reg_min) & (the_cpg_coords <= reg_max)
+                    cpg_coords_promoter_regions[chrom].extend(the_cpg_coords[in_region_idx])
+
+
+

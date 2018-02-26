@@ -39,12 +39,6 @@ class BismarkPEBase(jobs.ArrayJob):
     core_cmd = "bismark {extra} {index_dir} " + \
     "-o $SUBDIR -p {threads} -B $ID -1 $READS1 -2 $READS2"
 
-    # def set_default_extras(self):
-        # if '--outSAMstrandField' not in self.extra_args:
-        #     self.extra_args.extend(
-        #         ['--outSAMstrandField', 'intronMotif']
-        #     )
-
     def prepare_submission(self, *args, **kwargs):
         self.setup_params(self.args['read_dir'])
 
