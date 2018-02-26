@@ -28,7 +28,7 @@ class TrimGaloreBase(jobs.ArrayJob):
         ('$FASTQ', '! -z'),
     ]
     param_delim = ':'
-    core_cmd = "trim_galore -o {out_dir} $FASTQ"
+    core_cmd = "trim_galore -o {out_dir} $FASTQ {extra}"
 
     def prepare_submission(self, *args, **kwargs):
         self.setup_params(self.args['read_dir'])
