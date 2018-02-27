@@ -1,5 +1,6 @@
 import os
 import collections
+import gzip
 import numpy as np
 import re
 from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
@@ -20,6 +21,7 @@ if __name__ == "__main__":
 
     indir = os.path.join(basedir, 'mouse/bismark/GC-CV-7163-1_S1')
     bam_fn = os.path.join(indir, 'GC-CV-7163-1_S1_pe.sorted.bam')
+    cov_fn = os.path.join(indir, 'GC-CV-7163-1_S1_pe.bismark.cov.gz')
     s = pysam.AlignmentFile(bam_fn, 'rb')
     chroms = [str(t) for t in range(1, 20)]
     reads = {}
@@ -217,7 +219,17 @@ if __name__ == "__main__":
                     reg_min = min(region)
                     reg_max = max(region)
                     in_region_idx = (the_cpg_coords >= reg_min) & (the_cpg_coords <= reg_max)
-                    cpg_coords_promoter_regions[chrom].extend(the_cpg_coords[in_region_idx])
+                    cpg_coords_promoter_regions[c].extend(the_cpg_coords[in_region_idx])
+
+
+    # read the coverage file, splitting into chromosomes
+    cov = {}
+    raw = pd.read_csv(cov_fn, sep='\t', header=None, index_col=None)
+    raw.columns = ['chrom', 'coord', 'coord1', 'pct_meth', 'n_meth', 'n_unmeth']
+    raw.loc[:, 'chrom'] = raw.loc[:, 'chrom'].astype(str)
+    for c in chroms:
+        this_raw = raw.loc[raw.chrom == c]
+        cov[c] = this_raw.drop('chrom', axis=1)
 
 
 

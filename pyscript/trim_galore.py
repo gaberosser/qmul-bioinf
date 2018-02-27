@@ -10,7 +10,7 @@ class TrimGaloreSgeRequirements(sge.ApocritaArrayJobMixin):
 
     @property
     def runtime_mins(self):
-        return 120
+        return 240
 
 
 class TrimGaloreBase(jobs.ArrayJob):

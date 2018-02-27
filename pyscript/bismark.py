@@ -2,24 +2,32 @@ import math
 from pyscript import jobs, sge
 
 class BismarkSgeRequirements(sge.ApocritaArrayJobMixin):
-    pass
-    ## TODO
-    # min_ram_gb = 32.
-    # estimated_runtime_per_core = 720.
-    # @property
-    # def ram_per_core(self):
-    #     nthread = int(self.args['threads'])
-    #     # aim for minimum 32Gb
-    #     gb_per_core = int(math.ceil(self.min_ram_gb / float(nthread)))
-    #     print "Num thread: %d" % nthread
-    #     print "Gb per core: %d" % gb_per_core
-    #     return "%dG" % gb_per_core
-    #
-    # @property
-    # def runtime_mins(self):
-    #     nthread = int(self.args['threads'])
-    #     # roughly 60 mins with 12 cores
-    #     return self.estimated_runtime_per_core / float(nthread)
+
+    def shebang(self):
+        """
+        Generate the shebang line(s) for the top of the script
+        :return:
+        """
+        # Default behaviour: run with bash
+        return sge.apocrita_submission_header(
+            work_dir=self.out_dir,
+            threads=2 * int(self.args['threads']),
+            ram_per_core=self.ram_per_core,
+            runtime_mins=self.runtime_mins,
+            arr_size=len(self.params)
+        )
+
+    @property
+    def ram_per_core(self):
+        return "2G"
+
+    @property
+    def runtime_mins(self):
+        nthread = int(self.args['threads'])
+        # roughly 30 mins with 4 threads
+        estimated_runtime_one_core = 120.
+        # allow for some kind of plateau
+        return estimated_runtime_one_core / float(nthread) ** 0.8
 
 
 class BismarkPEBase(jobs.ArrayJob):
@@ -43,5 +51,14 @@ class BismarkPEBase(jobs.ArrayJob):
         self.setup_params(self.args['read_dir'])
 
 
+class BismarkPEBash(jobs.BashArrayJobMixin, BismarkPEBase, jobs.PEFastqFileIteratorMixin):
+    pass
+
+
 class BismarkMultilanePEBash(jobs.BashArrayJobMixin, BismarkPEBase, jobs.PEFastqBartsMultiLaneMixin):
+    ## FIXME: not sure this is working as it should
+    pass
+
+
+class BismarkPEApocrita(BismarkSgeRequirements, BismarkPEBase, jobs.PEFastqFileIteratorMixin):
     pass
