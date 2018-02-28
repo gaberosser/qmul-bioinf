@@ -34,6 +34,19 @@ class TrimGaloreBase(jobs.ArrayJob):
         self.setup_params(self.args['read_dir'])
 
 
+class TrimGaloreSEBase(TrimGaloreBase, jobs.SEFastqFileIteratorMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    pass
+
+
+class TrimGaloreSEApocrita(TrimGaloreSgeRequirements, TrimGaloreSEBase):
+    pass
+
+
+class TrimGaloreSEBash(jobs.BashArrayJobMixin, TrimGaloreSEBase):
+    pass
+
+
 class TrimGalorePEBase(TrimGaloreBase, jobs.PEFastqFileIteratorMixin):
     file_sep = ' '  # the character used to separate files of the same read number in different lanes
 
