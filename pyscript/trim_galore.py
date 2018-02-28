@@ -34,12 +34,12 @@ class TrimGaloreBase(jobs.ArrayJob):
         self.setup_params(self.args['read_dir'])
 
 
-class TrimGalorePEBase(TrimGaloreBase, jobs.PEFastqBartsMultiLaneMixin):
+class TrimGalorePEBase(TrimGaloreBase, jobs.PEFastqFileIteratorMixin):
     file_sep = ' '  # the character used to separate files of the same read number in different lanes
 
     def setup_params(self, read_dir, *args, **kwargs):
         super(TrimGalorePEBase, self).setup_params(read_dir, *args, **kwargs)
-        # the format here is interleaved reads, e.g. LANE1_1 LANE1_2 LANE2_1 LANE2_2 etc...
+        # the format here is LANE1_1 LANE1_2 [LANE2_1 LANE2_2 etc...]
         new_params = []
         for p in self.params:
             sep1 = p[1].split(' ')
