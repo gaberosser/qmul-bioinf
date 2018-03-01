@@ -36,9 +36,11 @@ OUTCOME_COL = 'Outcome'
 
 
 def load_cleaned_data():
-    # fn = os.path.join(DATA_DIR, 'divyen_shah', 'cleaned_data_nov_2016.csv')
+    # fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_jan_2018.csv')
     fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_feb_2018.csv')
-    return pd.read_csv(fn, header=0, na_values='-', index_col=0)
+    dat = pd.read_csv(fn, header=0, na_values='-', index_col=0)
+    dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
+    return dat
 
 
 def standardise(data, axis=0):
@@ -57,11 +59,22 @@ def impute_missing(data, strategy='median'):
     return pd.DataFrame(X, index=data.index, columns=data.columns)
 
 
+def logistic_regression(indept, dept):
+    logit_model = sm.Logit(dept, sm.add_constant(indept))
+    result = logit_model.fit()
+    print result.summary()
+    ci = result.conf_int()
+    ci.columns = ["2.5%", "97.5%"]
+    ci.insert(0, "Odds ratio", result.params)
+    ci = np.exp(ci)
+    ci.insert(0, "P value", result.pvalues)
+    return result, ci
+
+
 if __name__ == "__main__":
     outdir = unique_output_dir("hie_results", reuse_empty=True)
-
     dat = load_cleaned_data()
-    dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
+
     biomarkers = dat.loc[:, (
         BIOMARKER_PEAK_COLS
         + BIOMARKER_TROUGH_COLS
@@ -348,19 +361,12 @@ if __name__ == "__main__":
     # build a simple logistic regression model
 
     # add a constant and fit
-    logit_model = sm.Logit(outcomes == 2, sm.add_constant(X))  # outcome is FAVOURABLE
-    result = logit_model.fit()
-    print "statsmodels.Logit model fitted:"
+    result, ci = logistic_regression(X, outcomes == 1)
     print result.summary()
-    ci = result.conf_int()
-    ci.columns = ["2.5%", "97.5%"]
-    ci.insert(0, "Odds ratio", result.params)
-    ci = np.exp(ci)
-    ci.insert(0, "P value", result.pvalues)
 
     # plot the decision boundary for model with Plt peak and Plt trough (only)
     plt_dat = X.loc[:, ['Plt peak', 'Plt trough']]
-    logit_model_plt = sm.Logit(outcomes == 2, sm.add_constant(plt_dat))
+    logit_model_plt = sm.Logit(outcomes == 1, sm.add_constant(plt_dat))
     result_plt = logit_model_plt.fit()
     coeff = result_plt.params
     intercept = -coeff['const'] / coeff['Plt peak']
