@@ -24,7 +24,7 @@ class BwaSEBase(jobs.ArrayJob):
     ]
     param_delim = ':'
     core_cmd = 'bwa aln {extra} -t {threads} {index} $READS > "$OUTFILE.sai"\n'
-    core_cmd += 'bwa samse {index} "$OUTFILE.sai" $READS | samtools view -b > "$OUTFILE.bam"\n'
+    core_cmd += 'bwa samse {index} "$OUTFILE.sai" $READS | samtools view -hb - > "$OUTFILE.bam"\n'
     core_cmd += 'samtools sort -@ {threads} "$OUTFILE.bam" > "$OUTFILE.sorted.bam"\n'
     core_cmd += 'rm "$OUTFILE.sai" "$OUTFILE.bam"\n'
 
