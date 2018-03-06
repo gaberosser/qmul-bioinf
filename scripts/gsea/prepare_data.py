@@ -7,6 +7,14 @@ import pandas as pd
 from settings import LOCAL_DATA_DIR
 
 
+""" 
+Running GSEA from the command line:
+java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea -res /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.gct -cls /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.cls#GBM_versus_iNSC -gmx /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt -collapse false -norm meandiv -nperm 1000 -permute gene_set -rnd_type no_balance -scoring_scheme weighted -rpt_label RTK_II -metric Signal2Noise -sort real -order descending -create_gcts false -create_svgs false -include_only_symbols true -make_sets true -median false -num 1000 -plot_top_x 20 -rnd_seed timestamp -save_rnd_lists false -set_max 500 -set_min 15 -zip_report false -out /home/gabriel/gsea_home/output/rtk_II -gui false
+
+
+"""
+
+
 if __name__ == '__main__':
     outdir = unique_output_dir("gsea_data", reuse_empty=True)
     # load all data

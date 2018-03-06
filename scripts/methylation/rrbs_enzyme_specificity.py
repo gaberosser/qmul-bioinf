@@ -2,28 +2,48 @@ import os
 import collections
 import gzip
 import numpy as np
+from scipy import stats
 import re
 from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 import pysam
 from matplotlib import pyplot as plt
 import pandas as pd
 import multiprocessing as mp
-from utils import log, genomics
+from utils import log, genomics, output
 logger = log.get_console_logger(__name__)
 
 
 if __name__ == "__main__":
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
+    outdir = output.unique_output_dir("rrbs_enzyme_specificity")
+
+    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163', 'trim_galore')
     fq1_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_1.fastq.gz')
     fq2_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_2.fastq.gz')
     ncpu = mp.cpu_count()
 
-
-    indir = os.path.join(basedir, 'mouse/bismark/GC-CV-7163-1_S1')
-    bam_fn = os.path.join(indir, 'GC-CV-7163-1_S1_pe.sorted.bam')
-    cov_fn = os.path.join(indir, 'GC-CV-7163-1_S1_pe.bismark.cov.gz')
+    indir = os.path.join(basedir, 'mouse/bismark')
+    bam_fn = os.path.join(indir, 'GC-CV-7163-6_S6_pe.sorted.bam')
+    cov_fn = os.path.join(indir, 'GC-CV-7163-6_S6_bismark.cov.gz')
     s = pysam.AlignmentFile(bam_fn, 'rb')
     chroms = [str(t) for t in range(1, 20)]
+
+    # theoretical (binomial) distribution of inferred methylation by coverage
+    Ns = [10, 20, 50, 100]
+    cs = ['k', 'r', 'b', 'g']
+    ps = [0.1, 0.25, 0.5]
+    for p in ps:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        for N, c in zip(Ns, cs):
+            x = np.arange(N)
+            y = stats.binom.pmf(x, N, p)
+            ax.plot(x / float(N), y * len(x), '%s-o' % c, label='N = %d' % N)
+        ax.set_xticks(np.linspace(0, 1, 6))
+        ax.set_xlabel("Inferred methylation level")
+        ax.set_ylabel("Normalised probability density")
+        ax.legend(loc='upper right')
+        fig.savefig(os.path.join(outdir, "binomial_p%.2f.png" % p), dpi=200)
+
     reads = {}
     for c in chroms:
         reads[c] = []
@@ -151,6 +171,8 @@ if __name__ == "__main__":
     ax.set_xlabel('Minimum coverage')
     ax.set_ylabel('Number of CpG sites')
 
+    # inverse CDF of low coverage region
+
     fig = plt.figure(figsize=(8.5, 5))
     ax1 = fig.add_subplot(111)
     ax1.bar(cov[:25], np.array(ecdf[:25]) / float(n_cpg) * 100)
@@ -164,40 +186,34 @@ if __name__ == "__main__":
     h[0].set_visible(False)
     fig.tight_layout()
 
+    fig.savefig(os.path.join(outdir, "rrbs_cpg_coverage_low.png"), dpi=200)
+
+    # inverse CDF of higher coverage
+    cov_vals = np.array([20, 30, 40, 50, 60, 70, 80, 90, 100, 200])
+    ecdf_vals = np.array([ecdf[cov.index(t)] for t in cov_vals])
+
+    fig = plt.figure(figsize=(8.5, 5))
+    ax1 = fig.add_subplot(111)
+    ax1.bar(range(len(cov_vals)), ecdf_vals / float(n_cpg) * 100)
+    ax1.set_xticks(range(len(cov_vals)))
+    ax1.set_xticklabels(cov_vals)
+    ax1.set_xlabel('Minimum coverage')
+    ax1.set_ylabel('% CpG sites')
+    ax2 = ax1.twinx()
+    h = ax2.plot(range(len(cov_vals)), ecdf_vals / 1e3, 'x')
+    ax2.set_ylim(np.array(ax1.get_ylim()) / 100 * n_cpg / 1e3)
+    ax2.set_ylabel("Number of CpG sites (thousands)")
+    h[0].set_visible(False)
+    fig.tight_layout()
+
+    fig.savefig(os.path.join(outdir, "rrbs_cpg_coverage_high.png"), dpi=200)
+
+
     cpg_tsv_fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
 
     # load tsv
     cpg_regions = pd.read_csv(cpg_tsv_fn, sep='\t', header=0)
     region_pad = 2000
-
-    cov_cpg_islands = []
-    from scripts.methylation import rrbs_get_coverage
-
-    if ncpu > 1:
-        pool = mp.Pool(ncpu)
-        jobs = {}
-
-    for i, row in cpg_regions.iterrows():
-        region = (row.chrom, row.chromStart, row.chromEnd)
-        kwds = {'region_pad': region_pad}
-        if ncpu > 1:
-            jobs[i] = pool.apply_async(
-                rrbs_get_coverage.get_one_coverage,
-                args=(bam_fn, region),
-                kwds=kwds
-            )
-        else:
-            res = rrbs_get_coverage.get_one_coverage(bam_fn, region, **kwds)
-            cov_cpg_islands.append(res)
-
-    if ncpu > 1:
-        pool.close()
-        for i, row in cpg_regions.iterrows():
-            try:
-                res = jobs[i].get(1e6)
-                cov_cpg_islands.append(res)
-            except Exception:
-                logger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
 
     # get methylation levels in CpG sites in promoters and CpG islands
     promoters = genomics.get_promoter_regions(tax_id=10090)
@@ -206,6 +222,8 @@ if __name__ == "__main__":
     for p in promoters:
         promoters_by_region.setdefault((p['chr'], p['strand']), collections.defaultdict(list))
         promoters_by_region[(p['chr'], p['strand'])][(p['promoter_region_start'], p['promoter_region_end'])].append(p)
+        # promoters_by_region.setdefault(p['chr'], collections.defaultdict(list))
+        # promoters_by_region[p['chr']][(p['promoter_region_start'], p['promoter_region_end'])].append(p)
 
     # get CpG sites associated with the unique promoter regions
     cpg_coords_promoter_regions = {}
@@ -221,7 +239,6 @@ if __name__ == "__main__":
                     in_region_idx = (the_cpg_coords >= reg_min) & (the_cpg_coords <= reg_max)
                     cpg_coords_promoter_regions[c].extend(the_cpg_coords[in_region_idx])
 
-
     # read the coverage file, splitting into chromosomes
     cov = {}
     raw = pd.read_csv(cov_fn, sep='\t', header=None, index_col=None)
@@ -231,5 +248,32 @@ if __name__ == "__main__":
         this_raw = raw.loc[raw.chrom == c]
         cov[c] = this_raw.drop('chrom', axis=1)
 
+    # methylation and coverage of CpG island regions
+    methylation_in_cpg_islands = []
+    methylation_in_promoters = []
 
+    for c in chroms:
+        # this_data = cpg_regions.loc[cpg_regions.chrom == c, ['chromStart', 'chromEnd', 'length', 'cpgNum']]
+        # for _, r in this_data.iterrows():
+        #     idx = (cov[c].loc[:, 'coord'] >= r.chromStart) & (cov[c].loc[:, 'coord'] <= r.chromEnd)
+        #     new_dat = cov[c].loc[idx, ['coord', 'n_meth', 'n_unmeth', 'pct_meth']]
+        #     new_dat.insert(0, 'coverage', new_dat.n_meth + new_dat.n_unmeth)
+        #     new_dat.insert(0, 'beta', new_dat.n_meth / new_dat.coverage)
+        #     new_dat.drop('pct_meth', axis=1, inplace=True)
+        #     new_dat.insert(0, 'chrom', c)
+        #     new_dat.insert(0, 'length', r.length)
+        #     new_dat.insert(0, 'n_cpg', r.cpgNum)
+        #     methylation_in_cpg_islands.append(new_dat)
 
+        this_data = promoters_by_region[(c, '+')].keys() + promoters_by_region[(c, '-')].keys()
+        for start, end in this_data:
+            idx = (cov[c].loc[:, 'coord'] >= start) & (cov[c].loc[:, 'coord'] <= end)
+            new_dat = cov[c].loc[idx, ['coord', 'n_meth', 'n_unmeth', 'pct_meth']]
+            new_dat.insert(0, 'coverage', new_dat.n_meth + new_dat.n_unmeth)
+            new_dat.insert(0, 'beta', new_dat.n_meth / new_dat.coverage)
+            new_dat.drop('pct_meth', axis=1, inplace=True)
+            new_dat.insert(0, 'chrom', c)
+            methylation_in_promoters.append(new_dat)
+
+    # methylation_in_cpg_islands = pd.concat(methylation_in_cpg_islands, axis=0)
+    methylation_in_promoters = pd.concat(methylation_in_promoters, axis=0)
