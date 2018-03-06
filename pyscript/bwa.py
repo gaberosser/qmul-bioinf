@@ -33,7 +33,7 @@ class BwaSEBase(jobs.ArrayJob):
         if '--srna' in self.extra_args:
             self.extra_args.remove('--srna')
             self.extra_args.extend(
-                ['-n' '1', '-o', '0', '-e', '0', '-k', '1']
+                ['-n', '1', '-o', '0', '-e', '0', '-k', '1']
             )
 
     def prepare_submission(self, *args, **kwargs):
