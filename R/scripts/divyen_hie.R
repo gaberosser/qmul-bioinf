@@ -206,7 +206,7 @@ points(values.full$Plt.trough[y.full == 'Fav'], values.full$Plt.peak[y.full == '
 points(values.full$Plt.trough[y.full == 'Unfav'], values.full$Plt.peak[y.full == 'Unfav'], col='green', pch=19)
 # highlight cases where platelets were given
 points(values.full$Plt.trough[X.full$mec.or.cult], values.full$Plt.peak[X.full$mec.or.cult], col='black', pch=1)
-legend("topleft", legend = c("Decision boundary", "Favourable", "Unfavourable", "Meconium/culture"), lty=c(2, 0, 0, 0), pch=c(-1, 19, 19, 1), col=c("red", "dodgerblue2", "green", "black"), bty='n')
+legend("topright", legend = c("Decision boundary", "Favourable", "Unfavourable", "Meconium/culture"), lty=c(2, 0, 0, 0), pch=c(-1, 19, 19, 1), col=c("red", "dodgerblue2", "green", "black"), bty='n')
 
   
 
