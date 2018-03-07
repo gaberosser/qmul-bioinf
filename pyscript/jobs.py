@@ -271,8 +271,6 @@ class ArrayJob(Job):
         read_params_str = array_params_boilerplate(self.params_fn, argnames, sep=self.param_delim)
 
         sh = [
-            # self.shebang(),
-            # "for SGE_TASK_ID in $(seq {n}); do".format(n=len(self.params)),
             read_params_str,
             submit,
             '\n'

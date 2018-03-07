@@ -18,7 +18,7 @@ class BwaSEBase(jobs.ArrayJob):
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
-        ('$NAME', None),
+        ('$ID', None),
         ('$READS', '! -z'),
         ('$OUTFILE', None),
     ]
