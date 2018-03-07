@@ -9,6 +9,7 @@ all_genes <- as.vector(unlist(all_genes))
 pathways <- rownames(msig)
 
 sprintf("Loaded %d genes (%d unique) involved in %d pathways.", length(all_genes), length(unique(all_genes)), nrow(msig))
+all_genes <- unique(all_genes)
 
 #' create a data.frame containing all the edges
 #' every node is linked to the origin (which won't be plotted)
@@ -16,7 +17,7 @@ sprintf("Loaded %d genes (%d unique) involved in %d pathways.", length(all_genes
 d1 = data.frame(from="origin", to=pathways)
 
 a <- apply(msig[, 2:ncol(msig)], 1, function (x) {as.vector(x[x != ""])})
-b <- lapply(seq_along(a), function(i) data.frame(from=names(a)[[i]], to=a[[i]]))
+b <- lapply(seq_along(a), function(i) data.frame(from=names(a)[[i]], to=paste(names(a)[[i]], a[[i]], sep = '|')))
 d2 <- do.call("rbind", b)
 
 edges=rbind(d1, d2)
@@ -25,16 +26,25 @@ edges=rbind(d1, d2)
 conn_map <- sapply(all_genes, function (x) {
   sapply(a, function(t) x %in% t)
 })
-conn_count <- sapply(all_genes, function (x) {
-  sum(sapply(a, function(t) x %in% t))
-})
-conn_count <- conn_count[unique(names(conn_count))]
+conn_count <- colSums(conn_map)
 
 # create a dataframe with connection between leaves (individuals)
+conns = list()
+for (n in names(conn_count)[conn_count > 1]) {
+  the_pathways <- names(which(conn_map[,n]))
+  the_genes <- paste(the_pathways, n, sep='|')
+  this <- data.frame(t(combn(the_genes, 2)))
+  colnames(this) <- c('from', 'to')
+  this$values <- conn_count[[n]]
+  conns[[n]] <- this
+}
+
+connect = do.call("rbind", conns)
+rownames(connect) <- seq(1, nrow(connect))
 
 all_leaves=paste("subgroup", seq(1,100), sep="_")
 connect=rbind( data.frame( from=sample(all_leaves, 100, replace=T) , to=sample(all_leaves, 100, replace=T)), data.frame( from=sample(head(all_leaves), 30, replace=T) , to=sample( tail(all_leaves), 30, replace=T)), data.frame( from=sample(all_leaves[25:30], 30, replace=T) , to=sample( all_leaves[55:60], 30, replace=T)), data.frame( from=sample(all_leaves[75:80], 30, replace=T) , to=sample( all_leaves[55:60], 30, replace=T)) )
-connect$value=runif(nrow(connect))
+connect$value = 
   
 # create a vertices data.frame. One line per object of our hierarchy
 all_nodes <- unique(c(as.character(edges$from), as.character(edges$to)))
