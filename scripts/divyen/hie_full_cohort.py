@@ -73,6 +73,61 @@ if __name__ == "__main__":
 
     meconium_idx = dat.loc[:, 'Meconium Aspiration'] == 'Y'
     culture_idx = dat.loc[:, 'Culture'] == 'Y'
+    mec_index = meconium_idx | culture_idx
+
+    # scatter + boxplot showing distribution of variables between mec / nonmec
+    if nvar % 2 == 0:
+        fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
+    else:
+        fig, axs = plt.subplots(nrows=2, ncols=(nvar + 1) / 2, sharex=True, figsize=(12, 8))
+    axs = axs.flat
+
+    for i, c in enumerate(peaks_dat.columns):
+        ax = axs[i]
+
+        this_dat = peaks_dat.loc[:, [c]]
+        this_dat.insert(1, 'Mec', meconium_idx | culture_idx)
+
+        # this_dat = dat.loc[:, [c, 'Outcome']]
+        idx = this_dat.loc[:, 'Mec']
+        this_dat.loc[idx, 'Mec'] = 'Meconium / culture'
+        this_dat.loc[~idx, 'Mec'] = 'Normal'
+
+        sns.boxplot(data=this_dat, x='Mec', y=c, ax=ax, color='w')
+        sns.swarmplot(data=this_dat, x='Mec', y=c, ax=ax)
+
+        # ax.scatter(scat[:, 0], scat[:, 1], c=scat[:, 2], cmap='RdBu')
+
+        ax.xaxis.label.set_visible(False)
+        ax.yaxis.label.set_visible(False)
+        ax.set_title(c)
+        plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+        # ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
+        ylim = list(ax.get_ylim())
+        if ylim[0] < 0:
+            ylim[0] = 0.
+            ax.set_ylim(ylim)
+    # fig.subplots_adjust(left=0.025, right=0.99, wspace=0.4, bottom=0.2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.pdf'))
+
+    # t test
+    # look for differences in the distribution of individual variables between outcomes
+    p_ttest = {}
+
+    for col in peaks_dat.columns:
+        this_dat = peaks_dat.loc[:, col].groupby(mec_index).apply(lambda x: list(x.dropna()))
+        args = []
+        this_dropped = []
+        for k, t in this_dat.iteritems():
+            if len(t) == 0:
+                print "One of the 2 outcome groups is missing variable %s. Skipping" % col
+                continue
+            else:
+                args.append(t)
+        this_res = stats.ttest_ind(*args)
+        p_ttest[col] = this_res.pvalue
 
     # to what extent do biomarkers predict meconium aspiration / infection?
     mc_outcome = (meconium_idx | culture_idx).astype(int)

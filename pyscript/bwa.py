@@ -23,10 +23,11 @@ class BwaSEBase(jobs.ArrayJob):
         ('$OUTFILE', None),
     ]
     param_delim = ':'
-    core_cmd = 'bwa aln {extra} -t {threads} {index} $READS > "$OUTFILE.sai"\n'
-    core_cmd += 'bwa samse {index} "$OUTFILE.sai" $READS | samtools view -hb - > "$OUTFILE.bam"\n'
-    core_cmd += 'samtools sort -@ {threads} "$OUTFILE.bam" > "$OUTFILE.sorted.bam"\n'
-    core_cmd += 'rm "$OUTFILE.sai" "$OUTFILE.bam"\n'
+    core_cmd = 'bwa aln {extra} -t {threads} {index} $READS > "${{OUTFILE}}.sai"\n'
+    core_cmd += 'bwa samse {index} "${{OUTFILE}}.sai" $READS > "${{OUTFILE}}.sam"\n'
+    core_cmd += 'samtools view -hb "${{OUTFILE}}.sam" > "${{OUTFILE}}.bam"\n'
+    core_cmd += 'samtools sort -@ {threads} "${{OUTFILE}}.bam" > "${{OUTFILE}}.sorted.bam"\n'
+    core_cmd += 'rm "${{OUTFILE}}.sai" "${{OUTFILE}}.sam" "${{OUTFILE}}.bam"\n'
 
 
     def set_default_extras(self):

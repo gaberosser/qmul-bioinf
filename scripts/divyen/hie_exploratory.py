@@ -18,9 +18,9 @@ BIOMARKERS = [
     'Plt',
     'Neutrophil',
     'Lymphocyte',
-    'PT',  # PT test and INR are highly related
+    # 'PT',  # PT test and INR are highly related
     'INR',
-    'APTT',
+    # 'APTT',  # too many missing values
     'Urea',
     'Creatinine',
     'ALT',
@@ -38,6 +38,13 @@ OUTCOME_COL = 'Outcome'
 def load_cleaned_data():
     # fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_jan_2018.csv')
     fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_feb_2018.csv')
+    dat = pd.read_csv(fn, header=0, na_values='-', index_col=0)
+    dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
+    return dat
+
+
+def load_full_data():
+    fn = os.path.join(GIT_LFS_DATA_DIR, 'divyen_shah', 'cleaned_data_full_cohort_feb_2018.csv')
     dat = pd.read_csv(fn, header=0, na_values='-', index_col=0)
     dat.loc[:, 'batch'] = [t[:2] for t in dat.index]
     return dat
@@ -83,6 +90,8 @@ if __name__ == "__main__":
     )]
     outcomes = dat.loc[:, OUTCOME_COL]
     peaks_dat = dat.loc[:, BIOMARKER_PEAK_COLS + BIOMARKER_TROUGH_COLS]
+    nvar = peaks_dat.shape[1]
+    X = impute_missing(peaks_dat, strategy='median')
 
     ## 1) Correlation between variables
     corr = peaks_dat.corr(method='spearman')
@@ -94,11 +103,6 @@ if __name__ == "__main__":
     plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "spearman_correlation_plot.png"), dpi=200)
-
-    # CONCLUSION: PT and INR peaks are highly correlated -> remove PT
-    peaks_dat = peaks_dat.loc[:, peaks_dat.columns != 'PT peak']
-    nvar = peaks_dat.shape[1]
-    X = impute_missing(peaks_dat, strategy='median')
 
     # Look for batch effects using PCA on biomarker values
     # this requires us to fill NA values with column mean
@@ -227,9 +231,9 @@ if __name__ == "__main__":
     jitter = 0.2
     if nvar % 2 == 0:
         fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
-        axs = axs.flat
     else:
-        fig, axs = plt.subplots(nrows=1, ncols=nvar, sharex=True, figsize=(15, 5))
+        fig, axs = plt.subplots(nrows=2, ncols=(nvar + 1) / 2, sharex=True, figsize=(12, 8))
+    axs = axs.flat
 
     for i, c in enumerate(peaks_dat.columns):
         ax = axs[i]
