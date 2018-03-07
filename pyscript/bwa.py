@@ -5,7 +5,7 @@ from pyscript import jobs, sge
 class BwaSgeRequirements(sge.ApocritaArrayJobMixin):
     @property
     def ram_per_core(self):
-        return "2G"
+        return "4G"
 
     @property
     def runtime_mins(self):
@@ -24,10 +24,12 @@ class BwaSEBase(jobs.ArrayJob):
     ]
     param_delim = ':'
     core_cmd = 'bwa aln {extra} -t {threads} {index} $READS > "${{OUTFILE}}.sai"\n'
-    core_cmd += 'bwa samse {index} "${{OUTFILE}}.sai" $READS > "${{OUTFILE}}.sam"\n'
-    core_cmd += 'samtools view -hb "${{OUTFILE}}.sam" > "${{OUTFILE}}.bam"\n'
+    core_cmd += 'bwa samse {index} "${{OUTFILE}}.sai" $READS | samtools view -hb - > "${{OUTFILE}}.bam"\n'
+    # core_cmd += 'bwa samse {index} "${{OUTFILE}}.sai" $READS > "${{OUTFILE}}.sam"\n'
+    # core_cmd += 'samtools view -hb "${{OUTFILE}}.sam" > "${{OUTFILE}}.bam"\n'
     core_cmd += 'samtools sort -@ {threads} "${{OUTFILE}}.bam" > "${{OUTFILE}}.sorted.bam"\n'
-    core_cmd += 'rm "${{OUTFILE}}.sai" "${{OUTFILE}}.sam" "${{OUTFILE}}.bam"\n'
+    # core_cmd += 'rm "${{OUTFILE}}.sai" "${{OUTFILE}}.sam" "${{OUTFILE}}.bam"\n'
+    core_cmd += 'rm "${{OUTFILE}}.sai" "${{OUTFILE}}.bam"\n'
 
 
     def set_default_extras(self):
