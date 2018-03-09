@@ -1,6 +1,7 @@
 require(ggraph)
 require(igraph)
 require(tidyverse)
+require(RColorBrewer)
 
 # create a data frame giving the hierarchical structure of your individuals
 d1=data.frame(from="origin", to=paste("group", seq(1,10), sep=""))

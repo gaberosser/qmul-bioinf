@@ -48,12 +48,15 @@ if __name__ == '__main__':
     obj_gbm_s = loader.load_references('GBM_Pten_P53', source='salmon', tax_id=10090, samples=samples, batch_names=['BR'])
 
     # Ying / Brandner data
-    # samples = ['NSC repl %d' % i for i in range(1, 4)] + \
-    #     ['P53-Pten GIC repl %d' % i for i in range(1, 3)] + \
-    #     ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 3)]
+    # Drop the 3rd replicate in both GIC runs as it appears different from the other two
     samples = ['NSC repl %d' % i for i in range(1, 4)] + \
-        ['P53-Pten GIC repl %d' % i for i in range(1, 4)] + \
-        ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 4)]
+        ['P53-Pten GIC repl %d' % i for i in range(1, 3)] + \
+        ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 3)]
+
+    # All samples included
+    # samples = ['NSC repl %d' % i for i in range(1, 4)] + \
+    #     ['P53-Pten GIC repl %d' % i for i in range(1, 4)] + \
+    #     ['Idh1-P53-Pten GIC repl %d' % i for i in range(1, 4)]
 
     obj_ying = loader.load_references(
         'brandner_mouse_gic', source='star', tax_id=10090, batch_names=['Ying'], strandedness='u', samples=samples
@@ -62,18 +65,55 @@ if __name__ == '__main__':
         'brandner_mouse_gic', source='salmon', tax_id=10090, batch_names=['Ying'], samples=samples
     )
 
-    obj = loader.MultipleBatchLoader([obj1, obj2, obj_gbm, obj_ying])
-    obj_s = loader.MultipleBatchLoader([obj1_s, obj2_s, obj_gbm_s, obj_ying_s])
+    samples = ['GBM repl %d' % i for i in range(1, 6)]
+    obj_gse73127 = loader.load_references(
+        'GSE73127',
+        source='star',
+        tax_id=10090,
+        batch_names=['GSE73127'],
+        strandedness='r',
+        samples=samples
+    )
+    obj_gse73127_s = loader.load_references(
+        'GSE73127',
+        source='salmon',
+        tax_id=10090,
+        batch_names=['GSE73127'],
+        samples=samples
+    )
+
+    samples = ['Embryonic NSC repl 1', 'Embryonic NSC repl 2', 'Tumour']
+    obj_gse64411 = loader.load_references(
+        'GSE64411/trimgalore',
+        source='star',
+        tax_id=10090,
+        batch_names=['GSE64411'],
+        strandedness='u',
+        samples=samples
+    )
+    obj_gse64411_s = loader.load_references(
+        'GSE64411/trimgalore',
+        source='salmon',
+        tax_id=10090,
+        batch_names=['GSE64411'],
+        samples=samples
+    )
+
+    obj = loader.MultipleBatchLoader([obj1, obj2, obj_gbm, obj_ying, obj_gse64411, obj_gse73127])
+    obj_s = loader.MultipleBatchLoader([obj1_s, obj2_s, obj_gbm_s, obj_ying_s, obj_gse64411_s, obj_gse73127_s])
 
     dat = obj.data
 
     groups = pd.Series('eNSC', index=dat.columns)
     groups[dat.columns.str.contains('mDura')] = 'iNSC'
-    groups[dat.columns.str.contains('GBM') & (obj.batch_id == 'GBM_Pten_P53')] = 'GIC_BR'
-    groups[dat.columns.str.contains('WT') & (obj.batch_id == 'GBM_Pten_P53')] = 'eNSC_BR'
+    groups[dat.columns.str.contains('GBM') & (obj.batch_id == 'BR')] = 'GIC_BR'
+    groups[dat.columns.str.contains('WT') & (obj.batch_id == 'BR')] = 'eNSC_BR'
     groups[dat.columns.str.contains(r'NSC.*\(Ying\)')] = 'eNSC_Ying'
     groups[dat.columns.str.contains(r'^P53-Pten GIC')] = 'GIC_Ying'
     groups[dat.columns.str.contains(r'Idh1-P53-Pten GIC')] = 'IDH1_GIC_Ying'
+    groups[dat.columns.str.contains('GBM') & (obj.batch_id == 'GSE73127')] = 'GBM_GSE73127'
+    groups[dat.columns.str.contains('Tumour') & (obj.batch_id == 'GSE64411')] = 'GBM_GSE64411'
+    groups[dat.columns.str.contains('NSC') & (obj.batch_id == 'GSE64411')] = 'ENSC_GSE64411'
 
     gic_lines = ['GIC_BR', 'GIC_Ying', 'IDH1_GIC_Ying']
     nsc_lines = ['eNSC', 'iNSC', 'eNSC_BR', 'eNSC_Ying']
@@ -83,7 +123,12 @@ if __name__ == '__main__':
         ('iNSC', 'eNSC_BR'),
         ('iNSC', 'eNSC_Ying'),
         ('eNSC', 'eNSC_BR'),
-        ('eNSC', 'eNSC_Ying')
+        ('eNSC', 'eNSC_Ying'),
+        ('GBM_GSE73127', 'eNSC'),
+        ('GBM_GSE73127', 'iNSC'),
+        ('GBM_GSE64411', 'eNSC'),
+        ('GBM_GSE64411', 'iNSC'),
+        ('GBM_GSE64411', 'ENSC_GSE64411'),
     ]
 
     res = {}

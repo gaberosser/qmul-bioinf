@@ -473,10 +473,11 @@ def load_references(
 
     objs = []
     for i, rid in enumerate(ref_names):
+        bid = rid if batch_names is None else batch_names[i]
         loc = RnaSeqFileLocations(
             root_dir=os.path.join(RNASEQ_DIR, rid),
             alignment_subdir=alignment_subdir,
-            batch_id=rid
+            batch_id=bid
         )
         if not os.path.isdir(loc.root_dir):
             raise ValueError("Directory %s for ref %s does not exist." % (loc.root_dir, rid))
