@@ -42,15 +42,16 @@ for (n in names(conn_count)[conn_count > 1]) {
 connect = do.call("rbind", conns)
 rownames(connect) <- seq(1, nrow(connect))
 
-all_leaves=paste("subgroup", seq(1,100), sep="_")
-connect=rbind( data.frame( from=sample(all_leaves, 100, replace=T) , to=sample(all_leaves, 100, replace=T)), data.frame( from=sample(head(all_leaves), 30, replace=T) , to=sample( tail(all_leaves), 30, replace=T)), data.frame( from=sample(all_leaves[25:30], 30, replace=T) , to=sample( all_leaves[55:60], 30, replace=T)), data.frame( from=sample(all_leaves[75:80], 30, replace=T) , to=sample( all_leaves[55:60], 30, replace=T)) )
-connect$value = 
-  
 # create a vertices data.frame. One line per object of our hierarchy
 all_nodes <- unique(c(as.character(edges$from), as.character(edges$to)))
+gene_nodes <- sub('[^|]*\\|', '', all_nodes[grep('\\|', all_nodes)])
+node_conn_num <- c(rep(0, length(pathways) + 1), conn_count[gene_nodes])
+node_labels <- sub('[^|]*\\|', '', all_nodes)
+
 vertices = data.frame(
   name = all_nodes,
-  value = c(rep(0, length(pathways) + 1), conn_count)
+  value = node_conn_num ** 2,
+  labels = node_labels
 )
 vertices$group = edges$from[ match( vertices$name, edges$to ) ]
 
@@ -60,6 +61,21 @@ mygraph <- graph_from_data_frame( edges, vertices=vertices )
 # connection object - must refer to the ids of the leaves
 from = match( connect$from, vertices$name)
 to = match( connect$to, vertices$name)
+
+# node labels 
+
+
+ggraph(mygraph, layout = 'dendrogram', circular = TRUE) + 
+  geom_node_point(aes(filter = leaf, x = x*1.07, y=y*1.07, colour=group, size=value, alpha=0.2)) +
+  geom_conn_bundle(data = get_con(from = from, to = to), alpha=0.2, colour="black", width=0.9) +
+  geom_node_text(aes(x = x*1.1, y=y*1.1, filter = leaf, label=labels), size=1.5, alpha=1) +
+  theme_void() +
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm")
+  ) +
+  expand_limits(x = c(-1.2, 1.2), y = c(-1.2, 1.2))
+
 
 ## TODO: we are going to have to make the leaf labels UNIQUE (i.e. not just gene symbols)
 # Otherwise we won't be able to make the connections correctly.

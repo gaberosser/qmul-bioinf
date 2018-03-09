@@ -434,6 +434,19 @@ class BamFileIteratorMixin(FileIteratorMixin):
     ]
 
 
+class BamFileSingleRunMixin(BamFileIteratorMixin):
+    file_sep = ' ' # the character used to separate files
+    def setup_params(self, read_dir, *args, **kwargs):
+        # get the iterated form of the parameters
+        super(BamFileSingleRunMixin, self).setup_params(read_dir, *args, **kwargs)
+        # now revise
+        self.params = [
+            '&'.join([t[0] for t in self.params]),
+            self.file_sep.join([t[1] for t in self.params])
+        ]  # out subdir has no meaning here so discard it
+        self.run_names = '&'.join(self.run_names)
+
+
 class PEFastqFileIteratorMixin(PairedFileIteratorMixin):
     ext = r'fastq(\.gz)?'
     cleanup_regex = [
