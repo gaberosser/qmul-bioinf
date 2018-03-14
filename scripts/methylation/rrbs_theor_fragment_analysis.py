@@ -6,6 +6,7 @@ import pickle
 import sys
 import re
 import pysam
+import pybedtools
 from matplotlib import pyplot as plt
 import pandas as pd
 
@@ -14,6 +15,48 @@ from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 from utils import log, genomics, output
 
 logger = log.get_console_logger(__name__)
+
+
+def get_motif_locations(fa_reader, motif, references):
+    for c in references:
+        this_ref = fa_reader[c]
+        it = re.finditer(motif, this_ref)
+        for t in it:
+            yield (c, t.start())
+
+
+def create_cpg_bed(fa_fn, outfn, references=None):
+    fa_reader = pysam.FastaFile(fa_fn)
+    if references is None:
+        references = fa_reader.references
+    # get location of every CpG
+    bed_arr = []
+    for c, st in get_motif_locations(fa_reader, r'CG', references):
+        bed_arr.append(
+            (c, st, st + 1)
+        )
+    x = pybedtools.BedTool(bed_arr)
+    x.saveas(outfn)
+
+
+def create_ccgg_fragment_bed(fa_fn, outfn, references=None):
+    fa_reader = pysam.FastaFile(fa_fn)
+    if references is None:
+        references = fa_reader.references
+    # get location of every CCGG
+    it = get_motif_locations(fa_reader, r'CCGG', references)
+    c0, t0 = it.next()
+    t0 += 1
+    bed_arr = []
+    for c, st in it:
+        if c0 == c:
+            bed_arr.append(
+                (c, t0, st + 1)
+            )
+        c0 = c
+        t0 = st + 1
+    x = pybedtools.BedTool(bed_arr)
+    x.saveas(outfn)
 
 
 def coverage_ignore_pairs(s, chrom, ix0, ix1):
