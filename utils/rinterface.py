@@ -6,6 +6,13 @@ try:
 except ImportError:
     RFUNCTIONS_PRESENT = False
 
+try:
+    from rpy2.robjects import pandas2ri
+    pandas2ri.activate()
+    RPANDAS_PRESENT = True
+except Exception:
+    RPANDAS_PRESENT = False
+
 
 class RFunctionDeferred(object):
     """

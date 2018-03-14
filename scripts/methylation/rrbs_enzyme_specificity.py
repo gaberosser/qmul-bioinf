@@ -14,14 +14,11 @@ logger = log.get_console_logger(__name__)
 
 
 if __name__ == "__main__":
-    outdir = output.unique_output_dir("rrbs_enzyme_specificity")
+    outdir = output.unique_output_dir("rrbs_enzyme_specificity", reuse_empty=True)
 
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163', 'trim_galore')
-    fq1_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_1.fastq.gz')
-    fq2_fn = os.path.join(basedir, 'GC-CV-7163-1_S1_L001_2.fastq.gz')
-    ncpu = mp.cpu_count()
+    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
 
-    indir = os.path.join(basedir, 'mouse/bismark')
+    indir = os.path.join(basedir, 'trim_galore_mouse/bismark')
     bam_fn = os.path.join(indir, 'GC-CV-7163-6_S6_pe.sorted.bam')
     cov_fn = os.path.join(indir, 'GC-CV-7163-6_S6_bismark.cov.gz')
     s = pysam.AlignmentFile(bam_fn, 'rb')
@@ -70,16 +67,17 @@ if __name__ == "__main__":
     else:
         rd1 = rd_b
         rd2 = rd_a
-    if rd1.is_reverse:
-        print "Read 1 (%s) is reversed." % rd1.qname
-    else:
-        print "Read 1 (%s) is not reversed." % rd1.qname
 
-    if rd2.is_reverse:
-        print "Read 2 (%s) is reversed." % rd2.qname
-    else:
-        print "Read 2 (%s) is not reversed." % rd2.qname
+    print "Chromosome %s" % c
+    print "Read 1: %s" % rd1.qname
+    print "Read 2: %s" % rd2.qname
 
+    if rd1.is_reverse and not rd2.is_reverse:
+        print "R1 is reversed, R2 is forward (F2R1)."
+    elif not rd1.is_reverse and rd2.is_reverse:
+        print "R1 is forward, R2 is reverse (F2R1)."
+    else:
+        print "R1 and R2 have the same direction (%s) (probably bad?)" % ('reverse' if rd1.is_reverse else 'forward')
 
     # get the sequences from the reference
     fa_fn = os.path.join(
@@ -134,6 +132,32 @@ if __name__ == "__main__":
         it = re.finditer(r'CG', this_ref)
         cpg_coords[c] = [t.start() for t in it]
         n_cpg += len(cpg_coords[c])
+
+    # get location of every restriction site
+    ccgg_coords = {}
+    n_ccgg = 0
+    for c in chroms:
+        this_ref = fa_reader[c]
+        it = re.finditer(r'CCGG', this_ref)
+        ccgg_coords[c] = [t.start() for t in it]
+        n_ccgg += len(ccgg_coords[c])
+
+    # for each theoretical fragment, compute the size and coverage
+    mspi_fragments = {}
+    for c in chroms:
+        print "CCGG fragment coverage. Chrom %s" % c
+        this_coords = ccgg_coords[c]
+        mspi_fragments[c] = []
+        this_res = mspi_fragments[c]
+        for i in range(1, len(ccgg_coords[c])):
+            t0 = this_coords[i - 1]
+            t1 = this_coords[i]
+            this_res.append([t1 - t0, s.count(c, t0, t1)])
+
+    size_cov = np.concatenate(mspi_fragments.values(), axis=0)
+
+
+
 
     # get coverage of every CpG
     cpg_cov = {}
@@ -208,7 +232,6 @@ if __name__ == "__main__":
 
     fig.savefig(os.path.join(outdir, "rrbs_cpg_coverage_high.png"), dpi=200)
 
-
     cpg_tsv_fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
 
     # load tsv
@@ -253,17 +276,17 @@ if __name__ == "__main__":
     methylation_in_promoters = []
 
     for c in chroms:
-        # this_data = cpg_regions.loc[cpg_regions.chrom == c, ['chromStart', 'chromEnd', 'length', 'cpgNum']]
-        # for _, r in this_data.iterrows():
-        #     idx = (cov[c].loc[:, 'coord'] >= r.chromStart) & (cov[c].loc[:, 'coord'] <= r.chromEnd)
-        #     new_dat = cov[c].loc[idx, ['coord', 'n_meth', 'n_unmeth', 'pct_meth']]
-        #     new_dat.insert(0, 'coverage', new_dat.n_meth + new_dat.n_unmeth)
-        #     new_dat.insert(0, 'beta', new_dat.n_meth / new_dat.coverage)
-        #     new_dat.drop('pct_meth', axis=1, inplace=True)
-        #     new_dat.insert(0, 'chrom', c)
-        #     new_dat.insert(0, 'length', r.length)
-        #     new_dat.insert(0, 'n_cpg', r.cpgNum)
-        #     methylation_in_cpg_islands.append(new_dat)
+        this_data = cpg_regions.loc[cpg_regions.chrom == c, ['chromStart', 'chromEnd', 'length', 'cpgNum']]
+        for _, r in this_data.iterrows():
+            idx = (cov[c].loc[:, 'coord'] >= r.chromStart) & (cov[c].loc[:, 'coord'] <= r.chromEnd)
+            new_dat = cov[c].loc[idx, ['coord', 'n_meth', 'n_unmeth', 'pct_meth']]
+            new_dat.insert(0, 'coverage', new_dat.n_meth + new_dat.n_unmeth)
+            new_dat.insert(0, 'beta', new_dat.n_meth / new_dat.coverage)
+            new_dat.drop('pct_meth', axis=1, inplace=True)
+            new_dat.insert(0, 'chrom', c)
+            new_dat.insert(0, 'length', r.length)
+            new_dat.insert(0, 'n_cpg', r.cpgNum)
+            methylation_in_cpg_islands.append(new_dat)
 
         this_data = promoters_by_region[(c, '+')].keys() + promoters_by_region[(c, '-')].keys()
         for start, end in this_data:
@@ -275,5 +298,5 @@ if __name__ == "__main__":
             new_dat.insert(0, 'chrom', c)
             methylation_in_promoters.append(new_dat)
 
-    # methylation_in_cpg_islands = pd.concat(methylation_in_cpg_islands, axis=0)
+    methylation_in_cpg_islands = pd.concat(methylation_in_cpg_islands, axis=0)
     methylation_in_promoters = pd.concat(methylation_in_promoters, axis=0)

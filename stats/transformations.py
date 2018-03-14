@@ -1,6 +1,9 @@
 import pandas as pd
 from utils.log import get_console_logger
 import numpy as np
+from utils import rinterface
+# from rpy2 import robjects
+# from rpy2.robjects import pandas2ri, r
 logger = get_console_logger(__name__)
 
 
@@ -97,7 +100,51 @@ def variance_stabilizing_transform(data):
 
     rmat = pandas2ri.py2ri(data)
     rmat = robjects.r['data.matrix'](rmat)
-    v = robjects.r['vsn2'](rmat)
+    v = robjects.r['vsn2'](rmat, blind=True)
     v = robjects.r['predict'](v, newdata=rmat)
     dat = np.asarray(v)
     return pd.DataFrame(dat, index=data.index, columns=data.columns)
+
+
+def _rlog_blind(the_data, remove_zero_counts=True):
+    robjects = rinterface.robjects
+    pandas2ri = rinterface.pandas2ri
+    env = robjects.globalenv
+
+    rdata = pandas2ri.py2ri(the_data)
+    env['dat'] = rdata
+    robjects.r("meta <- data.frame(rep('foo', ncol(dat)), row.names = colnames(dat))")
+    robjects.r("dds <- DESeqDataSetFromMatrix(dat, meta, ~1)")
+    if remove_zero_counts:
+        robjects.r("dds <- dds[rowSums(counts(dds)) > 0,]")
+    robjects.r("dds <- estimateSizeFactors(dds)")
+    robjects.r("rld <- rlogTransformation(dds, blind = T)")
+
+    rld = robjects.r("assay(rld)")
+
+    return pd.DataFrame(rld, index=robjects.r("rownames(dds)"), columns=the_data.columns)
+
+
+rlog_blind = rinterface.RFunctionDeferred(_rlog_blind, imports=['DESeq2'])
+
+
+def _vst_blind(the_data, remove_zero_counts=True):
+    robjects = rinterface.robjects
+    pandas2ri = rinterface.robjects.pandas2ri
+    env = robjects.globalenv
+
+    rdata = pandas2ri.py2ri(the_data)
+    env['dat'] = rdata
+    robjects.r("meta <- data.frame(rep('foo', ncol(dat)), row.names = colnames(dat))")
+    robjects.r("dds <- DESeqDataSetFromMatrix(dat, meta, ~1)")
+    if remove_zero_counts:
+        robjects.r("dds <- dds[rowSums(counts(dds)) > 0,]")
+    robjects.r("dds <- estimateSizeFactors(dds)")
+    robjects.r("rld <- vst(dds, blind = T)")
+
+    rld = robjects.r("assay(rld)")
+
+    return pd.DataFrame(rld, index=robjects.r("rownames(dds)"), columns=the_data.columns)
+
+
+vst_blind = rinterface.RFunctionDeferred(_vst_blind, imports=['DESeq2'])

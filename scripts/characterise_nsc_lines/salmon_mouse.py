@@ -54,12 +54,29 @@ def cluster_data_with_threshold(data, min_val=None, n=None, mad=None, min_over=2
 
 
 if __name__ == '__main__':
+    # source = 'salmon'
+    source = 'star'
+
     # units = 'estimated_counts'
-    units = 'tpm'
+    # units = 'tpm'
+    units = 'counts'
+
+    transform = 'vst'
+
     # remove_mt = True
     remove_mt = False
+
     outdir = unique_output_dir("salmon_insc_mouse", reuse_empty=True)
     n_gene_try = [1000, 2000, 3000, 5000][::-1]  # largest first, so we can reuse the MAD array
+
+    if source == 'star':
+        load_cls = loader.StarCountLoader
+        load_kwargs = {}
+    elif source == 'salmon':
+        load_cls = loader.SalmonQuantLoader
+        load_kwargs = {'units': units}
+    else:
+        raise ValueError("Unrecognised source %s" % source)
 
     if units == 'tpm':
         min_val = 1
@@ -73,117 +90,234 @@ if __name__ == '__main__':
     if remove_mt:
         mt_ensg = set(gtf_reader.get_mitochondrial('GRCm38r88'))
 
-    mouse_data = rnaseq_data.mouse_nsc_salmon(units=units)
+    loc = loader.RnaSeqFileLocations(
+        root_dir=os.path.join(loader.RNASEQ_DIR, 'wtchg_p170390'),
+        alignment_subdir='mouse',
+        batch_id='wtchg_p170390'
+    )
+    # kwargs = loc.loader_kwargs('salmon')
+    kwargs = loc.loader_kwargs(source)
+    kwargs.update(dict(
+        tax_id=10090,
+        samples=[u'mDura3N1human', u'mDura5N24Ahuman', u'mDura6N6human']
+    ))
+    kwargs.update(load_kwargs)
+    obj1 = load_cls(**kwargs)
 
-    # aggregate to gene level
-    mouse_data_by_gene = general.ensembl_transcript_quant_to_gene(mouse_data, tax_id=10090)
+    loc = loader.RnaSeqFileLocations(
+        root_dir=os.path.join(loader.RNASEQ_DIR, 'wtchg_p170506'),
+        alignment_subdir='mouse',
+        batch_id='wtchg_p170506'
+    )
+
+    kwargs = loc.loader_kwargs(source)
+    kwargs.update(dict(
+        tax_id=10090,
+        samples=['eNSC3med', 'eNSC5med', 'eNSC6med',]
+    ))
+    kwargs.update(load_kwargs)
+    obj2 = load_cls(**kwargs)
+
+    our_obj = loader.loader.MultipleBatchLoader([obj1, obj2])
+
+    our_dat = our_obj.data
 
     # discard mitochondrial genes
     if remove_mt:
-        idx = ~mouse_data_by_gene.index.isin(mt_ensg)
-        mdbg = mouse_data_by_gene.loc[idx]
+        idx = ~our_dat.index.isin(mt_ensg)
+        our_dat = our_dat.loc[idx]
         # renorm
         if units == 'tpm':
-            mdbg = mdbg.divide(mdbg.sum(), axis=1) * 1e6
-    else:
-        mdbg = mouse_data_by_gene
+            our_dat = our_dat.divide(our_dat.sum(), axis=1) * 1e6
 
-    # discard genes expressed at low values
-    # idx = (mdbg > min_val).sum(axis=1) > min_n
-    # mdbg = mdbg.loc[idx]
+    if transform == 'vst':
+        our_dat = transformations.vst_blind(our_dat)
+    elif transform == 'log':
+        our_dat = np.log2(our_dat + eps)
 
-    if units == 'estimated_counts':
-        # here we can normalise by library size if desired
-        pass
+    mad = transformations.median_absolute_deviation(our_dat).sort_values(ascending=False)
 
-    # ax = hist_logvalues(mouse_data_by_gene, thresholds=[min_val])
-    # ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
-    # ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.pdf"))
-
-    mad = transformations.median_absolute_deviation(mdbg).sort_values(ascending=False)
-    mdbg_log = np.log2(mdbg + eps)
-    mad_log = transformations.median_absolute_deviation(mdbg_log).sort_values(ascending=False)
-    row_colours = pd.DataFrame('gray', index=mdbg_log.columns, columns=[''])
+    row_colours = pd.DataFrame('gray', index=our_dat.columns, columns=[''])
     row_colours.loc[row_colours.index.str.contains(r'eNSC[0-9]med')] = '#66c2a5'
     row_colours.loc[row_colours.index.str.contains(r'eNSC[0-9]mouse')] = '#fc8d62'
     row_colours.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*mouse')] = '#8da0cb'
     row_colours.loc[row_colours.index.str.contains(r'mDura.[AN0-9]*human')] = '#e78ac3'
 
-
     for n_t in n_gene_try:
         fname = "clustering_by_gene_corr_log_top%d_by_mad.{ext}" % n_t
 
-        d = clustering.dendrogram_with_colours(mdbg_log.loc[mad_log.index[:n_t]], row_colours, fig_kws={'figsize': (10, 5.5)})
+        d = clustering.dendrogram_with_colours(our_dat.loc[mad.index[:n_t]], row_colours, fig_kws={'figsize': (10, 5.5)})
         d['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
-        cm, _ = cluster_data_with_threshold(mdbg_log, n=n_t, mad=mad_log, col_colors=row_colours)
+        cm, _ = cluster_data_with_threshold(our_dat, n=n_t, mad=mad, col_colors=row_colours)
         cm.savefig(os.path.join(outdir, "clustermap_by_gene_corr_log_top%d_by_mad.png" % n_t), dpi=200)
 
+    raise Exception("TODO: complete the script refactor")
+
     # bring in reference data
-    ref_dats = [
-        ('Pten/P53 study', rnaseq_data.mouse_gbm_pten_p53(source='salmon', units=units)),
-        # ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
-        ('Liu et al.', rnaseq_data.gse96950_salmon(units=units)),
-        ('Wapinski et al.', rnaseq_data.gse43916_salmon(units=units)),
-        # ('Friedmann-Morvinski et al.', rnaseq_data.gse73127_salmon(units=units)),
-        # ('Friedmann-Morvinski et al.', rnaseq_data.gse64411_salmon(units=units)),
-        # ('Zhang et al.', rnaseq_data.gse52564_salmon(units=units)),
-        # ('Chen et al.', rnaseq_data.gse52125_salmon(units=units)),
-        ('Yanez et al.', rnaseq_data.gse88982_salmon(units=units)),
-        ('Lynch', rnaseq_data.gse78795_salmon(units=units)),
-        ('Moyon et al.', rnaseq_data.gse66029_salmon(units=units)),
-        ('Schmid et al.', rnaseq_data.gse75592_salmon(units=units)),
-        ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
+    ref_names = [
+        ('Brandner lab', 'brandner_mouse_gic'),
+        ('Pten/P53 study', 'GBM_Pten_P53'),
+        ('Zhang et al., reprog.', 'GSE78938'),
+        ('Liu et al.', 'GSE96950'),
+        ('Wapinski et al.', 'GSE43916'),
+        ('Friedmann-Morvinski et al.', 'GSE73127'),
+        ('Friedmann-Morvinski et al.', 'GSE64411/trimgalore'),
+        ('Zhang et al.', 'GSE52564'),
+        ('Chen et al.', 'GSE52125'),
+        ('Yanez et al.', 'GSE88982'),
+        ('Lynch', 'GSE78795'),
+        ('Moyon et al.', 'GSE66029'),
+        ('Schmid et al.', 'GSE75592'),
+        ('Srinivasan et al.', 'GSE75246'),
     ]
 
-    # drop unneeded and rename
-    for i, (auth, rd) in enumerate(ref_dats):
+    ref_objs = loader.load_references(
+        [t[1] for t in ref_names],
+        tax_id=10090,
+        source='salmon',
+        batch_names=[t[0] for t in ref_names],
+    )
+
+    ref_obj = loader.load_references(
+        [t[1] for t in ref_names],
+        tax_id=10090,
+        source='star',
+        batch_names=[t[0] for t in ref_names],
+    )
+
+    # remove unneeded samples
+
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('Normal brain')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('GBM')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('TrNeuron')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('TrAstrocyte')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('Tumour')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('MP and cMoP')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains('LPS')]
+    ref_obj.meta = ref_obj.meta.loc[~ref_obj.meta.index.str.contains(r'day [148]')]
+
+    ref_obj.data = ref_obj.data.loc[:, ref_obj.meta.index]
+    ref_obj.batch_id = ref_obj.meta.batch
+
+    # aggregate
+    ii, batch = ref_obj.batch_id.factorize()
+    new_dat = {}
+    new_meta = {}
+    for i, b in enumerate(batch):
+        the_meta = ref_obj.meta.loc[ii == i]
+        the_dat = ref_obj.data.loc[:, ii == i]
+
         # average over duplicates
+        to_keep = []
         a = {}
+        m = {}
         na = {}
         do_avg = False
-        for col in rd.columns:
+        for col in the_dat.columns:
             if ' repl ' in col:
                 do_avg = True
+            else:
+                to_keep.append(col)
+                continue
             t = re.sub(r' repl [0-9]*', '', col)
             if t in a:
-                a[t] += rd.loc[:, col]
+                a[t] += the_dat.loc[:, col]
                 na[t] += 1
             else:
-                a[t] = rd.loc[:, col].copy()
+                a[t] = the_dat.loc[:, col].copy()
+                m[t] = the_meta.loc[col]
                 na[t] = 1
         for t in a:
             a[t] = a[t] / float(na[t])
 
         if do_avg:
-            rd = pd.DataFrame(a)
+            # replace the affected columns
+            the_meta = the_meta.loc[to_keep]
+            the_dat = the_dat.loc[:, to_keep]
+            for t in m:
+                the_meta.loc[t] = m[t]
+                the_dat.insert(0, t, a[t])
+            the_dat = the_dat.loc[:, the_meta.index]
 
-        rd.columns = ["%s (%s)" % (col, auth) for col in rd.columns]
-        ref_dats[i] = (auth, rd)
+            new_dat[b] = the_dat
+            new_meta[b] = the_meta
 
-    ref = pd.concat([t[1] for t in ref_dats], axis=1)
+    for b in new_dat:
+        idx = ref_obj.meta.batch != b
+        ref_obj.meta = ref_obj.meta.loc[idx]
+        ref_obj.data = ref_obj.data.loc[:, idx]
 
-    # just in case it's useful, stitch the data together and export before we do any removal
-    tmp_ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
-    tmp_abg = pd.concat((mouse_data_by_gene, tmp_ref_by_gene), axis=1)
-    tmp_abg.to_excel(os.path.join(outdir, "tpm_values.xlsx"))
+        ref_obj.meta = pd.concat((ref_obj.meta, new_meta[b]), axis=0)
+        ref_obj.data = pd.concat((ref_obj.data, new_dat[b]), axis=1)
+        ref_obj.batch_id = ref_obj.meta.batch
 
-    # ref.index = ref.index.str.replace(r'.[0-9]+$', '')
+    abg = pd.concat((mouse_data_by_gene, ref_obj.data), axis=1)
 
-    ref = ref.loc[:, ~ref.columns.str.contains('Normal brain')]
-    ref = ref.loc[:, ~ref.columns.str.contains('GBM')]
-    ref = ref.loc[:, ~ref.columns.str.contains('TrNeuron')]
-    ref = ref.loc[:, ~ref.columns.str.contains('TrAstrocyte')]
-    ref = ref.loc[:, ~ref.columns.str.contains('Tumour')]
-    ref = ref.loc[:, ~ref.columns.str.contains('MP and cMoP')]
-    ref = ref.loc[:, ~ref.columns.str.contains('LPS')]
-    ref = ref.loc[:, ~ref.columns.str.contains(r'day [148]')]
-
-    # ref_by_gene = ref.groupby(genes).sum()
-    ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
-
-    # now let's try clustering everything together
-    abg = pd.concat((mouse_data_by_gene, ref_by_gene), axis=1)
+    # ref_dats = [
+    #     ('Pten/P53 study', rnaseq_data.mouse_gbm_pten_p53(source='salmon', units=units)),
+    #     ('Zhang et al., reprog.', rnaseq_data.gse78938_salmon(units=units)),
+    #     ('Liu et al.', rnaseq_data.gse96950_salmon(units=units)),
+    #     ('Wapinski et al.', rnaseq_data.gse43916_salmon(units=units)),
+    #     ('Friedmann-Morvinski et al.', rnaseq_data.gse73127_salmon(units=units)),
+    #     ('Friedmann-Morvinski et al.', rnaseq_data.gse64411_salmon(units=units)),
+    #     ('Zhang et al.', rnaseq_data.gse52564_salmon(units=units)),
+    #     ('Chen et al.', rnaseq_data.gse52125_salmon(units=units)),
+    #     ('Yanez et al.', rnaseq_data.gse88982_salmon(units=units)),
+    #     ('Lynch', rnaseq_data.gse78795_salmon(units=units)),
+    #     ('Moyon et al.', rnaseq_data.gse66029_salmon(units=units)),
+    #     ('Schmid et al.', rnaseq_data.gse75592_salmon(units=units)),
+    #     ('Srinivasan et al.', rnaseq_data.gse75246_salmon(units=units)),
+    # ]
+    #
+    # # drop unneeded and rename
+    # for i, (auth, rd) in enumerate(ref_dats):
+    #     # average over duplicates
+    #     a = {}
+    #     na = {}
+    #     do_avg = False
+    #     for col in rd.columns:
+    #         if ' repl ' in col:
+    #             do_avg = True
+    #         t = re.sub(r' repl [0-9]*', '', col)
+    #         if t in a:
+    #             a[t] += rd.loc[:, col]
+    #             na[t] += 1
+    #         else:
+    #             a[t] = rd.loc[:, col].copy()
+    #             na[t] = 1
+    #     for t in a:
+    #         a[t] = a[t] / float(na[t])
+    #
+    #     if do_avg:
+    #         rd = pd.DataFrame(a)
+    #
+    #     rd.columns = ["%s (%s)" % (col, auth) for col in rd.columns]
+    #     ref_dats[i] = (auth, rd)
+    #
+    # ref = pd.concat([t[1] for t in ref_dats], axis=1)
+    #
+    # # just in case it's useful, stitch the data together and export before we do any removal
+    # tmp_ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
+    # tmp_abg = pd.concat((mouse_data_by_gene, tmp_ref_by_gene), axis=1)
+    # tmp_abg.to_excel(os.path.join(outdir, "tpm_values.xlsx"))
+    #
+    # # ref.index = ref.index.str.replace(r'.[0-9]+$', '')
+    #
+    # ref = ref.loc[:, ~ref.columns.str.contains('Normal brain')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('GBM')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('TrNeuron')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('TrAstrocyte')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('Tumour')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('MP and cMoP')]
+    # ref = ref.loc[:, ~ref.columns.str.contains('LPS')]
+    # ref = ref.loc[:, ~ref.columns.str.contains(r'day [148]')]
+    #
+    # # ref_by_gene = ref.groupby(genes).sum()
+    # ref_by_gene = general.ensembl_transcript_quant_to_gene(ref, tax_id=10090)
+    #
+    # # now let's try clustering everything together
+    # abg = pd.concat((mouse_data_by_gene, ref_by_gene), axis=1)
 
     # discard mitochondrial genes
     if remove_mt:
