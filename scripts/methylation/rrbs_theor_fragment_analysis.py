@@ -177,7 +177,7 @@ if __name__ == "__main__":
     )
     logger.info("Calling featureCounts with the following command:")
     logger.info(cmd)
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     stdout, stderr = p.communicate()
     logger.info("Stdout: %s", stdout)
     logger.info("Stderr: %s", stderr)
