@@ -146,14 +146,19 @@ if __name__ == "__main__":
         logger.info("Unable to find BED file %s. Creating now.", cg_bed_fn)
         create_cpg_bed(fa_fn, cg_bed_fn, references=chroms)
         logger.info("Done")
+    else:
+        logger.info("Using existing BED file %s", cg_bed_fn)
 
     ccgg_saf_fn = os.path.join(bed_outdir, "ccgg_fragments.saf")
     if not os.path.exists(ccgg_saf_fn):
-        logger.info("Unable to find BED file %s. Creating now.", ccgg_saf_fn)
+        logger.info("Unable to find SAF file %s. Creating now.", ccgg_saf_fn)
         create_ccgg_fragment_bed(fa_fn, ccgg_saf_fn, references=chroms)
         logger.info("Done")
+    else:
+        logger.info("Using existing SAF file %s", ccgg_saf_fn)
 
     # CpG coverage
+    logger.info("Calling samtools depth to get CpG coverage")
     cg_depth = pysam.depth("-a", "-b", cg_bed_fn, bam_fn)
     cg_depth = [t.split('\t') for t in ''.join(cg_depth).split('\n')]
     # this avoids an error if there is a blank line at the end
@@ -162,6 +167,7 @@ if __name__ == "__main__":
     for t in cg_depth:
         t[1] = int(t[1])
         t[2] = int(t[2])
+    logger.info("Done.")
 
     # MspI theoretical fragment coverage
     cmd = "featureCounts -p -a {saf_fn} -T 12 -F SAF {bam_fn} -o {outfn}".format(
