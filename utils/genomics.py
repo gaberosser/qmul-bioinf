@@ -4,7 +4,7 @@ import warnings
 import glob
 import random
 import collections
-import numpy as np
+import pysam
 import gzip
 import csv
 from settings import LOCAL_DATA_DIR
@@ -140,3 +140,41 @@ def get_promoter_regions(
                 res.append(attr)
 
     return res
+
+
+def get_overlapping_paired_reads(bam_fn, chrom):
+    """
+    Iterate over the supplied BAM file (which must be sorted for this to work), finding paired reads within the
+    specified chromosome that overlap.
+    This is a bit niche, but useful for debugging double-counting issues, etc.
+    """
+    s = pysam.AlignmentFile(bam_fn, 'rb')
+    rd_seen = set()
+    for rd in s.fetch(chrom):
+        if rd.is_unmapped:
+            continue
+        if rd in rd_seen:
+            continue
+        if rd.is_read1:
+            rd1 = rd
+            rd2 = s.mate(rd)
+            rd_seen.add(rd2)
+        else:
+            rd2 = rd
+            rd1 = s.mate(rd)
+            rd_seen.add(rd1)
+
+        if rd1.is_reverse == rd2.is_reverse:
+            # this is strange, skip
+            continue
+
+        if rd1.is_reverse:
+            rd_f = rd2
+            rd_r = rd1
+        else:
+            rd_f = rd1
+            rd_r = rd2
+
+        # check overlap
+        if rd_r.pos <= rd_f.pos + rd_f.alen:
+            yield (rd_f, rd_r)
