@@ -182,7 +182,15 @@ if __name__ == '__main__':
             tax_id=10090,
         ))
         kwargs.update(load_kwargs)
-        ref_objs.append(load_cls(**kwargs))
+        try:
+            this_obj = load_cls(**kwargs)
+            this_obj.meta.index = ["%s (%s)" % (x, t[0]) for x in this_obj.meta.index]
+            this_obj.data.columns = ["%s (%s)" % (x, t[0]) for x in this_obj.data.columns]
+            ref_objs.append(this_obj)
+
+        except Exception as exc:
+            print "Error: failed to load reference %s" % t[0]
+            print repr(exc)
 
     ref_obj = loader.MultipleBatchLoader(ref_objs)
 
@@ -259,4 +267,47 @@ if __name__ == '__main__':
         ref_obj.data = pd.concat((ref_obj.data, new_dat[b]), axis=1)
         ref_obj.batch_id = ref_obj.meta.batch
 
-    abg = pd.concat((mouse_data_by_gene, ref_obj.data), axis=1)
+    all_obj = loader.MultipleBatchLoader([our_obj, ref_obj])
+
+    dat = all_obj.data
+
+    if transform == "vst":
+        # cast to int as aggregation will have broken this
+        dat = transformations.vst_blind(dat.astype(int))
+
+    mad = transformations.median_absolute_deviation(dat)
+
+    row_colours_all = pd.DataFrame('gray', index=dat.columns, columns=['Cell type',])
+
+    # cell type
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC'), 'Cell type'] = '#a5fff9' # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSLC'), 'Cell type'] = '#a5fff9' # pale turquoise(?)
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC'), 'Cell type'] = '#1eb9d8' # light blue
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Nn]euron'), 'Cell type'] = '#6dada9'  # teal
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte'), 'Cell type'] = '#ebff49' # yellow
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Oo]ligo'), 'Cell type'] = '#ffa8b3' # pale red
+    row_colours_all.loc[row_colours_all.index.str.contains(r'OPC'), 'Cell type'] = '#b70017' # dark red
+    row_colours_all.loc[row_colours_all.index.str.contains(r'MEF'), 'Cell type'] = '#f6ffaa' # pale yellow
+    row_colours_all.loc[row_colours_all.index.str.contains(r'ESC'), 'Cell type'] = '#8b33dd' # pale purple
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[iI]PSC'), 'Cell type'] = '#8b33dd' # pale purple
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Mm]icroglia'), 'Cell type'] = '#ffd8af' # pale orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'Yanez'), 'Cell type'] = '#ffa03d' # orange
+
+    # these override previously-defined colours
+    row_colours_all.loc[row_colours_all.index.str.contains(r'eNSC[0-9]med'), 'Cell type'] = '#96ff9d' # pale green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'eNSC[0-9]mouse'), 'Cell type'] = '#008408' # dark green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'mDura.[AN0-9]*mouse'), 'Cell type'] = '#3543ff' # dark blue
+    row_colours_all.loc[row_colours_all.index.str.contains(r'mDura.[AN0-9]*human'), 'Cell type'] = '#c4c8ff' # pale blue
+
+    d = clustering.dendrogram_with_colours(
+        dat.loc[mad.index[:3000]],
+        row_colours_all,
+        fig_kws={'figsize': (5.5, 10)},
+        vertical=False
+    )
+
+
+    # cm = clustering.plot_correlation_clustermap(
+    #     dat.loc[mad.index[:3000]],
+    #     row_colors=row_colours_all,
+    # )

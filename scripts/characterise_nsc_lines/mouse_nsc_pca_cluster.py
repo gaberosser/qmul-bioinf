@@ -13,16 +13,16 @@ import re
 
 
 if __name__ == '__main__':
-    # source = 'salmon'
-    source = 'star'
+    source = 'salmon'
+    # source = 'star'
 
     # units = 'estimated_counts'
-    # units = 'tpm'
+    units = 'tpm'
     # units = 'cpm'
-    units = 'counts'
+    # units = 'counts'
 
-    transform = 'vst'
-    # transform = 'log'
+    # transform = 'vst'
+    transform = 'log'
 
     # remove_mt = True
     remove_mt = False
@@ -62,11 +62,13 @@ if __name__ == '__main__':
         alignment_subdir='mouse',
         batch_id='wtchg_p170390'
     )
-    # kwargs = loc.loader_kwargs('salmon')
+
     kwargs = loc.loader_kwargs(source)
     kwargs.update(dict(
         tax_id=10090,
-        samples=[u'mDura3N1human', u'mDura5N24Ahuman', u'mDura6N6human']
+        samples=[u'mDura3N1human', u'mDura5N24Ahuman', u'mDura6N6human',
+                 u'mDura3N1mouse', u'mDura5N24Amouse', u'mDura6N6mouse',
+                 u'eNSC3mouse', u'eNSC5mouse', u'eNSC6mouse']
     ))
     kwargs.update(load_kwargs)
     obj1 = load_cls(**kwargs)
@@ -115,25 +117,33 @@ if __name__ == '__main__':
     p = PCA()
 
     subgroups = pd.Series('NA', index=our_dat.columns)
-    subgroups.loc[subgroups.index.str.contains('eNSC')] = 'eNSC'
-    subgroups.loc[subgroups.index.str.contains('mDura')] = 'iNSC'
+    subgroups.loc[subgroups.index.str.contains(r'eNSC.med')] = 'eNSC regular media'
+    subgroups.loc[subgroups.index.str.contains(r'eNSC.mouse')] = 'eNSC mouse induction media'
+    subgroups.loc[subgroups.index.str.contains(r'mDura.*human')] = 'iNSC human media'
+    subgroups.loc[subgroups.index.str.contains(r'mDura.*mouse')] = 'iNSC mouse media'
 
     sg_cmap = {
-        'eNSC': 'b',
-        'iNSC': 'g',
+        'eNSC regular media': '#146dff',
+        'eNSC mouse induction media': '#96beff',
+        'iNSC human media': '#008702',
+        'iNSC mouse media': '#7de07f',
         'NA': 'k'
     }
 
     for n_t in n_gene_try:
         y = p.fit_transform(our_dat.loc[mad.index[:n_t]].transpose())
+        expl_var_ratio = p.explained_variance_ratio_
         ax = pca.pca_plot_by_group_2d(y, subgroups, components=(0, 1), ellipses=False, colour_map=sg_cmap)
         ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.4)
+        ax.set_xlabel('PCA component 1 (%.1f%%)' % (expl_var_ratio[0] * 100.))
+        ax.set_ylabel('PCA component 2 (%.1f%%)' % (expl_var_ratio[1] * 100.))
         ax.set_aspect('auto')
         ax.figure.tight_layout()
-        if pca_add_sample_names:
-            for i in range(len(our_dat.columns)):
-                ax.text(y[i, 0], y[i, 1], our_dat.columns[i])
         ax.figure.savefig(os.path.join(outdir, "pca_top%d_by_mad.png" % n_t), dpi=200)
+        for i in range(len(our_dat.columns)):
+            ax.text(y[i, 0], y[i, 1], our_dat.columns[i], fontsize=10)
+        ax.figure.tight_layout(pad=3)
+        ax.figure.savefig(os.path.join(outdir, "pca_top%d_by_mad_with_names.png" % n_t), dpi=200)
 
     row_colours = pd.DataFrame('gray', index=our_dat.columns, columns=[''])
     row_colours.loc[row_colours.index.str.contains(r'eNSC[0-9]med')] = '#66c2a5'

@@ -112,13 +112,17 @@ if __name__ == "__main__":
         logger.info("Created output dir %s", bed_outdir)
         os.makedirs(bed_outdir)
 
-    # variable output directory for remaining results
-    outdir = output.unique_output_dir("rrbs_theor_fragments", reuse_empty=True)
+    # same output directory for remaining results
+    outdir = bed_outdir
     outfile = os.path.split(bam_fn)[-1].replace('.sorted.bam', '.coverage.pkl')
     outfn = os.path.join(outdir, outfile)
     fcounts_outfn = os.path.join(
         outdir,
-        os.path.split(bam_fn)[-1].replace('.sorted.bam', '.counts')
+        os.path.split(bam_fn)[-1].replace('.sorted.bam', '.mspi_fragments.counts')
+    )
+    depth_outfn = os.path.join(
+        outdir,
+        os.path.split(bam_fn)[-1].replace('.sorted.bam', '.cpg_coverage.gz')
     )
 
     logger.info("Output pickle file %s", outfn)
@@ -159,14 +163,18 @@ if __name__ == "__main__":
 
     # CpG coverage
     logger.info("Calling samtools depth to get CpG coverage")
-    cg_depth = pysam.depth("-a", "-b", cg_bed_fn, bam_fn)
-    cg_depth = [t.split('\t') for t in ''.join(cg_depth).split('\n')]
-    # this avoids an error if there is a blank line at the end
-    if len(cg_depth[-1]) == 1:
-        cg_depth = cg_depth[:-1]
-    for t in cg_depth:
-        t[1] = int(t[1])
-        t[2] = int(t[2])
+    cmd = "samtools depth -a -b {cg_bed_fn} {bam_fn} | gzip > {outfn}".format(
+        cg_bed_fn=cg_bed_fn,
+        bam_fn=bam_fn,
+        outfn=depth_outfn
+    )
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    stdout, stderr = p.communicate()
+    logger.info("Stdout: %s", stdout)
+    logger.info("Stderr: %s", stderr)
+    ccgg_coverage = None
+    if p.returncode != 0:
+        logger.error("samtools depth gave a non-zero return code (%s)", str(p.returncode))
     logger.info("Done.")
 
     # MspI theoretical fragment coverage
@@ -182,19 +190,7 @@ if __name__ == "__main__":
     logger.info("Stdout: %s", stdout)
     logger.info("Stderr: %s", stderr)
     ccgg_coverage = None
-    if p.returncode == 0:
-        ccgg_coverage = pd.read_csv(fcounts_outfn, sep='\t', comment='#', header=0, index_col=0)
-    else:
+    if p.returncode != 0:
         logger.error("featureCounts gave a non-zero return code (%s)", str(p.returncode))
 
-    res_out = {
-        'cpg_cov': cg_depth,
-        'fragment_coverage': ccgg_coverage,
-        'ccgg_saf_file': ccgg_saf_fn,
-        'cpg_bed_file': cg_bed_fn,
-        'bam_file': bam_fn
-    }
-
-    with open(outfn, 'wb') as fout:
-        pickle.dump(res_out, fout)
-    logger.info("Saved pickled results to %s.", outfn)
+    # ccgg_coverage = pd.read_csv(fcounts_outfn, sep='\t', comment='#', header=0, index_col=0)
