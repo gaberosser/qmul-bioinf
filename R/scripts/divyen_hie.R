@@ -25,6 +25,31 @@ predictivePerformance <- function(fit, truth) {
 }
 
 
+plotDecisionBoundary <- function(fit, coeffx, coeffy, values, outcomes, xlab=NULL, ylab=NULL) {
+  # let's plot the decision boundary for this model
+  colSd <- apply(values[,c(coeffx, coeffy)], 2, function (x) sd(na.omit(x)))
+  colMn <- apply(values[,c(coeffx, coeffy)], 2, function (x) mean(na.omit(x)))
+  
+  b0 <- coef(fit)[['(Intercept)']]
+  b_peak <- coef(fit)[[coeffy]]
+  b_trough <- coef(fit)[[coeffx]]
+  s_peak <- colSd[[coeffy]]
+  s_trough <- colSd[[coeffx]]
+  m_peak <- colMn[[coeffy]]
+  m_trough <- colMn[[coeffx]]
+  
+  incpt <- s_peak / b_peak * (-b0 + b_trough / s_trough * m_trough + b_peak / s_peak * m_peak)
+  slope <- -(s_peak * b_trough) / (s_trough * b_peak)
+  
+  fit_x <- c(0, 300)
+  fit_y = incpt + slope * fit_x
+  plot(fit_x, fit_y, type = "l", pch=22, lty=2, col="red", lwd=2, ylim=c(0, 900), xlim=c(0, 300),
+       xlab=xlab, ylab=ylab)
+  points(values[!outcomes, coeffx], values[!outcomes, coeffy], col='dodgerblue2', pch=19)
+  points(values[outcomes, coeffx], values[outcomes, coeffy], col='green', pch=19)
+}
+
+
 fn <- file.path(data.dir, 'divyen_shah', 'cleaned_data_feb_2018.csv')
 dat <- read.csv(fn)
 batch <- as.factor(substr(as.vector(dat$Study.No), 1, 2))
@@ -92,8 +117,8 @@ b_peak <- coef(fit.simple1)[['Plt.peak']]
 b_trough <- coef(fit.simple1)[['Plt.trough']]
 s_peak <- colSd[['Plt.peak']]
 s_trough <- colSd[['Plt.trough']]
-m_peak <- colM[['Plt.peak']]
-m_trough <- colM[['Plt.trough']]
+m_peak <- colMn[['Plt.peak']]
+m_trough <- colMn[['Plt.trough']]
 
 incpt <- s_peak / b_peak * (-b0 + b_trough / s_trough * m_trough + b_peak / s_peak * m_peak)
 slope <- -(s_peak * b_trough) / (s_trough * b_peak)
@@ -131,8 +156,15 @@ boxplot(Plt.peak~Platelets, data=X, lwd=2, xlab="Platelets given?", ylab="Plt pe
 stripchart(Plt.peak ~ Platelets, data=X, vertical=T, method="jitter", add=T, pch=20, col='darkgrey')
 
 fit.no_platelets <- glm(outcome ~ Plt.peak + Plt.trough, data=Xs[!Xs$Platelets,], family=binomial())
-
-# TODO: code up the performance evaluation
+plotDecisionBoundary(
+  fit.no_platelets, 
+  'Plt.trough', 
+  'Plt.peak', 
+  X[!X$Platelets,], 
+  Xs[!Xs$Platelets, 'outcome'],
+  xlab="Plt trough", ylab="Plt peak"
+)
+legend("topleft", legend = c("Favourable", "Unfavourable"), lty=c(0, 0), pch=c(19, 19), col=c("dodgerblue2", "green"), bty='n')
 
 fit.plt1 <- glm(outcome ~ Plt.peak + Plt.trough + Platelets, data=Xs, family=binomial())
 fit.plt2 <- glm(outcome ~ Plt.peak + Plt.trough + CRP.peak + Platelets, data=Xs, family=binomial())
@@ -192,8 +224,8 @@ b_peak <- coef(fit.full1)[['Plt.peak']]
 b_trough <- coef(fit.full1)[['Plt.trough']]
 s_peak <- colSd[['Plt.peak']]
 s_trough <- colSd[['Plt.trough']]
-m_peak <- colM[['Plt.peak']]
-m_trough <- colM[['Plt.trough']]
+m_peak <- colMn[['Plt.peak']]
+m_trough <- colMn[['Plt.trough']]
 
 incpt <- s_peak / b_peak * (-b0 + b_trough / s_trough * m_trough + b_peak / s_peak * m_peak)
 slope <- -(s_peak * b_trough) / (s_trough * b_peak)
@@ -212,7 +244,7 @@ legend("topright", legend = c("Decision boundary", "Favourable", "Unfavourable",
 
 fit.mec <- glm(mec.or.cult ~ Hb.peak + Plt.peak + Neutrophil.peak + 
                  Lymphocyte.peak + INR.peak + Urea.peak + Creatinine.peak + 
-                 ALT.peak + CRP.peak + APTT.peak + Plt.trough, data = X.full)
+                 ALT.peak + CRP.peak + Plt.trough, data = X.full)
 fit.mec.null <- glm(mec.or.cult ~ 1, data = X.full)
 
 anova(fit.mec.null, fit.mec, test='Chisq')
@@ -225,8 +257,8 @@ odds.ci.mec <- exp(confint.default(fit.mec))
 
 fit.outcome.full <- glm(outcome ~ mec.or.cult + Hb.peak + Plt.peak + Neutrophil.peak + 
                           Lymphocyte.peak + INR.peak + Urea.peak + Creatinine.peak + 
-                          ALT.peak + CRP.peak + APTT.peak + Plt.trough, data = X.full)
+                          ALT.peak + CRP.peak + Plt.trough, data = X.full)
 
 fit.outcome.full.hier <- glm(outcome ~ mec.or.cult * (Hb.peak + Plt.peak + Neutrophil.peak + 
                           Lymphocyte.peak + INR.peak + Urea.peak + Creatinine.peak + 
-                          ALT.peak + CRP.peak + APTT.peak + Plt.trough), data = X.full)
+                          ALT.peak + CRP.peak + Plt.trough), data = X.full)
