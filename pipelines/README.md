@@ -54,12 +54,12 @@ module load samtools
 
 sRNA-Seq reads always need trimming to remove adapters:
 ```bash
-trimgalore --small_rna --length 15  -o <output_dir> file.fastq.gz
+trimgalore --length 15  -o <output_dir> file.fastq.gz
 ```
 
-The two arguments provided tell `trim_galore` to trim small RNA-Seq adapters and lower the default minimum read length from 18bp (associated with `--small_rna`) to 15bp.
+The argument `--length 15` lowers the default minimum read length from 20bp to 15bp. The `trim_galore` documentation refers to a sRNA-Seq-specific argument, `--small_rna`. I have tested this found it resulted in the wrong adapter sequence being used.
 
-The files output by `trim_galore` have the naming convention `original-name_trimmed.fq.gz`. This is a bit inconvenient for the rest of my scripts, so I prefer to rename them:
+The files output by `trim_galore` have the naming convention `original-name_trimmed.fq.gz`. This is a bit inconvenient for the rest of my scripts, so I prefer to rename them. This snippet works for `.fastq` and `fastq.gz` files:
 
 ```bash
 for i in *_trimmed.fq.gz; do 
@@ -68,6 +68,12 @@ for i in *_trimmed.fq.gz; do
 	echo $CMD
 	eval $CMD
 done
+```
+
+
+I have created a file to automate running `trim_galore` on all valid files in the current directory. This also handles renaming and is called as follows:
+```bash
+python /path/to/pyscript/apocrita/trim_galore_se.py --length 15  # for SE reads
 ```
 
 Now we can align using an **ungapped** aligner like `bwa`. WE should be fairly strict about disallowing gaps and mismatches.
@@ -158,6 +164,11 @@ for i in *.fq.gz; do
 	echo $CMD
 	eval $CMD
 done
+```
+
+The trimming and renaming operations are automated in a `python` script that will run the process on all PE `fastq.gz` files in the directory:
+```bash
+python /path/to/apocrita/trim_galore_pe.py --rrbs
 ```
 
 Now we run `bismark`, an application developed for working with bisulphite sequencing data. There are three stages in the standard process: prepare the reference (run only once), alignment (that uses `bowtie2` behind the scenes), and extracting methylation data. 

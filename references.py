@@ -23,11 +23,13 @@ def known_genes(tax_id=9606, index_field=None):
 
 
 def conversion_table(type='protein_coding', tax_id=9606):
+    ## TODO: add a version option
     if tax_id == 9606:
         if type == 'protein_coding':
             in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
         elif type == 'all':
             in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
+            # in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.03.tsv')
         else:
             raise ValueError("Unsupported type option '%s'" % type)
         # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
@@ -104,3 +106,46 @@ def translate_quantification_resolving_duplicates(dat, from_field, to_field, typ
             raise NotImplementedError("Unsupported resolution method %s." % resolution)
         dat = dat.append(dupes_aggr)
     return dat
+
+
+def gene_symbol_to_x_robust(
+        g,
+        to_field,
+        tax_id=9606,
+        additional_search_fields=('Previous Symbols', 'Synonyms'),
+        split_str=', ',
+        type='all'
+):
+    """
+    Translate from gene symbol to another compatible field.
+    Where a search fails, we also look in the fields in additional_search_fields. If a match is found, this is used
+    instead. Priority is given to fields mentioned earlier.
+    :param g: Gene symbol or list of gene symbols
+    :param to_field: Lookup column in the conversion table
+    :param tax_id:
+    :param additional_search_fields:
+    :param split_str: String used to split the field (in the event that it contains multiple entries). If None, no
+    splitting is attempted. This is necessary unless the entries are lists already.
+    :param type:
+    :return:
+    """
+    if not hasattr(g, '__iter__'):
+        g = [g]
+    cat = conversion_table(type=type, tax_id=tax_id).set_index('Approved Symbol')
+    res = cat.loc[g, to_field]
+    spares = pd.Index(g).difference(cat.index).tolist()
+    for asf in additional_search_fields:
+        if not len(spares):
+            return res
+        lookup = cat.loc[:, asf]
+        if split_str is not None:
+            lookup = lookup.fillna('').str.split(split_str)
+        new_spares = []
+        for t in spares:
+            ix = lookup.apply(lambda x: t in x)
+            if ix.sum() == 1:
+                res.loc[t] = cat.loc[ix, to_field].values
+            else:
+                new_spares.append(t)
+        spares = new_spares
+    return res
