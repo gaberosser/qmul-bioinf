@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import pysam
 import numpy as np
-from settings import OUTPUT_DIR
+from settings import OUTPUT_DIR, GIT_LFS_DATA_DIR
 import pickle
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
         if process_cpg:
 
-            n_cpg = cpg_depth.shape[0]
+            n_cpg = float(cpg_depth.shape[0])
             cpg_cov_all_nz = cpg_depth.loc[cpg_depth.depth > 0]
 
             # distribution of CpG coverage: low coverage region

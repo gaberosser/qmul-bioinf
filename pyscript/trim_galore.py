@@ -28,7 +28,11 @@ class TrimGaloreBase(jobs.ArrayJob):
         ('$FASTQ', '! -z'),
     ]
     param_delim = ':'
-    core_cmd = "trim_galore -o {out_dir} $FASTQ {extra}"
+    core_cmd = "trim_galore -o {out_dir} $FASTQ {extra}\n"
+    core_cmd += "oldname=$(basename $FASTQ)\n"
+    core_cmd += "newname=$(echo $oldname | sed 's/\.fastq/_trimmed.fq/')\n"
+    core_cmd += "mv $newname $oldname"
+
 
     def prepare_submission(self, *args, **kwargs):
         self.setup_params(self.args['read_dir'])
@@ -49,6 +53,14 @@ class TrimGaloreSEBash(jobs.BashArrayJobMixin, TrimGaloreSEBase):
 
 class TrimGalorePEBase(TrimGaloreBase, jobs.PEFastqFileIteratorMixin):
     file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    core_cmd = "trim_galore -o {out_dir} $FASTQ {extra}\n"
+    core_cmd += """
+    for fn in $FASTQ; do
+        oldname=$(basename $fn)
+        newname=$(echo $oldname | sed 's/\.fastq/_val_[12].fq/')
+        mv $newname $oldname
+    done
+    """
 
     def setup_params(self, read_dir, *args, **kwargs):
         super(TrimGalorePEBase, self).setup_params(read_dir, *args, **kwargs)

@@ -15,6 +15,19 @@ import references
 if __name__ == "__main__":
     outdir = unique_output_dir('mouse_validation')
 
+    # new code
+    ref_obj = loader.load_references(
+        ['GSE64411', 'GSE52564', 'GSE43916', 'GSE86248', 'GSE36114'],
+        source='star',
+        tax_id=10090,
+        batch_names=['GSE64411', 'GSE52564', 'GSE43916', 'GSE86248', 'GSE36114']
+    )
+
+
+
+    # old code
+
+
     # load mouse data
 
     obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')

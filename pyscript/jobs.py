@@ -47,7 +47,7 @@ class BashJobMixin(object):
 
     def submit(self):
         print "Bash submit()"
-        subprocess.call(['bash', self.script_fn])
+        subprocess.call(['bash', self.script_fn], cwd=self.out_dir)
 
 
 class BashArrayJobMixin(BashJobMixin):

@@ -54,7 +54,20 @@ module load samtools
 
 sRNA-Seq reads always need trimming to remove adapters:
 ```bash
-trimgalore -o <output_dir> file.fastq.gz
+trimgalore --small_rna --length 15  -o <output_dir> file.fastq.gz
+```
+
+The two arguments provided tell `trim_galore` to trim small RNA-Seq adapters and lower the default minimum read length from 18bp (associated with `--small_rna`) to 15bp.
+
+The files output by `trim_galore` have the naming convention `original-name_trimmed.fq.gz`. This is a bit inconvenient for the rest of my scripts, so I prefer to rename them:
+
+```bash
+for i in *_trimmed.fq.gz; do 
+	nn=$(echo $i | sed 's/_trimmed.fq/.fastq/')
+	CMD="mv $i $nn"
+	echo $CMD
+	eval $CMD
+done
 ```
 
 Now we can align using an **ungapped** aligner like `bwa`. WE should be fairly strict about disallowing gaps and mismatches.
@@ -112,3 +125,79 @@ featureCounts -a path/to/annotation.gtf -o featurecounts_output -t miRNA -T <num
 Note that this can accept a list of bam files separated by a space. If run in this way, all the results are included in a single output file. A summary file, named `featurecounts_output.summary` gives an overview of the number of reads assigned to features.
 
 **NB** The default operation mode in `featureCounts` assumes that the reads are *unstranded*, which they probably are in single read mode(?). However, if using this for paired end data an additional parameter `-s 0/1/2` allows different configurations.
+
+## Reduced representation bisulphite sequencing (RRBS-Seq)
+### Typical experimental parameters
+- 76 bp reads
+- Paired end
+- 30mi reads per sample
+- Split over several lanes (4 in last batch)
+- Only raw reads received
+### Process
+This pipeline has only been applied once, so it is only partially automated. First load modules if on Apocrita:
+```bash
+module load trimgalore
+module load bismark
+module load samtools
+```
+
+The raw reads may not have a very high adapter content, but we need to trim them anyway because otherwise the first few bases introduce a very large bias in the inferred methylation state. `trim_galore` has a preset for this operation (--rrbs):
+
+```bash
+trim_galore -o <output_dir> read_1.fastq.gz read_2.fastq.gz --rrbs --paired
+```
+
+For convenience, it is possible to supply multiple fastq filenames to this command, space separated in the order `lane1_1 lane1_2 lane2_1 lane2_2` etc.
+
+As for other pipelines, it is convenient to rename the outputs here so that they have the extension `.fastq.gz`:
+
+```bash
+for i in *.fq.gz; do 
+	nn=$(echo $i | sed 's/_val_[12].fq/.fastq/')
+	CMD="mv $i $nn"
+	echo $CMD
+	eval $CMD
+done
+```
+
+Now we run `bismark`, an application developed for working with bisulphite sequencing data. There are three stages in the standard process: prepare the reference (run only once), alignment (that uses `bowtie2` behind the scenes), and extracting methylation data. 
+
+Preparing the reference:
+```bash
+bismark_genome_preparation path/to/fasta_dir
+```
+
+Note that we point to the containing directory, not the fasta file itself. This will generate a subdirectory with the name `Bisulfite_Genome` in the fasta directory.
+
+Aligning to the reference:
+```bash
+bismark path/to/fasta_dir -o <output_dir> -p <num_threads> -B <output_prefix> -1 path/to/reads_1.fastq[.gz] -2 path/to.reads_2.fastq[.gz]
+```
+
+The output files for each pair of reads will be located in a subdirectory, `output_dir/output_prefix`. Each subdirectory will contain a bam file. At this point we need to merge bams corresponding to multiple lanes of the same run. `samtools cat` is a quick option that preserves the required order (sorted by read name).
+
+```bash
+samtools cat sample1_lane1.bam sample1_lane2.bam ... > sample1.bam
+```
+
+Finally, we will extract the actual methylation state estimates:
+
+```bash
+bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedGraph sample1.bam
+```
+
+This generates a number of files in the same directory as the bam file. The most useful is probably the file with the extension `.bismark.cov`, which lists the coverage and % methylation of every CpG site.
+
+Also important is the `M-bias.txt` file, which tells us whether we should have trimmed more bases from the ends of the reads. A nice way to visualise these is using `multiqc`. Run the following in the output directory:
+
+```bash
+multiqc .
+```
+
+And open `multicq_report.html` in a browser.
+
+It's a bit annoying that we only find out about problems at this stage, because it leaves us with no option but to re-run the final step, ignoring reads from relevant ends. For example, I found that read 2 was very biased at the first and final two bp. I therefore re-ran with
+
+```bash
+bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedGraph --ignore_r2 2 --ignore_3prime_r2 2 sample1.bam
+```

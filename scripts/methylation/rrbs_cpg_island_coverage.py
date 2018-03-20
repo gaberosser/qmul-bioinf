@@ -1,150 +1,94 @@
 import sys
 import os
-import re
 import pandas as pd
-import multiprocessing as mp
-import argparse
-import json
-import pysam
-import datetime
-from StringIO import StringIO
-
-# add root of project dir to the path
-sys.path.append(os.path.dirname(__file__) + '/../../')
+import numpy as np
+from glob import glob
 from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
 from utils import genomics, output, log
+from matplotlib import pyplot as plt
+import seaborn as sns
 
-log_dir = os.path.join(os.environ['HOME'], 'log')
-now_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-flogger = log.get_file_logger("rrbs_cpg_island_coverage", os.path.join(log_dir, "rrbs_cpg_island_coverage"))
-# clogger = log.get_console_logger(__name__)
-
-
-def get_one_coverage(bam_fn, region, region_pad=500, n_perm=100):
-    chrom, start, end = region
-    start = max(start - region_pad, 0)
-    end += region_pad  # no problem if we run off the end
-
-    perm_depths = [None] * n_perm
-
-    # get the coverage over this region
-    region_depth = pysam.depth(bam_fn, "-a", "-r", "%s:%d-%d" % (chrom, start, end))
-
-    for j in range(n_perm):
-        chrom, start, end = genomics.random_genomic_interval(chrom_lengths, n_bp=end - start + 1)
-        perm_depths[j] = pysam.depth(bam_fn, "-a", "-r", "%s:%d-%d" % (chrom, start, end))
-
-    return region_depth, perm_depths
+logger = log.get_console_logger(__name__)
 
 
-def save_results(cov_cpg_islands, cov_perms, outfn):
-    to_write = {
-        'cpg_islands': cov_cpg_islands,
-        'permutations': cov_perms,
-    }
-    flogger.info("Dumping %d results to JSON file %s", len(cov_cpg_islands), outfn)
-    with open(outfn, 'wb') as fout:
-        json.dump(to_write, fout)
-    flogger.info("Wrote file %s successfully.", outfn)
+def plot_one_hist(dat, ax, *args, **kwargs):
+    mval = dat[:, 0] / dat.sum(axis=1).astype(float) * 100.
+    ax.hist(mval, *args, **kwargs)
 
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    required = parser.add_argument_group('required arguments')
+    min_coverage = 10
+    outdir = output.unique_output_dir("rrbs_methylation_cpg_islands", reuse_empty=True)
 
-    required.add_argument("-i", "--input", help="Path to BAM file", required=True)
-    required.add_argument("-p", "--threads", help="Number of threads", default=os.environ.get('NSLOTS', '1'))
+    cpg_island_tsv = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
+    cpg_regions = pd.read_csv(cpg_island_tsv, sep='\t', header=0)
 
-    # all extra args got to extra
-    args, extra = parser.parse_known_args()
-
-    ncpu = int(args.threads)
-    f = os.path.abspath(args.input)
-
-    flogger.info("Running on input file %s with %d threads.", f, ncpu)
-
-    outdir = output.unique_output_dir("rrbs_coverage_sampling", reuse_empty=True)
-
-    flogger.info("Output to directory %s", outdir)
-
-    save_every_n = 300  # number of iterations to save between
-    region_pad = 500  # number of BP to pad each region by
-    n_perm = 10  # number of times to draw each region size at random
-
-    bed_fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.bed')
-    tsv_fn = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163', 'mouse', 'bismark')
+    indir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163', 'trim_galore', 'mouse', 'bismark')
     subdir = "GC-CV-7163-{i}_S{i}"
+    flist = glob(os.path.join(indir, "*.bismark.cov.gz"))
+
+    chroms = [str(t) for t in range(1, 20)]
 
     chrom_lengths = genomics.reference_genome_chrom_lengths(tax_id=10090)
     # discard unplaced scaffolds, MT, X, Y
-    chrom_lengths = chrom_lengths.loc[chrom_lengths.index.str.contains(r'^[0-9]')]
+    chrom_lengths = chrom_lengths.loc[chroms]
 
-    # BAMs must be sorted and indexed
-    # flist = [
-    #     os.path.join(indir, subdir.format(i=i), 'GC-CV-7163-{i}_S{i}_pe.sorted.bam'.format(i=i))
-    #     for i in range(1, 7)
-    # ]
+    res_cpg = {}
+    res_outside = {}
 
-    # for f in flist:
-    fstem = os.path.split(f)[-1]
-    fstem = os.path.splitext(fstem)[0]
-    fstem = fstem.replace('.sorted', '')
-    fstem = re.sub(r'_pe$', '', fstem)
+    for f in flist:
+        fstem = os.path.split(f)[-1].replace(".bismark.cov.gz", "")
 
-    outfn = os.path.join(outdir, "%s.cpg_coverage.json" % fstem)
+        logger.info("Starting analysis of %s.", f)
+        dat = pd.read_csv(f, sep='\t', header=None, index_col=None)
+        dat.columns = ['chr', 'coord', 'end', 'meth_pct', 'n_m', 'n_u']
+        # strange behaviour: some chrom names are int, others string
+        # fix now by casting all to string
+        dat.loc[:, 'chr'] = dat.chr.astype(str)
 
-    fn = os.path.join(indir, f)
-    flogger.info("Starting analysis of %s.", fn)
-    s = pysam.AlignmentFile(fn, 'rb')
+        # pick only the data and regions we are interested in
+        dat = dat.loc[dat.chr.isin(chroms)]
 
-    # load tsv
-    cpg_regions = pd.read_csv(tsv_fn, sep='\t', header=0)
+        # require a minimum coverage
+        dat = dat.loc[(dat.n_u + dat.n_m) >= min_coverage]
 
-    if ncpu > 1:
-        pool = mp.Pool(ncpu)
-        jobs = {}
+        in_cpg = []
+        not_in_cpg = []
 
-    cov_cpg_islands = []
-    cov_perms = []
-    n_since_save = 0
+        for c, the_dat in dat.groupby('chr'):
+            logger.info("Chromosome %s" % c)
+            the_dat.insert(the_dat.shape[1], 'in_cpg_island', False)
+            coord = the_dat.coord.values
+            idx = np.zeros(len(coord)).astype(bool)
 
-    for i, row in cpg_regions.iterrows():
-        region = (row.chrom, row.chromStart, row.chromEnd)
-        kwds = {'region_pad': region_pad, 'n_perm': n_perm}
-        if ncpu > 1:
-            jobs[i] = pool.apply_async(
-                get_one_coverage,
-                args=(fn, region),
-                kwds=kwds
-            )
-        else:
-            try:
-                res = get_one_coverage(fn, region, **kwds)
-                cov_cpg_islands.append(res[0])
-                cov_perms.append(res[1])
-                n_since_save += 1
-                if n_since_save == save_every_n:
-                    save_results(cov_cpg_islands, cov_perms, outfn)
-                    n_since_save = 0
-            except Exception:
-                flogger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
+            the_cpg = cpg_regions.loc[cpg_regions.loc[:, 'chrom'] == c]
 
-    n_since_save = 0
-    if ncpu > 1:
-        pool.close()
-        for i, row in cpg_regions.iterrows():
-            try:
-                res = jobs[i].get(1e6)
-                cov_cpg_islands.append(res[0])
-                cov_perms.append(res[1])
-                n_since_save += 1
-                if n_since_save == save_every_n:
-                    save_results(cov_cpg_islands, cov_perms, outfn)
-                    n_since_save = 0
-            except Exception:
-                flogger.exception("Failed to extract region %s:%d-%d.", row.chrom, row.chromStart, row.chromEnd)
+            for i, row in the_cpg.iterrows():
+                st = row.chromStart
+                en = row.chromEnd
+                idx[(coord >= st) & (coord <= en)] = True
 
-    # save full results
-    save_results(cov_cpg_islands, cov_perms, outfn)
+            in_cpg.append(the_dat.loc[idx, ['n_m', 'n_u']].values)
+            not_in_cpg.append(the_dat.loc[~idx, ['n_m', 'n_u']].values)
+
+        res_cpg[fstem] = np.concatenate(in_cpg, axis=0)
+        res_outside[fstem] = np.concatenate(not_in_cpg, axis=0)
+
+    for f in flist:
+        fstem = os.path.split(f)[-1].replace(".bismark.cov.gz", "")
+        outfn = os.path.join(outdir, "%s_m_values.png" % fstem)
+
+        fig, axs = plt.subplots(nrows=2, ncols=1, sharex=True)
+        plot_one_hist(res_cpg[fstem], axs[0], 50)
+        # axs[0].hist(res_cpg[fstem], 50)
+        axs[0].set_title("CpG Islands")
+
+        plot_one_hist(res_outside[fstem], axs[1], 50)
+        # axs[1].hist(res_outside[fstem], 50)
+        axs[1].set_title("Non-CpG Islands")
+        axs[0].set_xlabel('Percent methylated')
+        axs[0].set_ylabel('Frequency')
+        axs[1].set_ylabel('Frequency')
+        fig.tight_layout()
+        fig.savefig(outfn)
