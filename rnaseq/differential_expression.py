@@ -98,7 +98,16 @@ def _edger_func_exacttest(the_data, the_groups, fdr=0.01, lfc=1, pair=None, retu
 edger_exacttest = rinterface.RFunctionDeferred(_edger_func_exacttest, imports=['edgeR'])
 
 
-def run_one_de(the_data, the_groups, the_comparison, lfc=1, fdr=0.01, method='QLGLM', return_full=False, tax_id=9606):
+def run_one_de(
+        the_data,
+        the_groups,
+        the_comparison,
+        lfc=1,
+        fdr=0.01,
+        method='QLGLM',
+        return_full=False,
+        tax_id=9606
+):
     the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
     if method == 'QLGLM':
         res = edger_glmqlfit(

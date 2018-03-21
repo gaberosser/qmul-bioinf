@@ -29,7 +29,7 @@ class SalmonPEBase(jobs.ArrayJob):
         ('$SUBDIR', None),  # this will be ignored
     ]
     param_delim = ':'
-    core_cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -1 $READS1 -2 $READS2 -o $SUBDIR"
+    core_cmd = "salmon quant -i {index_dir} -l {library_type} -p {threads} -1 $READS1 -2 $READS2 -o $SUBDIR {extra}"
 
     def set_default_extras(self):
         if '--seqBias' not in self.extra_args:

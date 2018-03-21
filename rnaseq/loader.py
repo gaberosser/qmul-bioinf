@@ -107,6 +107,11 @@ wtchg_p170582 = RnaSeqFileLocations(
     alignment_subdir='human',
 )
 
+wtchg_p170644 = RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p170644'),
+    alignment_subdir='human',
+)
+
 PATIENT_LOOKUP_CC = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
@@ -184,6 +189,8 @@ PATIENT_LOOKUP_CC = {
         ('GBM061_P5', wtchg_p170503),
         ('DURA061_NSC_N4_P2', wtchg_p170503),
         ('DURA061_NSC_N6_P4', wtchg_p170503),
+        ('DURA061_NSC_N1_P3', wtchg_p170644),
+        ('DURA061_NSC_N1_P5', wtchg_p170644),
         ('DURA061_IPSC_N4_P5', wtchg_p170582)
     ],
     'GIBCO': [
