@@ -17,6 +17,8 @@ if __name__ == "__main__":
     optional.add_argument("--read_dir", help="Directory containing reads", default='./')
     optional.add_argument("-o", "--out_dir", help="Output directory")
     optional.add_argument("-p", "--threads", help="Number of threads", default='1')
+    optional.add_argument("--include", help="List of filestems to include (comma separated)")
+    optional.add_argument("--exclude", help="List of filestems to exclude (comma separated)")
 
     required.add_argument("-i", "--genomeDir", help="Directory of pre-computed STAR index", required=True)
 
@@ -29,6 +31,11 @@ if __name__ == "__main__":
         if not os.path.exists(args.out_dir):
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
+
+    if args.include is not None:
+        args.include = args.include.split(',')
+    if args.exclude is not None:
+        args.exclude = args.exclude.split(',')
 
     obj = star.StarPEApocrita(extra_args=extra, **args.__dict__)
     obj.create_script()
