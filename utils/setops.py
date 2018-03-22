@@ -247,3 +247,62 @@ def venn_set_to_wide_dataframe(
     res = pd.concat(res, axis=0)
 
     return res
+
+
+def full_partial_unique_other_sets_from_groups(
+        set_labels,
+        subgroup_dict
+):
+    subgroup_ind = dict([
+        (k, pd.Index(set_labels).isin(v)) for k, v in subgroup_dict.items()
+    ])
+    subgroup_size = dict([
+        (k, len(v)) for k, v in subgroup_dict.items()
+    ])
+
+    groups = subgroup_dict.keys()
+
+    # colours and sets for UpsetR plot
+    sets_full = {}
+    sets_partial = {}
+    sets_unique = []
+    sets_other = []
+
+    for k in binary_combinations(len(set_labels)):
+        this_k = np.array([t for t in k]).astype(bool)
+        # case 1: single member of the set
+        if this_k.sum() == 1:
+            sets_unique.append(k)
+        # case 2: there is more than one member, so need to distinguish between full, partial and other
+        else:
+            n_in_subgroup = []
+            full_match = False
+            for grp in groups:
+                grp_idx = subgroup_ind[grp]
+                # case 2a: number of members matches the number in the subgroup
+                # now we need to determine whether it's an actual match
+                n_in_subgroup.append(this_k[grp_idx].sum())
+                if this_k[grp_idx].sum() == this_k.sum():
+                    # right number of members to be a full match - but is it?
+                    if this_k[grp_idx].sum() == subgroup_size[grp]:
+                        # yes - full match
+                        sets_full.setdefault(grp, []).append(k)
+                        full_match = True
+                        # no need to continue going through the subgroups for this k
+                        break
+            if not full_match:
+                n_in_subgroup = np.array(n_in_subgroup)
+                ii = np.where(n_in_subgroup > 0)[0]
+                # 2b: if only one element is non-zero, we have a partial match
+                if ii.size == 1:
+                    sets_partial.setdefault(groups[ii[0]], []).append(k)
+                # 2c: must be in the other category
+                else:
+                    sets_other.append(k)
+
+    return {
+        'full': sets_full,
+        'partial': sets_partial,
+        'specific': sets_unique,
+        'mixed': sets_other
+    }

@@ -12,16 +12,36 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from plotting import venn
 import pandas as pd
+import numpy as np
+import os
+from utils import output, setops
 
 
 if __name__ == "__main__":
+    # pids = [
+    #     '018', '019', '030', '031',
+    #     '017', '050', '054', '061',
+    #     '026', '052'
+    # ]
+    # subgroups = {
+    #     'RTK I': ['018', '019', '030', '031'],
+    #     'RTK II': ['017', '050', '054', '061'],
+    #     'MES': ['026', '052']
+    # }
+
     pids = [
         '018', '019', '030', '031',
-        '017', '050', '054', '061',
+        '017', '050', '054',
         '026', '052'
     ]
+    subgroups = {
+        'RTK I': ['018', '019', '030', '031'],
+        'RTK II': ['017', '050', '054'],
+        'MES': ['026', '052']
+    }
     min_cpm = 1
 
+    outdir = output.unique_output_dir("compare_de_gene_counts_s1", reuse_empty=True)
     obj = loader.load_by_patient(pids, include_control=True)
 
     # remove IPSC and rejected 061 samples for good
@@ -40,6 +60,7 @@ if __name__ == "__main__":
     res_3 = {}
     res_4 = {}
     step4_n_filter = {}
+
 
     for m in methods:
 
@@ -140,3 +161,106 @@ if __name__ == "__main__":
         res_3[m] = this_res1
         res_4[m] = this_res2
         step4_n_filter[m] = this_removed
+
+    # now let's look at the UpSet plot for each of these
+    # first, we run with a reduced set of PIDs to match the previous analysis
+
+    prev_pids = ['018', '019', '031', '017', '050', '054']
+    prev_subgroups = {
+        'RTK I': ['018', '019', '031'],
+        'RTK II': ['017', '050', '054'],
+    }
+    sets_all = setops.full_partial_unique_other_sets_from_groups(prev_pids, prev_subgroups)
+
+    set_colours = [
+        ('RTK I full', {'sets': sets_all['full']['RTK I'], 'colour': '#0d680f'}),
+        ('RTK I partial', {'sets': sets_all['partial']['RTK I'], 'colour': '#6ecc70'}),
+        ('RTK II full', {'sets': sets_all['full']['RTK II'], 'colour': '#820505'}),
+        ('RTK II partial', {'sets': sets_all['partial']['RTK II'], 'colour': '#d67373'}),
+        ('Expanded core', {'sets': sets_all['mixed'], 'colour': '#4C72B0'}),
+        ('Unique', {'sets': sets_all['specific'], 'colour': '#f4e842'})
+    ]
+
+    for m in methods:
+        # UpsetR attribute plots
+        data_for_upset1 = [res_1[m][pid].index for pid in prev_pids]  # this will be supplied to the function
+
+        upset1 = venn.upset_set_size_plot(
+            data_for_upset1,
+            set_labels=prev_pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset1['figure'].savefig(os.path.join(outdir, "upset_%s_1_prev_pids.png" % m), dpi=200)
+
+        data_for_upset2 = [res_2[m][pid].index for pid in prev_pids]  # this will be supplied to the function
+        upset2 = venn.upset_set_size_plot(
+            data_for_upset2,
+            set_labels=prev_pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset2['figure'].savefig(os.path.join(outdir, "upset_%s_2_prev_pids.png" % m), dpi=200)
+
+    # UpSet plots again, but this time including ALL the samples
+    sets_all = setops.full_partial_unique_other_sets_from_groups(pids, subgroups)
+
+    set_colours = [
+        ('RTK I full', {'sets': sets_all['full']['RTK I'], 'colour': '#0d680f'}),
+        ('RTK I partial', {'sets': sets_all['partial']['RTK I'], 'colour': '#6ecc70'}),
+        ('RTK II full', {'sets': sets_all['full']['RTK II'], 'colour': '#820505'}),
+        ('RTK II partial', {'sets': sets_all['partial']['RTK II'], 'colour': '#d67373'}),
+        ('MES full', {'sets': sets_all['full']['MES'], 'colour': '#7900ad'}),
+        # ('MES partial', {'sets': sets_all['partial']['MES'], 'colour': '#cc88ea'}),  # doesn't exist
+        ('Expanded core', {'sets': sets_all['mixed'], 'colour': '#4C72B0'}),
+        ('Unique', {'sets': sets_all['specific'], 'colour': '#f4e842'})
+    ]
+
+    for m in methods:
+        data_for_upset1 = [res_1[m][pid].index for pid in pids]
+        upset1 = venn.upset_set_size_plot(
+            data_for_upset1,
+            set_labels=pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset1['figure'].savefig(os.path.join(outdir, "upset_%s_1.png" % m), dpi=200)
+
+        data_for_upset2 = [res_2[m][pid].index for pid in pids]  # this will be supplied to the function
+        upset2 = venn.upset_set_size_plot(
+            data_for_upset2,
+            set_labels=pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset2['figure'].savefig(os.path.join(outdir, "upset_%s_2.png" % m), dpi=200)
+
+        data_for_upset3 = [res_3[m][pid].index for pid in pids]
+        upset3 = venn.upset_set_size_plot(
+            data_for_upset3,
+            set_labels=pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset3['figure'].savefig(os.path.join(outdir, "upset_%s_3.png" % m), dpi=200)
+
+        data_for_upset4 = [res_4[m][pid].index for pid in pids]  # this will be supplied to the function
+        upset4 = venn.upset_set_size_plot(
+            data_for_upset4,
+            set_labels=pids,
+            set_colours=set_colours,
+            min_size=10,
+            n_plot=30,
+            default_colour='gray'
+        )
+        upset4['figure'].savefig(os.path.join(outdir, "upset_%s_4.png" % m), dpi=200)
