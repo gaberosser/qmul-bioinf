@@ -14,56 +14,62 @@ source("utils.R")
 
 # load paired data
 
-in.dirs <- c(
-  file.path(
+in.dir <- file.path(
     data.dir.raid, 
     'rnaseq',
     'wtchg_p160704',
-    '161219_K00198_0151_BHGYHTBBXX',
+    'human',
     'star_alignment'
-  ),
-  file.path(
-    data.dir.raid, 
-    'rnaseq',
-    'wtchg_p160704',
-    '161222_K00198_0152_AHGYG3BBXX',
-    'star_alignment'
-  )
 )
 
-meta.files <- c(
-  file.path(
+meta.file <- file.path(
     data.dir.raid, 
     'rnaseq',
     'wtchg_p160704',
-    '161219_K00198_0151_BHGYHTBBXX',
     'sources.csv'
-  ),
-  file.path(
-    data.dir.raid, 
-    'rnaseq',
-    'wtchg_p160704',
-    '161222_K00198_0152_AHGYG3BBXX',
-    'sources.csv'
-  )
 )
 
 samples <- c(
-  'GBM018',
-  'GBM019',
-  'GBM026',
-  'GBM031',
-  'DURA018N2_NSC',
-  'DURA019N8C_NSC',
-  'DURA026N31D_NSC',
-  'DURA031N44B_NSC'
+  'GBM018_P10',
+  'GBM019_P4',
+  'GBM026_P8',
+  'GBM031_P4',
+  'DURA018_NSC_N2_P6',
+  'DURA019_NSC_N8C_P2',
+  'DURA026_NSC_N31D_P5',
+  'DURA031_NSC_N44B_P2'
 )
 
-loaded.wtchg <- star.combine_lanes(in.dirs, metafiles = meta.files, stranded='r')
-dat.wtchg <- loaded.wtchg$data[grep("ENSG", rownames(loaded.wtchg$data)), samples]
+loaded.wtchg <- star.load_all(in.dir, metafile = meta.file, stranded='r')
+dat.wtchg <- loaded.wtchg$data[grep("ENSG", rownames(loaded.wtchg$data)),]
+colnames(dat.wtchg) <- rownames(loaded.wtchg$meta)
 meta.wtchg <- loaded.wtchg$meta[loaded.wtchg$meta$sample %in% samples,]
+dat.wtchg <- dat.wtchg[,rownames(meta.wtchg)]
 
 meta.wtchg$type <- as.factor(replace(as.vector(meta.wtchg$type), meta.wtchg$type == 'iNSC', 'NSC'))
+meta.wtchg$pid <- as.factor(c('018', '019', '026', '031', '018', '019', '026', '031'))
+
+y <- DGEList(counts=dat.wtchg, group=meta.wtchg$type)
+y <- calcNormFactors(y)
+des <- model.matrix(~0 + type, data=meta.wtchg)
+y <- estimateDisp(y, design = des)
+
+fit <- glmFit(y)
+qlfit <- glmQLFit(y)
+
+treat <- glmTreat(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=1)
+qltreat <- glmTreat(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=1)
+
+lrt <- glmLRT(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+qllrt <- glmQLFTest(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+
+# these revert to the expected behaviour (glmLRT and glmQLFTest, as appropriate)
+# lrt_treat0 <- glmTreat(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=0)
+# qllrt_treat0 <- glmTreat(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=0)
+
+lrt_ql <- glmLRT(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+# this raises an error:
+# ql_lrt <- glmQLFTest(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
 
 # load TCGA-GBM data
 

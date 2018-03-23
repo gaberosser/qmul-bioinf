@@ -18,6 +18,7 @@ from utils import output, setops
 
 
 if __name__ == "__main__":
+    # all samples to date (22-03-2018):
     # pids = [
     #     '018', '019', '030', '031',
     #     '017', '050', '054', '061',
@@ -29,23 +30,38 @@ if __name__ == "__main__":
     #     'MES': ['026', '052']
     # }
 
+    # remove 061 due to limited methylation data (may be resolved shortly):
+    # pids = [
+    #     '018', '019', '030', '031',
+    #     '017', '050', '054',
+    #     '026', '052'
+    # ]
+    # subgroups = {
+    #     'RTK I': ['018', '019', '030', '031'],
+    #     'RTK II': ['017', '050', '054'],
+    #     'MES': ['026', '052']
+    # }
+
+    # original 6 samples for comparison:
     pids = [
-        '018', '019', '030', '031',
+        '018', '019', '031',
         '017', '050', '054',
-        '026', '052'
     ]
     subgroups = {
-        'RTK I': ['018', '019', '030', '031'],
+        'RTK I': ['018', '019', '031'],
         'RTK II': ['017', '050', '054'],
-        'MES': ['026', '052']
     }
+
     min_cpm = 1
 
     outdir = output.unique_output_dir("compare_de_gene_counts_s1", reuse_empty=True)
     obj = loader.load_by_patient(pids, include_control=True)
 
     # remove IPSC and rejected 061 samples for good
-    idx = (~obj.meta.index.str.contains('IPSC')) & (~obj.meta.index.isin(['DURA061_NSC_N1_P5', 'DURA061_NSC_N6_P4']))
+    idx = (
+        (~obj.meta.index.str.contains('IPSC'))
+        & (~obj.meta.index.isin(['DURA061_NSC_N1_P5', 'DURA061_NSC_N6_P4']))
+    )
     obj.meta = obj.meta.loc[idx]
     obj.data = obj.data.loc[:, idx]
     obj.batch_id = obj.batch_id.loc[idx]
