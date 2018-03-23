@@ -255,11 +255,10 @@ if __name__ == "__main__":
     # UpSet plots again, but this time including ALL the samples
     sets_all = setops.full_partial_unique_other_sets_from_groups(pids, subgroups)
 
-    set_colours = [
-        ('Expanded core', {'sets': sets_all['mixed'], 'colour': subgroup_set_colours['mixed']}),
-        ('Specific', {'sets': sets_all['specific'], 'colour': subgroup_set_colours['specific']})
-    ]
+    # create set colours
+    # NB the order matters!
 
+    set_colours = []
     for x in ['full', 'partial']:
         for sg in subgroups:
             k = "%s %s" % (sg, x)
@@ -267,6 +266,12 @@ if __name__ == "__main__":
                 set_colours.append(
                     (k, {'sets': sets_all[x][sg], 'colour': subgroup_set_colours[k]})
                 )
+    set_colours.append(
+        ('Expanded core', {'sets': sets_all['mixed'], 'colour': subgroup_set_colours['mixed']})
+    )
+    set_colours.append(
+        ('Specific', {'sets': sets_all['specific'], 'colour': subgroup_set_colours['specific']})
+    )
 
     for m in methods:
         data_for_upset1 = [res_1[m][pid].index for pid in pids]

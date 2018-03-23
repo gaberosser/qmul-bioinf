@@ -4,6 +4,7 @@ import pandas as pd
 import settings
 import references
 import csv
+import itertools
 
 
 pathway_files = {
@@ -55,6 +56,13 @@ if __name__ == "__main__":
 
     # now build a network
     # nodes are pathways, edges are genes
-    graph = networkx.Graph(db=src)
-    for pth, garr in pathway_symbols.iteritems():
-        graph.add_node()
+    graph_node_path = networkx.Graph(db=src)
+    for pth in pathway_symbols:
+        graph_node_path.add_node(pth)
+
+    for g in gene_pathways:
+        conn_paths = gene_pathways[g]
+
+
+
+
