@@ -14,6 +14,7 @@ from plotting import venn
 import pandas as pd
 import numpy as np
 import os
+import pickle
 from utils import output, setops
 
 
@@ -177,6 +178,24 @@ if __name__ == "__main__":
         res_3[m] = this_res1
         res_4[m] = this_res2
         step4_n_filter[m] = this_removed
+
+    # save the results - they don't take much space and make things much faster
+    to_save = {
+        'res_1': res_1,
+        'res_2': res_2,
+        'res_3': res_3,
+        'res_4': res_4,
+        'step2_n_filter': step2_n_filter,
+        'step4_n_filter': step4_n_filter,
+        'pids': pids,
+        'subgroups': subgroups,
+        'data': obj.data,
+        'meta': obj.meta
+    }
+    fn_pkl = os.path.join(outdir, 'results.pkl')
+    with open(fn_pkl, 'wb') as f:
+        pickle.dump(to_save, f)
+    print "Saved pickled results to %s" % fn_pkl
 
     # now let's look at the UpSet plot for each of these
     # first, we run with a reduced set of PIDs to match the previous analysis
