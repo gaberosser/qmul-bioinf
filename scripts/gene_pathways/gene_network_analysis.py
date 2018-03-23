@@ -55,13 +55,27 @@ if __name__ == "__main__":
             gene_pathways.setdefault(g, []).append(pth)
 
     # now build a network
-    # nodes are pathways, edges are genes
+
+    # 1) nodes are pathways, edges are genes
     graph_node_path = networkx.Graph(db=src)
+
     for pth in pathway_symbols:
         graph_node_path.add_node(pth)
 
     for g in gene_pathways:
         conn_paths = gene_pathways[g]
+        graph_node_path.add_edges_from(itertools.combinations(conn_paths, 2), gene_symbol=g)
+
+    # 2) nodes are genes, edges are pathways
+    graph_node_gene = networkx.Graph(db=src)
+
+    for g in gene_pathways:
+        graph_node_gene.add_node(g)
+
+    for pth in pathway_symbols:
+        conn_genes = pathway_symbols[pth]
+        graph_node_gene.add_edges_from(itertools.combinations(conn_genes, 2), pathway=pth)
+
 
 
 
