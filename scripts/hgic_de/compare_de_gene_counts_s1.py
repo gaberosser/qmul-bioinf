@@ -53,6 +53,17 @@ if __name__ == "__main__":
         'RTK II': ['017', '050', '054'],
     }
 
+    subgroup_set_colours = {
+        'RTK I full': '#0d680f',
+        'RTK II full': '#820505',
+        'MES full': '#7900ad',
+        'RTK I partial': '#6ecc70',
+        'RTK II partial': '#d67373',
+        'MES partial': '#cc88ea',
+        'mixed': '#4C72B0',
+        'specific': '#f4e842',
+    }
+
     min_cpm = 1
 
     outdir = output.unique_output_dir("compare_de_gene_counts_s1", reuse_empty=True)
@@ -245,15 +256,17 @@ if __name__ == "__main__":
     sets_all = setops.full_partial_unique_other_sets_from_groups(pids, subgroups)
 
     set_colours = [
-        ('RTK I full', {'sets': sets_all['full']['RTK I'], 'colour': '#0d680f'}),
-        ('RTK I partial', {'sets': sets_all['partial']['RTK I'], 'colour': '#6ecc70'}),
-        ('RTK II full', {'sets': sets_all['full']['RTK II'], 'colour': '#820505'}),
-        ('RTK II partial', {'sets': sets_all['partial']['RTK II'], 'colour': '#d67373'}),
-        ('MES full', {'sets': sets_all['full']['MES'], 'colour': '#7900ad'}),
-        # ('MES partial', {'sets': sets_all['partial']['MES'], 'colour': '#cc88ea'}),  # doesn't exist
-        ('Expanded core', {'sets': sets_all['mixed'], 'colour': '#4C72B0'}),
-        ('Unique', {'sets': sets_all['specific'], 'colour': '#f4e842'})
+        ('Expanded core', {'sets': sets_all['mixed'], 'colour': subgroup_set_colours['mixed']}),
+        ('Specific', {'sets': sets_all['specific'], 'colour': subgroup_set_colours['specific']})
     ]
+
+    for x in ['full', 'partial']:
+        for sg in subgroups:
+            k = "%s %s" % (sg, x)
+            if sg in sets_all[x]:
+                set_colours.append(
+                    (k, {'sets': sets_all[x][sg], 'colour': subgroup_set_colours[k]})
+                )
 
     for m in methods:
         data_for_upset1 = [res_1[m][pid].index for pid in pids]

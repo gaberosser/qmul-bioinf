@@ -47,6 +47,14 @@ if __name__ == "__main__":
                     )
             pathway_ens[row[0]] = ee.values
 
+    # to get connectivity, we need to create the complementary dictionary (indexed by genes)
+    gene_pathways = {}
+    for pth, garr in pathway_symbols.iteritems():
+        for g in garr:
+            gene_pathways.setdefault(g, []).append(pth)
 
     # now build a network
     # nodes are pathways, edges are genes
+    graph = networkx.Graph(db=src)
+    for pth, garr in pathway_symbols.iteritems():
+        graph.add_node()
