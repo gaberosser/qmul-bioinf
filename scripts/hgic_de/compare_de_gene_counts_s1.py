@@ -20,16 +20,16 @@ from utils import output, setops
 
 if __name__ == "__main__":
     # all samples to date (22-03-2018):
-    # pids = [
-    #     '018', '019', '030', '031',
-    #     '017', '050', '054', '061',
-    #     '026', '052'
-    # ]
-    # subgroups = {
-    #     'RTK I': ['018', '019', '030', '031'],
-    #     'RTK II': ['017', '050', '054', '061'],
-    #     'MES': ['026', '052']
-    # }
+    pids = [
+        '018', '019', '030', '031',
+        '017', '050', '054', '061',
+        '026', '052'
+    ]
+    subgroups = {
+        'RTK I': ['018', '019', '030', '031'],
+        'RTK II': ['017', '050', '054', '061'],
+        'MES': ['026', '052']
+    }
 
     # remove 061 due to limited methylation data (may be resolved shortly):
     # pids = [
@@ -44,14 +44,14 @@ if __name__ == "__main__":
     # }
 
     # original 6 samples for comparison:
-    pids = [
-        '018', '019', '031',
-        '017', '050', '054',
-    ]
-    subgroups = {
-        'RTK I': ['018', '019', '031'],
-        'RTK II': ['017', '050', '054'],
-    }
+    # pids = [
+    #     '018', '019', '031',
+    #     '017', '050', '054',
+    # ]
+    # subgroups = {
+    #     'RTK I': ['018', '019', '031'],
+    #     'RTK II': ['017', '050', '054'],
+    # }
 
     subgroup_set_colours = {
         'RTK I full': '#0d680f',
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     min_cpm = 1
 
     outdir = output.unique_output_dir("compare_de_gene_counts_s1", reuse_empty=True)
-    obj = loader.load_by_patient(pids, include_control=True)
+    obj = loader.load_by_patient(pids, include_control=False)
 
     # remove IPSC and rejected 061 samples for good
     idx = (
@@ -259,8 +259,8 @@ if __name__ == "__main__":
     # NB the order matters!
 
     set_colours = []
-    for x in ['full', 'partial']:
-        for sg in subgroups:
+    for sg in subgroups:
+        for x in ['full', 'partial']:
             k = "%s %s" % (sg, x)
             if sg in sets_all[x]:
                 set_colours.append(
