@@ -83,10 +83,10 @@ if __name__ == "__main__":
 
     # load reference data
     h9_obj = loader.load_references('GSE61794', tax_id=9606, source='star', strandedness='u')
-    h1_obj = loader.load_references('GSE38993', tax_id=9606, source='star', strandedness='u', samples=['H1 NSC'])
+    # h1_obj = loader.load_references('GSE38993', tax_id=9606, source='star', strandedness='u', samples=['H1 NSC'])
 
     # combine
-    obj = loader.MultipleBatchLoader([obj, h9_obj, h1_obj])
+    obj = loader.MultipleBatchLoader([obj, h9_obj])
 
     # remove IPSC and rejected 061 samples for good
     idx = (
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     obj.data = obj.data.loc[:, idx]
     obj.batch_id = obj.batch_id.loc[idx]
 
-    refs = ['GIBCO', 'H1', 'H9']
+    refs = ['GIBCO', 'H9']
 
     # we'll run everything with two different edgeR tests
     methods = ('GLM', 'QLGLM')
@@ -127,7 +127,7 @@ if __name__ == "__main__":
             the_groups = pd.Series('iNSC', index=the_data.columns)
             the_groups[the_groups.index.str.contains('GBM')] = 'GBM'
             the_comparison = ('GBM', 'iNSC')
-            jobs[(m, pid, 'insc')] = pool.apply_async(
+            jobs[(m, pid, 'iNSC')] = pool.apply_async(
                 differential_expression.run_one_de,
                 args=(the_data, the_groups, the_comparison),
                 kwds={'method': m}
@@ -182,10 +182,10 @@ if __name__ == "__main__":
             the_data = the_data.loc[keep]
 
             if m == methods[0]:
-                step2_n_filter.setdefault(pid, {})['insc'] = (keep.size, keep.sum())
+                step2_n_filter.setdefault(pid, {})['iNSC'] = (keep.size, keep.sum())
 
             the_comparison = ('GBM', 'iNSC')
-            jobs[(m, pid, 'insc')] = pool.apply_async(
+            jobs[(m, pid, 'iNSC')] = pool.apply_async(
                 differential_expression.run_one_de,
                 args=(the_data, the_groups, the_comparison),
                 kwds={'method': m}
@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
         for pid in pids:
             the_comparison = ('GBM%s' % pid, 'iNSC%s' % pid)
-            jobs[(m, pid, 'insc')] = pool.apply_async(
+            jobs[(m, pid, 'iNSC')] = pool.apply_async(
                 differential_expression.run_one_de,
                 args=(dat, the_groups, the_comparison),
                 kwds={'method': m}
@@ -268,7 +268,7 @@ if __name__ == "__main__":
 
             for ref in refs:
                 the_comparison = ('GBM%s' % pid, ref)
-                jobs[(m, pid, ref.lower())] = pool.apply_async(
+                jobs[(m, pid, ref)] = pool.apply_async(
                     differential_expression.run_one_de,
                     args=(dat, the_groups, the_comparison),
                     kwds={'method': m}
@@ -289,7 +289,7 @@ if __name__ == "__main__":
             idx1 = (
                 dat.columns.str.contains(pid)
             )
-            the_genes = res_3[m][pid]['insc'].index
+            the_genes = res_3[m][pid]['iNSC'].index
             the_data = dat.loc[the_genes, idx1]
             the_groups = pd.Series('iNSC', index=the_data.columns)
             the_groups[the_groups.index.str.contains('GBM')] = 'GBM'
@@ -300,8 +300,8 @@ if __name__ == "__main__":
                 min_cpm=min_cpm
             )
 
-            res_4.setdefault(m, {}).setdefault(pid, {})['insc'] = res_3[m][pid]['insc'].loc[keep]
-            step4_n_filter.setdefault(m, {}).setdefault(pid, {})['insc'] = (keep.size, keep.sum())
+            res_4.setdefault(m, {}).setdefault(pid, {})['iNSC'] = res_3[m][pid]['iNSC'].loc[keep]
+            step4_n_filter.setdefault(m, {}).setdefault(pid, {})['iNSC'] = (keep.size, keep.sum())
 
             for ref in refs:
                 idx = (
@@ -322,9 +322,6 @@ if __name__ == "__main__":
                 res_4.setdefault(m, {}).setdefault(pid, {})[ref] = res_3[m][pid][ref].loc[keep]
                 step4_n_filter.setdefault(m, {}).setdefault(pid, {})[ref] = (keep.size, keep.sum())
 
-
-
-
     # save the results - they don't take much space and make things much faster
     to_save = {
         'res_1': res_1,
@@ -343,112 +340,38 @@ if __name__ == "__main__":
         pickle.dump(to_save, f)
     print "Saved pickled results to %s" % fn_pkl
 
-    # now let's look at the UpSet plot for each of these
-    # first, we run with a reduced set of PIDs to match the previous analysis
+    # report some of the numbers involved
 
-    prev_pids = ['018', '019', '031', '017', '050', '054']
-    prev_subgroups = {
-        'RTK I': ['018', '019', '031'],
-        'RTK II': ['017', '050', '054'],
-    }
-    sets_all = setops.full_partial_unique_other_sets_from_groups(prev_pids, prev_subgroups)
+    # 1a) original (res_1) numbers of DE genes in Venn plot
 
-    set_colours = [
-        ('RTK I full', {'sets': sets_all['full']['RTK I'], 'colour': '#0d680f'}),
-        ('RTK I partial', {'sets': sets_all['partial']['RTK I'], 'colour': '#6ecc70'}),
-        ('RTK II full', {'sets': sets_all['full']['RTK II'], 'colour': '#820505'}),
-        ('RTK II partial', {'sets': sets_all['partial']['RTK II'], 'colour': '#d67373'}),
-        ('Expanded core', {'sets': sets_all['mixed'], 'colour': '#4C72B0'}),
-        ('Unique', {'sets': sets_all['specific'], 'colour': '#f4e842'})
-    ]
+    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
+    for i, pid in enumerate(pids):
+        # number DE in the refs
+        ax = axs.flat[i]
+        venn.venn_diagram(*[res_1['GLM'][pid][t].index for t in ['iNSC'] + refs], set_labels=['iNSC'] + refs, ax=ax)
+        ax.set_title(pid, fontsize=16)
+    for i in range(len(pids), 12):
+        ax = axs.flat[i]
+        ax.set_visible(False)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
+    fig.savefig(os.path.join(outdir, "original_number_de_genes_ref_comparison.png"), dpi=200)
 
-    for m in methods:
-        # UpsetR attribute plots
-        data_for_upset1 = [res_1[m][pid].index for pid in prev_pids]  # this will be supplied to the function
+    # 1b) original (res_1 numbers of PO genes in Venn plot
+    ## TODO: finish this!
+    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
+    for i, pid in enumerate(pids):
+        a = res_1['GLM'][pid]['iNSC'].index
+        po = []
+        for ref in refs:
+            b = res_1['GLM'][pid][ref].index
+            vs, vc = setops.venn_from_arrays(a, b)
+            po.append(vs['10'])
+        ax = axs.flat[i]
+        venn.venn_diagram(*po, set_labels=refs, ax=ax)
+        ax.set_title(pid, fontsize=16)
+    for i in range(len(pids), 12):
+        ax = axs.flat[i]
+        ax.set_visible(False)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
+    fig.savefig(os.path.join(outdir, "original_number_po_de_genes_ref_comparison.png"), dpi=200)
 
-        upset1 = venn.upset_set_size_plot(
-            data_for_upset1,
-            set_labels=prev_pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset1['figure'].savefig(os.path.join(outdir, "upset_%s_1_prev_pids.png" % m), dpi=200)
-
-        data_for_upset2 = [res_2[m][pid].index for pid in prev_pids]  # this will be supplied to the function
-        upset2 = venn.upset_set_size_plot(
-            data_for_upset2,
-            set_labels=prev_pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset2['figure'].savefig(os.path.join(outdir, "upset_%s_2_prev_pids.png" % m), dpi=200)
-
-    # UpSet plots again, but this time including ALL the samples
-    sets_all = setops.full_partial_unique_other_sets_from_groups(pids, subgroups)
-
-    # create set colours
-    # NB the order matters!
-
-    set_colours = []
-    for sg in subgroups:
-        for x in ['full', 'partial']:
-            k = "%s %s" % (sg, x)
-            if sg in sets_all[x]:
-                set_colours.append(
-                    (k, {'sets': sets_all[x][sg], 'colour': subgroup_set_colours[k]})
-                )
-    set_colours.append(
-        ('Expanded core', {'sets': sets_all['mixed'], 'colour': subgroup_set_colours['mixed']})
-    )
-    set_colours.append(
-        ('Specific', {'sets': sets_all['specific'], 'colour': subgroup_set_colours['specific']})
-    )
-
-    for m in methods:
-        data_for_upset1 = [res_1[m][pid].index for pid in pids]
-        upset1 = venn.upset_set_size_plot(
-            data_for_upset1,
-            set_labels=pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset1['figure'].savefig(os.path.join(outdir, "upset_%s_1.png" % m), dpi=200)
-
-        data_for_upset2 = [res_2[m][pid].index for pid in pids]  # this will be supplied to the function
-        upset2 = venn.upset_set_size_plot(
-            data_for_upset2,
-            set_labels=pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset2['figure'].savefig(os.path.join(outdir, "upset_%s_2.png" % m), dpi=200)
-
-        data_for_upset3 = [res_3[m][pid].index for pid in pids]
-        upset3 = venn.upset_set_size_plot(
-            data_for_upset3,
-            set_labels=pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset3['figure'].savefig(os.path.join(outdir, "upset_%s_3.png" % m), dpi=200)
-
-        data_for_upset4 = [res_4[m][pid].index for pid in pids]  # this will be supplied to the function
-        upset4 = venn.upset_set_size_plot(
-            data_for_upset4,
-            set_labels=pids,
-            set_colours=set_colours,
-            min_size=10,
-            n_plot=30,
-            default_colour='gray'
-        )
-        upset4['figure'].savefig(os.path.join(outdir, "upset_%s_4.png" % m), dpi=200)
