@@ -175,11 +175,11 @@ if __name__ == "__main__":
 
             # 4) filter again
             the_data = dat.loc[this_res1[pid].index, dat.columns.str.contains(pid)]
+            the_cpm = cpm.loc[this_res1[pid].index, dat.columns.str.contains(pid)]
             grp = pd.Series('iNSC', index=the_data.columns)
             grp[grp.index.str.contains('GBM')] = 'GBM'
 
-            cpm = the_data.divide(the_data.sum(), axis=1) * 1e6
-            over_min = (cpm > min_cpm).groupby(grp, axis=1).sum().astype(int)
+            over_min = (the_cpm > min_cpm).groupby(grp, axis=1).sum().astype(int)
             grp_size = grp.groupby(grp).size()
             keep = over_min.eq(grp_size).sum(axis=1) > 0
 

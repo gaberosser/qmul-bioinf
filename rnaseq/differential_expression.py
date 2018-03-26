@@ -254,6 +254,7 @@ def venn_set_to_dataframe(
         full_data=None,
         logfc_col='logFC',
         fdr_col='FDR',
+        run_sanity_check=False,
 ):
     """
     Given the input DE data and Venn sets, generate a wide format dataframe containing all the data, one column
@@ -268,6 +269,8 @@ def venn_set_to_dataframe(
     significant results can be accessed.
     :param logfc_col: The name of the log fold change column in the input data. Also used to name columns in the df.
     :param fdr_col: The name of the FDR column in the input data. Also used to name columns in the df.
+    :param run_sanity_check: (default: False) If True, run an additional sanity check at the end. This *should* be
+    unnecessary. It's slow for larger numbers of members.
     :return:
     """
     if include_sets is not None:
@@ -275,34 +278,51 @@ def venn_set_to_dataframe(
             (k, v) for k, v in venn_set.items() if k in include_sets
         ])
 
+
+    # precompute columns
+    cols = reduce(
+        lambda x, y: x + y,
+        [[t, "%s_%s" % (t, logfc_col), "%s_%s" % (t, fdr_col)] for t in set_labels]
+    ) + ['consistency']
+
     res = []
     for k in venn_set:
         the_genes = venn_set[k]
+
         # populate with individual patient results
-        blocks = []
+        this_block = pd.DataFrame(index=the_genes, columns=cols)
+        # blocks = []
         consistency_check = []
         for i, t in enumerate(k):
             pid = set_labels[i]
-            this_datum = pd.DataFrame(
-                index=the_genes,
-                columns=[pid, "%s_%s" % (pid, logfc_col), "%s_%s" % (pid, fdr_col)]
-            )
+
             if t == '1':
-                this_datum.loc[the_genes, pid] = 'Y'
-                this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = data[pid].loc[the_genes, logfc_col]
-                this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = data[pid].loc[the_genes, fdr_col]
+                this_block.loc[:, pid] = 'Y'
+                this_block.loc[the_genes, "%s_%s" % (pid, logfc_col)] = data[pid].loc[the_genes, logfc_col]
+                this_block.loc[the_genes, "%s_%s" % (pid, fdr_col)] = data[pid].loc[the_genes, fdr_col]
+
                 cc = data[pid].loc[the_genes, 'Direction']
                 cc.name = pid
                 consistency_check.append(cc)
             else:
-                this_datum.loc[the_genes, pid] = 'N'
+                this_block.loc[:, pid] = 'N'
+
+                # this_datum.loc[the_genes, pid] = 'N'
                 if full_data is not None:
-                    this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes, logfc_col]
-                    this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes, fdr_col]
+                    # we can't guarantee there will be entries for all genes, as filtering removes some
+                    # therefore find matches in advance and only fill in those rows
+                    the_genes_present = pd.Index(the_genes).intersection(full_data[pid].index)
+                    this_block.loc[the_genes_present, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes_present, logfc_col]
+                    this_block.loc[the_genes_present, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes_present, fdr_col]
 
-            blocks.append(this_datum)
+                    # # this may be faster, but I don't think it makes any difference (bottleneck is elsewhere):
+                    # try:
+                    #     this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes, logfc_col]
+                    #     this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes, fdr_col]
+                    # except KeyError:
+                    #     # we only arrive here if none of the_genes were in the full data
+                    #     pass
 
-        core_block = pd.concat(blocks, axis=1)
         # assess consistency of DE direction
         consist = pd.Series(index=the_genes)
 
@@ -312,16 +332,18 @@ def venn_set_to_dataframe(
             consist.loc[idx] = 'Y'
             consist.loc[~idx] = 'N'
 
-        core_block.insert(core_block.shape[1], 'consistent', consist)
-        res.append(core_block)
+        this_block.loc[:, 'consistency'] = consist
+
+        res.append(this_block)
 
     # check: no genes should be in more than one data entry
-    for i, k in enumerate(venn_set):
-        for j, k2 in enumerate(venn_set):
-            if k == k2: continue
-            bb = len(res[i].index.intersection(res[j].index))
-            if bb > 0:
-                raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
+    if run_sanity_check:
+        for i, k in enumerate(venn_set):
+            for j, k2 in enumerate(venn_set):
+                if k == k2: continue
+                bb = len(res[i].index.intersection(res[j].index))
+                if bb > 0:
+                    raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
 
     res = pd.concat(res, axis=0)
 

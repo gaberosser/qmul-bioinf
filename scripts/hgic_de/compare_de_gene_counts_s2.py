@@ -22,9 +22,8 @@ import multiprocessing as mp
 def filter_cpm_by_group(cpm, groups, min_cpm=1):
     # filter
     over_min = (cpm > min_cpm).groupby(groups, axis=1).sum().astype(int)
-    grp_size = the_groups.groupby(the_groups).size()
+    grp_size = groups.groupby(groups).size()
     return over_min.eq(grp_size).sum(axis=1) > 0
-
 
 
 if __name__ == "__main__":
@@ -341,36 +340,94 @@ if __name__ == "__main__":
     print "Saved pickled results to %s" % fn_pkl
 
     # report some of the numbers involved
+    cols = []
+    for k, nm in zip(['res_1', 'res_2', 'res_4'], ['original', 'original_filter', 'group_dispersion']):
+        for m in methods:
+            cols.append("%s_%s" % (nm, m))
+    n_pair_only_intersect = pd.DataFrame(index=pids, columns=cols)
 
-    # 1a) original (res_1) numbers of DE genes in Venn plot
-    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 8))
-    for i, pid in enumerate(pids):
-        # number DE in the refs
-        ax = axs.flat[i]
-        venn.venn_diagram(*[res_1['GLM'][pid][t].index for t in ['iNSC'] + refs], set_labels=['iNSC'] + refs, ax=ax)
-        ax.set_title(pid, fontsize=16)
-    for i in range(len(pids), 12):
-        ax = axs.flat[i]
-        ax.set_visible(False)
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
-    fig.savefig(os.path.join(outdir, "original_number_de_genes_ref_comparison.png"), dpi=200)
+    for k, nm in zip(['res_1', 'res_2', 'res_4'], ['original', 'original_filter', 'group_dispersion']):
+        for m in methods:
+            this_res = to_save[k][m]
 
-    # 1b) original (res_1) numbers of PO genes in Venn plot
-    ## TODO: finish this!
-    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
-    for i, pid in enumerate(pids):
-        a = res_1['GLM'][pid]['iNSC'].index
-        po = []
-        for ref in refs:
-            b = res_1['GLM'][pid][ref].index
-            vs, vc = setops.venn_from_arrays(a, b)
-            po.append(vs['10'])
-        ax = axs.flat[i]
-        venn.venn_diagram(*po, set_labels=refs, ax=ax)
-        ax.set_title(pid, fontsize=16)
-    for i in range(len(pids), 12):
-        ax = axs.flat[i]
-        ax.set_visible(False)
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
-    fig.savefig(os.path.join(outdir, "original_number_po_de_genes_ref_comparison.png"), dpi=200)
+            # number of DE genes in Venn diagrams
+            fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 8))
+            for i, pid in enumerate(pids):
+                # number DE in the refs
+                ax = axs.flat[i]
+                venn.venn_diagram(*[this_res[pid][t].index for t in ['iNSC'] + refs], set_labels=['iNSC'] + refs, ax=ax)
+                ax.set_title(pid, fontsize=16)
+            for i in range(len(pids), 12):
+                ax = axs.flat[i]
+                ax.set_visible(False)
+            fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
+            fig.savefig(os.path.join(outdir, "number_de_genes_ref_comparison_%s_%s.png" % (nm, m)), dpi=200)
 
+            # number of PO genes in Venn diagrams
+            fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
+            for i, pid in enumerate(pids):
+                a = this_res[pid]['iNSC'].index
+                po = []
+                for ref in refs:
+                    b = this_res[pid][ref].index
+                    vs, vc = setops.venn_from_arrays(a, b)
+                    po.append(vs['10'])
+                ax = axs.flat[i]
+                venn.venn_diagram(*po, set_labels=refs, ax=ax)
+                ax.set_title("GBM%s pair only" % pid, fontsize=16)
+            for i in range(len(pids), 12):
+                ax = axs.flat[i]
+                ax.set_visible(False)
+            fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
+            fig.savefig(os.path.join(outdir, "po_de_genes_ref_comparison_%s_%s.png" % (nm, m)), dpi=200)
+
+            # number of PO DE genes
+
+            # overlap between individual references in terms of PO genes shared
+            pct_pair_only_intersect = pd.DataFrame(index=pids, columns=refs)
+
+            for i, pid in enumerate(pids):
+                a = this_res[pid]['iNSC'].index
+                po = []
+                for ref in refs:
+                    b = this_res[pid][ref].index
+                    vs, vc = setops.venn_from_arrays(a, b)
+                    po.append(vs['10'])
+                n_pair_only = np.array([len(t) for t in po])
+                _, vc = setops.venn_from_arrays(*po)
+                n_pair_only_intersect.loc[pid, "%s_%s" % (nm, m)] = vc['11']
+                pct_pair_only_intersect.loc[pid] = float(vc['11']) / n_pair_only * 100.
+
+            ax = pct_pair_only_intersect.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k', legend=False)
+            ax.set_xlabel('Patient')
+            ax.set_ylabel("% DE genes shared")
+            ax.set_ylim([0, 100])
+            ax.figure.tight_layout()
+            ax.figure.savefig(os.path.join(outdir, "perc_po_gene_correspondence_%s_%s.png" % (nm, m)), dpi=200)
+
+            plt.close('all')
+
+    # effect of filtering on original approach
+    cols_select = ['original_GLM', 'original_filter_GLM']
+    legend_lbls = [
+        'No filtering',
+        'CPM filtering',
+    ]
+    to_plot = n_pair_only_intersect.loc[:, cols_select]
+    to_plot.columns = legend_lbls
+    ax = to_plot.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k')
+    ax.set_ylabel("Number agreeing PO genes")
+    ax.figure.savefig(os.path.join(outdir, "filtering_effect_number_agreeing_po.png"), dpi=200)
+
+    # number of PO genes in the various different routines
+    cols_select = ['original_filter_GLM', 'group_dispersion_GLM', 'group_dispersion_QLGLM']
+    legend_lbls = [
+        'Original, filter, GLM',
+        'Group dispersion, GLM',
+        'Group dispersion, QLGLM',
+    ]
+    to_plot = n_pair_only_intersect.loc[:, cols_select]
+    to_plot.columns = legend_lbls
+    ax = to_plot.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k')
+    ax.set_ylabel("Number agreeing PO genes")
+    ax.figure.savefig(os.path.join(outdir, "number_agreeing_po.png"), dpi=200)
