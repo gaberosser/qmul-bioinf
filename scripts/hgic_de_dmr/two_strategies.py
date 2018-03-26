@@ -42,14 +42,23 @@ def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=N
     return obj, anno
 
 
-def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC'):
+def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC', strandedness=None):
+    """
+    :param strandedness: Iterable of same length as ref_names giving the strandedness of each ref
+    """
+    if strandedness is None:
+        strandedness = ['u'] * len(ref_names)
+    else:
+        if len(strandedness) != len(ref_names):
+            raise ValueError("Supplied strandedness must be a list of the same length as the ref_names.")
+
     # Load RNA-Seq from STAR
     obj = rnaseq_loader.load_by_patient(pids)
 
     # load additional references
     ref_objs = []
-    for rn in ref_names:
-        ref_obj = rnaseq_loader.load_references(rn)
+    for rn, strnd in zip(ref_names, strandedness):
+        ref_obj = rnaseq_loader.load_references(rn, strandedness=strnd)
         if ref_name_filter is not None:
             # only keep relevant references
             ref_obj.meta = ref_obj.meta.loc[ref_obj.meta.index.str.contains(ref_name_filter)]
@@ -300,6 +309,7 @@ if __name__ == "__main__":
     ])
 
     external_ref_names_de = ['GSE61794']
+    external_ref_strandedness_de = ['u']
     external_ref_names_dm = ['gse38216']
     external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
 
@@ -382,7 +392,7 @@ if __name__ == "__main__":
         # only need the keys for the significant DMR list
         dmr_res_sign_s1[k1] = dmr_res_sign_s1[k1].keys()
 
-    rnaseq_obj = load_rnaseq(pids, external_ref_names_de)
+    rnaseq_obj = load_rnaseq(pids, external_ref_names_de, strandedness=external_ref_strandedness_de)
 
     # Compute DE cross-comparison
 

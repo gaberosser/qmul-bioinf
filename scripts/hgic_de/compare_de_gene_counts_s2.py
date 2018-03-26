@@ -343,8 +343,7 @@ if __name__ == "__main__":
     # report some of the numbers involved
 
     # 1a) original (res_1) numbers of DE genes in Venn plot
-
-    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
+    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 8))
     for i, pid in enumerate(pids):
         # number DE in the refs
         ax = axs.flat[i]
@@ -356,7 +355,7 @@ if __name__ == "__main__":
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.95)
     fig.savefig(os.path.join(outdir, "original_number_de_genes_ref_comparison.png"), dpi=200)
 
-    # 1b) original (res_1 numbers of PO genes in Venn plot
+    # 1b) original (res_1) numbers of PO genes in Venn plot
     ## TODO: finish this!
     fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(10, 6))
     for i, pid in enumerate(pids):
