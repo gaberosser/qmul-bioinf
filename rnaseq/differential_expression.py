@@ -158,7 +158,6 @@ def run_multiple_de(
         method='QLGLM',
         return_full=False,
         tax_id=9606,
-        njob=None
 ):
     """
     :param comparisons: Dictionary of comparisons, each of which is a string formula, e.g. "groupB - groupA"
@@ -168,29 +167,11 @@ def run_multiple_de(
     if method not in {'GLM', 'QLGLM'}:
         raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
 
-    pool = None
-    jobs = {}
-    if njob is None or njob > 1:
-        pool = mp.Pool(processes=njob)
-
     fit, design = edger_fit(the_data, the_groups, method)
     res = {}
 
     for k, contrast_str in comparisons.items():
-        if pool is None:
-            res[k] = edger_test(fit, design, contrast_str, fdr=fdr, lfc=lfc, return_full=return_full)
-        else:
-            jobs[k] = pool.apply_async(
-                edger_test,
-                args=(fit, design, contrast_str),
-                kwds=dict(fdr=fdr, lfc=lfc, return_full=return_full)
-            )
-
-    if pool is not None:
-        pool.close()
-        pool.join()
-        for k in jobs:
-            res[k] = jobs[k].get(10)
+        res[k] = edger_test(fit, design, contrast_str, fdr=fdr, lfc=lfc, return_full=return_full)
 
     for k in res:
         general.add_gene_symbols_to_ensembl_data(res[k], tax_id=tax_id)

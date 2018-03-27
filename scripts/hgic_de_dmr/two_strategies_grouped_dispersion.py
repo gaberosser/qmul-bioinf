@@ -327,13 +327,25 @@ if __name__ == "__main__":
     }
     norm_method_s1 = 'swan'
 
-    pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
+    # pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
+    pids = ['018', '019', '030', '031', '017', '050', '054', '026', '052']
 
+    # subgroups = {
+    #     'RTK I': ['018', '019', '030', '031'],
+    #     'RTK II': ['017', '050', '054', '061'],
+    #     'MES': ['026', '052']
+    # }
     subgroups = {
         'RTK I': ['018', '019', '030', '031'],
-        'RTK II': ['017', '050', '054', '061'],
+        'RTK II': ['017', '050', '054'],
         'MES': ['026', '052']
     }
+
+    subgroups_lookup = {}
+    for grp, arr in subgroups.items():
+        subgroups_lookup.update(dict([
+            (t, grp) for t in arr
+        ]))
 
     # indicator showing which groups the PIDs belong to
     subgroup_ind = dict([
@@ -686,12 +698,13 @@ if __name__ == "__main__":
 
     # generate wide-form lists and save to Excel file
     # first, export everything (concordant and discordant)
-    data = dmr.venn_set_to_wide_dataframe(
+    data = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_s1,
         venn_set,
         pids,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        direction_col='de_logfc'
+        consistency_check_col='de_logfc',
+        consistency_check_method='sign'
     )
     # add gene symbol and cluster ID back in
     annotate_de_dmr_wide_form(data)
@@ -711,49 +724,53 @@ if __name__ == "__main__":
     venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member_concordant)
 
     # export only concordant results
-    data = dmr.venn_set_to_wide_dataframe(
+    data = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        direction_col='de_logfc'
+        consistency_check_col='de_logfc',
+        consistency_check_method='sign'
     )
     # add gene symbol and cluster ID back in
     annotate_de_dmr_wide_form(data)
     data.to_excel(os.path.join(outdir_s1, 'full_de_dmr_concordant.xlsx'), index=False)
 
     # expanded core
-    data_ec = dmr.venn_set_to_wide_dataframe(
+    data_ec = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=ec_sets,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        direction_col='de_logfc'
+        consistency_check_col='de_logfc',
+        consistency_check_method='sign'
     )
     annotate_de_dmr_wide_form(data_ec)
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr_concordant.xlsx'), index=False)
 
     # subgroup-specific
-    data_ss = dmr.venn_set_to_wide_dataframe(
+    data_ss = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=ss_sets,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        direction_col='de_logfc'
+        consistency_check_col='de_logfc',
+        consistency_check_method='sign'
     )
     annotate_de_dmr_wide_form(data_ss)
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr_concordant.xlsx'), index=False)
 
     # patient unique
-    data_pu = dmr.venn_set_to_wide_dataframe(
+    data_pu = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
         include_sets=pu_sets,
         cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        direction_col='de_logfc'
+        consistency_check_col='de_logfc',
+        consistency_check_method='sign'
     )
     annotate_de_dmr_wide_form(data_pu)
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
@@ -761,13 +778,14 @@ if __name__ == "__main__":
     # patient and subgroup-specific
     data_pss = {}
     for pid in pids:
-        this_tbl =  dmr.venn_set_to_wide_dataframe(
+        this_tbl =  setops.venn_set_to_wide_dataframe(
             joint_de_dmr_concordant_s1,
             venn_set,
             pids,
             include_sets=pss_sets[pid],
             cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-            direction_col='de_logfc'
+            consistency_check_col='de_logfc',
+            consistency_check_method='sign'
         )
         annotate_de_dmr_wide_form(this_tbl)
         data_pss[pid] = this_tbl
@@ -806,7 +824,7 @@ if __name__ == "__main__":
     groups_s2 = pd.Series(index=meta_s2.index)
     comparisons_s2 = {}
     for er, er_type in external_refs_de:
-        groups_s2[groups_s2.index.str.contains(er) & meta_s2.loc[:, 'type'] == er_type] = er_type
+        groups_s2[groups_s2.index.str.contains(er) & (meta_s2.loc[:, 'type'] == er_type)] = er
 
     for pid in pids:
         groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
@@ -815,8 +833,7 @@ if __name__ == "__main__":
         for pid2 in pids:
             comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
         for er, er_type in external_refs_de:
-            comparisons_s2[("GBM%s" % pid, er_type)] = "GBM%s - %s" % (pid, er_type)
-
+            comparisons_s2[("GBM%s" % pid, er)] = "GBM%s - %s" % (pid, er)
 
     de_res_full_s2 = de_grouped_dispersion(
         dat_s2,
@@ -943,53 +960,59 @@ if __name__ == "__main__":
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
 
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+    nrows = len(subgroups)
+    ncols = max([len(t) for t in subgroups.values()])
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             de_res_s2[(pid, r)].index for r in external_refs_de_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
+        ax_set.remove(axs[i, j])
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.tiff'), dpi=200)
 
     # plot: how many DE genes are in the pair only comparison when each reference is used?
-    # NB apply correction
 
     # at the same time, get numbers for a bar chart about % overlap
     n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
 
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+    nrows = len(subgroups)
+    ncols = max([len(t) for t in subgroups.values()])
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             set(pair_only_de.loc[pid, r]) for r in external_refs_de_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)
+        ax_set.remove(axs[i, j])
 
         for i, r in enumerate(external_refs_de_labels):
-            # this will fail for anything other than 3 refs
             n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_de_labels))]
+
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_po_de_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_po_de_multiple_references.tiff'), dpi=200)
+
 
     # plot: overlap between individual references in terms of PO genes shared
     po_counts = pair_only_de.applymap(len)
@@ -1097,22 +1120,26 @@ if __name__ == "__main__":
             this_tbl = this_tbl.loc[this_tbl.class_island | this_tbl.class_tss]
             dmr_members[(pid, r)] = this_tbl.index
 
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+    nrows = len(subgroups)
+    ncols = max([len(t) for t in subgroups.values()])
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             dmr_members[(pid, r)] for r in external_refs_dm_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
-        venn.venn2(cts, set_labels=external_refs_dm_labels, ax=axs[i, j])
+        venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
+        ax_set.remove(axs[i, j])
+
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_dmr_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_dmr_multiple_references.tiff'), dpi=200)
 
@@ -1121,28 +1148,30 @@ if __name__ == "__main__":
     # at the same time, get numbers for a bar chart about % overlap
     n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_dm_labels)
 
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             set(pair_only_dmr.loc[pid, r]) for r in external_refs_dm_labels
-            ]
+        ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_dm_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)
+        ax_set.remove(axs[i, j])
 
         for i, r in enumerate(external_refs_dm_labels):
             n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_dm_labels))]
 
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_po_dmr_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_po_dmr_multiple_references.tiff'), dpi=200)
+
 
     # plot: overlap between individual references in terms of PO genes shared
     po_counts = pair_only_dmr.applymap(len)
@@ -1234,22 +1263,26 @@ if __name__ == "__main__":
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_dmr_wideform.xlsx'))
 
     # plot: number of DM-concordant DE genes in each reference comparison
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+
+    nrows = len(subgroups)
+    ncols = max([len(t) for t in subgroups.values()])
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             de_dmr_by_gene[(pid, r)] for r in external_refs_de_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
+        ax_set.remove(axs[i, j])
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.tiff'), dpi=200)
 
@@ -1258,26 +1291,27 @@ if __name__ == "__main__":
     # at the same time, get numbers for a bar chart about % overlap
     n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
 
-    fig, axs = plt.subplots(nrows=2, ncols=3)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+    ax_set = set(axs.flat)
     for pid in pids:
-        if pid in subgroups['RTK I']:
-            i = 0
-            sg = subgroups['RTK I']
-        else:
-            i = 1
-            sg = subgroups['RTK II']
-        j = sg.index(pid)
+        sg = subgroups_lookup[pid]
+        sg_members = subgroups[sg]
+        i = subgroups.keys().index(sg)
+        j = sg_members.index(pid)
         the_lists = [
             set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
             ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)
+        ax_set.remove(axs[i, j])
 
         for i, r in enumerate(external_refs_de_labels):
             n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_de_labels))]
 
     fig.tight_layout()
+    for ax in ax_set:
+        ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.tiff'), dpi=200)
 

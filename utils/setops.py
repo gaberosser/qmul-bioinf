@@ -143,7 +143,7 @@ def venn_set_to_wide_dataframe(
     cols_to_include=None,
     consistency_check_col=None,
     consistency_check_method=None,
-    run_sanity_check=True
+    run_sanity_check=False
 ):
     """
     Given the input DMR data and Venn sets, generate a wide format dataframe containing all the data, one column
