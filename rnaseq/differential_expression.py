@@ -10,7 +10,11 @@ toptags_cols = [
     "logFC", "unshrunk.logFC", "logCPM", "PValue", "FDR"
 ]
 
-def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, return_full=False):
+
+def _edger_func_fit(the_data, the_groups, the_method):
+    if the_method not in {'GLM', 'QLGLM'}:
+        raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
+    fit = None
     rdata = pandas2ri.py2ri(the_data)
     rgroups = robjects.FactorVector(the_groups)
     y = r("DGEList")(rdata)
@@ -20,8 +24,18 @@ def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, re
     design = r("model.matrix")(formula)
     design.colnames = r('levels')(rgroups)
     y = r("estimateDisp")(y, design)
-    rcontrast = r('makeContrasts')(robjects.StrVector([the_contrast]), levels=design)
-    fit = r('glmQLFit')(y, design)
+    if the_method == 'GLM':
+        fit = r('glmFit')(y, design)
+    elif the_method == 'QLGLM':
+        fit = r('glmQLFit')(y, design)
+    return fit, design
+
+
+edger_fit = rinterface.RFunctionDeferred(_edger_func_fit, imports=['edgeR'])
+
+
+def _edger_func_test(fit, design, contrast_str, fdr=0.01, lfc=1, return_full=False):
+    rcontrast = r('makeContrasts')(contrast_str, levels=design)
     lrt = r('glmTreat')(fit, contrast=rcontrast, lfc=lfc)
     if return_full:
         toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': 1.})
@@ -31,32 +45,22 @@ def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, re
         return pd.DataFrame(columns=toptags_cols)
     else:
         return pandas2ri.ri2py_dataframe(toptags[toptags.names.index('table')])
+
+
+edger_test = rinterface.RFunctionDeferred(_edger_func_test, imports=['edgeR'])
+
+
+def _edger_func_glmqlfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, return_full=False):
+    fit, design = _edger_func_fit(the_data, the_groups, 'QLGLM')
+    return _edger_func_test(fit, design, the_contrast, fdr=fdr, lfc=lfc, return_full=return_full)
 
 
 edger_glmqlfit = rinterface.RFunctionDeferred(_edger_func_glmqlfit, imports=['edgeR'])
 
 
 def _edger_func_glmfit(the_data, the_groups, the_contrast, fdr=0.01, lfc=1, return_full=False):
-    rdata = pandas2ri.py2ri(the_data)
-    rgroups = robjects.FactorVector(the_groups)
-    y = r("DGEList")(rdata)
-    y = r("calcNormFactors")(y)
-    formula = robjects.Formula("~0 + groups")
-    formula.environment['groups'] = rgroups
-    design = r("model.matrix")(formula)
-    design.colnames = r('levels')(rgroups)
-    y = r("estimateDisp")(y, design)
-    rcontrast = r('makeContrasts')(robjects.StrVector([the_contrast]), levels=design)
-    fit = r('glmFit')(y, design)
-    lrt = r('glmTreat')(fit, contrast=rcontrast, lfc=lfc)
-    if return_full:
-        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': 1.})
-    else:
-        toptags = r('topTags')(lrt, n=r('Inf'), **{'p.value': fdr})
-    if len(toptags) == 0:
-        return pd.DataFrame(columns=toptags_cols)
-    else:
-        return pandas2ri.ri2py_dataframe(toptags[toptags.names.index('table')])
+    fit, design = _edger_func_fit(the_data, the_groups, 'GLM')
+    return _edger_func_test(fit, design, the_contrast, fdr=fdr, lfc=lfc, return_full=return_full)
 
 
 edger_glmfit = rinterface.RFunctionDeferred(_edger_func_glmfit, imports=['edgeR'])
@@ -141,6 +145,56 @@ def run_one_de(
 
     general.add_gene_symbols_to_ensembl_data(res, tax_id=tax_id)
     general.add_fc_direction(res)
+
+    return res
+
+
+def run_multiple_de(
+        the_data,
+        the_groups,
+        comparisons,
+        lfc=1,
+        fdr=0.01,
+        method='QLGLM',
+        return_full=False,
+        tax_id=9606,
+        njob=None
+):
+    """
+    :param comparisons: Dictionary of comparisons, each of which is a string formula, e.g. "groupB - groupA"
+    :param njob: Number of parallel processes. Default is the number of available CPUs. Set to 1 to disable parallel
+    computing.
+    """
+    if method not in {'GLM', 'QLGLM'}:
+        raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
+
+    pool = None
+    jobs = {}
+    if njob is None or njob > 1:
+        pool = mp.Pool(processes=njob)
+
+    fit, design = edger_fit(the_data, the_groups, method)
+    res = {}
+
+    for k, contrast_str in comparisons.items():
+        if pool is None:
+            res[k] = edger_test(fit, design, contrast_str, fdr=fdr, lfc=lfc, return_full=return_full)
+        else:
+            jobs[k] = pool.apply_async(
+                edger_test,
+                args=(fit, design, contrast_str),
+                kwds=dict(fdr=fdr, lfc=lfc, return_full=return_full)
+            )
+
+    if pool is not None:
+        pool.close()
+        pool.join()
+        for k in jobs:
+            res[k] = jobs[k].get(10)
+
+    for k in res:
+        general.add_gene_symbols_to_ensembl_data(res[k], tax_id=tax_id)
+        general.add_fc_direction(res[k])
 
     return res
 

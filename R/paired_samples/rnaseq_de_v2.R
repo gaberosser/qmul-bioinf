@@ -57,19 +57,21 @@ y <- estimateDisp(y, design = des)
 fit <- glmFit(y)
 qlfit <- glmQLFit(y)
 
-treat <- glmTreat(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=1)
-qltreat <- glmTreat(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=1)
+contr <- makeContrasts(typeGBM - typeNSC, levels=des)
 
-lrt <- glmLRT(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
-qllrt <- glmQLFTest(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+treat <- glmTreat(fit, contrast=contr, lfc=1)
+qltreat <- glmTreat(qlfit, contrast=contr, lfc=1)
+
+lrt <- glmLRT(fit, contrast=contr)
+qllrt <- glmQLFTest(qlfit, contrast=contr)
 
 # these revert to the expected behaviour (glmLRT and glmQLFTest, as appropriate)
-# lrt_treat0 <- glmTreat(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=0)
-# qllrt_treat0 <- glmTreat(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des), lfc=0)
+# lrt_treat0 <- glmTreat(fit, contrast=contr, lfc=0)
+# qllrt_treat0 <- glmTreat(qlfit, contrast=contr, lfc=0)
 
-lrt_ql <- glmLRT(qlfit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+lrt_ql <- glmLRT(qlfit, contrast=contr)
 # this raises an error:
-# ql_lrt <- glmQLFTest(fit, contrast=makeContrasts(c("typeGBM", "typeNSC"), levels=des))
+# ql_lrt <- glmQLFTest(fit, contrast=contr)
 
 # load TCGA-GBM data
 

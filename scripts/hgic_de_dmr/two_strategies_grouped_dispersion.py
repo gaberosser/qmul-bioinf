@@ -275,25 +275,15 @@ def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
     keep = (cpm > min_cpm).sum(axis=1) > 0
     dat = dat.loc[keep]
 
-    pool = mp.Pool()
-    jobs = {}
+    res = differential_expression.run_multiple_de(
+        the_data=dat,
+        the_groups=groups,
+        comparisons=comparisons,
+        **de_params
+    )
 
-    for the_comparison in comparisons:
-
-        jobs[the_comparison] = pool.apply_async(
-            differential_expression.run_one_de,
-            args=(dat, groups, the_comparison),
-            kwds=de_params
-        )
-
-    pool.close()
-    pool.join()
-
-    res = {}
-
-    for the_comparison, j in jobs.items():
+    for the_comparison, this_res in res.items():
         try:
-            this_res = j.get(1e4)
             the_genes = this_res.index
             the_groups = groups[groups.isin(the_comparison)]
             the_cpm = cpm.loc[the_genes, the_groups.index]
@@ -307,7 +297,6 @@ def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
             print repr(exc)
 
     return res
-
 
 
 if __name__ == "__main__":
@@ -810,28 +799,38 @@ if __name__ == "__main__":
     me_data_with_ref = me_obj_with_ref.data
 
     # Compute DE cross-comparison
-    ## TODO: replace with _s2 specific
-    dat_s1 = rnaseq_obj.data.loc[
-             :,
-             rnaseq_obj.batch_id.str.contains('wtchg') & (~rnaseq_obj.data.columns.str.contains('GIBCO'))
-    ]
-    meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
-    groups_s1 = pd.Series(index=meta_s1.index)
-    comparisons_s1 = []
-    for pid in pids:
-        groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
-        groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
-        comparisons_s1.append(("GBM%s" % pid, "iNSC%s" % pid))
 
-    de_res_full_s1 = de_grouped_dispersion(
-        dat_s1,
-        groups_s1,
-        comparisons_s1,
+    dat_s2 = rnaseq_obj.data
+    meta_s2 = rnaseq_obj.meta
+    groups_s2 = pd.Series(index=meta_s2.index)
+    comparisons_s2 = {}
+    for er, er_type in external_refs_de:
+        groups_s2[groups_s2.index.str.contains(er) & meta_s2.loc[:, 'type'] == er_type] = er_type
+
+    for pid in pids:
+        groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
+        groups_s2[groups_s2.index.str.contains('NSC') & groups_s2.index.str.contains(pid)] = "iNSC%s" % pid
+
+        for pid2 in pids:
+            comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
+        for er, er_type in external_refs_de:
+            comparisons_s2[("GBM%s" % pid, er_type)] = "GBM%s - %s" % (pid, er_type)
+
+
+    de_res_full_s2 = de_grouped_dispersion(
+        dat_s2,
+        groups_s2,
+        comparisons_s2,
         min_cpm=min_cpm,
         return_full=True,
         **de_params
     )
+    # rename for convenience
+    de_res_full_s2 = dict([
+        ((k[0].replace('GBM', ''), k[1].replace('iNSC', '')), v) for k, v in de_res_full_s2.items()
+    ])
 
+    de_res_s2 = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full_s2.items()])
 
     # Compute DMR cross-comparison
 
@@ -884,7 +883,7 @@ if __name__ == "__main__":
     #######################
 
     de_res_s2_idx = dict([
-        (k, v.index) for k, v in de_res.items()
+        (k, v.index) for k, v in de_res_s2.items()
     ])
 
     cc_dict_de = cross_comparison.compute_cross_comparison_correction(
@@ -893,6 +892,7 @@ if __name__ == "__main__":
         external_refs=[t[0] for t in external_refs_de],
         set_type='pair_only'
     )
+
     po_specific_to_all_refs_de = sorted(cc_dict_de['specific_to_all_refs'])
     pair_only_de = cc_dict_de['venn_set']
 
@@ -904,7 +904,7 @@ if __name__ == "__main__":
     po_de_export = {}
     po_de_export_full = {}
     for pid in pids:
-        po_de_export_full[pid] = de_res_full[(pid, pid)].copy()
+        po_de_export_full[pid] = de_res_full_s2[(pid, pid)].copy()
 
         this_row = pair_only_de.loc[pid, [t[0] for t in external_refs_de]]
         this_genes_pre = setops.reduce_intersection(*this_row)
@@ -922,7 +922,7 @@ if __name__ == "__main__":
         po_col.loc[this_genes] = 'Y'
         po_de_export_full[pid].insert(po_de_export_full[pid].shape[1], 'pair_only', po_col)
 
-        po_de_export[pid] = de_res[(pid, pid)].loc[this_genes]
+        po_de_export[pid] = de_res_s2[(pid, pid)].loc[this_genes]
 
     excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, 'pair_only_de.xlsx'))
     excel.pandas_to_excel(po_de_export_full, os.path.join(outdir_s2, 'pair_only_de_full.xlsx'))
@@ -952,7 +952,7 @@ if __name__ == "__main__":
             sg = subgroups['RTK II']
         j = sg.index(pid)
         the_lists = [
-            de_res[(pid, r)].index for r in external_refs_de_labels
+            de_res_s2[(pid, r)].index for r in external_refs_de_labels
         ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
@@ -1173,7 +1173,7 @@ if __name__ == "__main__":
             (pid, dmr_res_s2[pid][dm_ref]) for pid in pids
         ]))
         the_de = dict([
-            (pid, de_res[(pid, de_ref)]) for pid in pids
+            (pid, de_res_s2[(pid, de_ref)]) for pid in pids
         ])
         ref_joint = rnaseq_methylationarray.compute_joint_de_dmr(the_dmr, the_de)
         for pid in pids:
