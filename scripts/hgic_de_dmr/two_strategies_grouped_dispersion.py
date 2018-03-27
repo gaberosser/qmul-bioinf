@@ -471,11 +471,12 @@ if __name__ == "__main__":
     ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
     groups_s1 = pd.Series(index=meta_s1.index)
-    comparisons_s1 = []
+    comparisons_s1 = {}
     for pid in pids:
         groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
         groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
-        comparisons_s1.append(("GBM%s" % pid, "iNSC%s" % pid))
+
+        comparisons_s1[("GBM%s" % pid, "iNSC%s" % pid)] = "GBM%s - iNSC%s" % (pid, pid)
 
     de_res_full_s1 = de_grouped_dispersion(
         dat_s1,
