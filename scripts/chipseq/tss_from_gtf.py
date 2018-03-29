@@ -3,17 +3,24 @@ import os
 import re
 import csv
 import collections
-from settings import DATA_DIR_NON_GIT
+from settings import LOCAL_DATA_DIR
+from utils import output
 
 
 if __name__ == "__main__":
     LIMIT = int(1e12)
     SOURCES = {'ensembl', 'havana', 'ensembl_havana'}
-    distance = 2000 # distance from TSS to include
-    # fn = '/home/gabriel/Documents/qmul_data/Homo_sapiens.GRCh38.87.gtf.gz'
-    fn = os.path.join(DATA_DIR_NON_GIT, 'reference_genomes', 'ensembl', 'GRCh38', 'gtf', 'Homo_sapiens.GRCh38.87.gtf.gz')
-    # fn_out = '/home/gabriel/Documents/qmul_data/tss_pm_%d.bed' % distance
-    fn_out = 'tss_pm_%d.bed' % distance
+    distance = 2500 # distance from TSS to include
+    fn = os.path.join(
+        LOCAL_DATA_DIR,
+        'reference_genomes',
+        'ensembl',
+        'GRCh38.release87',
+        'gtf',
+        'Homo_sapiens.GRCh38.87.gtf.gz'
+    )
+    outdir = output.unique_output_dir("chipseq_analysis")
+    fn_out = os.path.join(outdir, 'tss_pm_%d.bed' % distance)
 
     res = []
     seen = collections.defaultdict(list)
