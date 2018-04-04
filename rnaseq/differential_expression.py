@@ -110,7 +110,8 @@ def run_one_de(
         fdr=0.01,
         method='QLGLM',
         return_full=False,
-        tax_id=9606
+        tax_id=9606,
+        add_gene_symbols=True,
 ):
     the_contrast = "%s - %s" % (the_comparison[0], the_comparison[1])
     if method == 'QLGLM':
@@ -143,7 +144,8 @@ def run_one_de(
     else:
         raise AttributeError("Unrecognised method %s." % method)
 
-    general.add_gene_symbols_to_ensembl_data(res, tax_id=tax_id)
+    if add_gene_symbols:
+        general.add_gene_symbols_to_ensembl_data(res, tax_id=tax_id)
     general.add_fc_direction(res)
 
     return res

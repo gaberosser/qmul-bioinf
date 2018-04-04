@@ -1,21 +1,32 @@
+#!/usr/bin/env python
 import pandas as pd
 import numpy as np
+import logging
 import gzip
 import os
 import csv
 import multiprocessing as mp
+import subprocess
 import collections
-from utils.output import unique_output_dir
+import argparse
+import sys
 import pickle
 import time
 
+LOG_FMT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# add root of project dir to the path
+sys.path.append(os.path.dirname(__file__) + '/../../')
+
+
+def opener(fn, *args, **kwargs):
+    if os.path.splitext(fn)[1].lower() == '.gz':
+        return gzip.open(fn, *args, **kwargs)
+    else:
+        return open(fn, *args, **kwargs)
+
 
 def coverage_reader(cov_fn, exclude=None, include=None):
-    if os.path.splitext(cov_fn)[1].lower() == '.gz':
-        opener = gzip.open
-    else:
-        opener = open
-
     if isinstance(exclude, str):
         exclude = {exclude}
     elif exclude is not None:
@@ -118,62 +129,79 @@ def depth_to_trace(depth, bed_regions):
 
 
 if __name__ == "__main__":
-    outdir = unique_output_dir("chipseq_enrichment_traces", reuse_empty=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("bam_file", help="BAM file to analyse")
+    parser.add_argument("-b", "--bed", help="BED file containing regions of interest", required=True)
+    parser.add_argument("-p", "--threads", help="Number of CPU threads [1].", type=int, default=1)
+    parser.add_argument("-o", "--outdir", help="Output directory [.]", default='.')
+
+    args = parser.parse_args()
+    outdir = os.path.abspath(args.outdir)
+
+    if not os.path.exists(args.bam_file):
+        raise ValueError("Invalid path to BAM file.")
+
+    if not os.path.exists(args.bed):
+        raise ValueError("Invalid path to BED file.")
+
+    logger = logging.getLogger("chipseq_tss_enrichment")
+
+    # reset handlers
+    logger.handlers = []
+    sh = logging.StreamHandler()
+    fmt = logging.Formatter(LOG_FMT)
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    logger.setLevel(logging.INFO)
 
     CHROMS = ['%d' % i for i in range(1, 24)]
-    # CHROMS = ['22']
-    try:
-        NCPU = mp.cpu_count()
-    except Exception as exc:
-        print repr(exc)
-        NCPU = 1
 
-    # cov_fn = '/home/gabriel/Documents/qmul_data/samtools_depth_tss_pm_2000.cov.gz'
-    # cov_fn = '/home/gabriel/Documents/samtools_depth_tss_pm_2000.cov.gz'
-    # gene_bed_fn = '/home/gabriel/Documents/qmul_data/tss_pm_2000.bed'
-    # gene_bed_fn = '/home/gabriel/bioinf/tss_pm_2000.bed'
-    # samples = [
-    #     ("GBM026", "H3K27me3"),
-    #     ("GBM026", "H3K36me3"),
-    #     ("Icb1299", "H3K4me3"),
-    #     ("Icb1299", "H3K27me3"),
-    #     ("Icb1299", "BMI1"),
-    #     ("Icb1299", "CHD7"),
-    #     ("Dura026_NSC", "H3K4me3"),
-    #     ("Dura026_NSC", "H3K27me3"),
-    #     ("Dura026_NSC", "H3K36me3"),
-    #     ("GBM026", "H3K4me3"),
-    # ]
+    if args.threads > 1:
+        pool = mp.Pool(processes=args.threads)
+        jobs = {}
+    else:
+        pool = None
 
+    # Step 1: generate coverage
+    cov_fn = "%s.cov.bed.gz" % os.path.split(args.bam_file)[1]
+    cov_fn = os.path.join(outdir, cov_fn)
+    cmd = "samtools depth -b {bed_file} -aa | gzip > {out_cov_file}".format(bed_file=args.bed, out_cov_file=cov_fn)
+    logger.info("Calling samtools depth.")
+    logger.info("%s", cmd)
 
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, cwd=outdir)
+    stdout, stderr = p.communicate()
+    logger.info("Stdout: %s", stdout)
+    logger.info("Stderr: %s", stderr)
+    if p.returncode != 0:
+        logger.error("samtools depth gave a non-zero return code (%s)", str(p.returncode))
+    logger.info("Done.")
 
+    trace = {}
 
     # load gene bed file, indexed by chromosome
     bed = []
     regions = collections.defaultdict(list)
-    with open(gene_bed_fn, 'rb') as f:
+    with opener(args.bed, 'rb') as f:
         c = csv.reader(f, delimiter='\t')
         for row in c:
             # start, end, name, strand
             regions[row[0]].append([int(row[1]), int(row[2]), row[3], row[5]])
 
-    trace = {}
-
-    pool = None
-    if NCPU > 1:
-        pool = mp.Pool(processes=NCPU)
-        jobs = {}
+    traces = []
 
     for chrom, depth in coverage_reader(cov_fn=cov_fn, include=CHROMS):
         this_regions = np.array(regions[chrom])
+        pkl_fn = os.path.join(outdir, 'trace_%s.pkl') % chrom
 
         if pool is None:
+            logger.info("Compute traces for chromosome %s", chrom)
             this_traces, features = depth_to_trace(depth, this_regions)
-            print "Got traces for chromosome %s" % chrom
             # dump this set of traces to disk
-            with open(os.path.join(outdir, 'trace_%s.pkl') % chrom, 'wb') as f:
+            with open(pkl_fn, 'wb') as f:
                 pickle.dump({'traces': this_traces, 'bed': this_regions, 'features': features}, f)
-            trace[chrom] = this_traces.mean(axis=2)
+            logger.info("Dumped traces to %s", pkl_fn)
+            traces.append(this_traces)
         else:
             jobs[chrom] = pool.apply_async(depth_to_trace, args=(depth, this_regions))
 
@@ -181,73 +209,31 @@ if __name__ == "__main__":
     if pool is not None:
         pool.close()
         tic = time.time()
-        # keep looping over jobs until finished or a ludicrously long time has elapsed
-        while (len(jobs) > 1) and (time.time() - tic) < 50000:
+        # keep looping over jobs until finished
+        while len(jobs) > 1:
             for chrom in jobs.keys():
                 j = jobs[chrom]
                 if j.ready():
-                    this_traces, features = j.get()
-                    print "Got traces for chromosome %s" % chrom
+                    try:
+                        this_traces, features = j.get(600)
+                        logger.info("Completed traces for chromosome %s", chrom)
+                        with open(pkl_fn, 'wb') as f:
+                            pickle.dump(
+                                {'traces': this_traces, 'bed': np.array(regions[chrom]), 'features': features},
+                                f
+                            )
+                            logger.info("Dumped traces to %s", pkl_fn)
+                            traces.append(this_traces)
+                    except Exception:
+                        logger.exception("Failed to compute trace for chromosome %s", chrom)
                     jobs.pop(chrom)
-                    with open(os.path.join(outdir, 'trace_%s.pkl') % chrom, 'wb') as f:
-                        pickle.dump({'traces': this_traces, 'bed': np.array(regions[chrom]), 'features': features}, f)
-                    trace[chrom] = this_traces.mean(axis=2)
 
+    # finally aggregate over all traces
+    mean_trace = np.dstack(traces).mean(axis=2).squeeze()
+    trace_fn = "%s.trace" % os.path.split(args.bam_file)[1]
+    trace_fn = os.path.join(outdir, trace_fn)
 
-        # for chrom, j in jobs.items():
-        #     this_traces, features = j.get
-        #
-        #
-        #     # split depth with overhangs
-        #     n = depth.shape[0]
-        #     fracs = np.linspace(0, 1, NCPU + 1)
-        #     split_ind = [int(f * n) for f in fracs]
-        #
-        #     splits = []
-        #     split_coords= []
-        #     jobs = []
-        #     pool = mp.Pool(processes=NCPU)
-        #
-        #     for i in range(len(split_ind) - 1):
-        #         # generate splits with overhang of length ONE LESS THAN the length of the fragment
-        #         ix0 = split_ind[i]
-        #         coord0 = bp[ix0]
-        #         ix1 = split_ind[i + 1]
-        #         # if we aren't on the final interval, include an overhang if necessary
-        #         if i != (len(split_ind) - 2):
-        #             coord1 = bp[ix1] + 2 * DISTANCE - 1
-        #             # if the overhang is included in this run, we'll include it in full.
-        #             # Otherwise we will just include enough of an overhang to guarantee no regions are missed.
-        #             ix1 = np.where(bp <= coord1)[0][-1] + 1
-        #
-        #         jobs.append(
-        #             pool.apply_async(depth_to_trace, args=(depth[ix0:ix1], this_bed), kwds={'distance': DISTANCE})
-        #         )
-        #         splits.append((ix0, ix1))
-        #         split_coords.append((bp[ix0], bp[ix1 - 1]))  # this is INCLUSIVE
-        #
-        #     pool.close()
-        #     pool.join()
-        #
-        #     n_trace = len(this_bed)
-        #     n_sample = depth.shape[1] - 1
-        #
-        #     this_traces = np.zeros((2 * DISTANCE + 1, n_sample, n_trace), dtype=np.uint32)
-        #     features = []
-        #     i = 0
-        #     for j in jobs:
-        #         tt, ftr = j.get()
-        #         features.append(ftr)
-        #         n_res = tt.shape[2]
-        #         this_traces[..., i:(i + n_res)] = tt
-        #         i += n_res
-        #     if i != n_trace:
-        #         print "WARNING: the number of traces returned (%d) is less than the number expected (%d)" % (i, n_trace)
-        #     this_traces = this_traces[..., :i]
-        #
-        # # dump this set of traces to disk
-        # with open(os.path.join(outdir, 'trace_%s.pkl') % chrom, 'wb') as f:
-        #     pickle.dump({'traces': this_traces, 'bed': this_bed, 'features': features}, f)
+    with open(trace_fn, 'wb') as f:
+        f.write(", ".join(["%.6f" % t for t in mean_trace]))
 
-        # trace[chrom] = this_traces.mean(axis=2)
-
+    logger.info("Wrote mean trace to %s.", trace_fn)
