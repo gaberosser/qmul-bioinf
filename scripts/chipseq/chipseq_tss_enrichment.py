@@ -12,6 +12,7 @@ import argparse
 import sys
 import pickle
 import time
+import re
 
 LOG_FMT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
@@ -144,6 +145,9 @@ if __name__ == "__main__":
     if not os.path.exists(args.bed):
         raise ValueError("Invalid path to BED file.")
 
+    filestem = os.path.split(args.bam_file)[1]
+    filestem = re.sub(r'(\.sorted)?\.bam', '', filestem)
+
     logger = logging.getLogger("chipseq_tss_enrichment")
 
     # reset handlers
@@ -162,20 +166,27 @@ if __name__ == "__main__":
     else:
         pool = None
 
-    # Step 1: generate coverage
-    cov_fn = "%s.cov.bed.gz" % os.path.split(args.bam_file)[1]
-    cov_fn = os.path.join(outdir, cov_fn)
-    cmd = "samtools depth -b {bed_file} -aa | gzip > {out_cov_file}".format(bed_file=args.bed, out_cov_file=cov_fn)
-    logger.info("Calling samtools depth.")
-    logger.info("%s", cmd)
+    # Step 1: generate coverage if required
+    cov_fn = os.path.join(outdir, "%s.cov.bed.gz" % filestem)
 
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, cwd=outdir)
-    stdout, stderr = p.communicate()
-    logger.info("Stdout: %s", stdout)
-    logger.info("Stderr: %s", stderr)
-    if p.returncode != 0:
-        logger.error("samtools depth gave a non-zero return code (%s)", str(p.returncode))
-    logger.info("Done.")
+    if not os.path.isfile(cov_fn):
+        cmd = "samtools depth -b {bed_file} -aa {bam_file} | gzip > {out_cov_file}".format(
+            bed_file=os.path.abspath(args.bed),
+            out_cov_file=cov_fn,
+            bam_file=os.path.abspath(args.bam_file)
+        )
+        logger.info("Calling samtools depth.")
+        logger.info("%s", cmd)
+
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, cwd=outdir)
+        stdout, stderr = p.communicate()
+        logger.info("Stdout: %s", stdout)
+        logger.info("Stderr: %s", stderr)
+        if p.returncode != 0:
+            logger.error("samtools depth gave a non-zero return code (%s)", str(p.returncode))
+        logger.info("Done.")
+    else:
+        logger.info("Using existing coverage file %s", cov_fn)
 
     trace = {}
 
@@ -188,17 +199,18 @@ if __name__ == "__main__":
             # start, end, name, strand
             regions[row[0]].append([int(row[1]), int(row[2]), row[3], row[5]])
 
+    logger.info("Threads: %d. Pool: %s", args.threads, str(pool))
     traces = []
 
     for chrom, depth in coverage_reader(cov_fn=cov_fn, include=CHROMS):
-        this_regions = np.array(regions[chrom])
-        pkl_fn = os.path.join(outdir, 'trace_%s.pkl') % chrom
+        this_regions = regions[chrom]
+        pkl_fn = os.path.join(outdir, '%s.trace.%s.pkl') % (filestem, chrom)
 
         if pool is None:
             logger.info("Compute traces for chromosome %s", chrom)
             this_traces, features = depth_to_trace(depth, this_regions)
             # dump this set of traces to disk
-            with open(pkl_fn, 'wb') as f:
+            with gzip.open(pkl_fn, 'wb') as f:
                 pickle.dump({'traces': this_traces, 'bed': this_regions, 'features': features}, f)
             logger.info("Dumped traces to %s", pkl_fn)
             traces.append(this_traces)
@@ -217,9 +229,9 @@ if __name__ == "__main__":
                     try:
                         this_traces, features = j.get(600)
                         logger.info("Completed traces for chromosome %s", chrom)
-                        with open(pkl_fn, 'wb') as f:
+                        with gzip.open(pkl_fn, 'wb') as f:
                             pickle.dump(
-                                {'traces': this_traces, 'bed': np.array(regions[chrom]), 'features': features},
+                                {'traces': this_traces, 'bed': regions[chrom], 'features': features},
                                 f
                             )
                             logger.info("Dumped traces to %s", pkl_fn)
@@ -230,8 +242,7 @@ if __name__ == "__main__":
 
     # finally aggregate over all traces
     mean_trace = np.dstack(traces).mean(axis=2).squeeze()
-    trace_fn = "%s.trace" % os.path.split(args.bam_file)[1]
-    trace_fn = os.path.join(outdir, trace_fn)
+    trace_fn = os.path.join(outdir, "%s.trace" % filestem)
 
     with open(trace_fn, 'wb') as f:
         f.write(", ".join(["%.6f" % t for t in mean_trace]))
