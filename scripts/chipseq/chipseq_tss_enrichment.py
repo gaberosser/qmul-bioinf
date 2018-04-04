@@ -229,6 +229,7 @@ if __name__ == "__main__":
                     try:
                         this_traces, features = j.get(600)
                         logger.info("Completed traces for chromosome %s", chrom)
+                        pkl_fn = os.path.join(outdir, '%s.trace.%s.pkl') % (filestem, chrom)
                         with gzip.open(pkl_fn, 'wb') as f:
                             pickle.dump(
                                 {'traces': this_traces, 'bed': regions[chrom], 'features': features},
