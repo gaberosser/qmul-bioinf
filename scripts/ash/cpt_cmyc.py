@@ -25,6 +25,17 @@ def one_vs_many_correlation(one, many, method='pearson'):
     return cor, pval
 
 
+def standardise(data, axis=1):
+    """
+    Standardise the RMA data in the exon array
+    :param data:
+    :param axis: The axis to run this - default is rows (probes)
+    :return:
+    """
+    other_axis = 0 if axis == 1 else 1
+    return data.subtract(data.median(axis=axis), axis=other_axis).divide(stats.iqr(data, axis=axis), axis=other_axis)
+
+
 if __name__ == '__main__':
     cmyc_probe = 3115514
     cmyc_gene = 'MYC'
@@ -55,7 +66,19 @@ if __name__ == '__main__':
     ann2.loc[:, 'gene_assignment'] = ann2.loc[:, 'gene_assignment'].str.replace(r' /+ ', '|')
     symb2 = ann2.gene_assignment.str.split('|').apply(lambda x: x[1] if len(x) > 1 else None)
 
-    the_symbols = symb2
+    the_symbols = symb
+
+    # get all MYC probes
+
+    # reduce down to those that correlate with one another
+
+    # find all probes correlated with them (individually, taking the union)
+
+    # get the associated genes
+
+    # aggregate those genes based only on the correlated probe list (standardise then mean)
+
+    # 
 
     # aggregate all genes
     all_aggr_by_gene = rma_data.groupby(the_symbols, axis=0).mean()
@@ -69,7 +92,28 @@ if __name__ == '__main__':
     genes = the_symbols.loc[probes].dropna()
     print "%d probes selected that correlate with MYC, corresponding to %d unique genes" % (probes.size, genes.unique().size)
 
-    # go back to the genes, taking the median probe aggregation
+    # drop probes that have no gene assignment
+    probes_dropped = probes.difference(genes.index)
+    print "Dropped %d probes as they had no gene assignment" % probes_dropped.size
+    probes = genes.index
+
+    # extract this block of data
+    sub_rma_data = rma_data.loc[probes]
+
+    # standardise
+    sub_rma_data_ctr = standardise(sub_rma_data)
+
+    # aggregate by gene
+    aggr_rma_data_ctr_by_gene = sub_rma_data_ctr.groupby(genes, axis=0).mean()
+
+    # re-run correlation with Myc
+    cor_gene_ctr, pval_gene_ctr = one_vs_many_correlation(
+        aggr_rma_data_ctr_by_gene.loc[cmyc_gene],
+        aggr_rma_data_ctr_by_gene,
+        method=corr_method
+    )
+
+    # go back to the genes, taking the average probe aggregation (for some value of average)
     glist = genes.unique()
     plist = the_symbols[the_symbols.isin(glist)].index
 
@@ -79,6 +123,8 @@ if __name__ == '__main__':
     cor_gene, pval_gene = one_vs_many_correlation(aggr_by_gene.loc[cmyc_gene], aggr_by_gene, method=corr_method)
 
     ### alternative approach: just take the gene signature and replot the heatmap
+    # NB: some typos in here (wow - done by hand?!), now corrected
+
 
     jennie_list = [
         'MYC',
@@ -125,7 +171,7 @@ if __name__ == '__main__':
         'ZC3H12A',
         'JUN',
         'ALOXE3',
-        'NBAG3',
+        'BAG3', # 'NBAG3',
         'FOSL1',
         'BIRC3',
         'CCL20',
@@ -149,8 +195,8 @@ if __name__ == '__main__':
         'NAMPT',
         'IER5',
         'ICAM1',
-        'CCLF1',
-        'TFP12',
+        'CLCF1', # 'CCLF1',
+        'TFPI2', # 'TFP12',
         'SOD2',
         'REL',
         'SLFN5',
@@ -204,7 +250,7 @@ if __name__ == '__main__':
         'BHLHE41',
         'ULBP2',
         'CCL3',
-        'P1GA',
+        'PIGA', # 'P1GA',
         'FHL1',
         'TSPYL2',
         'NR4A1',
@@ -228,7 +274,7 @@ if __name__ == '__main__':
         'VPS54',
         'MT1L',
         'ARRDC3',
-        'TMEM',
+        'TMEM130', # 'TMEM',
         'KDM6A',
         'THOC6',
         'NCEH1',
