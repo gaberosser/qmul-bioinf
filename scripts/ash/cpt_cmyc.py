@@ -6,6 +6,7 @@ from settings import DATA_DIR_NON_GIT
 from matplotlib import pyplot as plt
 import seaborn as sns
 from plotting import heatmap, clustering
+from utils import setops
 
 
 def one_vs_many_correlation(one, many, method='pearson'):
@@ -25,9 +26,33 @@ def one_vs_many_correlation(one, many, method='pearson'):
     return cor, pval
 
 
+def pairwise_correlation(many, method='pearson'):
+    if method == 'pearson':
+        the_func = stats.pearsonr
+    elif method == 'spearman':
+        the_func = stats.spearmanr
+    else:
+        raise NotImplementedError("Unrecognised method %s" % method)
+
+    cor = pd.DataFrame(index=many.index, columns=many.index)
+    pval = pd.DataFrame(index=many.index, columns=many.index)
+
+    for i, row in enumerate(many.index):
+        for j in range(i, len(many.index)):
+            col = many.index[j]
+            c, p = the_func(many.loc[row], many.loc[col])
+            cor.loc[row, col] = c
+            cor.loc[col, row] = c
+            pval.loc[row, col] = p
+            pval.loc[col, row] = p
+
+    return cor, pval
+
+
 def standardise(data, axis=1):
     """
     Standardise the RMA data in the exon array
+    Defined as median centred and divided by the IQR.
     :param data:
     :param axis: The axis to run this - default is rows (probes)
     :return:
@@ -37,9 +62,12 @@ def standardise(data, axis=1):
 
 
 if __name__ == '__main__':
-    cmyc_probe = 3115514
-    cmyc_gene = 'MYC'
+    myc_probe = 3115514
+    myc_gene = 'MYC'
     corr_method = 'pearson'
+    cross_corr_threshold = 0.5
+    within_corr_threshold = 0.75
+    alpha = 0.05
 
     fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
     rma_data = pd.read_csv(fn, sep='\t', comment='#', header=0, index_col=0)
@@ -47,44 +75,97 @@ if __name__ == '__main__':
     ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'HuEx-1_0-st-v2.na36.hg19.probeset.csv.gz')
     ann = pd.read_csv(ann_fn, sep=',', comment='#', header=0, index_col=0, na_values='---')
 
-    ann_fn2 = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'ash_cpt_project', 'GSE60892_annotation.xlsx')
-    ann2 = pd.read_excel(ann_fn2)
+    # ann_fn2 = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'ash_cpt_project', 'GSE60892_annotation.xlsx')
+    # ann2 = pd.read_excel(ann_fn2)
 
     # annotation files
     # latest version from Affymetrix / Thermofisher
+    # every probe in this annotation is defined as 'core'
     ann = ann.loc[rma_data.index]
     ann = ann.loc[~ann.gene_assignment.isnull()]
     ann.loc[:, 'gene_assignment'] = ann.loc[:, 'gene_assignment'].str.replace(r' /+ ', '|')
-    symb = ann.gene_assignment.str.split('|').apply(lambda x: x[1])
+    the_symbols = ann.gene_assignment.str.split('|').apply(lambda x: x[1])
 
     # version used by Jennie originally
-    ann2 = ann2.loc[~ann2.probeset_id.isnull()]
-    ann2.loc[:, 'probeset_id'] = ann2.loc[:, 'probeset_id'].astype(int)
-    ann2.set_index("probeset_id", inplace=True)
-    ann2 = ann2.loc[rma_data.index]
-    ann2 = ann2.loc[~ann2.gene_assignment.isnull()]
-    ann2.loc[:, 'gene_assignment'] = ann2.loc[:, 'gene_assignment'].str.replace(r' /+ ', '|')
-    symb2 = ann2.gene_assignment.str.split('|').apply(lambda x: x[1] if len(x) > 1 else None)
+    # ann2 = ann2.loc[~ann2.probeset_id.isnull()]
+    # ann2.loc[:, 'probeset_id'] = ann2.loc[:, 'probeset_id'].astype(int)
+    # ann2.set_index("probeset_id", inplace=True)
+    # ann2 = ann2.loc[rma_data.index]
+    # ann2 = ann2.loc[~ann2.gene_assignment.isnull()]
+    # ann2.loc[:, 'gene_assignment'] = ann2.loc[:, 'gene_assignment'].str.replace(r' /+ ', '|')
+    # symb2 = ann2.gene_assignment.str.split('|').apply(lambda x: x[1] if len(x) > 1 else None)
 
-    the_symbols = symb
+    # get a standardised dataset
+    the_data = standardise(rma_data)
 
     # get all MYC probes
+    myc_probes = the_symbols.index[the_symbols == myc_gene]
+    n_myc_probes_orig = len(myc_probes)
 
     # reduce down to those that correlate with one another
+    # form the square pairwise corr matrix, remove rows that don't correlate
+    myc_probe_corr, myc_probe_pval = pairwise_correlation(the_data.loc[myc_probes], method=corr_method)
+    drop_idx = ((myc_probe_corr < within_corr_threshold) & (myc_probe_pval > alpha)).sum(axis=0) == (n_myc_probes_orig - 1)
+    myc_probes = myc_probes[~drop_idx]
+
+    print "Of the original %d MYC probes, we retained %d that correlate well: %s." % (
+        n_myc_probes_orig,
+        len(myc_probes),
+        ', '.join(myc_probes.astype(str))
+    )
 
     # find all probes correlated with them (individually, taking the union)
+    probes_corr_with_myc = []
 
-    # get the associated genes
+    for p in myc_probes:
+        print "Computing correlation with MYC probe %s" % str(p)
+        base = the_data.loc[p]
+        cor, pval = one_vs_many_correlation(the_data.loc[p], the_data, method=corr_method)
+        keep_probes = cor.index[(cor.abs() > cross_corr_threshold) & (pval < alpha)]
+        probes_corr_with_myc.append(keep_probes)
 
-    # aggregate those genes based only on the correlated probe list (standardise then mean)
+    #  out of interest, what is the overlap between these? (presumably quite high?)
+    vs, vc = setops.venn_from_arrays(*probes_corr_with_myc)
 
-    # 
+    # union of probes
+    probes_corr_with_myc_union = setops.reduce_union(*probes_corr_with_myc)
+
+    print "After comparing all data against each MYC probe, we are left with %d correlated probes" % len(probes_corr_with_myc_union)
+
+    # aggregate by gene (only within the pre-selected probes)
+    genes_corr_with_myc = the_symbols.loc[probes_corr_with_myc_union]
+    dat_corr_with_myc_aggr = the_data.loc[probes_corr_with_myc_union].groupby(genes_corr_with_myc, axis=0).mean()
+
+    # re-run correlation analysis at the gene level
+    base = dat_corr_with_myc_aggr.loc[myc_gene]
+    cor_gene, pval_gene = one_vs_many_correlation(base, dat_corr_with_myc_aggr, method=corr_method)
+
+    # reduce to significant and relevant
+    keep_genes = cor_gene.index[(cor_gene.abs() > cross_corr_threshold) & (pval_gene < alpha)]
+
+    # remove MYC itself when reporting
+    print "Having aggregated these by gene, %d are correlated with %s" % (len(keep_genes.drop(myc_gene)), myc_gene)
+
+    # cluster using this representation of the data
+    # force the order of the columns to match the correlation with MYC
+    keep_genes = cor_gene.loc[keep_genes].sort_values(ascending=False).index
+    cg = clustering.plot_clustermap(
+        dat_corr_with_myc_aggr.loc[keep_genes],
+        cmap='RdBu_r',
+        metric='euclidean',
+        method='ward',
+        row_cluster=False,
+        vmin=-4.5, vmax=4.5
+    )
+    cg.gs.update(bottom=0.1)
+
+
 
     # aggregate all genes
     all_aggr_by_gene = rma_data.groupby(the_symbols, axis=0).mean()
 
     # Pearson correlation by gene against the cymc probe
-    base = rma_data.loc[cmyc_probe]
+    base = rma_data.loc[myc_probe]
     cor, pval = one_vs_many_correlation(base, rma_data, method=corr_method)
 
     # select probes exhibiting correlation
@@ -108,7 +189,7 @@ if __name__ == '__main__':
 
     # re-run correlation with Myc
     cor_gene_ctr, pval_gene_ctr = one_vs_many_correlation(
-        aggr_rma_data_ctr_by_gene.loc[cmyc_gene],
+        aggr_rma_data_ctr_by_gene.loc[myc_gene],
         aggr_rma_data_ctr_by_gene,
         method=corr_method
     )
@@ -120,7 +201,7 @@ if __name__ == '__main__':
     aggr_by_gene = rma_data.loc[plist].groupby(the_symbols[plist], axis=0).mean()
 
     # re-run correlation with MYC
-    cor_gene, pval_gene = one_vs_many_correlation(aggr_by_gene.loc[cmyc_gene], aggr_by_gene, method=corr_method)
+    cor_gene, pval_gene = one_vs_many_correlation(aggr_by_gene.loc[myc_gene], aggr_by_gene, method=corr_method)
 
     ### alternative approach: just take the gene signature and replot the heatmap
     # NB: some typos in here (wow - done by hand?!), now corrected

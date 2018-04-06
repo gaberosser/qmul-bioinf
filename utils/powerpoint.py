@@ -114,6 +114,15 @@ def df_to_powerpoint(filename, df, **kwargs):
     All other arguments that can be taken by df_to_table() (such as col_formatters or rounding) can also
     be passed here.
     """
+    kwargs.setdefault('left', 0)
+    kwargs.setdefault('top', 0)
+    kwargs.setdefault('width', 1)
+    kwargs.setdefault('height', 1)
+
+    if df.index.dtype != 'O':
+        df = df.copy()
+        df.index = df.index.astype(str)
+
     pres = Presentation()
     blank_slide_layout = pres.slide_layouts[6]
     slide = pres.slides.add_slide(blank_slide_layout)
