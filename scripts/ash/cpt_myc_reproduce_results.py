@@ -1,14 +1,11 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
-from scipy.cluster import hierarchy
 import os
 from settings import DATA_DIR_NON_GIT
 from matplotlib import pyplot as plt
 import seaborn as sns
-from sklearn.decomposition import PCA
 from plotting import heatmap, clustering
-
 from utils import setops
 
 
@@ -55,13 +52,13 @@ def pairwise_correlation(many, method='pearson'):
 def standardise(data, axis=1):
     """
     Standardise the RMA data in the exon array
-    Defined as median centred and divided by the IQR.
+    Defined as median centred (only).
     :param data:
     :param axis: The axis to run this - default is rows (probes)
     :return:
     """
     other_axis = 0 if axis == 1 else 1
-    return data.subtract(data.median(axis=axis), axis=other_axis).divide(stats.iqr(data, axis=axis), axis=other_axis)
+    return data.subtract(data.median(axis=axis), axis=other_axis)
 
 
 if __name__ == '__main__':
@@ -69,114 +66,57 @@ if __name__ == '__main__':
     myc_gene = 'MYC'
     corr_method = 'pearson'
     cross_corr_threshold = 0.5
-    within_corr_threshold = 0.75
     alpha = 0.05
-    outlier_max_dist = 100. # maximum distance from the centroid before a sample is declared an outlier
-    remove_outliers = True
-
-    # these genes were validated, so we'd like to retain them!
-    validated_genes = [
-        'CXCL1',
-        'CXCL2',
-        'IL6',
-        'IL1RL2',
-    ]
 
     fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
     rma_data = pd.read_csv(fn, sep='\t', comment='#', header=0, index_col=0)
 
-    ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'HuEx-1_0-st-v2.na36.hg19.probeset.csv.gz')
-    ann = pd.read_csv(ann_fn, sep=',', comment='#', header=0, index_col=0, na_values='---')
+    # load annotation files
 
-    # annotation files
     # latest version from Affymetrix / Thermofisher
     # every probe in this annotation is defined as 'core'
+    # ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'HuEx-1_0-st-v2.na36.hg19.probeset.csv.gz')
+    # ann = pd.read_csv(ann_fn, sep=',', comment='#', header=0, index_col=0, na_values='---')
+
+
+    # version used by Jennie originally
+    ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'ash_cpt_project', 'GSE60892_annotation.xlsx')
+    ann = pd.read_excel(ann_fn)
+    ann = ann.loc[~ann.probeset_id.isnull()]
+    ann.loc[:, 'probeset_id'] = ann.loc[:, 'probeset_id'].astype(int)
+    ann.set_index("probeset_id", inplace=True)
+
+
+    # both versions need this
+
     ann = ann.loc[rma_data.index]
     ann = ann.loc[~ann.gene_assignment.isnull()]
     ann.loc[:, 'gene_assignment'] = ann.loc[:, 'gene_assignment'].str.replace(r' /+ ', '|')
-    the_symbols = ann.gene_assignment.str.split('|').apply(lambda x: x[1])
+
+    the_symbols = ann.gene_assignment.str.split('|').apply(lambda x: x[1] if len(x) > 1 else None)
 
     # get a standardised dataset
     the_data = standardise(rma_data)
 
-    # note to future self: the samples do *not* separate as expected when using the full array representation
-    # (see below) - instead we need to run a decomposition method later, once we have selected probes / genes
-    # pca = PCA(n_components=10)
-    # y = pca.fit_transform(the_data.transpose())
+    # find probes correlated with a single MYC probe
+    base = the_data.loc[myc_probe]
+    myc_probe_corr, myc_probe_pval = one_vs_many_correlation(base, the_data, method=corr_method)
 
-    # get all MYC probes
-    myc_probes = the_symbols.index[the_symbols == myc_gene]
-    n_myc_probes_orig = len(myc_probes)
-
-    # reduce down to those that correlate with one another
-    # form the square pairwise corr matrix, remove rows that don't correlate
-    myc_probe_corr, myc_probe_pval = pairwise_correlation(the_data.loc[myc_probes], method=corr_method)
-    drop_idx = ((myc_probe_corr < within_corr_threshold) & (myc_probe_pval > alpha)).sum(axis=0) == (n_myc_probes_orig - 1)
-    myc_probes = myc_probes[~drop_idx]
-
-    print "Of the original %d MYC probes, we retained %d that correlate well: %s." % (
-        n_myc_probes_orig,
-        len(myc_probes),
-        ', '.join(myc_probes.astype(str))
-    )
-
-    # find all probes correlated with them (individually, taking the union)
-    myc_corr_probes = []
-
-    for p in myc_probes:
-        print "Computing correlation with MYC probe %s" % str(p)
-        base = the_data.loc[p]
-        cor, pval = one_vs_many_correlation(the_data.loc[p], the_data, method=corr_method)
-        these_probes = cor.index[(cor.abs() > cross_corr_threshold) & (pval < alpha)]
-        myc_corr_probes.append(these_probes)
-
-    #  out of interest, what is the overlap between these? (presumably quite high?)
-    vs, vc = setops.venn_from_arrays(*myc_corr_probes)
-
-    # union of probes
-    keep_probes = setops.reduce_union(*myc_corr_probes)
+    keep_probes = myc_probe_corr.index[(myc_probe_corr.abs() > cross_corr_threshold) & (myc_probe_pval < alpha)]
 
     print "After comparing all data against each MYC probe, we are left with %d correlated probes" % len(keep_probes)
 
-    genes_corr_with_myc = the_symbols.loc[keep_probes].dropna()
-    print "These correspond to %d genes." % len(genes_corr_with_myc.unique())
-
-    # PCA decomposition and centroid distance calculcation to spot outliers
-    pca = PCA(n_components=2)
-    y = pca.fit_transform(the_data.loc[keep_probes].transpose())
-
-    pca_dist_from_centroid = (y ** 2).sum(axis=1) ** .5
-    x = the_data.loc[keep_probes]
-    dist_from_centroid = (x.subtract(x.mean(axis=1), axis=0) ** 2).sum(axis=0) ** .5
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.scatter(y[:, 0], y[:, 1], c=dist_from_centroid, cmap='RdYlGn_r')
-
-    # outliers = np.where(dist_from_centroid > 100)[0]
-    outliers = np.where(dist_from_centroid > outlier_max_dist)[0]
-
-    for i in outliers:
-        ax.text(y[i, 0], y[i, 1], the_data.columns[i], horizontalalignment='right')
-    ax.set_xlabel("Principal component 1 (%.2f%%)" % (pca.explained_variance_ratio_[0] * 100.))
-    ax.set_ylabel("Principal component 2 (%.2f%%)" % (pca.explained_variance_ratio_[1] * 100.))
-    fig.tight_layout()
-
-    if remove_outliers and len(outliers):
-        print "Removing %d sample(s) that ha(s/ve) been branded outlier(s): %s" % (
-            len(outliers),
-            ', '.join(the_data.columns[outliers])
-        )
-        # make a backup in case we want to go back
-        the_data_before_filt = the_data.copy()
-        the_data = standardise(rma_data.loc[:, dist_from_centroid <= outlier_max_dist])
-
-
     # aggregate by gene (only within the pre-selected probes)
+    genes_corr_with_myc = the_symbols.loc[keep_probes]
     dat_corr_with_myc_aggr = the_data.loc[keep_probes].groupby(genes_corr_with_myc, axis=0).mean()
 
     # re-run correlation analysis at the gene level
-    base = dat_corr_with_myc_aggr.loc[myc_gene]
+
+    # here we use all matching MYC probes (5 out of 6 of them) aggregated:
+    # base = dat_corr_with_myc_aggr.loc[myc_gene]
+
+    # here we just use the same one probe
+    base = the_data.loc[myc_probe]
     cor_gene, pval_gene = one_vs_many_correlation(base, dat_corr_with_myc_aggr, method=corr_method)
 
     # reduce to significant and relevant
@@ -187,15 +127,14 @@ if __name__ == '__main__':
 
     # cluster using this representation of the data
     # force the order of the columns to match the correlation with MYC
-
-    keep_genes_sorted = cor_gene.loc[keep_genes].sort_values(ascending=False).index
+    keep_genes = cor_gene.loc[keep_genes].sort_values(ascending=False).index
     cg = clustering.plot_clustermap(
-        dat_corr_with_myc_aggr.loc[keep_genes_sorted],
+        dat_corr_with_myc_aggr.loc[keep_genes],
         cmap='RdBu_r',
         metric='euclidean',
         method='ward',
         row_cluster=False,
-        # vmin=-5, vmax=5
+        vmin=-4.5, vmax=4.5
     )
     cg.gs.update(bottom=0.1)
 
@@ -415,7 +354,5 @@ if __name__ == '__main__':
         'RAB33A',
     ]
 
-    # bizarrely, not all of these genes have a match - in fact, some don't even exist online?!
-    # anyway, do the best I can
-    j_not_ours = pd.Index(jennie_list).difference(keep_genes)
-    ours_not_j = keep_genes.difference(jennie_list)
+j_not_ours = pd.Index(jennie_list).difference(keep_genes)
+ours_not_j = keep_genes.difference(jennie_list)
