@@ -135,6 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--bed", help="BED file containing regions of interest", required=True)
     parser.add_argument("-p", "--threads", help="Number of CPU threads [1].", type=int, default=1)
     parser.add_argument("-o", "--outdir", help="Output directory [.]", default='.')
+    parser.add_argument("-Q", "--minmapqual", help="Minimum mapping quality for samtools depth [0]", default=0, type=int)
 
     args = parser.parse_args()
     outdir = os.path.abspath(args.outdir)
@@ -158,7 +159,7 @@ if __name__ == "__main__":
     logger.addHandler(sh)
     logger.setLevel(logging.INFO)
 
-    CHROMS = ['%d' % i for i in range(1, 24)]
+    CHROMS = ['%d' % i for i in range(1, 23)]
 
     if args.threads > 1:
         pool = mp.Pool(processes=args.threads)
@@ -170,10 +171,11 @@ if __name__ == "__main__":
     cov_fn = os.path.join(outdir, "%s.cov.bed.gz" % filestem)
 
     if not os.path.isfile(cov_fn):
-        cmd = "samtools depth -b {bed_file} -aa {bam_file} | gzip > {out_cov_file}".format(
+        cmd = "samtools depth -b {bed_file} -aa {bam_file} -Q {minmapqual}| gzip > {out_cov_file}".format(
             bed_file=os.path.abspath(args.bed),
             out_cov_file=cov_fn,
-            bam_file=os.path.abspath(args.bam_file)
+            bam_file=os.path.abspath(args.bam_file),
+            minmapqual=args.minmapqual,
         )
         logger.info("Calling samtools depth.")
         logger.info("%s", cmd)

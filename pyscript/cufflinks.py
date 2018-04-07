@@ -29,7 +29,7 @@ class CufflinksBase(jobs.ArrayJob, jobs.BamFileIteratorMixin):
     def set_default_extras(self):
         if '--no-update-check' not in self.extra_args:
             self.extra_args.extend(
-                ['--no_update_check']
+                ['--no-update-check']
             )
 
     def prepare_submission(self, *args, **kwargs):
