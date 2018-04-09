@@ -6,10 +6,11 @@ import os
 from settings import DATA_DIR_NON_GIT
 from matplotlib import pyplot as plt
 import seaborn as sns
+import multiprocessing as mp
 from sklearn.decomposition import PCA
 from plotting import heatmap, clustering
 
-from utils import setops
+from utils import setops, output
 
 
 def one_vs_many_correlation(one, many, method='pearson'):
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     within_corr_threshold = 0.75
     alpha = 0.05
     outlier_max_dist = 100. # maximum distance from the centroid before a sample is declared an outlier
-    remove_outliers = True
+    remove_outliers = False
 
     # these genes were validated, so we'd like to retain them!
     validated_genes = [
@@ -81,6 +82,8 @@ if __name__ == '__main__':
         'IL6',
         'IL1RL2',
     ]
+
+    outdir = output.unique_output_dir("cpt_myc")
 
     fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
     rma_data = pd.read_csv(fn, sep='\t', comment='#', header=0, index_col=0)
@@ -120,13 +123,34 @@ if __name__ == '__main__':
         ', '.join(myc_probes.astype(str))
     )
 
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sns.heatmap(myc_probe_corr.astype(float), cmap='RdBu_r', ax=ax)
+    ax.set_title('MYC probe %s correlation' % corr_method.capitalize())
+    fig.savefig(os.path.join(outdir, 'myc_probe_cross_correlation.png'), dpi=200)
+
     # find all probes correlated with them (individually, taking the union)
+    # this can be slow so we can run in parallel
+    jobs = {}
+    pool = mp.Pool()
     myc_corr_probes = []
 
     for p in myc_probes:
         print "Computing correlation with MYC probe %s" % str(p)
         base = the_data.loc[p]
-        cor, pval = one_vs_many_correlation(the_data.loc[p], the_data, method=corr_method)
+        jobs[p] = pool.apply_async(
+            one_vs_many_correlation,
+            args=(the_data.loc[p], the_data),
+            kwds=dict(method=corr_method)
+        )
+        # cor, pval = one_vs_many_correlation(the_data.loc[p], the_data, method=corr_method)
+        # these_probes = cor.index[(cor.abs() > cross_corr_threshold) & (pval < alpha)]
+        # myc_corr_probes.append(these_probes)
+
+    pool.close()
+    pool.join()
+    for p in myc_probes:
+        cor, pval = jobs[p].get(1e4)
         these_probes = cor.index[(cor.abs() > cross_corr_threshold) & (pval < alpha)]
         myc_corr_probes.append(these_probes)
 
@@ -139,7 +163,18 @@ if __name__ == '__main__':
     print "After comparing all data against each MYC probe, we are left with %d correlated probes" % len(keep_probes)
 
     genes_corr_with_myc = the_symbols.loc[keep_probes].dropna()
-    print "These correspond to %d genes." % len(genes_corr_with_myc.unique())
+    print "These correspond to %d unique genes." % len(genes_corr_with_myc.unique())
+
+    # check the overlap with validated genes
+    overlap = pd.Index(validated_genes).intersection(genes_corr_with_myc.unique())
+    if len(overlap) == len(validated_genes):
+        print "Good news: all %d validated genes are in the genes shortlist." % len(validated_genes)
+    else:
+        print "Oh dear, %d of the %d validated genes are NOT in the shortlist (%s)" % (
+            len(validated_genes) - len(overlap),
+            len(validated_genes),
+            ', '.join(pd.Index(validated_genes).difference(genes_corr_with_myc.unique()))
+        )
 
     # PCA decomposition and centroid distance calculcation to spot outliers
     pca = PCA(n_components=2)
@@ -162,6 +197,9 @@ if __name__ == '__main__':
     ax.set_ylabel("Principal component 2 (%.2f%%)" % (pca.explained_variance_ratio_[1] * 100.))
     fig.tight_layout()
 
+    fig.savefig(os.path.join(outdir, 'myc_genes_pca_for_outliers.png'), dpi=200)
+
+
     if remove_outliers and len(outliers):
         print "Removing %d sample(s) that ha(s/ve) been branded outlier(s): %s" % (
             len(outliers),
@@ -170,7 +208,11 @@ if __name__ == '__main__':
         # make a backup in case we want to go back
         the_data_before_filt = the_data.copy()
         the_data = standardise(rma_data.loc[:, dist_from_centroid <= outlier_max_dist])
-
+    elif len(outliers):
+        print "%d sample(s) is/are outlier(s), but we will retain them: %s" % (
+            len(outliers),
+            ', '.join(the_data.columns[outliers])
+        )
 
     # aggregate by gene (only within the pre-selected probes)
     dat_corr_with_myc_aggr = the_data.loc[keep_probes].groupby(genes_corr_with_myc, axis=0).mean()
@@ -195,9 +237,22 @@ if __name__ == '__main__':
         metric='euclidean',
         method='ward',
         row_cluster=False,
-        # vmin=-5, vmax=5
+        vmin=-8, vmax=8
     )
     cg.gs.update(bottom=0.1)
+    cg.savefig(os.path.join(outdir, 'myc_genes_clustermap.png'), dpi=200)
+    cg.savefig(os.path.join(outdir, 'myc_genes_clustermap.tiff'), dpi=200)
+
+    # export to excel for downstream analysis
+    to_export = pd.DataFrame.from_dict(
+        {'pearson_correlation': cor_gene.sort_values(ascending=False)}
+    )
+    # add probes
+    tmp = pd.Series(genes_corr_with_myc.index, index=genes_corr_with_myc.values)
+    probe_col = tmp.groupby(tmp.index).apply(lambda x: ','.join([str(t) for t in x])).loc[to_export.index]
+    to_export.insert(1, 'probes', probe_col)
+
+    to_export.to_excel(os.path.join(outdir, 'GSE60982_genes_correlated_with_myc.xlsx'))
 
     jennie_list = [
         'MYC',

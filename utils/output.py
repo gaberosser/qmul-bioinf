@@ -4,7 +4,7 @@ from log import get_console_logger
 logger = get_console_logger(__name__)
 
 
-def unique_output_dir(title, root_output_dir=OUTPUT_DIR, reuse_empty=False):
+def unique_output_dir(title, root_output_dir=OUTPUT_DIR, reuse_empty=True):
 
     if not os.path.exists(root_output_dir):
         logger.info("Creating global output directory %s", root_output_dir)
