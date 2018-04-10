@@ -40,6 +40,15 @@ process_and_save_idat_ucl <- function(
   rgSet <- read.metharray(basenames, extended = T)
   
   print(rgSet@annotation)
+  dir.create(output.dir, showWarnings = FALSE)
+  
+  if (gzip) {
+    file_ext <- ".csv.gz"
+    open_func <- gzfile
+  } else {
+    file_ext <- ".csv"
+    open_func <- file
+  }
   
   # rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
 
@@ -68,39 +77,43 @@ process_and_save_idat_ucl <- function(
   champLoad <- champ.filter(beta.raw, detP = detP, pd = meta, arraytype = arraytype)
   
   beta.raw <- champLoad$beta
+  write.csv(beta.raw, file = open_func(file.path(output.dir, paste0("beta_raw", file_ext))))
 
   beta.bmiq <- champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = arraytype, cores=4)
-
+  write.csv(beta.bmiq, file = open_func(file.path(output.dir, paste0("beta_bmiq", file_ext))))
+  
   beta.pbc <- champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
+  write.csv(beta.pbc, file = open_func(file.path(output.dir, paste0("beta_pbc", file_ext))))
 
   mset.swan <- preprocessSWAN(rgSet, mSet = mset)
   beta.swan <- getBeta(mset.swan)
   beta.swan <- beta.swan[rownames(beta.raw),]
+  write.csv(beta.swan, file = open_func(file.path(output.dir, paste0("beta_swan", file_ext))))
 
   if (arraytype == 'EPIC') {
     grSet.funnorm <- preprocessFunnorm(rgSet)
     beta.funnorm <- getBeta(grSet.funnorm)[rownames(beta.raw),]
     colnames(beta.funnorm) <- meta[colnames(beta.funnorm), name.col]
+    write.csv(beta.funnorm, file = open_func(file.path(output.dir, paste0("beta_funnorm", file_ext))))
   }
 
-  dir.create(output.dir, showWarnings = FALSE)
-  if (gzip) {
-    write.csv(beta.raw, file=gzfile(file.path(output.dir, "beta_raw.csv.gz")))
-    write.csv(beta.bmiq, file=gzfile(file.path(output.dir, "beta_bmiq.csv.gz")))
-    write.csv(beta.swan, file=gzfile(file.path(output.dir, "beta_swan.csv.gz")))
-    write.csv(beta.pbc, file=gzfile(file.path(output.dir, "beta_pbc.csv.gz")))
-    if (arraytype == 'EPIC') {
-      write.csv(beta.funnorm, file =gzfile(file.path(output.dir, "beta_funnorm.csv.gz")))
-    }
-  } else {
-    write.csv(beta.raw, file = file.path(output.dir, "beta_raw.csv"))
-    write.csv(beta.bmiq, file = file.path(output.dir, "beta_bmiq.csv"))
-    write.csv(beta.swan, file = file.path(output.dir, "beta_swan.csv"))
-    write.csv(beta.pbc, file = file.path(output.dir, "beta_pbc.csv"))
-    if (arraytype == 'EPIC') {
-      write.csv(beta.funnorm, file = file.path(output.dir, "beta_funnorm.csv"))
-    }
-  }
+  # if (gzip) {
+  #   write.csv(beta.raw, file=gzfile(file.path(output.dir, "beta_raw.csv.gz")))
+  #   write.csv(beta.bmiq, file=gzfile(file.path(output.dir, "beta_bmiq.csv.gz")))
+  #   write.csv(beta.swan, file=gzfile(file.path(output.dir, "beta_swan.csv.gz")))
+  #   write.csv(beta.pbc, file=gzfile(file.path(output.dir, "beta_pbc.csv.gz")))
+  #   if (arraytype == 'EPIC') {
+  #     write.csv(beta.funnorm, file =gzfile(file.path(output.dir, "beta_funnorm.csv.gz")))
+  #   }
+  # } else {
+  #   write.csv(beta.raw, file = file.path(output.dir, "beta_raw.csv"))
+  #   write.csv(beta.bmiq, file = file.path(output.dir, "beta_bmiq.csv"))
+  #   write.csv(beta.swan, file = file.path(output.dir, "beta_swan.csv"))
+  #   write.csv(beta.pbc, file = file.path(output.dir, "beta_pbc.csv"))
+  #   if (arraytype == 'EPIC') {
+  #     write.csv(beta.funnorm, file = file.path(output.dir, "beta_funnorm.csv"))
+  #   }
+  # }
   
 }
 
@@ -296,14 +309,15 @@ GenomicMethylSetfromGEORaw <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', '2017-09-19')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-01-12')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_EPIC')
-base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_450k')
+# base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_450k')
+base.dir <- file.path(data.dir.raid, 'methylation', '2018-04-09')
 
 idat.dir <- file.path(base.dir, 'idat')
 # raw.file <- file.path(base.dir, 'geo_raw.txt')
 meta.file <- file.path(base.dir, 'sources.csv')
 # process_and_save(idat.dir, meta.file, arraytype = "450K")
-# process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC")
-process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "450k", name.col="sample")
+process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC", name.col = "sample")
+# process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "450k", name.col="sample")
 
 # meta <- read.csv(meta.file)
 # rownames(meta) <- meta$Sample_Name

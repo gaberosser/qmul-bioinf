@@ -59,7 +59,7 @@ def get_feature_tss_from_gtf(fn, filter_func, name_field, distance=2500, sources
                 # BED format is 0-based
                 # GTF format is 1-based
                 # NB samtools depth does not include the final base (?) so only subtract 1 from the start
-                tss_minus = start - distance - 1
+                tss_minus = max(start - distance - 1, 0)
                 tss_plus = start + distance
 
                 # only include this TSS if it inhabits a unique region
@@ -115,7 +115,7 @@ def write_bed_file(region_data, names, fn):
 
 if __name__ == "__main__":
 
-    distance = 2500 # distance from TSS to include
+    distance = 5000 # distance from TSS to include
 
     fn = os.path.join(
         LOCAL_DATA_DIR,

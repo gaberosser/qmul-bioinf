@@ -1,6 +1,8 @@
 import networkx
 import os
 import pandas as pd
+from matplotlib import pyplot as plt
+import numpy as np
 import settings
 import references
 import csv
@@ -62,9 +64,38 @@ if __name__ == "__main__":
     for pth in pathway_symbols:
         graph_node_path.add_node(pth)
 
+    edges = {}
     for g in gene_pathways:
         conn_paths = gene_pathways[g]
-        graph_node_path.add_edges_from(itertools.combinations(conn_paths, 2), gene_symbol=g)
+        # graph_node_path.add_edges_from(itertools.combinations(conn_paths, 2), gene_symbol=g)
+        for p1, p2 in itertools.combinations(conn_paths, 2):
+            edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
+
+    for (p1, p2), edge_attr in edges.iteritems():
+        edge_attr['gene_count'] = len(edge_attr['genes'])
+        graph_node_path.add_edge(p1, p2, **edge_attr)
+
+    # plotting
+    # we'll use the gene_count to define plotting parameters
+    gc = []
+    for (u, v, attr) in graph_node_path.edges(data=True):
+        gc.append(attr['gene_count'])
+    gc = np.array(gc)
+
+    # need to reduce the range here somewhat
+    ew = gc ** .5
+    ew[gc <= 10] = 0.
+    ec = gc.astype(float) / gc.max()
+    pos = networkx.spring_layout(graph_node_path, iterations=200)
+    networkx.draw_circular(
+        graph_node_path,
+        width=ew,
+        edge_color=ec,
+        alpha=0.8,
+        edge_cmap=plt.cm.RdYlGn_r,
+        edge_vmin=0, edge_vmax=1
+    )
+    # TODO: add node labels
 
     # 2) nodes are genes, edges are pathways
     graph_node_gene = networkx.Graph(db=src)

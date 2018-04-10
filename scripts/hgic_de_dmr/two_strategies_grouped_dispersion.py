@@ -327,17 +327,11 @@ if __name__ == "__main__":
     }
     norm_method_s1 = 'swan'
 
-    # pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
-    pids = ['018', '019', '030', '031', '017', '050', '054', '026', '052']
+    pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
 
-    # subgroups = {
-    #     'RTK I': ['018', '019', '030', '031'],
-    #     'RTK II': ['017', '050', '054', '061'],
-    #     'MES': ['026', '052']
-    # }
     subgroups = {
         'RTK I': ['018', '019', '030', '031'],
-        'RTK II': ['017', '050', '054'],
+        'RTK II': ['017', '050', '054', '061'],
         'MES': ['026', '052']
     }
 
@@ -426,6 +420,11 @@ if __name__ == "__main__":
     me_obj, anno = load_methylation(pids, norm_method=norm_method_s1)
     me_data = me_obj.data
     me_meta = me_obj.meta
+
+    # remove unneeded samples
+    me_meta = me_meta.loc[me_meta.index != 'DURA061_NSC_N6_P4']
+    me_meta = me_meta.loc[me_meta.type.isin(['GBM', 'iNSC', 'NSC'])]
+    me_data = me_data.loc[:, me_meta.index]
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results
