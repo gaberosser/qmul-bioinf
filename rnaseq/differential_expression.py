@@ -11,6 +11,36 @@ toptags_cols = [
 ]
 
 
+def _edger_func_fit_glm(the_data, the_method, the_formula, common_disp=False, **vars):
+    if the_method not in {'GLM', 'QLGLM'}:
+        raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
+    fit = None
+    rdata = pandas2ri.py2ri(the_data)
+
+    formula = robjects.Formula(the_formula)
+    for k, v in vars.items():
+        formula.environment[k] = robjects.FactorVector(v)
+
+    y = r("DGEList")(rdata)
+    y = r("calcNormFactors")(y)
+    design = r("model.matrix")(formula)
+
+    if common_disp:
+        # use a common estimate of the dispersion rather than using experimental structure
+        # this is helpful where we have no replicates
+        y = r("estimateGLMCommonDisp")(y, method='deviance', robust=True, subset=robjects.NULL)
+    else:
+        y = r("estimateDisp")(y, design)
+    if the_method == 'GLM':
+        fit = r('glmFit')(y, design)
+    elif the_method == 'QLGLM':
+        fit = r('glmQLFit')(y, design)
+    return fit, design
+
+
+edger_fit_glm = rinterface.RFunctionDeferred(_edger_func_fit_glm, imports=['edgeR'])
+
+
 def _edger_func_fit(the_data, the_groups, the_method):
     if the_method not in {'GLM', 'QLGLM'}:
         raise NotImplementedError("Only GLM and QLGLM methods are supported at present")

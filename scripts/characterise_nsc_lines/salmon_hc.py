@@ -9,7 +9,7 @@ from utils.output import unique_output_dir
 from stats import transformations
 import os
 from settings import LOCAL_DATA_DIR
-from rnaseq import general
+from rnaseq import general, loader
 
 
 def hist_logvalues(data, thresholds=None, eps=1e-6):
@@ -133,43 +133,22 @@ if __name__ == "__main__":
     if remove_mt:
         mt_ensg = set(gtf_reader.get_mitochondrial())
 
-    patient_data = rnaseq_data.load_salmon_by_patient_id(pids, units=units)
+    patient_obj = loader.load_by_patient(pids, source='salmon', units=units)
+    patient_data = patient_obj.data
 
-    # discard GBM
+    # discard GBM and unused 016 iNSC
     patient_data = patient_data.loc[:, ~patient_data.columns.str.contains('GBM')]
-
-    patient_data_by_gene = general.ensembl_transcript_quant_to_gene(patient_data)
-
-    # update index to remove accession version
-    # idx = patient_data.index.str.replace(r'.[0-9]+$', '')
-    # patient_data.index = idx
-    #
-    # fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90', 'gene_to_transcript.txt')
-    # gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
-    #
-    # # shouldn't be necessary, but remove transcripts that have no translation
-    # to_keep = patient_data.index.intersection(gene_transcript.index)
-    # if len(to_keep) != patient_data.shape[0]:
-    #     to_drop = patient_data.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
-    #     print "Discarding %d transcripts that have no associated gene: %s" % (
-    #         len(to_drop), ', '.join(to_drop)
-    #     )
-    #     patient_data = patient_data.loc[to_keep]
-    #
-    # # gene list in same order as data
-    # genes = gene_transcript.loc[patient_data.index, 'Gene stable ID']
-    #
-    # patient_data_by_gene = patient_data.groupby(genes).sum()
+    patient_data = patient_data.drop(['DURA061_NSC_N6_P4', 'DURA061_NSC_N1_P5'], axis=1)
 
     # discard mitochondrial genes
     if remove_mt:
-        idx = ~patient_data_by_gene.index.isin(mt_ensg)
-        pdbg = patient_data_by_gene.loc[idx]
+        idx = ~patient_data.index.isin(mt_ensg)
+        pdbg = patient_data.loc[idx]
         # renorm
         if units == 'tpm':
             pdbg = pdbg.divide(pdbg.sum(), axis=1) * 1e6
     else:
-        pdbg = patient_data_by_gene
+        pdbg = patient_data
 
     # discard genes expressed at low values
     idx = (pdbg > min_val).sum(axis=1) > min_n
@@ -179,7 +158,7 @@ if __name__ == "__main__":
         # here we can normalise by library size if desired
         pass
 
-    ax = hist_logvalues(patient_data_by_gene, thresholds=[min_val])
+    ax = hist_logvalues(patient_data, thresholds=[min_val])
     ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "log2_intensities_by_gene_with_min_tpm_threshold.pdf"))
 
@@ -196,29 +175,38 @@ if __name__ == "__main__":
         fname = "clustering_by_gene_corr_top%d_by_mad.{ext}" % n_t
         fname_log = "clustering_by_gene_corr_log_top%d_by_mad.{ext}" % n_t
 
-        d = clustering.dendrogram_with_colours(pdbg_log.loc[mad_log.index[:n_t]], row_colours, fig_kws={'figsize': (10, 5.5)})
+        d = clustering.dendrogram_with_colours(
+            pdbg_log.loc[mad_log.index[:n_t]],
+            row_colours,
+            fig_kws={'figsize': (5.5, 10)},
+            vertical=False
+        )
         d['fig'].savefig(os.path.join(outdir, fname_log.format(ext='png')), dpi=200)
+
+    plt.draw()
+    plt.close('all')
 
     # bring in reference data
     # IDs (if req), lab (appears in label), loader
+
     ref_dats = [
-        (None, 'Barres et al.', rnaseq_data.gse73721_salmon(units=units),),
-        (None, 'Caren et al.', rnaseq_data.pollard_salmon(units=units),),
-        (None, 'Yang et al.', rnaseq_data.gse80732_salmon(units=units),),
-        (None, 'Shahbazi et al.', rnaseq_data.gse64882_salmon(units=units),),
-        (None, 'Li et al.', rnaseq_data.gse84166_salmon(units=units),),
-        (None, 'Duan et al.', rnaseq_data.gse61794_salmon(units=units),),
-        (None, 'Bago et al.', rnaseq_data.gse92839_salmon(units=units),),
-        (None, 'Kelley and Rinn', rnaseq_data.gse38993_salmon(units=units),),
-        (None, 'ENCODE Wold', rnaseq_data.encode_h1_esc_wold(units=units),),
-        (['H1 PSC Costello_PSB'], 'ENCODE Costello', rnaseq_data.encode_h1_esc_costello(units=units),),
-        (['ENCSR000COU rep 1', 'ENCSR000COU rep 2'], 'ENCODE Gingeras', rnaseq_data.encode_h1_esc_gingeras(units=units),),
-        (None, 'ENCODE Gingeras', rnaseq_data.encode_h7_esc_gingeras(units=units),),
-        (None, 'ENCODE Gingeras', rnaseq_data.encode_h9_npc_gingeras(units=units),),
-        (['H1 PSC Ecker_WQY'], 'ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker1(units=units),),
-        (['H1 PSC Ecker_RSE'], 'ENCODE Ecker', rnaseq_data.encode_h1_esc_ecker2(units=units),),
-        (['H1 NPC Ecker_XUX'], 'ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker1(units=units),),
-        (['H1 NPC Ecker_EET'], 'ENCODE Ecker', rnaseq_data.encode_h1_npc_ecker2(units=units),),
+        (None, 'Barres et al.', loader.load_references('GSE73721', source='salmon', units=units),),
+        (None, 'Caren et al.', loader.load_references('E-MTAB-3867', source='salmon', units=units),),
+        (None, 'Yang et al.', loader.load_references('GSE80732', source='salmon', units=units),),
+        (None, 'Shahbazi et al.', loader.load_references('GSE64882', source='salmon', units=units),),
+        (None, 'Li et al.', loader.load_references('GSE84166', source='salmon', units=units),),
+        (None, 'Duan et al.', loader.load_references('GSE61794', source='salmon', units=units),),
+        (None, 'Bago et al.', loader.load_references('GSE92839', source='salmon', units=units),),
+        (None, 'Kelley and Rinn', loader.load_references('GSE38993', source='salmon', units=units),),
+        (None, 'ENCODE Wold', loader.load_references('encode_roadmap/ENCSR000EYP', source='salmon', units=units),),
+        (['H1 PSC Costello_PSB'], 'ENCODE Costello', loader.load_references('encode_roadmap/ENCSR950PSB', source='salmon', units=units),),
+        (['ENCSR000COU rep 1', 'ENCSR000COU rep 2'], 'ENCODE Gingeras', loader.load_references('encode_roadmap/ENCSR000COU', source='salmon', units=units),),
+        (None, 'ENCODE Gingeras', loader.load_references('encode_roadmap/ENCSR490SQH', source='salmon', units=units),),
+        (None, 'ENCODE Gingeras', loader.load_references('encode_roadmap/ENCSR244ISQ', source='salmon', units=units),),
+        (['H1 PSC Ecker_WQY'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR670WQY', source='salmon', units=units),),
+        (['H1 PSC Ecker_RSE'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR043RSE', source='salmon', units=units),),
+        (['H1 NPC Ecker_XUX'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR977XUX', source='salmon', units=units),),
+        (['H1 NPC Ecker_EET'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR572EET', source='salmon', units=units),),
     ]
 
     ref_arr = []
@@ -227,7 +215,7 @@ if __name__ == "__main__":
     batches = []
 
     for i, r in enumerate(ref_dats):
-        the_dat = r[2]
+        the_dat = r[2].data
         if r[0] is not None:
             the_cols = r[0]
         else:
@@ -297,12 +285,8 @@ if __name__ == "__main__":
     ref.columns = new_labels
     batches.index = new_labels
 
-    ref_by_gene = general.ensembl_transcript_quant_to_gene(ref)
-
-    # ref_by_gene = ref.groupby(genes).sum()
-
     # now let's try clustering everything together
-    abg = pd.concat((patient_data_by_gene, ref_by_gene), axis=1)
+    abg = pd.concat((patient_data, ref), axis=1)
 
     # discard mitochondrial genes
     if remove_mt:
@@ -344,6 +328,9 @@ if __name__ == "__main__":
         fname = "all_samples_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
+    plt.draw()
+    plt.close('all')
+
     # for n_t in n_gene_try:
     #     fname = "all_samples_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t
     #
@@ -372,6 +359,9 @@ if __name__ == "__main__":
         fname = "no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
+    plt.draw()
+    plt.close('all')
+
 
     # kick out fetal samples
     x = abg_nobarres_log.loc[:, ~abg_nobarres_log.columns.str.contains('Fetal')]
@@ -384,6 +374,9 @@ if __name__ == "__main__":
     for ng, x in plt_dict.items():
         fname = "no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    plt.draw()
+    plt.close('all')
 
 
     # Encode samples, no Barres
@@ -399,6 +392,8 @@ if __name__ == "__main__":
         fname = "encode_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
+    plt.draw()
+    plt.close('all')
 
     # Encode samples, no Barres, no fetal
     x = abg_encode_nobarres_log.loc[:, ~abg_encode_nobarres_log.columns.str.contains('Fetal')]
@@ -413,6 +408,9 @@ if __name__ == "__main__":
         fname = "encode_no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
+    plt.draw()
+    plt.close('all')
+
     # no Encode, no Barres
     x = abg_nobarres_log.loc[:, ~abg_nobarres_log.columns.str.contains('ENCODE')]
     abg_noencode_nobarres_log = x
@@ -423,6 +421,8 @@ if __name__ == "__main__":
         fname = "no_encode_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
 
+    plt.draw()
+    plt.close('all')
 
     # no Encode, no Barres, no fetal
     x = abg_noencode_nobarres_log.loc[:, ~abg_noencode_nobarres_log.columns.str.contains('Fetal')]
@@ -435,6 +435,9 @@ if __name__ == "__main__":
     for ng, x in plt_dict.items():
         fname = "no_encode_no_fetal_no_barres_dendrogram_log_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+
+    plt.draw()
+    plt.close('all')
 
     # for n_t in n_gene_try:
     #     fname = "no_barres_clustering_by_gene_log_corr_top%d_by_mad.{ext}" % n_t

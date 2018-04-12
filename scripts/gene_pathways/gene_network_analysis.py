@@ -106,8 +106,3 @@ if __name__ == "__main__":
     for pth in pathway_symbols:
         conn_genes = pathway_symbols[pth]
         graph_node_gene.add_edges_from(itertools.combinations(conn_genes, 2), pathway=pth)
-
-
-
-
-

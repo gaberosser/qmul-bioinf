@@ -245,7 +245,7 @@ class StarCountLoader(loader.MultipleFileLoader):
         if strandedness not in ('u', 'f', 'r'):
             raise ValueError("Variable 'strandedness' must be one of ('u', 'f', 'r')")
         self.strandedness = strandedness
-        self.data_unaligned = None
+        self.data_unassigned = None
         super(StarCountLoader, self).__init__(*args, **kwargs)
 
     def generate_input_path(self, fname):
@@ -271,7 +271,7 @@ class StarCountLoader(loader.MultipleFileLoader):
     def post_process(self):
         super(StarCountLoader, self).post_process()
         unal = ['N_unmapped', 'N_multimapping', 'N_noFeature', 'N_ambiguous']
-        self.data_unaligned = self.data.loc[self.data.index.isin(unal)]
+        self.data_unassigned = self.data.loc[self.data.index.isin(unal)]
         self.data = self.data.loc[~self.data.index.isin(unal)]
 
 
@@ -370,13 +370,15 @@ def load_by_patient(
         patient_ids,
         type='cell_culture',
         source='star',
-        include_control=True
+        include_control=True,
+        **kwargs
 ):
     """
     Load all RNA-Seq count data associated with the patient ID(s) supplied
     :param patient_ids: Iterable or single int or char
     :param source:
     :param include_control: If True (default) include Gibco reference NSC
+    :param kwargs: Passed to the loader
     :return:
     """
 
@@ -422,10 +424,12 @@ def load_by_patient(
 
     objs = []
     for ldr, samples in by_loader.items():
+        the_kwargs = dict(ldr.loader_kwargs(source))
+        the_kwargs.update(kwargs)
         objs.append(
             cls(
                 samples=samples,
-                **ldr.loader_kwargs(source)
+                **the_kwargs
             )
         )
 

@@ -309,6 +309,7 @@ class MultipleBatchLoader(object):
             self.tax_id = loaders[0].tax_id
 
         dat = pd.DataFrame(index=idx, dtype=float)
+        dat_unassigned = None
         meta_values = []
         meta_index = []
         blank_meta_row = dict([(k, None) for k in meta_cols])
@@ -361,13 +362,22 @@ class MultipleBatchLoader(object):
                 this_dat.columns = this_samples
                 # relabel the batch IDs
                 this_batch.index = this_samples
+                # relabel unassigned data if present
+                if hasattr(l, 'data_unassigned'):
+                    l.data_unassigned.columns = this_samples
 
             # data
             for c in this_dat.columns:
                 dat.insert(dat.shape[1], c, this_dat.loc[idx, c])
 
-            # rebuild meta
+            # unassigned data
+            if hasattr(l, 'data_unassigned'):
+                if dat_unassigned is None:
+                    dat_unassigned = l.data_unassigned.copy()
+                else:
+                    dat_unassigned = pd.concat((dat_unassigned, l.data_unassigned), axis=1)
 
+            # rebuild meta
             if l.meta is not None:
                 for i in this_meta.index:
                     this_row = dict(blank_meta_row)
@@ -390,6 +400,8 @@ class MultipleBatchLoader(object):
         self.meta = pd.DataFrame(meta_values, index=meta_index, columns=meta_cols)
         self.data = dat
         self.batch_id = self.meta.loc[:, batch_col]
+        if dat_unassigned is not None:
+            self.data_unassigned = dat_unassigned
 
 
     def filter_by_sample_name(self, filt, exact=True):
