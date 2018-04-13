@@ -431,6 +431,7 @@ class BamFileIteratorMixin(FileIteratorMixin):
     cleanup_regex_arr = [
         (r'Aligned\.sortedByCoord\.out', ''),
         (r'Aligned\.out', ''),
+        (r'\.sorted', '')
     ]
 
 
