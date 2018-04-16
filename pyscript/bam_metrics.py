@@ -17,23 +17,26 @@ class BamMetricsBase(jobs.ArrayJob):
     required_args = ['bam_dir']
 
     ## FIXME: params file is more complex than this script expects
+    # self.params.append([base, os.path.abspath(os.path.join(read_dir, t)), out_subdir])
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
-        ('$BAM', None),
+        ('$ID', None),
+        ('$BAM', '! -z'),
+        ('$OUTFILE', '! -z'),
     ]
 
     ## FIXME: this doesn't remove the .sorted extension?
 
     core_cmd = """
-    $outfile="$(echo $BAM | sed 's/\.bam/.bam_metrics')"
+    outfile="${{OUTFILE}}.bam_metrics"
     samtools view -b {extra} $BAM | samtools flagstat - > $outfile
     plus_counts=$(samtools view -F16 {extra} $BAM | cut -f3-4 | sort -u | wc -l)
     minus_counts=$(samtools view -f16 {extra} $BAM | cut -f3-4 | sort -u | wc -l)
-    echo "Forward strand unique reads: $plus_counts\n" >> $outfile
-    echo "Reverse strand unique reads: $minus_counts\n" >> $outfile
+    echo "Forward strand unique reads: $plus_counts" >> $outfile
+    echo "Reverse strand unique reads: $minus_counts" >> $outfile
     total_counts=$(cat $outfile | grep 'in total (QC-passed' | cut -d ' ' -f1)
-    NRF=`echo "($plus_counts + $minus_counts)/$total_counts" | bc -l)`
-    echo "NRF = $NRF\n" >> $outfile
+    NRF=`echo "($plus_counts + $minus_counts)/$total_counts" | bc -l`
+    echo "NRF = $NRF" >> $outfile
     """
 
     def prepare_submission(self, *args, **kwargs):

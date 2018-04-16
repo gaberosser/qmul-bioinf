@@ -51,7 +51,7 @@ class ApocritaJobMixin(object):
         # Default behaviour: run with bash
         return apocrita_submission_header(
             work_dir=self.out_dir,
-            threads=self.args['threads'],
+            threads=self.args.get('threads', 1),
             ram_per_core=self.ram_per_core,
             runtime_mins=self.runtime_mins,
             arr_size=len(self.params)
