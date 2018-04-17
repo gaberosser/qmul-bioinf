@@ -7,7 +7,7 @@ from load_data.loader import MultipleBatchLoader
 from rnaseq.general import ensembl_transcript_quant_to_gene
 from utils.log import get_console_logger
 from utils import setops
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2, RNASEQ_DIR
+from settings import RNASEQ_DIR
 logger = get_console_logger(__name__)
 
 

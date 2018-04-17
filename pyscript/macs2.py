@@ -80,8 +80,6 @@ def multilane_run(run_type):
 
     # all extra args got to extra
     args, extra = parser.parse_known_args()
-    print args
-    print extra
 
     if not os.path.exists(args.config_file):
         raise ValueError("No config file found at %s" % args.config_file)

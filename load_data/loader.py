@@ -102,6 +102,9 @@ class DatasetLoader(object):
                 self.meta_is_linked = False
             else:
                 self.meta.set_index(self.meta_col_sample_name, inplace=True)
+                if self.meta_col_filename == self.meta_col_sample_name:
+                    # the filename and sample name columns are shared, so we need to replace it
+                    self.meta.insert(0, self.meta_col_filename, self.meta.index)
                 self.meta_is_linked = True
 
 
@@ -249,9 +252,24 @@ class MultipleFileLoader(DatasetLoader):
         dat = None
         for sn, fn in self.input_files.iteritems():
             this_dat = self.load_one_file(fn)
-            if dat is None:
-                dat = pd.DataFrame(index=this_dat.index)
-            dat.insert(dat.shape[1], sn, this_dat)
+            # if each sample if represented by a simple series, the joining process is straightforward:
+            if isinstance(this_dat, pd.Series):
+                if dat is None:
+                    dat = pd.DataFrame(index=this_dat.index)
+                dat.insert(dat.shape[1], sn, this_dat)
+
+            # otherwise, we need to use a MultiIndex
+            elif isinstance(this_dat, pd.DataFrame):
+                # make a multiindex column
+                this_dat = pd.DataFrame(
+                    this_dat.values,
+                    index=this_dat.index,
+                    columns=pd.MultiIndex.from_product([[sn], this_dat.columns], names=['sample', 'fields'])
+                )
+                if dat is None:
+                    dat = this_dat
+                else:
+                    dat = dat.join(this_dat, how='outer')  # outer join to keep all values
         self.data = dat
 
     def post_process(self):
@@ -260,7 +278,10 @@ class MultipleFileLoader(DatasetLoader):
         """
         if self.meta_is_linked:
             # ensure that meta has the same entries as data
-            self.meta = self.meta.loc[self.data.columns]
+            if isinstance(self.data.columns, pd.MultiIndex):
+                self.meta = self.meta.loc[self.data.columns.levels[0]]
+            else:
+                self.meta = self.meta.loc[self.data.columns]
 
 
 class MultipleBatchLoader(object):

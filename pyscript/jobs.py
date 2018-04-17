@@ -428,7 +428,7 @@ class PairedFileIteratorMixin(FileIteratorMixin):
 
 class BamFileIteratorMixin(FileIteratorMixin):
     ext = 'bam'
-    cleanup_regex_arr = [
+    cleanup_regex = [
         (r'Aligned\.sortedByCoord\.out', ''),
         (r'Aligned\.out', ''),
         (r'\.sorted', '')
