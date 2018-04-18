@@ -240,6 +240,7 @@ PATIENT_LOOKUP_FFPE = {
 
 class StarCountLoader(loader.MultipleFileLoader):
     file_pattern = '*ReadsPerGene.out.tab'
+    extra_df_attributes = ('data_unassigned',)
 
     def __init__(self, strandedness='u', *args, **kwargs):
         if strandedness not in ('u', 'f', 'r'):

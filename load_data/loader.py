@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import copy
 from utils import log
 from utils import setops, string_manipulation
 import fnmatch
@@ -39,6 +40,7 @@ def _filter_by_sample_name_index(sample_names, filt, exact=True):
 class DatasetLoader(object):
     meta_col_sample_name = 'sample'
     meta_col_filename = 'filename'
+    extra_df_attributes = tuple()
 
     def __init__(
             self,
@@ -70,6 +72,8 @@ class DatasetLoader(object):
                 raise ValueError("Meta file %s does not exist." % self.meta_fn)
 
         self.meta_is_linked = None
+        self.sample_names = None
+
         self.samples_to_keep = samples
         self.tax_id = tax_id
         self.batch_id = batch_id
@@ -173,8 +177,37 @@ class SingleFileLoader(DatasetLoader):
         super(SingleFileLoader, self).post_process()
 
 
+# TODO idea: create a mixin that replaces load_data in the MultipleFileLoader with a more appropriate method when the
+# data are NOT row-matched. For example. ChIP peaks are not joined on the index, so it's fairly pointless trying to
+# stuff them into a single DataFrame?
+
+def join_row_indexed_data(**kwargs):
+    dat = None
+    for sn, this_dat in kwargs.iteritems():
+        # if each sample if represented by a simple series, the joining process is straightforward:
+        if isinstance(this_dat, pd.Series):
+            if dat is None:
+                dat = pd.DataFrame(index=this_dat.index)
+            dat.insert(dat.shape[1], sn, this_dat)
+
+        # otherwise, we need to use a MultiIndex
+        elif isinstance(this_dat, pd.DataFrame):
+            # make a multiindex column
+            this_dat = pd.DataFrame(
+                this_dat.values,
+                index=this_dat.index,
+                columns=pd.MultiIndex.from_product([[sn], this_dat.columns], names=['sample', 'fields'])
+            )
+            if dat is None:
+                dat = this_dat
+            else:
+                dat = dat.join(this_dat, how='outer')  # outer join to keep all values
+    return dat
+
+
 class MultipleFileLoader(DatasetLoader):
     file_pattern = ''
+    row_indexed = True
 
     def generate_input_path(self, fname):
         """
@@ -249,28 +282,15 @@ class MultipleFileLoader(DatasetLoader):
         self.logger.info("Loading %d samples: %s", self.input_files.shape[0], ', '.join(self.input_files.index))
 
     def load_data(self):
-        dat = None
+        the_data_separates = {}
         for sn, fn in self.input_files.iteritems():
-            this_dat = self.load_one_file(fn)
-            # if each sample if represented by a simple series, the joining process is straightforward:
-            if isinstance(this_dat, pd.Series):
-                if dat is None:
-                    dat = pd.DataFrame(index=this_dat.index)
-                dat.insert(dat.shape[1], sn, this_dat)
-
-            # otherwise, we need to use a MultiIndex
-            elif isinstance(this_dat, pd.DataFrame):
-                # make a multiindex column
-                this_dat = pd.DataFrame(
-                    this_dat.values,
-                    index=this_dat.index,
-                    columns=pd.MultiIndex.from_product([[sn], this_dat.columns], names=['sample', 'fields'])
-                )
-                if dat is None:
-                    dat = this_dat
-                else:
-                    dat = dat.join(this_dat, how='outer')  # outer join to keep all values
-        self.data = dat
+            the_data_separates[sn] = self.load_one_file(fn)
+        if self.row_indexed:
+            dat = join_row_indexed_data(**the_data_separates)
+            # tolist() is important here for MultiIndexed data
+            self.data = dat[self.input_files.index.tolist()]
+        else:
+            self.data = the_data_separates
 
     def post_process(self):
         """
@@ -278,11 +298,9 @@ class MultipleFileLoader(DatasetLoader):
         """
         if self.meta_is_linked:
             # ensure that meta has the same entries as data
-            if isinstance(self.data.columns, pd.MultiIndex):
-                self.meta = self.meta.loc[self.data.columns.levels[0]]
-            else:
-                self.meta = self.meta.loc[self.data.columns]
+            self.meta = self.meta.loc[self.input_files.index]
 
+## TODO: broken for datasets that are not row-indexed (e.g. ChIP peaks)
 
 class MultipleBatchLoader(object):
     ## FIXME: respect the batch ID somehow - so that MultipleBatch instances can also be combined
@@ -298,12 +316,6 @@ class MultipleBatchLoader(object):
 
         if len(loaders) < 2:
             raise ValueError("Must supply 2 or more loaders to use a MultipleBatchLoader.")
-
-        # get the data index (e.g. gene labels) based on intersection_only
-        if intersection_only:
-            idx = setops.reduce_intersection(*[t.data.index for t in loaders])
-        else:
-            idx = setops.reduce_union(*[t.data.index for t in loaders])
 
         # we can only claim the meta data is linked here if all loaders have this property
         self.meta_is_linked = True
@@ -322,6 +334,7 @@ class MultipleBatchLoader(object):
                 i += 1
         meta_cols += [batch_col]
 
+        # check attributes that must match in all loaders
         if len(set([t.tax_id for t in loaders])) > 1:
             raise AttributeError(
                 "The tax_id of the samples differ between loaders: %s" % ', '.join([str(t.tax_id) for t in loaders])
@@ -329,12 +342,29 @@ class MultipleBatchLoader(object):
         else:
             self.tax_id = loaders[0].tax_id
 
-        dat = pd.DataFrame(index=idx, dtype=float)
-        dat_unassigned = None
+        if len(set([t.row_indexed for t in loaders])) > 1:
+            raise AttributeError("row_indexed bool must be the same in all loaders")
+        else:
+            self.row_indexed = loaders[0].row_indexed
+
+        # dat_unassigned = None
+        extra_df_attributes = {}
+
+        if self.row_indexed:
+            # get the data index (e.g. gene labels) based on intersection_only
+            # if intersection_only:
+            #     idx = setops.reduce_intersection(*[t.data.index for t in loaders])
+            # else:
+            #     idx = setops.reduce_union(*[t.data.index for t in loaders])
+
+            # dat = pd.DataFrame(index=idx, dtype=float)
+            row_indexed_dat_arr = {}
+        else:
+            dat = {}
+
         meta_values = []
         meta_index = []
         blank_meta_row = dict([(k, None) for k in meta_cols])
-        meta = pd.DataFrame(columns=meta_cols)
 
         # we may need to append a number to sample names
         sample_appendix = 0
@@ -350,16 +380,23 @@ class MultipleBatchLoader(object):
                     auto_batch += 1
                 this_batch = pd.Series(this_batch, index=l.data.columns)
 
-            this_samples = l.data.columns.tolist()
+            # this_samples = l.data.columns.tolist()
+            this_samples = l.input_files.index.tolist()
+
             # get a copy of the data
-            this_dat = l.data.copy()
+            if self.row_indexed:
+                this_dat = l.data.copy()
+            else:
+                this_dat = copy.copy(l.data)
+
             # get a copy of meta
             if l.meta is not None:
                 this_meta = l.meta.copy()
 
-
             # resolve any sample clashes in the data (NOT the meta data)
             clash_resolved = False
+            new_names = []
+
             while len(samples_seen.intersection(this_samples)) > 0:
                 sample_appendix += 1
                 # find the clash
@@ -369,6 +406,10 @@ class MultipleBatchLoader(object):
                     ', '.join(clashes)
                 )
                 for c in clashes:
+                    new_names.append([
+                        this_samples[this_samples.index(c)],
+                        this_samples[this_samples.index(c)] + "_%d" % sample_appendix
+                    ])
                     this_samples[this_samples.index(c)] += "_%d" % sample_appendix
                 clash_resolved = True
             samples_seen.update(this_samples)
@@ -379,26 +420,52 @@ class MultipleBatchLoader(object):
                     # reorder first to be sure it's the same as data
                     this_meta = this_meta.loc[this_dat.columns]
                     this_meta.index = this_samples
+
                 # relabel the data
-                this_dat.columns = this_samples
+                if self.row_indexed:
+                    this_dat.columns = this_samples
+                else:
+                    for prev, new in new_names:
+                        this_dat[new] = this_dat.pop(prev)
+
                 # relabel the batch IDs
                 this_batch.index = this_samples
-                # relabel unassigned data if present
-                if hasattr(l, 'data_unassigned'):
-                    l.data_unassigned.columns = this_samples
+                # relabel any other DF data if present
+                for fld in l.extra_df_attributes:
+                    x = getattr(l, fld)
+                    x.columns = this_samples
+                # if hasattr(l, 'data_unassigned'):
+                #     l.data_unassigned.columns = this_samples
 
             # data
-            for c in this_dat.columns:
-                dat.insert(dat.shape[1], c, this_dat.loc[idx, c])
+            if self.row_indexed:
+                if isinstance(this_dat.columns, pd.MultiIndex):
+                    col_list = this_dat.columns.levels[0].tolist()
+                else:
+                    col_list = this_dat.columns.tolist()
+                for c in col_list:
+                    row_indexed_dat_arr[c] = this_dat[[c]]
+                ## FIXME: probably broken for row indexed, MultiIndexed data
+                # for c in this_dat.columns:
+                #     dat.insert(dat.shape[1], c, this_dat.loc[idx, c])
+            else:
+                dat.update(this_dat)
 
             # unassigned data
-            if hasattr(l, 'data_unassigned'):
-                if dat_unassigned is None:
-                    dat_unassigned = l.data_unassigned.copy()
-                else:
-                    dat_unassigned = pd.concat((dat_unassigned, l.data_unassigned), axis=1)
+            # if hasattr(l, 'data_unassigned'):
+            #     if dat_unassigned is None:
+            #         dat_unassigned = l.data_unassigned.copy()
+            #     else:
+            #         dat_unassigned = pd.concat((dat_unassigned, l.data_unassigned), axis=1)
 
-            # rebuild meta
+            # other df attributes
+            for fld in l.extra_df_attributes:
+                if fld not in extra_df_attributes:
+                    extra_df_attributes[fld] = getattr(l, fld).copy()
+                else:
+                    extra_df_attributes[fld] = pd.concat((extra_df_attributes[fld], getattr(l, fld)), axis=1)
+
+                    # rebuild meta
             if l.meta is not None:
                 for i in this_meta.index:
                     this_row = dict(blank_meta_row)
@@ -418,12 +485,22 @@ class MultipleBatchLoader(object):
                     meta_index.append(meta_auto_idx)
                     meta_auto_idx += 1
 
+
         self.meta = pd.DataFrame(meta_values, index=meta_index, columns=meta_cols)
+
+        if self.row_indexed:
+            dat = join_row_indexed_data()
+
         self.data = dat
         self.batch_id = self.meta.loc[:, batch_col]
-        if dat_unassigned is not None:
-            self.data_unassigned = dat_unassigned
 
+        # if dat_unassigned is not None:
+        #     self.data_unassigned = dat_unassigned
+
+        self.extra_df_attributes = tuple()
+        for fld in extra_df_attributes:
+            setattr(self, fld, extra_df_attributes[fld])
+            self.extra_df_attributes += (fld,)
 
     def filter_by_sample_name(self, filt, exact=True):
         if not self.meta_is_linked:
