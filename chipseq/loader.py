@@ -120,6 +120,7 @@ MACS2_SAMPLE_LOOKUP = {
 
 class MACS2PeaksLoader(loader.MultipleFileLoader):
     meta_col_filename = 'sample'
+    row_indexed = False
 
     def __init__(self, run_type='default', *args, **kwargs):
         self.run_type = run_type
