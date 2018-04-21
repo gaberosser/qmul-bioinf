@@ -163,6 +163,9 @@ if __name__ == '__main__':
 
     for run_type in run_types:
 
+        out_subdir = os.path.join(outdir, run_type)
+        os.makedirs(out_subdir)
+
         # recreate the essential operation of Homer suite's annotatePeaks.pl
         peaks = loader.load_macs2_by_patient('all', run_type=run_type)
 
@@ -209,9 +212,7 @@ if __name__ == '__main__':
                 pac[k][d] += this_counts[d]
 
         pac = pd.DataFrame.from_dict(pac)
-        pac.to_csv(os.path.join(outdir, "%s_peak_assignment_count.csv" % run_type))
-
-        # peaks.data[k].to_csv(os.path.join(outdir, "%s_%s_annotated_peaks.csv" % (run_type, k)))
+        pac.to_csv(os.path.join(out_subdir, "peak_assignment_count.csv"))
 
         peak_assignment[run_type] = pac
         peak_sizes[run_type] = ps
@@ -257,7 +258,7 @@ if __name__ == '__main__':
             ax.set_xlim([2, 6])
             ax.set_xlabel('log10(peak size)')
             fig.tight_layout()
-            fig.savefig(os.path.join(outdir, "%s_peak_size_distribution _%s.png" % (run_type, '_'.join(grp))), dpi=200)
+            fig.savefig(os.path.join(out_subdir, "peak_size_distribution_%s.png" % '_'.join(grp)), dpi=200)
 
         # PLOT: dual bar chart - number of peaks and assignment %
 
@@ -292,13 +293,20 @@ if __name__ == '__main__':
         # fig.subplots_adjust(right=0.85, hspace=0.05, top=0.95, bottom=0.28)
         fig.subplots_adjust(left=0.28, right=0.8, wspace=0.2, top=0.95, bottom=0.1)
 
-        fig.savefig(os.path.join(outdir, "%s_peaks_feature_assignment.png" % run_type), dpi=200)
+        fig.savefig(os.path.join(out_subdir, "peaks_feature_assignment.png"), dpi=200)
 
         pool = mp.Pool()
         jobs = {}
 
+        # get the closest TSS
+
         for k in peaks.data:
             print "Sample %s" % k
+            dat = peaks.data[k]
+
+            # add new columns to store the information
+            dat.insert(0, 'distance_to_tss', None)
+            dat.insert(0, 'closest_tss', None)
 
             for c in dat.chrom.unique():
                 c = str(c)
@@ -323,15 +331,13 @@ if __name__ == '__main__':
 
         ct_temp = {}
         closest_tss_chroms = {}
+        # insert the results into the original df in chunks
         for k, c in jobs:
+            dat = peaks.data[k]
             res = jobs[(k, c)].get()
-            ct_temp.setdefault(k, []).append(res)
-            closest_tss_chroms.setdefault(k, []).extend([c] * res.shape[0])
+            # ensure that this is the SAME indexing that we used earlier to generate results
+            dat.loc[dat.chrom.astype(str) == c, ['closest_tss', 'distance_to_tss']] = res.values
 
-        closest_tss[run_type] = {}
+        # save data
         for k in peaks.data:
-            closest_tss[run_type] = pd.concat(
-                ct_temp[k], axis=0
-            )
-            closest_tss[run_type].reset_index(inplace=True)
-            closest_tss[run_type].insert(0, 'chrom', closest_tss_chroms[k])
+            peaks.data[k].to_csv(os.path.join(out_subdir, "%s_annotated_peaks.csv" % k))
