@@ -7,8 +7,6 @@ import pandas as pd
 import numpy as np
 import multiprocessing as mp
 
-SOURCES = {'ensembl', 'havana', 'ensembl_havana'}
-
 
 if __name__ == '__main__':
     # matplotlib import: check whether we have an X session
@@ -20,6 +18,8 @@ if __name__ == '__main__':
         matplotlib.use('Agg')
         from matplotlib import pyplot as plt
     import seaborn as sns
+
+    sources = {'ensembl', 'havana', 'ensembl_havana'}
 
     # tss_pad controls how far from a TSS is still counted as TSS
     tss_pad = 500
@@ -98,7 +98,7 @@ if __name__ == '__main__':
                 jobs[(k, c)] = pool.apply_async(
                     annotation.assign_peaks_to_basic_features,
                     args=(this_dat, fn_bzip),
-                    kwds=dict(tss_pad=tss_pad)
+                    kwds=dict(tss_pad=tss_pad, sources=sources)
                 )
 
         pool.close()

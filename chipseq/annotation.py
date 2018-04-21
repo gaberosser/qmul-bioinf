@@ -26,12 +26,14 @@ def prepare_tabix_indexed_gtf(gtf_fn):
     subprocess.call(cmd, shell=True)
 
 
-def assign_peaks_to_basic_features(peak_dat, gtf_fn, tss_pad=500):
+def assign_peaks_to_basic_features(peak_dat, gtf_fn, tss_pad=500, sources=None):
     """
     Given the peak data (from MACS), get basic peak assignment: TSS, exon, intron, intergenic
     (in that order of priority)
     :param peak_dat: Pandas DataFrame containing ChIP peaks of interest. Must have the columns start, end and chrom.
     :param gtf_fn: Path to a sorted, BGzipped, tabix-indexed GTF file.
+    :param tss_pad: Number of bases (in both directions) considered a hit for the TSS.
+    :param sources: If supplied, limit the GTF sources to these
     :return:
     """
     tb = tabix.open(gtf_fn)
@@ -44,7 +46,7 @@ def assign_peaks_to_basic_features(peak_dat, gtf_fn, tss_pad=500):
         hit_tss = False
         for t in qry:
             _, typ, ftr, i0, i1, _, strand, _, attr = t
-            if typ in SOURCES:
+            if (sources is None) or (typ in sources):
                 if ftr in {'gene', 'transcript'}:
                     hit_gene = True
                 if ftr == 'exon':
