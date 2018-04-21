@@ -89,6 +89,10 @@ def get_closest_tss(peak_loc, tss_loc, tss_names):
 
     closest_tss = pd.DataFrame(index=range(N_pk), columns=['gene', 'distance_to_tss'])
 
+    if N == 0:
+        # no peaks to search, so return an empty dataframe
+        return closest_tss
+
     # ix == 0 and ix == N are special cases (closest TSS is unambiguous)
     closest_tss.loc[ix == 0, 'gene'] = tss_names[0]
     closest_tss.loc[ix == N, 'gene'] = tss_names[N - 1]
