@@ -37,6 +37,7 @@ class BamMetricsBase(jobs.ArrayJob):
     total_counts=$(cat $outfile | grep 'in total (QC-passed' | cut -d ' ' -f1)
     NRF=`echo "($plus_counts + $minus_counts)/$total_counts" | bc -l`
     echo "NRF = $NRF" >> $outfile
+    samtools stats {extra} $BAM >> $outfile
     """
 
     def prepare_submission(self, *args, **kwargs):
