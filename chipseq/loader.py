@@ -56,6 +56,39 @@ wtchg_p170710_pilot = ChIPSeqFileLocations(
     alignment_subdir='human/bt2_alignment',
 )
 
+INPUTS_LOOKUP = {
+    '050': {wtchg_p170710_pilot: [
+        'GBM050Input',
+    ]},
+    '017': {wtchg_p170710: [
+        'GBM17Input',
+        'Dura17Input',
+    ]},
+    '061': {wtchg_p170710: [
+        'GBM61Input',
+        'Dura61Input',
+    ]},
+    '3021': {wtchg_p170710: [
+        '3021_1INPUTScr',
+    ]},
+    '3021_shBMI1': {wtchg_p170710: [
+        '3021_1INPUTshB',
+    ]},
+    '3021_shCHD7': {wtchg_p170710: [
+        '3021_1INPUTshC',
+    ]},
+    '3021_shBMI1shCHD7': {wtchg_p170710: [
+        '3021_1INPUTshB+C',
+    ]},
+    '054': {
+        wtchg_p170710_pilot: [
+            'GBM054Input',
+        ],
+        wtchg_p170710: [
+            'GBM54Input',
+            'Dura54Input',
+        ]},
+}
 
 MACS2_SAMPLE_LOOKUP = {
     '050': {wtchg_p170710_pilot: [
