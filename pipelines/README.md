@@ -212,3 +212,29 @@ It's a bit annoying that we only find out about problems at this stage, because 
 ```bash
 bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedGraph --ignore_r2 2 --ignore_3prime_r2 2 sample1.bam
 ```
+
+## ChIP-Seq
+### Typical experimental parameters
+- 75 bp reads
+- Paired end
+- 30mi reads per sample
+- Split over a number of lanes
+- WTCHG usually run their own pipeline on the data, mainly for QC purposes. However, they use an old reference so I prefer to re-run everything from scratch.
+
+### Process
+This has not been used enough to be fully automated. First load modules if on Apocrita:
+```bash
+module load bowtie2
+```
+Our first step is to align the data to the reference genome. This should be carried out with an ungapped aligner, as the input sample is DNA and shouldn't have splice junctions. I use `bowtie2` for this purpose; it is also possible to use `bwa` and probably others. `bowtie2` outputs a SAM file by default, but I prefer to convert this to BAM directly to save space and time. I also sort it, as this is required by various downstream processes:
+```bash
+bowtie2 -p <num_threads> -x path/to/bt2_index \
+-1 /path/to/sample_1_read_1_lane_a.fastq.gz,/path/to/sample_1_read_1_lane_b.fastq.gz,... \
+-2 /path/to/sample_1_read_2_lane_a.fastq.gz,/path/to/sample_1_read_2_lane_b.fastq.gz,... \
+| samtools view -b > sample_1.bam
+samtools sort -@ <num_threads> sample_1.bam > sample_1.sorted.bam
+rm sample_1.bam
+```
+We should now have a number of aligned BAM files. Based on Rob Lowe's suggestion, there are a number of analyses that can be carried out directly on the BAM files, for example using `samtools depth` to get coverage around TSSs. These are not detailed here, as they are quite involved.
+
+

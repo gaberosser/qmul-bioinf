@@ -2,11 +2,12 @@ import pandas as pd
 import os
 import warnings
 import glob
-import random
 import collections
 import pysam
 import gzip
 import csv
+import random
+import subprocess
 from settings import LOCAL_DATA_DIR
 
 
@@ -178,3 +179,86 @@ def get_overlapping_paired_reads(bam_fn, chrom):
         # check overlap
         if rd_r.pos <= rd_f.pos + rd_f.alen:
             yield (rd_f, rd_r)
+
+
+def random_sampling_alignments(
+        bam_fn,
+        p=0.1,
+        proper_pair=False,
+        min_qual=None
+):
+    """
+    Iterate over reads at random intervals from the supplied file
+    :param bam_fn: BAM, SAM or similar alignment file
+    :param p: Probability of returning a read
+    :return:
+    """
+    s = pysam.AlignmentFile(bam_fn, 'rb')
+    for rd in s:
+        if rd.is_unmapped:
+            continue
+        if proper_pair and not rd.is_proper_pair:
+            continue
+        if min_qual is not None and rd.mapq < min_qual:
+            continue
+        if random.random() < p:
+            yield rd
+
+
+def get_mean_insert_size_pe_subsample(
+        bam_fn,
+        p=None,
+        n=100000,
+        proper_pair=True,
+        min_qual=10,
+):
+    """
+    Estimate the mean insert length (length of sequence between adapters) by subsampling the supplied file.
+    Optionally apply filters by setting them in kwargs (passed to random_sampling_alignments)
+    NB we must limit ourselves to alignments on one strand to avoid double counting and avoid negative lengths.
+    :param bam_fn:
+    :param n: Stop reading file after this many reads have been observed
+    :param p: Probability of outputting a single read. Automatically selected if absent.
+    :param proper_pair, min_qual: Sensible values set.
+    :return:
+    """
+    if p is None:
+        # estimate number of forward reads
+        estimated_rd_count = estimate_number_of_bam_reads(bam_fn) / 2.
+        # we don't know what proportion of reads will be filtered, so let's be conservative and ensure we don't
+        # run to the end of the file too soon.
+        p = n / float(estimated_rd_count) * 10.
+    it = random_sampling_alignments(bam_fn=bam_fn, p=p, proper_pair=proper_pair, min_qual=min_qual)
+    curr = 0.
+    count = 0
+    for rd in it:
+        if not rd.is_reverse:
+            curr += rd.tlen
+            count += 1
+            if count == n:
+                break
+    return curr / float(n)
+
+
+def estimate_number_of_bam_reads(fn, bytes=10000000):
+    """
+    Estimate the number of reads in a BAM file based on the first N bytes.
+    This is an underestimation, as the header is included (but should be a minor factor).
+    Adapted from https://www.biostars.org/p/1890/
+    :param fn:
+    :param bytes: Number of bytes to use to estimate [100Mb]
+    :return:
+    """
+    DEVNULL = open(os.devnull, 'wb')
+    total_size = int(
+        subprocess.check_output("ls -ln '" + fn + "' | awk '{print $5}'", stderr=subprocess.STDOUT, shell=True)
+    )
+    cmd = "head -c {bytes_used} {fn} | samtools view - | wc -l".format(
+        bytes_used = bytes, fn = fn
+    )
+    reads_in_subsample = int(subprocess.check_output(
+        cmd,
+        stderr=DEVNULL,
+        shell=True
+    ))
+    return int((reads_in_subsample / float(bytes)) * total_size)
