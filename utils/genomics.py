@@ -242,7 +242,7 @@ def get_mean_insert_size_pe_subsample(
 
 def estimate_number_of_bam_reads(fn, bytes=10000000):
     """
-    Estimate the number of reads in a BAM file based on the first N bytes.
+    Estimate the number of reads in a BAM file based on the first N bytes (or exactly, if an idex is available).
     This is an underestimation, as the header is included (but should be a minor factor).
     Adapted from https://www.biostars.org/p/1890/
     :param fn:
@@ -250,6 +250,20 @@ def estimate_number_of_bam_reads(fn, bytes=10000000):
     :return:
     """
     DEVNULL = open(os.devnull, 'wb')
+    bai_fn = "%s.bai" % fn
+    # if a BAM index is available, this is both faster and perfectly correct.
+    if os.path.isfile(bai_fn):
+        cmd = "samtools idxstats {fn} | awk -F '\t' '{{s+=$3+$4}}END{{print s}}'".format(
+            fn=fn
+        )
+        return int(
+            subprocess.check_output(
+                cmd,
+                stderr=DEVNULL,
+                shell=True
+            )
+        )
+
     total_size = int(
         subprocess.check_output("ls -ln '" + fn + "' | awk '{print $5}'", stderr=subprocess.STDOUT, shell=True)
     )

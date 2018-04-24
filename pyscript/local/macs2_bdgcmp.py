@@ -9,4 +9,4 @@ from pyscript import macs2
 
 
 if __name__ == "__main__":
-    macs2.multilane_run("apocrita")
+    macs2.bdgcmp_run("bash")
