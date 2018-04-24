@@ -5,7 +5,7 @@ import re
 from pyscript import jobs, sge
 
 
-class MACS2SgeRequirements(sge.ApocritaArrayJobMixin):
+class MACS2CallPeaksSgeRequirements(sge.ApocritaArrayJobMixin):
     @property
     def ram_per_core(self):
         return "8G"
@@ -13,6 +13,16 @@ class MACS2SgeRequirements(sge.ApocritaArrayJobMixin):
     @property
     def runtime_mins(self):
         return 240
+
+
+class MACS2BdgCmpSgeRequirements(sge.ApocritaArrayJobMixin):
+    @property
+    def ram_per_core(self):
+        return "4G"
+
+    @property
+    def runtime_mins(self):
+        return 120
 
 
 class MACS2CallPeaksBase(jobs.ArrayJob):
@@ -53,13 +63,14 @@ class MACS2CallPeaksBase(jobs.ArrayJob):
             self.run_names.append(row['name'])
 
 
-class MACS2CallPeaksApocrita(MACS2SgeRequirements, MACS2CallPeaksBase):
+class MACS2CallPeaksApocrita(MACS2CallPeaksSgeRequirements, MACS2CallPeaksBase):
     core_cmd = """
     cp $TARGET $TMPDIR
     TARGET="$TMPDIR/$TARGET"
+    TARGET="$TMPDIR/$(basename $TARGET)"
     if [ ! -z $CONTROL ]; then
         cp $CONTROL $TMPDIR
-        CONTROL="$TMPDIR/$CONTROL"
+        CONTROL="$TMPDIR/$(basename $CONTROL)"
     fi
     """ + MACS2CallPeaksBase.core_cmd
 
@@ -140,13 +151,12 @@ class MACS2BdgCmpBase(jobs.ArrayJob):
                 )
 
 
-class MACS2BdgCmpApocrita(MACS2SgeRequirements, MACS2BdgCmpBase):
+class MACS2BdgCmpApocrita(MACS2BdgCmpSgeRequirements, MACS2BdgCmpBase):
     core_cmd = """
     cp $TARGET $TMPDIR
-    TARGET="$TMPDIR/$TARGET"
-    if [ ! -z $CONTROL ]; then
-        cp $CONTROL $TMPDIR
-        CONTROL="$TMPDIR/$CONTROL"
+    TARGET="$TMPDIR/$(basename $TARGET)"
+    cp $CONTROL $TMPDIR
+    CONTROL="$TMPDIR/$(basename $CONTROL)"
     fi
     """ + MACS2BdgCmpBase.core_cmd
 
