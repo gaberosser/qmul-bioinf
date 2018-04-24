@@ -11,7 +11,7 @@ class MACS2SgeRequirements(sge.ApocritaArrayJobMixin):
 
     @property
     def runtime_mins(self):
-        return 20
+        return 240
 
 
 class MACS2Base(jobs.ArrayJob):
