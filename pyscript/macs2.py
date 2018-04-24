@@ -95,23 +95,33 @@ class MACS2BdgCmpBase(jobs.ArrayJob):
     if [ $GZ == "gz" ]; then
         # decompress the input files, keeping the existing zipped version
         # we'll delete these uncompressed files later
-        echo "Decompressing target file $TARGET"
-        gzip -kd $TARGET
-        TARGET=$(echo $TARGET | sed 's/\.gz$//')
+        TARGET_NEW=$(echo $TARGET | sed 's/\.gz$//')
+        if [ "$TARGET" == "$TARGET_NEW" ]; then
+            echo "Something went very wrong: new (uncompressed) target filename $TARGET_NEW is the SAME as the input filename."
+            exit 1
+        fi
+        echo "Decompressing target file $TARGET to $TARGET_NEW"
+        gzip -cd $TARGET > $TARGET_NEW
+        TARGET=$TARGET_NEW
         echo "New target file is at $TARGET"
 
-        echo "Decompressing control file $CONTROL"
-        gzip -kd $CONTROL
-        CONTROL=$(echo $CONTROL | sed 's/\.gz$//')
+        CONTROL_NEW=$(echo $CONTROL | sed 's/\.gz$//')
+        if [ "$CONTROL" == "$CONTROL_NEW" ]; then
+            echo "Something went very wrong: new (uncompressed) control filename $CONTROL_NEW is the SAME as the input filename."
+            exit 1
+        fi
+        echo "Decompressing control file $CONTROL to $CONTROL_NEW"
+        gzip -cd $CONTROL > $CONTROL_NEW
+        CONTROL=$CONTROL_NEW
         echo "New control file is at $CONTROL"
     fi
     macs2 bdgcmp -t $TARGET -c $CONTROL {extra} --outdir {out_dir} --o-prefix $ID
 
     if [ $GZ == "gz" ]; then
         # delete uncompressed files
-        echo "Deleting uncompressed files $TARGET and $CONTROL"
-        rm $TARGET
-        rm $CONTROL
+        echo "Deleting uncompressed files $TARGET_NEW and $CONTROL_NEW"
+        rm $TARGET_NEW
+        rm $CONTROL_NEW
     fi
     """
 
