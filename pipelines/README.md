@@ -1,6 +1,6 @@
 # Marino Lab processing pipelines for Next Gen Seq data
 _Author: Gabriel Rosser_
-_Last updated: 09/03/2018_
+_Last updated: 25/04/2018_
 
 ## Preamble
 All `commands` can be run at a Linux terminal, providing the appropriate software has been installed and - in the case of Apocrita - `module load` has been called.
@@ -34,7 +34,7 @@ fastqc --noextract -t <num_threads> -o <output_dir> <file.fastq.gz>
 ```
 To automate on Apocrita, the following will run `fastqc` on  all fastq files in the current directory: 
 ```bash
-python /path/to/pyscript/apocrita/fastqc.py
+python bioinf/pyscript/apocrita/fastqc.py
 ```
 
 ## Small RNA-Seq
@@ -73,7 +73,7 @@ done
 
 I have created a file to automate running `trim_galore` on all valid files in the current directory. This also handles renaming and is called as follows:
 ```bash
-python /path/to/pyscript/apocrita/trim_galore_se.py --length 15  # for SE reads
+python bioinf/pyscript/apocrita/trim_galore_se.py --length 15  # for SE reads
 ```
 
 Now we can align using an **ungapped** aligner like `bwa`. WE should be fairly strict about disallowing gaps and mismatches.
@@ -92,7 +92,7 @@ rm reads.sai reads.bam
 
 This is implemented in a Python script:
 ```bash
-python /path/to/pyscript/apocrita/bwa_se.py -i /path/to/reference.fa -p <num_threads> --srna -o <output_dir>
+python bioinf/pyscript/apocrita/bwa_se.py -i /path/to/reference.fa -p <num_threads> --srna -o <output_dir>
 ```
 Running this script from within a directory will submit an alignment job for every fastq and fastq.gz file in that directory.
 
@@ -168,7 +168,7 @@ done
 
 The trimming and renaming operations are automated in a `python` script that will run the process on all PE `fastq.gz` files in the directory:
 ```bash
-python /path/to/apocrita/trim_galore_pe.py --rrbs
+python bioinf/pyscript/apocrita/trim_galore_pe.py --rrbs
 ```
 
 Now we run `bismark`, an application developed for working with bisulphite sequencing data. There are three stages in the standard process: prepare the reference (run only once), alignment (that uses `bowtie2` behind the scenes), and extracting methylation data. 
@@ -220,6 +220,7 @@ bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedG
 - 30mi reads per sample
 - Split over a number of lanes
 - WTCHG usually run their own pipeline on the data, mainly for QC purposes. However, they use an old reference so I prefer to re-run everything from scratch.
+- Typically, each sample is ChIPped for one or more markers and also processed with no immunoprecipitation step (known as _input_, or _control_). The input sample is used as a negative control; any peaks identified here are simply due to the inherent biases of the process.
 
 ### Process
 This has not been used enough to be fully automated. First load modules if on Apocrita:
@@ -235,6 +236,68 @@ bowtie2 -p <num_threads> -x path/to/bt2_index \
 samtools sort -@ <num_threads> sample_1.bam > sample_1.sorted.bam
 rm sample_1.bam
 ```
-We should now have a number of aligned BAM files. Based on Rob Lowe's suggestion, there are a number of analyses that can be carried out directly on the BAM files, for example using `samtools depth` to get coverage around TSSs. These are not detailed here, as they are quite involved.
+We should now have aligned BAM files. 
+
+Based on Rob Lowe's suggestion, there are a number of analyses that can be carried out directly on the BAM files, for example using `samtools depth` to get coverage around TSSs. These are not detailed here, as they are quite involved. Scripts can be found at `bioinf/scripts/chipseq/{tss_from_gtf.py,chipseq_tss_enrichment.py}`.
+
+We can now call peaks using the BAM files. This process detects peaks that are statistically significantly enriched in a ChIP sample versus the corresponding input sample. It is also possible to call peaks without any input sample, but this is less reliable. There are many published and commercial software packages for peak calling. A well-established method is called [`MACS`](https://github.com/taoliu/MACS) (NB. version 2 supercedes the original release). This is easy to install as a `python` package. The syntax (using default parameters) is as follows:
+```bash
+macs2 callpeak -t /path/to/target.bam [-z /path/to/input.bam] -n <output_filestem> --outdir /path/to/output_dir/ -B -g 3.0e9 -f BAMPE
+```
+Note that the control sample isn't required, but should be supplied with the `-z` argument if it is available. Other arguments:
+- `-B` requests the output of a `bedgraph` file for both the target and control (if supplied). This will be used downstream to generate an enrichment track for visualisation purposes. 
+- `-g` specifies the effective size of the reference genome. The default option here is for hg19 (2.7e9), but the Ensembl reference is slightly larger - hence specifying it as an input. In practice, it probably makes no real difference, but would certainly do so for other species.
+- `-f` tells `macs2` the format of the input file(s) - paired end BAM.
+
+There are many other options that can be supplied to `macs callpeaks` (see [the website](https://github.com/taoliu/MACS) the website for details). One significant option is `--broad`, which results in multiple narrow peaks being merged to generate broad peaks. I'm still working on the optimal parameters for different histone marks and will put a table in here when I have decided.
+
+This has been automated in a Python script that runs it on all BAMs in the directory (note that you still have to specify variables)
+```bash
+python bioinf/pyscript/apocrita/macs2_callpeaks.py -c /path/to.config_file.csv -f BAMPE -g 3.0e9 --out_dir /path/to/out_dir -B [--broad]
+```
+All the arguments have the same syntax as the original `macs` call, except for `-c`, which specifies the path to a CSV file that specifies the comparisons we want to make. This file _must_ have the following columns
+- `name` (used for the `-n` argument to name output files)
+- `target` (filename of the target BAM)
+- `control` (filename of the control BAM, can be left blank if not present)
+Any other arguments supplied are just passed on to `macs`.
 
 
+The `macs callpeaks` routine generates several output files:
+- <sample_name\>_peaks.xls
+- <sample_name\>_peaks.narrowPeak (default) or broadPeak (`--broad`)
+- <sample_name\>_control_lambda.bdg (if control supplied)
+- <sample_name\>_treat_pileup.bdg
+
+The `Excel` file is actually a CSV (weird choice of naming convention). It's convenient to rename these files:
+```bash
+for i in *.xls; do
+	nn=$(echo $i | sed 's/xls$/csv/')
+	mv $i $nn
+done
+```
+
+The `.narrowPeak` and `.broadPeak` files are explained on the website, but are basically in the BED format.
+
+The `.bdg` files are in `bedgraph` format and can be used to generate an enrichment trace, which we can use for visualisation. This is essentially a plot that quantifies the enrichment of the ChIPped sample over the control. We do this as follows:
+```bash
+macs2 bdgcmp -t /path/to/target.bdg -c /path/to.control.bdg --outdir /path/to/out_dir --o-prefix <output_filestem> -m <method>
+```
+where `<method\>` is one of the options given when you run `macs bdgcmp -h`. I use `qpois`, which means enrichment is given as `-log10(adj Pval).`
+
+This has also beenn a Python script, which runs it on all valid pairs of `.bdg` files:
+```bash
+python bioinf/pyscript/apocrita/macs2_bdgcmp.py -m <method>
+```
+The `macs bdgcmp` routine generates a single bedgraph file with the name `output_filestem_method.bdg`.
+
+#### Two notes on bedgraph files
+1) These files are very inefficient and easily compressed. If storing them on Apocrita, I recommend gzipping them. The python script `macs2_bdgcmp.py` supports gzipped inputs.
+2) The Ensembl reference I use names chromosomes by letter or number _only_: 1, X, etc., while the related hg38 genome used by some browsers such as WashU names them with the prefix `chr`: chr1, chrX, etc. It is therefore necessary to rename chromosomes in bed and bedgraph files before attempting to import them into WashU. An example script to perform this operation on the `.narrowPeak` files:
+```bash
+for i in *_peaks.narrowPeak; do 
+	nn=$(echo $i | sed 's/\.narrowPeak/.chr.narrowPeak.bed/')
+	echo "$i -> $nn"
+	cat $i | sed 's/^/chr/' > $nn
+done
+```
+A similar process can be carried out as required on the .bdg files.

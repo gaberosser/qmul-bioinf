@@ -167,7 +167,6 @@ class MACS2BdgCmpApocrita(MACS2BdgCmpSgeRequirements, MACS2BdgCmpBase):
     TARGET="$TMPDIR/$(basename $TARGET)"
     cp $CONTROL $TMPDIR
     CONTROL="$TMPDIR/$(basename $CONTROL)"
-    fi
     """ + MACS2BdgCmpBase.core_cmd
 
 
