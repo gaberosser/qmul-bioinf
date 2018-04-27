@@ -46,7 +46,6 @@ class BashJobMixin(object):
         return "#!/bin/bash\n\n"
 
     def submit(self):
-        print "Bash submit()"
         subprocess.call(['bash', self.script_fn], cwd=self.out_dir)
 
 
@@ -59,6 +58,7 @@ class BashArrayJobMixin(BashJobMixin):
         """
         sh = [
             self.shebang(),
+            'trap "exit" INT',  # tells Bash to exit when a SIGINT (or other exit code) is captured
             "for SGE_TASK_ID in $(seq {n}); do".format(n=len(self.params)),
         ] + self.script_body() + ['done']
         self.sh = sh
@@ -218,7 +218,10 @@ class Job(object):
         :return:
         """
         cmd = self.core_command()
-        self.sh = [self.shebang(), cmd, "STATUS=$?"]
+        self.sh = [self.shebang(), cmd]
+        # if the exit code hasn't been set in the script, we set it now (default)
+        if '=$?' not in cmd:
+            self.sh.append("STATUS=$?")
 
     def create_script(self):
         """
@@ -293,7 +296,8 @@ class ArrayJob(Job):
         if check:
             sh.append('if [[ {check_str} ]]; then'.format(check_str=' && '.join(checking)))
         sh.append(cmd)
-        sh.append("STATUS=$?")
+        if '=$?' not in cmd:
+            sh.append("STATUS=$?")
         if check:
             sh.append("else")
             sh.append('\n'.join(failing))
@@ -680,3 +684,9 @@ class SraRunIteratorMixin(object):
         self.run_names = [t for t in srr_list.split('\n') if len(t)]
         self.params = [[t, t] for t in self.run_names]
 
+
+class Macs2PeaksIteratorMixin(FileIteratorMixin):
+    ext = r'(broad|narrow)Peak$'
+    cleanup_regex = [
+        (r'_peaks', ''),
+    ]

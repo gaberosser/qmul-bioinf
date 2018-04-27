@@ -66,7 +66,6 @@ class MACS2CallPeaksBase(jobs.ArrayJob):
 class MACS2CallPeaksApocrita(MACS2CallPeaksSgeRequirements, MACS2CallPeaksBase):
     core_cmd = """
     cp $TARGET $TMPDIR
-    TARGET="$TMPDIR/$TARGET"
     TARGET="$TMPDIR/$(basename $TARGET)"
     if [ ! -z $CONTROL ]; then
         cp $CONTROL $TMPDIR
