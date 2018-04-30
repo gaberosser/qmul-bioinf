@@ -4,7 +4,6 @@ import pandas as pd
 from settings import CHIPSEQ_DIR
 
 
-
 class ChIPSeqFileLocations(object):
     def __init__(self, root_dir, alignment_subdir=None, batch_id=None, tax_id=9606):
         self.root_dir = root_dir
@@ -28,12 +27,18 @@ class ChIPSeqFileLocations(object):
 
         self.params['default'] = {
             'base_dir': os.path.join(self.base_dir, 'macs2', 'default'),
-            'run_type': 'default'
         }
 
         self.params['broad'] = {
             'base_dir': os.path.join(self.base_dir, 'macs2', 'broad'),
-            'run_type': 'broad'
+        }
+
+        self.params['homer_default'] = {
+            'base_dir': os.path.join(self.base_dir, 'macs2', 'default', 'homer_annotatepeaks'),
+        }
+
+        self.params['homer_broad'] = {
+            'base_dir': os.path.join(self.base_dir, 'macs2', 'broad', 'homer_annotatepeaks'),
         }
 
         for k, v in self.params.items():
@@ -151,26 +156,16 @@ MACS2_SAMPLE_LOOKUP = {
 }
 
 
-class MACS2PeaksLoader(loader.MultipleFileLoader):
+class MACS2DefaultPeaksLoader(loader.MultipleFileLoader):
     meta_col_filename = 'sample'
     row_indexed = False
-
-    def __init__(self, run_type='default', *args, **kwargs):
-        self.run_type = run_type
-        if run_type == 'default':
-            self.file_pattern = "*_peaks.narrowPeak"
-            self.data_columns = ['chrom', 'start', 'end', 'peak_name', 'disp_q', 'null', 'fc', '-log10p', '-log10q',
-                                 'rel_peak_pos']
-        elif run_type == 'broad':
-            self.file_pattern = "*_peaks.broadPeak"
-            self.data_columns = ['chrom', 'start', 'end', 'peak_name', 'disp_q', 'null', 'fc', '-log10p', '-log10q']
-        else:
-            raise NotImplementedError("Unsupported run type %s." % run_type)
-        super(MACS2PeaksLoader, self).__init__(*args, **kwargs)
+    file_pattern = "*_peaks.narrowPeak"
+    data_columns = ('chrom', 'start', 'end', 'peak_name', 'disp_q',
+                    'null', 'fc', '-log10p', '-log10q', 'rel_peak_pos')
 
     def load_one_file(self, fn):
         dat = pd.read_csv(fn, sep='\t', index_col=None, header=None)
-        dat.columns = self.data_columns
+        dat.columns = list(self.data_columns)
         return dat
 
     def generate_input_path(self, fname):
@@ -183,6 +178,21 @@ class MACS2PeaksLoader(loader.MultipleFileLoader):
             to_append = self.file_pattern
 
         return os.path.join(self.base_dir, "".join([fname, to_append]))
+
+
+class MACS2BroadPeaksLoader(MACS2DefaultPeaksLoader):
+    file_pattern = "*_peaks.broadPeak"
+    data_columns = ('chrom', 'start', 'end', 'peak_name', 'disp_q',
+                    'null', 'fc', '-log10p', '-log10q')
+
+
+class HomerPeaksLoader(MACS2DefaultPeaksLoader):
+    file_pattern = "*.annotatePeaks"
+
+    def load_one_file(self, fn):
+        dat = pd.read_csv(fn, sep='\t', index_col=0, header=0)
+        dat.index.name = 'peak_id'
+        return dat
 
 
 def load_macs2_by_patient(
@@ -203,6 +213,16 @@ def load_macs2_by_patient(
     elif not hasattr(patient_ids, '__iter__'):
         patient_ids = [patient_ids]
 
+    if run_type == 'default':
+        cls = MACS2DefaultPeaksLoader
+    elif run_type == 'broad':
+        cls = MACS2BroadPeaksLoader
+    elif run_type in ['homer_default', 'homer_broad']:
+        cls = HomerPeaksLoader
+    else:
+        raise ValueError("Unrecognised run type %s" % run_type)
+
+
     # precompute the loaders required to avoid reloading multiple times
     by_loader = {}
     for pid in patient_ids:
@@ -215,7 +235,7 @@ def load_macs2_by_patient(
         the_kwargs = dict(ldr.loader_kwargs(run_type))
         the_kwargs.update(kwargs)
         objs.append(
-            MACS2PeaksLoader(
+            cls(
                 samples=samples,
                 **the_kwargs
             )

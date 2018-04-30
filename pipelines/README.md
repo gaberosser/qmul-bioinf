@@ -290,6 +290,17 @@ python bioinf/pyscript/apocrita/macs2_bdgcmp.py -m <method>
 ```
 The `macs bdgcmp` routine generates a single bedgraph file with the name `output_filestem_method.bdg`.
 
+We can visualise the resulting enrichment trace on IGV, but we get much better performance if we first convert it to the `bigwig` (binary) format. this can be achieved using the UCSC tool `wigToBigWig`, available in a precompiled binary [here](http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/). Ensuring this file is executable and available on the `PATH` environment variable, we can use the following to convert all the relevant `.bdg` files to `.bw`:
+```bash
+for i in *_qpois.bdg; do 
+	outfn=$(echo $i | sed 's/bdg$/bw/')
+	CMD="wigToBigWig $i /path/to/reference.fa.fai $outfn"
+	echo $CMD
+	eval $CMD
+done
+```
+where we need to pass in the full path to a fasta index file (generate this using `samtools faidx` if not available already).
+
 #### Two notes on bedgraph files
 1) These files are very inefficient and easily compressed. If storing them on Apocrita, I recommend gzipping them. The python script `macs2_bdgcmp.py` supports gzipped inputs.
 2) The Ensembl reference I use names chromosomes by letter or number _only_: 1, X, etc., while the related hg38 genome used by some browsers such as WashU names them with the prefix `chr`: chr1, chrX, etc. It is therefore necessary to rename chromosomes in bed and bedgraph files before attempting to import them into WashU. An example script to perform this operation on the `.narrowPeak` files:

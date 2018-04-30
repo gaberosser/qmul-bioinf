@@ -78,6 +78,20 @@ GENE_TO_TRANSCRIPT_FILES = {
 }
 
 
+def transcript_to_gene_lookup(tax_id=9606):
+    """
+    Load the lookup tabel that translates from transcript to gene
+    :param tax_id:
+    :return:
+    """
+    if tax_id in GENE_TO_TRANSCRIPT_FILES:
+        fn = GENE_TO_TRANSCRIPT_FILES[tax_id]
+    else:
+        raise AttributeError("Unsupported taxonomy ID %d" % tax_id)
+
+    return pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
+
+
 def ensembl_transcript_quant_to_gene(dat, tax_id=9606, remove_ver=True):
     """
     Aggregate the supplied transcript-level quantification to gene level. Input index is Ensembl transcript ID.
@@ -91,12 +105,14 @@ def ensembl_transcript_quant_to_gene(dat, tax_id=9606, remove_ver=True):
         dat = dat.copy()
         dat.index = dat.index.str.replace(r'.[0-9]+$', '')
 
-    if tax_id in GENE_TO_TRANSCRIPT_FILES:
-        fn = GENE_TO_TRANSCRIPT_FILES[tax_id]
-    else:
-        raise AttributeError("Unsupported taxonomy ID %d" % tax_id)
+    gene_transcript = transcript_to_gene_lookup(tax_id=tax_id)
 
-    gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
+    # if tax_id in GENE_TO_TRANSCRIPT_FILES:
+    #     fn = GENE_TO_TRANSCRIPT_FILES[tax_id]
+    # else:
+    #     raise AttributeError("Unsupported taxonomy ID %d" % tax_id)
+    #
+    # gene_transcript = pd.read_csv(fn, header=0, sep='\t').set_index('Transcript stable ID')
 
     # shouldn't be necessary, but remove transcripts that have no translation
     to_keep = dat.index.intersection(gene_transcript.index)
