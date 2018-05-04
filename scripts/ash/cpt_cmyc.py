@@ -4,7 +4,7 @@ from scipy import stats
 from scipy.cluster import hierarchy
 import os
 from settings import DATA_DIR_NON_GIT
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, colors
 import seaborn as sns
 import multiprocessing as mp
 from sklearn.decomposition import PCA
@@ -231,12 +231,20 @@ if __name__ == '__main__':
     # force the order of the columns to match the correlation with MYC
 
     keep_genes_sorted = cor_gene.loc[keep_genes].sort_values(ascending=False).index
+
+    # define a column colour band
+    base_n = (base + 1) / 2.5
+    cmap = plt.cm.RdBu_r
+    vals = [colors.rgb2hex(t) for t in cmap(base_n)]
+    col_colours = pd.DataFrame(vals, index=the_data.columns, columns=['MYC'])
+
     cg = clustering.plot_clustermap(
         dat_corr_with_myc_aggr.loc[keep_genes_sorted],
         cmap='RdBu_r',
         metric='euclidean',
         method='ward',
         row_cluster=False,
+        col_colors=col_colours,
         vmin=-8, vmax=8
     )
     cg.gs.update(bottom=0.1)
