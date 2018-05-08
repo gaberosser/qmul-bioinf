@@ -195,6 +195,16 @@ PATIENT_LOOKUP_CC = {
     ],
     'GIBCO': [
         ('GIBCO_NSC_P4', wtchg_p170218),
+    ],
+    '3021': [
+        ('3021_1Scr', wtchg_p170644),
+        ('3021_1shB', wtchg_p170644),
+        ('3021_1shC', wtchg_p170644),
+        ('3021_1shB+C', wtchg_p170644),
+        ('3021_2Scr', wtchg_p170644),
+        ('3021_2shB', wtchg_p170644),
+        ('3021_2shC', wtchg_p170644),
+        ('3021_2shB+C', wtchg_p170644),
     ]
 }
 

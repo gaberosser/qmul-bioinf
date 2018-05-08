@@ -20,8 +20,6 @@ if __name__ == '__main__':
 
     sources = {'ensembl', 'havana', 'ensembl_havana'}
 
-    # tss_pad controls how far from a TSS is still counted as TSS
-    tss_pad = 500
     run_types = ['homer_default', 'homer_broad']
     chip_target_colours = {
         'BMI1': '#1b9e77',
@@ -47,11 +45,18 @@ if __name__ == '__main__':
     ]
     outdir = output.unique_output_dir("chipseq_peak_annotation_homer", reuse_empty=True)
 
+    macs2_peaks = {}
     peaks = {}
     annot = {}
     annot_counts = {}
 
     for rt in run_types:
+        rt_m = rt.replace('homer_', '')
+        macs2_obj = loader.load_macs2_by_patient('all', run_type=rt_m)
+        macs2_dat = macs2_obj.data
+        for k in macs2_dat:
+            macs2_dat[k] = macs2_dat[k].set_index('peak_name')
+        macs2_peaks[rt_m] = macs2_dat
         peaks[rt] = loader.load_macs2_by_patient('all', run_type=rt)
         annot[rt] = {}
         this_annot_counts = {}
@@ -143,6 +148,7 @@ if __name__ == '__main__':
     gene_lookup = general.transcript_to_gene_lookup(tax_id=9606)
 
     for rt in run_types:
+        rt_m = rt.replace('homer_', '')
         peaks_data[rt] = {}
         out_subdir = os.path.join(outdir, rt)
         os.makedirs(out_subdir)
@@ -151,7 +157,10 @@ if __name__ == '__main__':
             the_dat = peaks[rt].data[k].copy()
             the_dat.drop('Strand', axis=1, inplace=True)
             the_dat.dropna(how='all', axis=1, inplace=True)
+            orig_dat = macs2_peaks[rt_m][k].loc[the_dat.index]
             the_dat.insert(5, 'basic_annotation', annot[rt][k])
+            the_dat.insert(4, 'fold_change', orig_dat['fc'])
+            the_dat.insert(4, '-log10(fdr)', orig_dat['-log10q'])
 
             the_genes = gene_lookup.loc[the_dat['Nearest PromoterID'].values]
             the_dat.insert(the_dat.shape[1], 'ensembl_gene_id', the_genes['Gene stable ID'].values)
