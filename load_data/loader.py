@@ -371,7 +371,12 @@ class MultipleBatchLoader(object):
                     auto_batch += 1
                 this_batch = pd.Series(this_batch, index=l.meta.index)
 
-            this_samples = l.input_files.index.tolist()
+            try:
+                this_samples = l.input_files.index.tolist()
+            except AttributeError:
+                # occurs when we are loading a single file
+                # FIXME: find a better catch - this is too general
+                this_samples = [l.input_files]
 
             # get a copy of the data
             if self.row_indexed:

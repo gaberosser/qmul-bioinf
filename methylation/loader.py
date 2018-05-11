@@ -204,6 +204,8 @@ def load_illumina_methylation450_annotation():
 
 
 class IlluminaHumanMethylationLoader(loader.SingleFileLoader):
+    row_indexed = True
+
     def __init__(self, norm_method='swan', *args, **kwargs):
         self.norm_method = norm_method
         super(IlluminaHumanMethylationLoader, self).__init__(*args, **kwargs)
@@ -250,7 +252,7 @@ def load_by_patient(
     if patient_ids == 'all':
         patient_ids = [t for t in LOOKUP.keys() if t != 'GIBCO']
     elif hasattr(patient_ids, '__iter__'):
-        patient_ids = [t if isinstance(t, str) else ('%03d' % t) for t in patient_ids]
+        patient_ids = [t if isinstance(t, str) or isinstance(t, unicode) else ('%03d' % t) for t in patient_ids]
     else:
         if isinstance(patient_ids, str):
             patient_ids = [patient_ids]
