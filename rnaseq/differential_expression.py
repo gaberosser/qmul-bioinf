@@ -11,6 +11,58 @@ toptags_cols = [
 ]
 
 
+def model_matrix_from_formula(formula, **vars):
+    formula = robjects.Formula(formula)
+    for k, v in vars.items():
+        ## TODO: this only works with discrete groups, but edgeR also supports continuous variables
+        formula.environment[k] = robjects.FactorVector(v)
+    return r("model.matrix")(formula)
+
+
+def _edger_func_compute_DGEList_with_dispersion(the_data, the_formula=None, common_disp=False, **vars):
+    if the_formula is None and not common_disp:
+        raise AttributeError("Either supply a formula OR specify common_disp = True.")
+    rdata = pandas2ri.py2ri(the_data)
+
+    y = r("DGEList")(rdata)
+    y = r("calcNormFactors")(y)
+
+    if the_formula is not None:
+        design = model_matrix_from_formula(the_formula, **vars)
+        y = r("estimateDisp")(y, design)
+        return y, design
+
+    else:
+        # use a common estimate of the dispersion rather than using experimental structure
+        # this is helpful where we have no replicates
+        y = r("estimateGLMCommonDisp")(y, method='deviance', robust=True, subset=robjects.NULL)
+        return y
+
+
+edger_dgelist = rinterface.RFunctionDeferred(_edger_func_compute_DGEList_with_dispersion, imports=['edgeR'])
+
+
+def _edger_func_fit_to_dgelist(dgelist, the_method, design=None, the_formula=None, **vars):
+    if design is None and the_formula is None:
+        raise AttributeError("Must either supply a design matrix OR a formula")
+    if the_method not in {'GLM', 'QLGLM'}:
+        raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
+
+    if design is None:
+        design = model_matrix_from_formula(the_formula, **vars)
+
+    fit = None
+    if the_method == 'GLM':
+        fit = r('glmFit')(dgelist, design)
+    elif the_method == 'QLGLM':
+        fit = r('glmQLFit')(dgelist, design)
+
+    return fit, design
+
+
+edger_fit_dgelist = rinterface.RFunctionDeferred(_edger_func_fit_to_dgelist, imports=['edgeR'])
+
+
 def _edger_func_fit_glm(the_data, the_method, the_formula, common_disp=False, **vars):
     if the_method not in {'GLM', 'QLGLM'}:
         raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
@@ -192,9 +244,9 @@ def run_multiple_de(
         tax_id=9606,
 ):
     """
-    :param comparisons: Dictionary of comparisons, each of which is a string formula, e.g. "groupB - groupA"
-    :param njob: Number of parallel processes. Default is the number of available CPUs. Set to 1 to disable parallel
-    computing.
+    :param comparisons: Dictionary of comparisons, each of which is a string formula, e.g. "groupB - groupA".
+    The keys are used to organise the resulting dictionary.
+    :return: Dict with same keys as comparisons containing DE result tables.
     """
     if method not in {'GLM', 'QLGLM'}:
         raise NotImplementedError("Only GLM and QLGLM methods are supported at present")
