@@ -102,6 +102,11 @@ wtchg_p170446 = RnaSeqFileLocations(
     alignment_subdir='human',
 )
 
+wtchg_p170446b = RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p170446b'),
+    alignment_subdir='human',
+)
+
 wtchg_p170582 = RnaSeqFileLocations(
     root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p170582'),
     alignment_subdir='human',
@@ -219,7 +224,8 @@ PATIENT_LOOKUP_FFPE = {
         ('NH15_2101_DEF1A', wtchg_p160704_ribozero)
     ],
     '026': [
-        ('NH16_270_DEF1A', wtchg_p160704_ribozero2)
+        ('NH16_270_DEF1A', wtchg_p160704_ribozero2),
+        ('NH16_270_DEF1Ereplacement', wtchg_p170446b)
     ],
     '030': [
         ('NH16_616DEF1B', wtchg_p170446)
@@ -231,13 +237,16 @@ PATIENT_LOOKUP_FFPE = {
         ('NH16_1574DEF1A', wtchg_p170446)
     ],
     '049': [
-        ('NH16_1976DEF2A', wtchg_p170446)
+        ('NH16_1976DEF2A', wtchg_p170446),
+        ('NH16_1976_DEF1Areplacement', wtchg_p170446b),
     ],
     '050': [
-        ('NH16_2063DEF1B1', wtchg_p170446)
+        ('NH16_2063DEF1B1', wtchg_p170446),
+        ('NH16_2063_DEF1Areplacement', wtchg_p170446b),
     ],
     '052': [
-        ('NH16_2214DEF1A', wtchg_p170446)
+        ('NH16_2214DEF1A', wtchg_p170446),
+        ('NH16_2214_DEF1A', wtchg_p170446b),
     ],
     '054': [
         ('NH16_2255DEF1B2', wtchg_p170446)

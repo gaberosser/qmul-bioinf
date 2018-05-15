@@ -1,6 +1,6 @@
 from rnaseq import loader, differential_expression, filter, general
 from plotting import common, clustering
-from stats import transformations
+from stats import transformations, basic
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -11,14 +11,6 @@ from adjustText import adjust_text
 from utils import output, setops
 import references
 import os
-
-
-def ecdf_func(x):
-    x = np.sort(x)
-    n = float(x.size)
-    def result(v):
-        return np.searchsorted(x, v, side='right') / n
-    return result
 
 
 def log_cpm(dat, base=2, offset=1.):
@@ -84,7 +76,7 @@ if __name__ == '__main__':
         this_dat = col.loc[col >= min_cpm] + 1
         this_cpm = this_dat.divide(this_dat.sum()) * 1e6
         this_log_cpm = np.log2(this_cpm)
-        this_ecdf_fun = ecdf_func(this_log_cpm)
+        this_ecdf_fun = basic.ecdf_func(this_log_cpm)
         this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
         log_cpm_ecdf[c] = this_log_cpm_ecdf
 
@@ -328,7 +320,7 @@ if __name__ == '__main__':
             this_cpm = this_dat.divide(this_dat.sum()) * 1e6
             this_log_cpm = np.log2(this_cpm)
             log_cpms.append(this_log_cpm)
-            this_ecdf_fun = ecdf_func(this_log_cpm)
+            this_ecdf_fun = basic.ecdf_func(this_log_cpm)
             ecdf_funs.append(this_ecdf_fun)
             this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
             ax.plot(x_cdf, this_log_cpm_ecdf, c=cs[j], label=ls[j])
