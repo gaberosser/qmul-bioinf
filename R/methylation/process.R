@@ -150,10 +150,10 @@ process_and_save_methylset <- function(
   
   beta.pbc <- champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
   
-  # mset.swan <- preprocessSWAN(rgSet, mSet = mset)
-  # beta.swan <- getBeta(mset.swan)
-  # beta.swan <- beta.swan[rownames(beta.raw),]
-  # colnames(beta.swan) <- meta[colnames(beta.swan), 'Sample_Name']
+  mset.swan <- preprocessSWAN(rgSet, mSet = mset)
+  beta.swan <- getBeta(mset.swan)
+  beta.swan <- beta.swan[rownames(beta.raw),]
+  colnames(beta.swan) <- meta[colnames(beta.swan), 'Sample_Name']
   
   # grSet.funnorm <- preprocessFunnorm(rgSet)
   # beta.funnorm <- getBeta(grSet.funnorm)[rownames(beta.raw),]
@@ -302,6 +302,7 @@ GenomicMethylSetfromGEORaw <- function(
 }
 
 
+base.dir <- file.path(data.dir.raid, 'methylation', '2016-06-10_brandner')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'tcga_gbm')
@@ -310,7 +311,7 @@ GenomicMethylSetfromGEORaw <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-01-12')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_EPIC')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_450k')
-base.dir <- file.path(data.dir.raid, 'methylation', '2018-04-09')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2018-04-09')
 
 idat.dir <- file.path(base.dir, 'idat')
 # raw.file <- file.path(base.dir, 'geo_raw.txt')

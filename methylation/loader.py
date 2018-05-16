@@ -221,6 +221,8 @@ def _idat_files_to_beta(
 
     champ = r("champ.filter")(raw_beta, detP=det_pval, pd=pandas2ri.py2ri(meta), arraytype=array_type)
 
+    beta['raw'] = pandas2ri.ri2py_dataframe(champ.rx('beta'))
+
 
 
 
