@@ -1,11 +1,15 @@
 from load_data import loader
 import pandas as pd
 import os
+import glob
 import re
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
-from utils.log import get_console_logger
-from utils import setops, string_manipulation
 
+from utils import rinterface, log
+from rpy2 import robjects
+from rpy2.robjects import pandas2ri, r
+pandas2ri.activate()
+logger = log.get_console_logger(__name__)
 
 NORM_METHODS = {
     None,
@@ -32,7 +36,44 @@ project_dirs = {
     "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
 }
 
-PATIENT_LOOKUP_FFPE = {}  # TODO?
+PATIENT_LOOKUP_FFPE = {
+    '017': [
+        ('NH15-1661', '2016-06-10_brandner')
+    ],
+    '018': [
+        ('NH15-1877', '2016-06-10_brandner')
+    ],
+    '019': [
+        ('NH15-2101', '2016-06-10_brandner')
+    ],
+    '026': [
+        ('NH16-270', '2016-06-10_brandner')
+    ],
+    '030': [
+        ('NH16-616', '2016-06-10_brandner')
+    ],
+    '031': [
+        ('NH16-677', '2016-06-10_brandner')
+    ],
+    '044': [
+        ('NH16-1574', '2016-09-21_dutt')
+    ],
+    '049': [
+        ('NH16-1976', '2017-02-09_brandner')
+    ],
+    '050': [
+        ('NH16-2063', '2017-01-17_brandner')
+    ],
+    '052': [
+        ('NH16-2214', '2017-02-09_brandner')
+    ],
+    '054': [
+        ('NH16-2255', '2017-02-09_brandner')
+    ],
+    '061': [
+        ('NH16-2806', '2017-02-09_brandner')
+    ],
+}
 
 PATIENT_LOOKUP_CELL = {
     '017': [
@@ -119,6 +160,74 @@ PATIENT_LOOKUP_CELL = {
         ('GIBCONSC_P4', '2017-05-12'),
     ]
 }
+
+
+def _idat_files_to_beta(
+        idat_dir,
+        meta_fn,
+        samples=None,
+        array_type='EPIC',
+        name_col='sample',
+        annotation=None
+):
+    """
+    Using embedded R, load raw idat files and process to generate beta values.
+    :param annotation: Can use this to forcibly set the annotation to use.
+    """
+
+    # get the idat file basenames
+    flist = []
+    for root, dirnames, filenames in os.walk(idat_dir):
+        for fn in filenames:
+            se = os.path.splitext(fn)
+            if se[1].lower() == '.idat' and re.search(r'_Red$', se[0]):
+                flist.append(os.path.join(root, se[0].replace('_Red', '')))
+
+    # load meta
+    meta = pd.read_csv(meta_fn, header=0, index_col=None)
+    meta.index = ['%s_%s' % (t.Sentrix_ID, t.Sentrix_Position) for _, t in meta.iterrows()]
+
+    ## TODO: apply sample filtering at this stage to avoid loading unnecessary data
+
+    beta = {}
+
+    rg_set = r("read.metharray")(flist, extended=True)
+    mset = r("preprocessRaw")(rg_set)
+    det_pval = r("detectionP")(rg_set)
+
+    raw_beta = r("getBeta")(mset, "Illumina")
+
+    # ensure everything is in the same order
+    meta = meta.loc[list(raw_beta.colnames)]
+    det_pval = det_pval.rx(True, raw_beta.colnames)  # True means everything in that axis
+
+    # set the column names based on meta
+    snames = robjects.StrVector(meta[name_col].values)
+    raw_beta.colnames = snames
+    det_pval.colnames = snames
+    mset.colnames = snames
+
+    # filter samples if requested (see TODO above)
+    if samples is not None:
+        if len(pd.Index(samples).difference(meta.index)) > 0:
+            logger.warn(
+                "Some of the requested sample names were not found: %s",
+                ', '.join(pd.Index(samples).difference(meta.index).tolist())
+            )
+        keep = meta.index[meta.index.isin(samples)]
+        meta = meta.loc[keep]
+        raw_beta = raw_beta.rx(True, robjects.StrVector(keep))
+        det_pval = det_pval.rx(True, robjects.StrVector(keep))
+
+    champ = r("champ.filter")(raw_beta, detP=det_pval, pd=pandas2ri.py2ri(meta), arraytype=array_type)
+
+
+
+
+
+
+idat_files_to_beta = rinterface.RFunctionDeferred(_idat_files_to_beta, imports=['ChAMP'])
+
 
 
 def load_illumina_methylationepic_annotation(split_genes=True):

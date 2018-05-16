@@ -39,16 +39,24 @@ if __name__ == "__main__":
     }
     norm_method_s1 = 'swan'
 
+    ############
+    # 1: FFPE  #
+    ############
+
+    # in this case, we want the median beta value over all probes that are associated with a given gene
+    # we'll exclude those associated with gene body only
+
+    ffpe_obj = loader.load_by_patient(pids, type='ffpe', norm_method=norm_method_s1)
+
+
+    ############
+    # 2: DMRs  #
+    ############
+
     # load raw methylation data
     me_obj, anno = load_methylation(pids, norm_method=norm_method_s1)
     me_data = process.beta_from_m(me_obj.data)
     me_meta = me_obj.meta
-
-    # remove unneeded samples
-    # me_meta = me_meta.loc[me_meta.index != 'DURA061_NSC_N6_P4']
-    # me_meta = me_meta.loc[me_meta.type.isin(['GBM', 'iNSC', 'NSC'])]
-    # me_data = me_data.loc[:, me_meta.index]
-
 
     # use a hash on the PIDs and parameters to ensure we're looking for the right results
     dmr_hash_dict = dict(dmr_params)
