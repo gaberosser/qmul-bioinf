@@ -79,6 +79,66 @@ def load_one_microarray(indir, fid, fname, col_name=None):
     return the_col
 
 
+def parse_meta(meta_fn):
+    with open(meta_fn, 'rb') as f:
+        meta = json.load(f)
+
+    res = {}
+
+    for m in meta:
+        fid = m['file_id']
+        fname = m['file_name']
+
+        if len(m['cases']) > 1:
+            raise AttributeError("Unexpectedly encountered >1 cases attributed to a single file: %s." % repr(m))
+        c = m['cases'][0]
+        cid = c['submitter_id']
+
+        if len(c['samples']) > 1:
+            raise AttributeError("%d samples attributed to case %s - expected 1." % (len(c['samples']), cid))
+
+        s = c['samples'][0]
+
+        if len(s['portions']) > 1:
+            raise AttributeError("%d portions attributed to sample %s - expected 1." % (len(s['portions']), s))
+
+        p = s['portions'][0]
+        pid = p['submitter_id']
+
+        this_a260_280 = []
+        for a in p['analytes']:
+            this_a260_280.append(a['a260_a280_ratio'])
+
+        this_pct = {}
+        for sl in p['slides']:
+            for k in ('necrosis', 'normal_cells', 'stromal_cells', 'tumor_cells', 'tumor_nuclei'):
+                the_key = "percent_%s" % k
+                this_pct.setdefault(the_key, []).append(sl[the_key])
+
+        if pid in res:
+            if res[pid]['case_id'] != cid:
+                print "case_id clash for %s: (%s, %s)" % (
+                    pid, res[pid]['case_id'], pid
+                )
+            if res[pid]['sample_type'] != s['sample_type']:
+                print "sample_type clash for %s: (%s, %s)" % (
+                    pid, res[pid]['sample_type'], s['sample_type']
+                )
+            res[pid]['file_id'].append(fid)
+            res[pid]['file_name'].append(fname)
+        else:
+            res[pid] = {
+                'case_id': cid,
+                'file_id': [fid],
+                'file_name': [fname],
+                'sample_type': s['sample_type'],
+                'a260_280_ratio': this_a260_280,
+            }
+            res[pid].update(this_pct)
+
+    return res
+
+
 def load_files(
         indir,
         loader,
