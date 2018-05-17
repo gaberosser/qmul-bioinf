@@ -1,8 +1,9 @@
 from load_data import loader
 import pandas as pd
 import os
-import glob
+import gzip
 import re
+import multiprocessing as mp
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 
 from utils import rinterface, log
@@ -165,6 +166,7 @@ PATIENT_LOOKUP_CELL = {
 def _idat_files_to_beta(
         idat_dir,
         meta_fn,
+        outdir=None,
         samples=None,
         array_type='EPIC',
         name_col='sample',
@@ -172,8 +174,14 @@ def _idat_files_to_beta(
 ):
     """
     Using embedded R, load raw idat files and process to generate beta values.
-    :param annotation: Can use this to forcibly set the annotation to use.
+    :param annotation: Can use this to force the annotation to use. It should be a dictionary containing the keys
+    `array` and `annotation`. Not currently implemented.
+    :param outdir: If supplied, write CSV files (gzipped) to this directory
     """
+    if annotation is not None:
+        raise NotImplementedError("Haven't implemented force setting annotation yet (see comments).")
+
+    njob = mp.cpu_count()
 
     # get the idat file basenames
     flist = []
@@ -192,6 +200,10 @@ def _idat_files_to_beta(
     beta = {}
 
     rg_set = r("read.metharray")(flist, extended=True)
+
+    ## TODO (?) implement force setting annotation?
+    # rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+
     mset = r("preprocessRaw")(rg_set)
     det_pval = r("detectionP")(rg_set)
 
@@ -219,16 +231,77 @@ def _idat_files_to_beta(
         raw_beta = raw_beta.rx(True, robjects.StrVector(keep))
         det_pval = det_pval.rx(True, robjects.StrVector(keep))
 
+    logger.info("Applying initial ChAMP filtering")
     champ = r("champ.filter")(raw_beta, detP=det_pval, pd=pandas2ri.py2ri(meta), arraytype=array_type)
 
     beta['raw'] = pandas2ri.ri2py_dataframe(champ.rx('beta'))
+    logger.info("Computed raw beta values.")
+    if outdir is not None:
+        with gzip.open(os.path.join(outdir, "beta_raw.csv.gz"), 'wb') as fout:
+            beta['raw'].to_csv(fout)
+
+    try:
+        logger.info("Computing BMIQ normalised beta values...")
+        b = r("champ.norm")(beta=champ.rx('beta'), method='BMIQ', arraytype=array_type, cores=njob)
+        beta['bmiq'] = pandas2ri.ri2py_dataframe(b)
+        logger.info("Done.")
+        if outdir is not None:
+            with gzip.open(os.path.join(outdir, "beta_bmiq.csv.gz"), 'wb') as fout:
+                beta['bmiq'].to_csv(fout)
+    except Exception:
+        logger.exception("BMIQ norming failed")
+
+    try:
+        logger.info("Computing PBC normalised beta values...")
+        b = r("champ.norm")(beta=champ.rx('beta'), method='PBC', arraytype=array_type)
+        beta['pbc'] = pandas2ri.ri2py_dataframe(b)
+        logger.info("Done.")
+        if outdir is not None:
+            with gzip.open(os.path.join(outdir, "beta_pbc.csv.gz"), 'wb') as fout:
+                beta['pbc'].to_csv(fout)
+    except Exception:
+        logger.exception("PBC norming failed")
+
+    try:
+        logger.info("Computing Swan normalised beta values...")
+        mset_swan = r("preprocessSWAN")(rg_set, mSet = mset)
+        b = r("getBeta")(mset_swan)
+        b = b.rx(champ.rx('beta').rownames, True)
+        beta['swan'] = pandas2ri.ri2py_dataframe(b)
+        logger.info("Done.")
+        if outdir is not None:
+            with gzip.open(os.path.join(outdir, "beta_swan.csv.gz"), 'wb') as fout:
+                beta['swna'].to_csv(fout)
+    except Exception:
+        logger.exception("Swan norming failed")
+
+    if array_type == 'EPIC':
+        try:
+            logger.info("Computing funnorm normalised beta values (EPIC only)...")
+            rgset_funnorm = r("preprocessFunnorm")(rg_set)
+            b = r("getBeta")(rgset_funnorm)
+            b = b.rx(champ.rx('beta').rownames, True)
+
+            snames = robjects.StrVector(meta.loc[list(b.colnames), name_col].values)
+            b.colnames = snames
+
+            beta['funnorm'] = pandas2ri.ri2py_dataframe(b)
+            logger.info("Done.")
+            if outdir is not None:
+                with gzip.open(os.path.join(outdir, "beta_funnorm.csv.gz"), 'wb') as fout:
+                    beta['funnorm'].to_csv(fout)
+        except Exception:
+            logger.exception("Funnorm norming failed")
+
+    return beta
 
 
-
-
-
-
-idat_files_to_beta = rinterface.RFunctionDeferred(_idat_files_to_beta, imports=['ChAMP'])
+idat_files_to_beta = rinterface.RFunctionDeferred(
+    _idat_files_to_beta,
+    imports=['ChAMP'],
+    redirect_stderr=True,
+    redirect_stdout=True
+)
 
 
 
