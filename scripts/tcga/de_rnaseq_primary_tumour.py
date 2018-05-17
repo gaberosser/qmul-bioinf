@@ -54,7 +54,7 @@ if __name__ == "__main__":
         **de_params
     )
 
-    de_res.to_excel(os.path.join(outdir, 'tcga_primary_tumour_vs_normal_solid.xlsx'))
+    # de_res.to_excel(os.path.join(outdir, 'tcga_primary_tumour_vs_normal_solid.xlsx'))
 
     de_res_full = differential_expression.run_one_de(
         all_dat,
@@ -63,6 +63,7 @@ if __name__ == "__main__":
         return_full=True,
         **de_params
     )
+    de_res_full.to_excel(os.path.join(outdir, 'tcga_primary_tumour_vs_normal_solid.xlsx'))
 
     from matplotlib import pyplot as plt
     import seaborn as sns

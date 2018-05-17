@@ -12,9 +12,9 @@ import os
 # logger = log.get_console_logger(__name__)
 
 
-idat_dir = '/home/gabriel/data/methylation/2016-06-10_brandner/idat/'
-meta_fn = '/home/gabriel/data/methylation/2016-06-10_brandner/sources.csv'
-outdir = '/home/gabriel/data/methylation/2016-06-10_brandner/beta'
+idat_dir = '/home/gabriel/data/methylation/2016-09-21_dutt/idat/'
+meta_fn = '/home/gabriel/data/methylation/2016-09-21_dutt/sources.csv'
+outdir = '/home/gabriel/data/methylation/2016-09-21_dutt/beta'
 
 if not os.path.exists(outdir):
     os.makedirs(outdir)
@@ -26,6 +26,6 @@ beta = func(
     outdir=outdir,
     samples=None,
     array_type='EPIC',
-    name_col='Sample_Name',
+    name_col='sample',
     annotation=None
 )
