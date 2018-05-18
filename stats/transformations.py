@@ -2,8 +2,6 @@ import pandas as pd
 from utils.log import get_console_logger
 import numpy as np
 from utils import rinterface
-# from rpy2 import robjects
-# from rpy2.robjects import pandas2ri, r
 logger = get_console_logger(__name__)
 
 
@@ -148,3 +146,20 @@ def _vst_blind(the_data, remove_zero_counts=True):
 
 
 vst_blind = rinterface.RFunctionDeferred(_vst_blind, imports=['DESeq2'])
+
+
+def _edger_tmm_normalisation_cpm(count_data):
+    robjects = rinterface.robjects
+    pandas2ri = rinterface.robjects.pandas2ri
+
+    rdata = pandas2ri.py2ri(count_data)
+    y = robjects.r("DGEList")(rdata)
+    yn = robjects.r("calcNormFactors")(y)
+    cpm = pandas2ri.ri2py_dataframe(robjects.r('cpm')(yn))
+    cpm.index = count_data.index
+    cpm.columns = count_data.columns
+
+    return cpm
+
+
+edger_tmm_normalisation_cpm = rinterface.RFunctionDeferred(_edger_tmm_normalisation_cpm, imports=['edgeR'])
