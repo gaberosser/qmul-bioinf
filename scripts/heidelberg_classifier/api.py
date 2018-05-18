@@ -161,15 +161,14 @@ class Heidelberg(object):
         This is required if it has stalled
         """
         # FIXME: POST request returns a 404 error - why?
-        if soup is None:
-            soup = self.get_result_soup(sample_id)
-
         if run_id is None:
+            if soup is None:
+                soup = self.get_result_soup(sample_id)
             summary = self.get_summary_data(soup=soup)
             run_id = summary['run_id']
 
         the_url = self.RESTART_ANALYSIS_URL.format(sid=sample_id, rid=run_id)
-        resp = self.session.post(the_url)
+        return self.session.post(the_url)
 
     def get_result(self, sample_id, outdir=None, sample_name=None, run_id=None):
         """
