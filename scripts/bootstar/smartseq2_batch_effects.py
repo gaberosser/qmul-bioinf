@@ -25,6 +25,7 @@ def log_cpm(dat, base=2, offset=1.):
 if __name__ == '__main__':
     pids = ['019', '031', '049', '052']
     min_cpm = 1
+    min_cpm_individual = 0.1
 
     outdir = output.unique_output_dir("james_opc_smartseq2_vs_polya")
 
@@ -61,6 +62,9 @@ if __name__ == '__main__':
     data = pd.concat((ss2_data, polya_data), axis=1)
     data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
 
+    # TMM normed version
+    data_n = transformations.edger_tmm_normalisation_cpm(data)
+
     # plot the CDF of the log2(CPM) values
     # for this purpose, we need to filter the CPM values for each col separately
     x_cdf = np.linspace(-5, 15, 500)
@@ -72,8 +76,8 @@ if __name__ == '__main__':
     ss_opc_lbl = False
     pa_lbl = False
 
-    for c, col in data.iteritems():
-        this_dat = col.loc[col >= min_cpm] + 1
+    for c, this_dat in data.iteritems():
+        this_dat = this_dat.loc[this_dat > 0]
         this_cpm = this_dat.divide(this_dat.sum()) * 1e6
         this_log_cpm = np.log2(this_cpm)
         this_ecdf_fun = basic.ecdf_func(this_log_cpm)
@@ -102,6 +106,45 @@ if __name__ == '__main__':
     ax.set_ylabel("Empirical CDF")
     fig.savefig(os.path.join(outdir, "ecdf_by_library_prep.png"), dpi=200)
 
+    # again but TMM normed
+    log_cpm_ecdf_tmm = {}
+
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ss_nsc_lbl = False
+    ss_opc_lbl = False
+    pa_lbl = False
+
+    for c, this_cpm in data_n.iteritems():
+        this_cpm = this_cpm.loc[this_cpm > 0]
+        this_log_cpm = np.log2(this_cpm)
+        this_ecdf_fun = basic.ecdf_func(this_log_cpm)
+        this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
+        log_cpm_ecdf_tmm[c] = this_log_cpm_ecdf
+
+        lbl = None
+        if 'smartseq' in c and 'OPC' in c:
+            style = {'c': 'b'}
+            if ss_opc_lbl is False:
+                lbl = 'OPC SmartSeq2'
+                ss_opc_lbl = True
+        elif 'smartseq' in c and 'NSC' in c:
+            style = {'c': 'r'}
+            if ss_nsc_lbl is False:
+                lbl = 'NSC SmartSeq2'
+                ss_nsc_lbl = True
+        else:
+            style = {'c': 'k'}
+            if pa_lbl is False:
+                lbl = 'Poly(A)'
+                pa_lbl = True
+        ax.plot(x_cdf, this_log_cpm_ecdf, label=lbl, **style)
+    ax.legend(loc='lower right')
+    ax.set_xlabel("log2(CPM)")
+    ax.set_ylabel("Empirical CDF")
+    fig.savefig(os.path.join(outdir, "ecdf_by_library_prep_tmm.png"), dpi=200)
+
     # same, but only plot the SS2 samples, with labels included
     colours = common.COLOUR_BREWERS[ss2_obj.meta.shape[0]]
     fig = plt.figure()
@@ -113,6 +156,16 @@ if __name__ == '__main__':
     ax.set_ylabel("Empirical CDF")
     fig.savefig(os.path.join(outdir, "ecdf_smartseq2.png"), dpi=200)
 
+    # TMM
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for i, c in enumerate(ss2_data.columns):
+        ax.plot(x_cdf, log_cpm_ecdf_tmm[c], c=colours[i], label=c)
+    ax.legend(loc='lower right')
+    ax.set_xlabel("log2(CPM)")
+    ax.set_ylabel("Empirical CDF")
+    fig.savefig(os.path.join(outdir, "ecdf_smartseq2_tmm.png"), dpi=200)
+
     # same, but only plot the Poly(A) samples, with labels included
     colours = common.COLOUR_BREWERS[polya_obj.meta.shape[0]]
     fig = plt.figure()
@@ -123,6 +176,16 @@ if __name__ == '__main__':
     ax.set_xlabel("log2(CPM)")
     ax.set_ylabel("Empirical CDF")
     fig.savefig(os.path.join(outdir, "ecdf_polya.png"), dpi=200)
+
+    # TMM
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for i, c in enumerate(polya_data.columns):
+        ax.plot(x_cdf, log_cpm_ecdf_tmm[c], c=colours[i], label=c)
+    ax.legend(loc='lower right')
+    ax.set_xlabel("log2(CPM)")
+    ax.set_ylabel("Empirical CDF")
+    fig.savefig(os.path.join(outdir, "ecdf_polya_tmm.png"), dpi=200)
 
     # matching samples between two different preps
 
@@ -140,6 +203,19 @@ if __name__ == '__main__':
     cg = clustering.plot_correlation_clustermap(matched_log_cpm.loc[mad.index[:3000]], row_colors=row_colours)
     cg.gs.update(bottom=0.35, right=0.65)
     cg.savefig(os.path.join(outdir, "cluster_log_cpm_corr_3000_genes.png"), dpi=200)
+
+    # repeat with TMM norming
+    matched_log_cpm_n = transformations.edger_tmm_normalisation_cpm(matched_data)
+
+    cg = clustering.plot_correlation_clustermap(matched_log_cpm_n, row_colors=row_colours)
+    cg.gs.update(bottom=0.35, right=0.65)
+    cg.savefig(os.path.join(outdir, "cluster_log_cpm_corr_all_genes_tmm.png"), dpi=200)
+
+    mad = transformations.median_absolute_deviation(matched_log_cpm_n).sort_values(ascending=False)
+    cg = clustering.plot_correlation_clustermap(matched_log_cpm_n.loc[mad.index[:3000]], row_colors=row_colours)
+    cg.gs.update(bottom=0.35, right=0.65)
+    cg.savefig(os.path.join(outdir, "cluster_log_cpm_corr_3000_genes_tmm.png"), dpi=200)
+
 
     # each of the three pairings in each NSC
     for p in pids:

@@ -11,6 +11,7 @@ from mpltools import color
 from adjustText import adjust_text
 from utils import output, setops
 import references
+import collections
 from plotting.rnaseq import log_cpm_ecdf_plot
 import os
 
@@ -25,7 +26,7 @@ def log_cpm(dat, base=2, offset=1.):
 
 
 if __name__ == '__main__':
-    min_cpm = 1
+    min_cpm = 0.01
 
     outdir = output.unique_output_dir("biological_technical_ecdf")
 
@@ -95,7 +96,6 @@ if __name__ == '__main__':
                 opc_lbl = True
             else:
                 first_label[k] = None
-        first_label[k] = 'Human FFPE Ribozero' if i == 0 else None
 
 
     plot_style = dict([
@@ -117,7 +117,7 @@ if __name__ == '__main__':
         if 'OPC' in k:
             plot_style[k] = {'c': 'k', 'alpha': 0.6}
 
-    x_cdf = np.linspace(-1, 12.5, 500)
+    x_cdf = np.linspace(-6, 12.5, 500)
 
     # ECDFs
     # -1: FFPE, poly(A) human, poly(A) mouse
@@ -125,7 +125,13 @@ if __name__ == '__main__':
     this_data.update(our_ffpe_obj.data.iteritems())
     this_data.update(our_mouse_obj.data.iteritems())
 
-    ax = log_cpm_ecdf_plot(this_data, label_dict=first_label, log_cpm_lookup_values=x_cdf, style_dict=plot_style)
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        label_dict=first_label,
+        log_cpm_lookup_values=x_cdf,
+        style_dict=plot_style,
+        min_cpm=min_cpm
+    )
 
     # again with norming
     polya_human_cpm_n = transformations.edger_tmm_normalisation_cpm(our_patient_obj.data)
@@ -143,7 +149,8 @@ if __name__ == '__main__':
         units='cpm',
         label_dict=first_label,
         log_cpm_lookup_values=x_cdf,
-        style_dict=plot_style
+        style_dict=plot_style,
+        min_cpm=min_cpm
     )
 
     # 1: poly(A) mouse and human
@@ -154,7 +161,8 @@ if __name__ == '__main__':
         this_data,
         log_cpm_lookup_values=x_cdf,
         label_dict=first_label,
-        style_dict=plot_style
+        style_dict=plot_style,
+        min_cpm=min_cpm
     )
     # fig.savefig(os.path.join(outdir, "ecdf_by_library_prep.png"), dpi=200)
 
@@ -163,28 +171,37 @@ if __name__ == '__main__':
     # set the colour cycle to distinguish the samples more easily
     color.cycle_cmap(our_mouse_obj.meta.shape[0], cmap='jet')
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+    this_data = collections.OrderedDict(sorted(polya_mouse_counts.iteritems()))
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        log_cpm_lookup_values=x_cdf,
+        label_dict=dict([(k, k) for k in this_data]),
+        # style_dict=plot_style,
+        min_cpm=min_cpm,
+    )
 
-    e = references.gene_symbol_to_ensembl('Gapdh', tax_id=10090)
-
-    for c, col in our_mouse_obj.data.iteritems():
-        this_dat = col.loc[col >= min_cpm] + 1
-        this_cpm = this_dat.divide(this_dat.sum()) * 1e6
-        this_log_cpm = np.log2(this_cpm)
-        this_ecdf_fun = basic.ecdf_func(this_log_cpm)
-
-        this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
-
-        ens_ecdf = this_ecdf_fun(this_log_cpm[e])
-
-        ax.plot(x_cdf, this_log_cpm_ecdf, label=c)
-        # optional - plot a single gene on each line
-        ax.plot(this_log_cpm[e], ens_ecdf, 'ko')
-
-    ax.legend(loc='lower right')
-    ax.set_xlabel("log2(CPM)")
-    ax.set_ylabel("Empirical CDF")
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    #
+    # e = references.gene_symbol_to_ensembl('Gapdh', tax_id=10090)
+    #
+    # for c, col in our_mouse_obj.data.iteritems():
+    #     this_dat = col.loc[col >= min_cpm] + 1
+    #     this_cpm = this_dat.divide(this_dat.sum()) * 1e6
+    #     this_log_cpm = np.log2(this_cpm)
+    #     this_ecdf_fun = basic.ecdf_func(this_log_cpm)
+    #
+    #     this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
+    #
+    #     ens_ecdf = this_ecdf_fun(this_log_cpm[e])
+    #
+    #     ax.plot(x_cdf, this_log_cpm_ecdf, label=c)
+    #     # optional - plot a single gene on each line
+    #     ax.plot(this_log_cpm[e], ens_ecdf, 'ko')
+    #
+    # ax.legend(loc='lower right')
+    # ax.set_xlabel("log2(CPM)")
+    # ax.set_ylabel("Empirical CDF")
 
     # 3: Add OPCs and NSC (SS2) in
     this_data.update(dict(ss2_counts.iteritems()))

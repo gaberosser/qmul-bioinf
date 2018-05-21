@@ -42,11 +42,13 @@ def log_cpm_ecdf_plot(
         if style_dict is not None:
             sd = style_dict[c]
 
+        this_dat = col.loc[col > 0]
+
         if units == 'counts':
-            this_dat = col + 1
+            # this_dat = col + 1
             this_dat = this_dat / this_dat.sum() * 1e6
-        else:
-            this_dat = col
+        # else:
+        #     this_dat = col
 
         if min_cpm is not None:
             this_dat = this_dat.loc[this_dat >= min_cpm]
