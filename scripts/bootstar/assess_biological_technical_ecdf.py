@@ -73,6 +73,8 @@ if __name__ == '__main__':
     polya_mouse_counts = our_mouse_obj.data
     ffpe_counts = our_ffpe_obj.data
     ss2_counts = ss2_obj.data
+    ss2_nsc_counts = ss2_obj.data.loc[:, ss2_obj.data.columns.str.contains('NSC')]
+    ss2_opc_counts = ss2_obj.data.loc[:, ss2_obj.data.columns.str.contains('OPC')]
 
     first_label = {}
     for i, k in enumerate(our_patient_obj.meta.index):
@@ -99,11 +101,11 @@ if __name__ == '__main__':
 
 
     plot_style = dict([
-        (k, {'c': 'r', 'alpha': 0.6}) for k in our_patient_obj.meta.index
+        (k, {'c': 'r', 'alpha': 0.5}) for k in our_patient_obj.meta.index
     ])
     plot_style.update(
         dict([
-            (k, {'c': 'b', 'alpha': 0.6}) for k in our_mouse_obj.meta.index
+            (k, {'c': 'b', 'alpha': 0.6, 'zorder': 99}) for k in our_mouse_obj.meta.index
         ])
     )
     plot_style.update(
@@ -113,14 +115,14 @@ if __name__ == '__main__':
     )
     for i, k in enumerate(ss2_obj.meta.index):
         if 'NSC' in k:
-            plot_style[k] = {'c': 'g', 'alpha': 0.6}
+            plot_style[k] = {'c': 'g', 'alpha': 0.6, 'zorder': 100}
         if 'OPC' in k:
-            plot_style[k] = {'c': 'k', 'alpha': 0.6}
+            plot_style[k] = {'c': 'k', 'alpha': 0.6, 'zorder': 101}
 
     x_cdf = np.linspace(-6, 12.5, 500)
 
     # ECDFs
-    # -1: FFPE, poly(A) human, poly(A) mouse
+    # 1a) FFPE, poly(A) human, poly(A) mouse
     this_data = dict(our_patient_obj.data.iteritems())
     this_data.update(our_ffpe_obj.data.iteritems())
     this_data.update(our_mouse_obj.data.iteritems())
@@ -128,151 +130,134 @@ if __name__ == '__main__':
     ax = log_cpm_ecdf_plot(
         this_data,
         label_dict=first_label,
-        log_cpm_lookup_values=x_cdf,
+        # log_cpm_lookup_values=x_cdf,
         style_dict=plot_style,
         min_cpm=min_cpm
     )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_polya_ffpe.png"), dpi=200)
 
-    # again with norming
+    # 1b) again with TMM norming
     polya_human_cpm_n = transformations.edger_tmm_normalisation_cpm(our_patient_obj.data)
     polya_mouse_cpm_n = transformations.edger_tmm_normalisation_cpm(our_mouse_obj.data)
     ffpe_cpm_n = transformations.edger_tmm_normalisation_cpm(our_ffpe_obj.data)
     ss2_cpm_n = transformations.edger_tmm_normalisation_cpm(ss2_obj.data)
+    ss2_nsc_cpm_n = ss2_cpm_n.loc[:, ss2_cpm_n.columns.str.contains('NSC')]
+    ss2_opc_cpm_n = ss2_cpm_n.loc[:, ss2_cpm_n.columns.str.contains('OPC')]
 
     this_data = dict(polya_human_cpm_n.iteritems())
     this_data.update(polya_mouse_cpm_n.iteritems())
     this_data.update(ffpe_cpm_n.iteritems())
-    this_data.update(ss2_cpm_n.iteritems())
 
     ax = log_cpm_ecdf_plot(
         this_data,
         units='cpm',
         label_dict=first_label,
-        log_cpm_lookup_values=x_cdf,
         style_dict=plot_style,
         min_cpm=min_cpm
     )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_polya_ffpe_tmm.png"), dpi=200)
 
-    # 1: poly(A) mouse and human
-    this_data = dict(polya_human_counts.iteritems())
-    this_data.update(dict(polya_mouse_counts.iteritems()))
-
-    ax = log_cpm_ecdf_plot(
-        this_data,
-        log_cpm_lookup_values=x_cdf,
-        label_dict=first_label,
-        style_dict=plot_style,
-        min_cpm=min_cpm
-    )
-    # fig.savefig(os.path.join(outdir, "ecdf_by_library_prep.png"), dpi=200)
-
-    # 2: same, just for mouse samples
+    # 2a) same, just for mouse samples
 
     # set the colour cycle to distinguish the samples more easily
     color.cycle_cmap(our_mouse_obj.meta.shape[0], cmap='jet')
 
-    this_data = collections.OrderedDict(sorted(polya_mouse_counts.iteritems()))
+    # set the order because it makes it easier to distinguish samples
+    this_data = collections.OrderedDict([
+        (c, polya_mouse_counts[c]) for c in our_mouse_obj.meta.index
+    ])
+
     ax = log_cpm_ecdf_plot(
         this_data,
-        log_cpm_lookup_values=x_cdf,
         label_dict=dict([(k, k) for k in this_data]),
-        # style_dict=plot_style,
         min_cpm=min_cpm,
     )
 
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111)
-    #
-    # e = references.gene_symbol_to_ensembl('Gapdh', tax_id=10090)
-    #
-    # for c, col in our_mouse_obj.data.iteritems():
-    #     this_dat = col.loc[col >= min_cpm] + 1
-    #     this_cpm = this_dat.divide(this_dat.sum()) * 1e6
-    #     this_log_cpm = np.log2(this_cpm)
-    #     this_ecdf_fun = basic.ecdf_func(this_log_cpm)
-    #
-    #     this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
-    #
-    #     ens_ecdf = this_ecdf_fun(this_log_cpm[e])
-    #
-    #     ax.plot(x_cdf, this_log_cpm_ecdf, label=c)
-    #     # optional - plot a single gene on each line
-    #     ax.plot(this_log_cpm[e], ens_ecdf, 'ko')
-    #
-    # ax.legend(loc='lower right')
-    # ax.set_xlabel("log2(CPM)")
-    # ax.set_ylabel("Empirical CDF")
-
-    # 3: Add OPCs and NSC (SS2) in
-    this_data.update(dict(ss2_counts.iteritems()))
+    # overlay human samples in grey
+    this_data = dict(our_patient_obj.data.iteritems())
+    this_plot_style = dict([
+        (k, {'c': 'gray', 'alpha': 0.4, 'zorder': 1}) for k in our_patient_obj.meta.index
+    ])
     ax = log_cpm_ecdf_plot(
         this_data,
-        log_cpm_lookup_values=x_cdf,
         label_dict=first_label,
-        style_dict=plot_style
+        style_dict=this_plot_style,
+        min_cpm=min_cpm,
+        ax=ax
+    )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_mouse_samples.png"), dpi=200)
+
+    # 2b) Again with TMM norming
+    this_data = collections.OrderedDict([
+        (c, polya_mouse_cpm_n[c]) for c in our_mouse_obj.meta.index
+    ])
+
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        label_dict=dict([(k, k) for k in this_data]),
+        min_cpm=min_cpm,
+        units='cpm'
     )
 
-    ## TODO: update from here using transformations
-
-    """
-
-    # So how does EgdeR cope with this? Can the TMM normalisation collapse these lines?
-    ss2_dat = ss2_obj.data.copy()
-    human_data = pd.concat(
-        (our_patient_obj.data, ss2_dat), axis=1
+    # overlay human samples in grey
+    this_data = dict(polya_human_cpm_n.iteritems())
+    this_plot_style = dict([
+        (k, {'c': 'gray', 'alpha': 0.4, 'zorder': 1}) for k in our_patient_obj.meta.index
+    ])
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        units='cpm',
+        label_dict=first_label,
+        style_dict=this_plot_style,
+        min_cpm=min_cpm,
+        ax=ax
     )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_mouse_samples_tmm.png"), dpi=200)
 
-    differential_expression.robjects.packages.importr('edgeR')
-    rdata = differential_expression.pandas2ri.py2ri(human_data)
+    # 3a) NSC (SS2) and NSC poly(A)
+    this_data = dict(polya_human_counts.iteritems())
+    this_data.update(dict(ss2_nsc_counts.iteritems()))
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        label_dict=first_label,
+        style_dict=plot_style,
+        min_cpm=min_cpm
+    )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_nsc_two_preps.png"), dpi=200)
 
-    y = differential_expression.r("DGEList")(rdata)
+    # 3b) with TMM norming
+    this_data = dict(polya_human_cpm_n.iteritems())
+    this_data.update(dict(ss2_nsc_cpm_n.iteritems()))
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        units='cpm',
+        label_dict=first_label,
+        style_dict=plot_style,
+        min_cpm=min_cpm
+    )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_nsc_two_preps_tmm.png"), dpi=200)
 
-    yn = differential_expression.r("calcNormFactors")(y)
-    cpm_2 = differential_expression.pandas2ri.ri2py_dataframe(differential_expression.r('cpm')(yn))
-    cpm_2.index = human_data.index
-    cpm_2.columns = human_data.columns
+    # 4a) NSC (SS2) and NSC poly(A) and OPC (SS2)
+    this_data = dict(polya_human_counts.iteritems())
+    this_data.update(dict(ss2_nsc_counts.iteritems()))
+    this_data.update(dict(ss2_opc_counts.iteritems()))
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        label_dict=first_label,
+        style_dict=plot_style,
+        min_cpm=min_cpm
+    )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_nsc_opc_two_preps.png"), dpi=200)
 
-    # FWIW, edgeR agrees with my own calculation to within 1e-10 numerical error:
-    # cpm_1 = differential_expression.pandas2ri.ri2py_dataframe(differential_expression.r('cpm')(y))
-    # cpm_1.index = human_data.index
-    # cpm_1.columns = human_data.columns
-    # cpm_mine = human_data.divide(human_data.sum(), axis=1) * 1e6
-    # ((cpm_mine - cpm_1).abs() > 1e-10).sum().sum() == 0
-
-    normed_data = dict(cpm_2.iteritems())
-
-    opc_lbl = False
-    nsc_lbl = False
-    for i, k in enumerate(ss2_obj.meta.index):
-        k2 = "%s_SS2" % k
-        if 'NSC' in k:
-            plot_style[k2] = {'c': 'g', 'alpha': 0.6}
-            if not nsc_lbl:
-                first_label[k2] = 'SmartSeq2 NSC'
-                nsc_lbl = True
-            else:
-                first_label[k2] = None
-        if 'OPC' in k:
-            plot_style[k2] = {'c': 'k', 'alpha': 0.6}
-            if not opc_lbl:
-                first_label[k2] = 'SmartSeq2 OPC'
-                opc_lbl = True
-            else:
-                first_label[k2] = None
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-
-    for c, col in normed_data.iteritems():
-        this_dat = col.loc[col >= min_cpm] + 1
-        this_cpm = this_dat.divide(this_dat.sum()) * 1e6
-        this_log_cpm = np.log2(this_cpm)
-        this_ecdf_fun = basic.ecdf_func(this_log_cpm)
-        this_log_cpm_ecdf = this_ecdf_fun(x_cdf)
-
-        ax.plot(x_cdf, this_log_cpm_ecdf, label=first_label[c], **plot_style[c])
-    ax.legend(loc='lower right')
-    ax.set_xlabel("log2(CPM)")
-    ax.set_ylabel("Empirical CDF")
-
-    """
+    # 4b) with TMM norming
+    this_data = dict(polya_human_cpm_n.iteritems())
+    this_data.update(dict(ss2_nsc_cpm_n.iteritems()))
+    this_data.update(dict(ss2_opc_cpm_n.iteritems()))
+    ax = log_cpm_ecdf_plot(
+        this_data,
+        units='cpm',
+        label_dict=first_label,
+        style_dict=plot_style,
+        min_cpm=min_cpm
+    )
+    ax.figure.savefig(os.path.join(outdir, "ecdf_nsc_opc_two_preps_tmm.png"), dpi=200)

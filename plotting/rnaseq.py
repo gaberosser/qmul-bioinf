@@ -32,7 +32,7 @@ def log_cpm_ecdf_plot(
         ax = fig.add_subplot(111)
 
     if log_cpm_lookup_values is None:
-        log_cpm_lookup_values = np.linspace(-5, 15, 100)
+        log_cpm_lookup_values = np.linspace(np.floor(np.log2(min_cpm)), 15, 100)
 
     for c, col in data_dict.iteritems():
         lbl = None
