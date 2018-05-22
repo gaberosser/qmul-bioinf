@@ -4,6 +4,7 @@ from stats import transformations, basic
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.cluster import hierarchy as hc
 import math
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -216,6 +217,50 @@ if __name__ == '__main__':
     cg.gs.update(bottom=0.35, right=0.65)
     cg.savefig(os.path.join(outdir, "cluster_log_cpm_corr_3000_genes_tmm.png"), dpi=200)
 
+    # check with Spearman: in theory, TMM norming should make no difference?
+    spearman_pdist = pd.DataFrame(index=matched_log_cpm.columns, columns=matched_log_cpm.columns, dtype=float)
+    pairs_seen = set()
+    for c1 in matched_log_cpm.columns:
+        for c2 in matched_log_cpm.columns:
+            if c1 == c2:
+                spearman_pdist.loc[c1, c2] = 0
+            if (c1, c2) in pairs_seen:
+                continue
+            pairs_seen.add((c1, c2))
+            this_corr = stats.spearmanr(
+                matched_log_cpm.loc[:, c1],
+                matched_log_cpm.loc[:, c2]
+            ).correlation
+            spearman_pdist.loc[c1, c2] = 1 - this_corr
+            spearman_pdist.loc[c2, c1] = 1 - this_corr
+    X = spearman_pdist.values
+    X[np.arange(len(X)), np.arange(len(X))] = 0
+    spearman_cond_dist = hc.distance.squareform(X)
+
+    cg = clustering.plot_correlation_clustermap(matched_log_cpm, row_colors=row_colours, distance=spearman_cond_dist)
+    cg.gs.update(bottom=0.35, right=0.65)
+
+    spearman_pdist_n = pd.DataFrame(index=matched_log_cpm_n.columns, columns=matched_log_cpm_n.columns, dtype=float)
+    pairs_seen = set()
+    for c1 in matched_log_cpm_n.columns:
+        for c2 in matched_log_cpm_n.columns:
+            if c1 == c2:
+                spearman_pdist.loc[c1, c2] = 0
+            if (c1, c2) in pairs_seen:
+                continue
+            pairs_seen.add((c1, c2))
+            this_corr = stats.spearmanr(
+                matched_log_cpm_n.loc[:, c1],
+                matched_log_cpm_n.loc[:, c2]
+            ).correlation
+            spearman_pdist_n.loc[c1, c2] = 1 - this_corr
+            spearman_pdist_n.loc[c2, c1] = 1 - this_corr
+    X = spearman_pdist_n.values
+    X[np.arange(len(X)), np.arange(len(X))] = 0
+    spearman_cond_dist_n = hc.distance.squareform(X)
+
+    cg = clustering.plot_correlation_clustermap(matched_log_cpm_n, row_colors=row_colours, distance=spearman_cond_dist_n)
+    cg.gs.update(bottom=0.35, right=0.65)
 
     # each of the three pairings in each NSC
     for p in pids:
