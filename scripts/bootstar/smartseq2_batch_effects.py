@@ -1,5 +1,5 @@
 from rnaseq import loader, differential_expression, filter, general
-from plotting import common, clustering
+from plotting import common, clustering, venn
 from stats import transformations, basic
 import pandas as pd
 import numpy as np
@@ -42,14 +42,15 @@ if __name__ == '__main__':
     print ss2_pct_assigned
 
     polya_obj = loader.load_by_patient(pids)
-    # restrict to relevant samples
-    idx = (polya_obj.meta.type == 'iNSC')
-    polya_obj.meta = polya_obj.meta.loc[idx]
-    polya_obj.data = polya_obj.data.loc[:, polya_obj.meta.index]
-    polya_obj.data_unassigned = polya_obj.data_unassigned.loc[:, polya_obj.meta.index]
 
-    assigned_sum = polya_obj.data.sum()
-    unassigned_sum = polya_obj.data_unassigned.drop('N_unmapped').sum()
+    # restrict to relevant samples for first part of the analysis
+    idx = (polya_obj.meta.type == 'iNSC')
+    polya_nsc_meta = polya_obj.meta.loc[idx]
+    polya_nsc_data = polya_obj.data.loc[:, polya_nsc_meta.index]
+    polya_nsc_unassigned = polya_obj.data_unassigned.loc[:, polya_nsc_meta.index]
+
+    assigned_sum = polya_nsc_data.sum()
+    unassigned_sum = polya_nsc_unassigned.drop('N_unmapped').sum()
 
     polya_pct_assigned = assigned_sum / (assigned_sum + unassigned_sum) * 100.
 
@@ -59,8 +60,8 @@ if __name__ == '__main__':
     # combine data then eliminate genes that are not expressed
     ss2_data = ss2_obj.data
     ss2_data.columns = ["%s_smartseq" % t for t in ss2_data.columns]
-    polya_data = polya_obj.data
-    data = pd.concat((ss2_data, polya_data), axis=1)
+    polya_nsc_data = polya_obj.data
+    data = pd.concat((ss2_data, polya_nsc_data), axis=1)
     data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
 
     # TMM normed version
@@ -171,7 +172,7 @@ if __name__ == '__main__':
     colours = common.COLOUR_BREWERS[polya_obj.meta.shape[0]]
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for i, c in enumerate(polya_data.columns):
+    for i, c in enumerate(polya_nsc_data.columns):
         ax.plot(x_cdf, log_cpm_ecdf[c], c=colours[i], label=c)
     ax.legend(loc='lower right')
     ax.set_xlabel("log2(CPM)")
@@ -181,7 +182,7 @@ if __name__ == '__main__':
     # TMM
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for i, c in enumerate(polya_data.columns):
+    for i, c in enumerate(polya_nsc_data.columns):
         ax.plot(x_cdf, log_cpm_ecdf_tmm[c], c=colours[i], label=c)
     ax.legend(loc='lower right')
     ax.set_xlabel("log2(CPM)")
@@ -368,6 +369,18 @@ if __name__ == '__main__':
     de_in_all = references.ensembl_to_gene_symbol(
         setops.reduce_intersection(*[t.index for t in de_res_separate.values()])
     )
+    # sort this by the avg logFC
+    logfc_in_all = pd.DataFrame.from_dict(dict([
+        (p, v.loc[de_in_all.index, 'logFC']) for p, v in de_res_separate.items()
+    ]))
+    logfc_in_all = logfc_in_all.loc[logfc_in_all.mean(axis=1).abs().sort_values(ascending=False).index]
+    general.add_gene_symbols_to_ensembl_data(logfc_in_all)
+
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111, facecolor='w')
+    venn.venn_diagram(set_labels=de_res_separate.keys(), *[t.index for t in de_res_separate.values()], ax=ax)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "de_nsc_ss2-polya_combined_dispersion.png"), dpi=200)
 
     fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, figsize=(10, 10))
     fig.tight_layout()
@@ -399,6 +412,7 @@ if __name__ == '__main__':
         )
         ax.set_aspect('equal')
         ax.plot([-1, 20], [-1, 20], 'k--')
+        ax.set_title(p)
 
         # annotate the largest FC genes (top 10%)
         to_annot = abs_fc.index[:int(np.ceil(0.1 * abs_fc.shape[0]))]
@@ -498,61 +512,189 @@ if __name__ == '__main__':
         general.add_gene_symbols_to_ensembl_data(de_res_separate_common[p])
 
 
-    # 3) how about DE between different NSC (within each library prep situation)?
-    # this requires a comparison without replicates in the case of smartseq
+    # 3) GIC vs NSC (separately for each prep)
+    # a) restrict this to matching passage / subclone for poly(A)
     # must use GLM method here - QLGLM complains about estimating dof
     de_method = 'GLM'
 
-    # 3a) Matching the format of 2a: 
+    # combine data
+    polya_data = polya_obj.data
+    polya_data = polya_data.loc[:, ~polya_data.columns.str.contains('GIBCO')]
+    polya_data = polya_data.loc[:, ~polya_data.columns.str.contains('IPSC')]
 
-    comparisons_run = set()
-    de_res_intra_ss = {}
-    de_res_intra_pa = {}
-    for p1 in pids:
-        for p2 in pids:
-            if p1 == p2:
-                continue
-            if (p1, p2) in comparisons_run:
-                continue
-            ss_idx = matched_data.columns.str.contains('smartseq') & matched_data.columns.str.contains("%s|%s" % (p1, p2))
-            ss_data = matched_data.loc[:, ss_idx]
-            ss_groups = patient[ss_idx]
-            fit, design = differential_expression.edger_fit_glm(
-                ss_data,
-                de_method,
-                '~0+patient',
-                common_disp=True,
-                patient=ss_groups,
-            )
-            de_res_intra_ss[(p1, p2)] = differential_expression.edger_test(fit, design, "patient%s - patient%s" % (p1, p2))
+    # drop unneeded replicates in poly(A)
+    polya_data = polya_data.loc[:, polya_data.columns != 'DURA019_NSC_N5C1_P2']
+    polya_data = polya_data.loc[:, polya_data.columns != 'DURA031_NSC_N44_P3']
+    polya_data = polya_data.loc[:, polya_data.columns != 'DURA049_NSC_N5_P2']
+    polya_data = polya_data.loc[:, polya_data.columns != 'DURA052_NSC_N5_P2']
 
-            # four ways to run the PA comparison (make it n=1 to be fair)
-            pa_p1_idx = (~matched_data.columns.str.contains('smartseq')) & matched_data.columns.str.contains(p1)
-            pa_p2_idx = (~matched_data.columns.str.contains('smartseq')) & matched_data.columns.str.contains(p2)
-            pa_idx = pa_p1_idx | pa_p2_idx
-            pa_data = matched_data.loc[:, pa_idx]
-            pa_groups = patient[pa_idx]
+    ss2_nsc_data = ss2_data.loc[:, ~ss2_data.columns.str.contains('OPC')]
 
-            for i in range(0, 2):
-                for j in range(0, 2):
-                    this_p1 = matched_data.columns[pa_p1_idx][i]
-                    this_p2 = matched_data.columns[pa_p2_idx][j]
-                    this_pa_data = pa_data.loc[:, [this_p1, this_p2]]
-                    this_pa_groups = pa_groups[pa_data.columns.isin([this_p1, this_p2])]
+    ss2_de_data = pd.concat((ss2_nsc_data, polya_data.loc[:, polya_data.columns.str.contains('GBM')]), axis=1)
 
-                    fit, design = differential_expression.edger_fit_glm(
-                        this_pa_data,
-                        de_method,
-                        '~0+patient',
-                        common_disp=True,
-                        patient=this_pa_groups,
-                    )
-                    de_res_intra_pa[(this_p1, this_p2)] = differential_expression.edger_test(fit, design, "patient%s - patient%s" % (p1, p2))
+    de_gic_vs_nsc = {}
 
-            comparisons_run.add((p1, p2))
-            comparisons_run.add((p2, p1))
+    # poly(A)
+    # filter data
+    data = polya_data
+    data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
+
+    groups = pd.Series(index=data.columns)
+    comparisons = {}
+    for p in pids:
+        groups[groups.index.str.contains(p) & groups.index.str.contains('smartseq')] = "SmartSeqNSC%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & groups.index.str.contains('GBM')] = "PolyAGBM%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & ~groups.index.str.contains('GBM')] = "PolyANSC%s" % p
+        comparisons[p] = "PolyAGBM%s - PolyANSC%s" % (p, p)
+
+    de_gic_vs_nsc['PolyA'] = differential_expression.run_multiple_de(
+        data, groups, comparisons, method=de_method
+    )
+    for p in pids:
+        this_res = de_gic_vs_nsc['PolyA'][p]
+        print "Patient %s: %d DE genes in GBM - PolyA NSC (%d up, %d down)." % (
+            p,
+            this_res.shape[0],
+            (this_res.logFC > 0).sum(),
+            (this_res.logFC < 0).sum(),
+        )
 
 
+    # SmartSeq
+    # filter data
+    data = ss2_de_data
+    data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
+
+    groups = pd.Series(index=data.columns)
+    comparisons = {}
+    for p in pids:
+        groups[groups.index.str.contains(p) & groups.index.str.contains('smartseq')] = "SmartSeqNSC%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & groups.index.str.contains('GBM')] = "PolyAGBM%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & ~groups.index.str.contains('GBM')] = "PolyANSC%s" % p
+        comparisons[p] = "PolyAGBM%s - SmartSeqNSC%s" % (p, p)
+
+    de_gic_vs_nsc['SmartSeq'] = differential_expression.run_multiple_de(
+        data, groups, comparisons, method=de_method
+    )
+
+    for p in pids:
+        this_res = de_gic_vs_nsc['SmartSeq'][p]
+        print "Patient %s: %d DE genes in GBM - SmartSeq2 NSC (%d up, %d down)." % (
+            p,
+            this_res.shape[0],
+            (this_res.logFC > 0).sum(),
+            (this_res.logFC < 0).sum(),
+        )
+
+    # venn diagrams to compare the results
+    fig, axs = plt.subplots(2, 2)
+    for i, p in enumerate(pids):
+        ax = axs.flat[i]
+        venn.venn_diagram(
+            de_gic_vs_nsc['PolyA'][p].index,
+            de_gic_vs_nsc['SmartSeq'][p].index,
+            set_labels=['PolyA', 'SmartSeq2'],
+            ax=ax,
+        )
+        ax.set_title(p)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'de_gic_vs_nsc_venn.png'), dpi=200)
+
+    # 3b) only use ONE GIC sample
+    # arbitrary choice (for now)
+    # to make this work, we'll have to pool across lib preps for dispersion estimation
+
+    polya_data = polya_data.loc[:, polya_data.columns != 'GBM019_P3n6']
+    polya_data = polya_data.loc[:, polya_data.columns != 'GBM031_P4']
+    polya_data = polya_data.loc[:, polya_data.columns != 'GBM049_P6']
+    polya_data = polya_data.loc[:, polya_data.columns != 'GBM052_P4n5']
+
+    de_gic_vs_nsc_n1 = {}
+
+    # poly(A)
+    # filter data
+    data = polya_data
+    data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
+
+    groups = pd.Series(index=data.columns)
+    comparisons = {}
+    for p in pids:
+        groups[groups.index.str.contains(p) & groups.index.str.contains('smartseq')] = "SmartSeqNSC%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & groups.index.str.contains('GBM')] = "PolyAGBM%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & ~groups.index.str.contains('GBM')] = "PolyANSC%s" % p
+    groups_for_disp = pd.Series('NSC', index=data.columns)
+    groups_for_disp.loc[groups_for_disp.index.str.contains('GBM')] = 'GBM'
+
+    dgelist, _ = differential_expression.edger_dgelist(
+        data,
+        the_formula="~0 + groups",
+        groups=groups_for_disp.values
+    )
+    design = differential_expression.model_matrix_from_formula("~0 + group", group=groups.values)
+    fit, _ = differential_expression.edger_fit_dgelist(dgelist, de_method, design=design)
+
+    de_gic_vs_nsc_n1['PolyA'] = {}
+
+    for p in pids:
+        this_res = differential_expression.edger_test(fit, design, "groupPolyAGBM%s - groupPolyANSC%s" % (p, p))
+        general.add_gene_symbols_to_ensembl_data(this_res)
+        print "Patient %s: %d DE genes in GBM - PolyA NSC (%d up, %d down)." % (
+            p,
+            this_res.shape[0],
+            (this_res.logFC > 0).sum(),
+            (this_res.logFC < 0).sum(),
+        )
+
+        de_gic_vs_nsc_n1['PolyA'][p] = this_res
 
 
+    # SmartSeq
+    # filter data
+    data = ss2_de_data
+    data = filter.filter_by_cpm(data, min_cpm=min_cpm, min_n_samples=1)
+
+    groups = pd.Series(index=data.columns)
+    comparisons = {}
+    for p in pids:
+        groups[groups.index.str.contains(p) & groups.index.str.contains('smartseq')] = "SmartSeqNSC%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & groups.index.str.contains('GBM')] = "PolyAGBM%s" % p
+        groups[groups.index.str.contains(p) & ~groups.index.str.contains('smartseq') & ~groups.index.str.contains('GBM')] = "PolyANSC%s" % p
+    groups_for_disp = pd.Series('NSC', index=data.columns)
+    groups_for_disp.loc[groups_for_disp.index.str.contains('GBM')] = 'GBM'
+
+    dgelist, _ = differential_expression.edger_dgelist(
+        data,
+        the_formula="~0 + groups",
+        groups=groups_for_disp.values
+    )
+    design = differential_expression.model_matrix_from_formula("~0 + group", group=groups.values)
+    fit, _ = differential_expression.edger_fit_dgelist(dgelist, de_method, design=design)
+
+    de_gic_vs_nsc_n1['SmartSeq'] = {}
+
+    for p in pids:
+        this_res = differential_expression.edger_test(fit, design, "groupPolyAGBM%s - groupSmartSeqNSC%s" % (p, p))
+        general.add_gene_symbols_to_ensembl_data(this_res)
+        print "Patient %s: %d DE genes in GBM - SmartSeq NSC (%d up, %d down)." % (
+            p,
+            this_res.shape[0],
+            (this_res.logFC > 0).sum(),
+            (this_res.logFC < 0).sum(),
+        )
+
+        de_gic_vs_nsc_n1['SmartSeq'][p] = this_res
+
+    # venn diagrams to compare the results
+    fig, axs = plt.subplots(2, 2)
+    for i, p in enumerate(pids):
+        ax = axs.flat[i]
+        venn.venn_diagram(
+            de_gic_vs_nsc_n1['PolyA'][p].index,
+            de_gic_vs_nsc_n1['SmartSeq'][p].index,
+            set_labels=['PolyA', 'SmartSeq2'],
+            ax=ax,
+        )
+        ax.set_title(p)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'de_gic_vs_nsc_n1_venn.png'), dpi=200)
 
