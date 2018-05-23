@@ -70,13 +70,22 @@ if __name__ == "__main__":
     # median_beta = collections.OrderedDict()
 
     # 1) background and DM probe IDs for each patient
-    background_pids = {}
-    focus_pids = {}
+    pid_sets = {
+        'background': {},
+        'dmr': {},
+        'hypo': {},
+        'hyper': {},
+    }
+
+    n_dmr_by_direction = {}
 
     for pid in pids:
-
-        background_pids[pid] = set(me_data.index)
-        focus_pids[pid] = set()
+        n_dmr_by_direction[pid] = {'hyper': 0, 'hypo': 0}
+        for k, v in pid_sets.items():
+            if k == 'background':
+                v[pid] = set(me_data.index)
+            else:
+                v[pid] = set()
 
         the_dmr_res = dmr_res_s1[pid]
         idx = dat[pid] == 'Y'
@@ -84,17 +93,29 @@ if __name__ == "__main__":
         the_clusters = dat.loc[idx, 'dmr_cluster_id'].values
 
         for i, c in enumerate(the_clusters):
-            background_pids[pid].difference_update(the_dmr_res.clusters[c].pids)
-            focus_pids[pid].update(the_dmr_res.clusters[c].pids)
+            the_probe_ids = the_dmr_res.clusters[c].pids
+
+            pid_sets['background'][pid].difference_update(the_probe_ids)
+            pid_sets['dmr'][pid].update(the_probe_ids)
+
+            if the_dmr_res.results[c]['median_change'] > 0:
+                # hypermethylation
+                pid_sets['hyper'][pid].update(the_probe_ids)
+                n_dmr_by_direction[pid]['hyper'] += 1
+            else:
+                # hypomethylation
+                pid_sets['hypo'][pid].update(the_probe_ids)
+                n_dmr_by_direction[pid]['hypo'] += 1
 
     # 2) Add count columns to the (gene / cluster) pairs in dat
+    k_open_sea = 'open_sea'
     cats = {
         'N_Shore': 'n_shore',
         'S_Shore': 's_shore',
         'Island': 'island',
         'N_Shelf': 'n_shelf',
         'S_Shelf': 's_shelf',
-        np.nan: 'open_sea',
+        k_open_sea: 'open_sea',
     }
 
     new_cols = ["%s_count" % t for t in cats.values()]
@@ -103,12 +124,13 @@ if __name__ == "__main__":
         for t in new_cols:
             new_dat["%s_%s" % (pid, t)] = []
 
+    n_probes = []
     for i, row in dat.iterrows():
         g = row.gene
         cid = row.dmr_cluster_id
         a = the_dmr_res.clusters[cid]
         probe_ids = a.pids
-        n_probe = len(probe_ids)
+        n_probes.append(len(probe_ids))
 
         for pid in pids:
             if row[pid] == 'N':
@@ -117,7 +139,7 @@ if __name__ == "__main__":
                     new_dat["%s_%s" % (pid, t)].append(None)
             else:
                 # relevant DMR - go through probes
-                this_counts = anno.loc[probe_ids, 'Relation_to_UCSC_CpG_Island'].value_counts().to_dict()
+                this_counts = anno.loc[probe_ids, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea).value_counts().to_dict()
                 for k, t in cats.items():
                     new_dat["%s_%s_count" % (pid, t)].append(this_counts.get(k, 0))
 
@@ -128,9 +150,50 @@ if __name__ == "__main__":
             the_k = "%s_%s" % (pid, t)
             dat.insert(ix, the_k, new_dat[the_k])
 
+    dat.insert(2, "n_probe", n_probes)
     dat.to_excel(os.path.join(outdir, "full_de_dmr_concordant.with_cpg_annotation.xlsx"))
 
-    # 3) 
+    # 3) Similar to above, but compute the _distribution_ across those features in the foreground and background
+    res_focus = {}
+    res_background = {}
+    res_hypo = {}
+    res_hyper = {}
+
+    res = {}
+
+    for pid_typ, pid_set in pid_sets.items():
+        for pid in pids:
+            p = pid_set[pid]
+            this_counts = anno.loc[p, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea).value_counts().to_dict()
+            res.setdefault(pid_typ, {})[pid] = dict([
+                (v, this_counts.get(k, 0)) for k, v in cats.items()
+            ])
+
+    # sanity check
+    for pid in pids:
+        if not (pd.Series(res['hyper'][pid]) + pd.Series(res['hypo'][pid]) == pd.Series(res['dmr'][pid])).all():
+            raise ValueError("PID %s failed check # hypo + # hyper = # dmr" % pid)
+
+    # all
+    this_counts = anno.loc[:, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea).value_counts().to_dict()
+    res_all = dict([
+        (v, this_counts.get(k, 0)) for k, v in cats.items()
+    ])
+
+    # save this in a 'nice' format for sharing
+    cols = cats.values()
+    to_export = pd.DataFrame(
+        index=pd.MultiIndex.from_product([pids, res.keys()], names=['patient ID', 'probe list']),
+        columns=cols
+    )
+
+    for pid_typ, pid_set in res.items():
+        for pid in pids:
+            to_export.loc[(pid, pid_typ)] = pd.Series(pid_set[pid])[cols]
+
+    to_export.loc[('all', 'all'), cols] = pd.Series(res_all)[cols]
+
+    to_export.to_excel(os.path.join(outdir, "cpg_annotation_distribution_by_dmr_type.xlsx"))
 
 
     #         g = the_genes[i]
