@@ -142,7 +142,8 @@ y = np.array(
 ).transpose()
 fig = plt.figure(figsize=[12, 4])
 ax = fig.add_subplot(111)
-bar.stacked_bar_chart(deltas, y, colours=colours, labels=grps, width=0.8, ax=ax)
+y = pd.DataFrame(y, columns=deltas, index=grps)
+bar.stacked_bar_chart(deltas, y, colours=colours, width=0.8, ax=ax)
 dt = deltas[1] - deltas[0]
 ax.set_xlim([deltas[0] - dt * 0.5, deltas[-1] + dt * 0.5])
 ax.set_ylim([0, 1])

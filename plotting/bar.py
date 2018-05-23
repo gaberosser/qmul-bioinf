@@ -100,12 +100,11 @@ def multi_grouped_bar_chart(dict_of_series_lists, width=0.8, figsize=None, equal
     return fig, axs
 
 
-def stacked_bar_chart(x, y, labels=None, ax=None, colours=None, width=0.9):
+def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True):
     """
     Plot a stacked bar chart. Each group is a row in the matrix y. The number of columns in y is equal to the length
     of x.
-    :param x:
-    :param y:
+    :param y: pd.DataFrame, rows correspond to groups, cols correspond to separate bars
     :param labels:
     :param ax:
     :param colours:
@@ -115,17 +114,13 @@ def stacked_bar_chart(x, y, labels=None, ax=None, colours=None, width=0.9):
 
     n_grp = y.shape[0]
     nx = y.shape[1]
-    if len(x) != nx:
-        raise ValueError("Length of x must match number of columns in y")
-    dx = x[1] - x[0]
+    x = np.arange(nx)
 
     if colours is None:
         colours = [cm.jet(t) for t in np.linspace(0, 1, n_grp)]
     elif len(colours) != n_grp:
         raise ValueError("If supplied, colours must have the same length as the number of rows in y.")
-
-    if labels is not None and len(labels) != n_grp:
-        raise ValueError("If supplied, labels must have the same length as the number of rows in y.")
+    colours = pd.Series(colours, index=y.index)
 
     if ax is None:
         fig = plt.figure()
@@ -135,12 +130,16 @@ def stacked_bar_chart(x, y, labels=None, ax=None, colours=None, width=0.9):
 
     bottom = np.zeros(nx)
 
-    for i in range(n_grp):
-        lbl = labels[i] if labels is not None else None
-        ax.bar(x - 0.5 * dx, y[i], bottom=bottom, width=width * dx, color=colours[i], label=lbl, edgecolor='none')
-        bottom += y[i]
+    for lbl, row in y.iterrows():
+        # FIXME: this seems to use x as the central coord rather than the leftmost coord?
+        # ax.bar(x - 0.5 * width, row, bottom=bottom, width=width, color=colours[lbl], label=lbl, edgecolor='none')
+        ax.bar(x, row, bottom=bottom, width=width, color=colours[lbl], label=lbl, edgecolor='none')
+        bottom += row.values
 
-    if labels is not None:
+    if legend:
         ax.legend()
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(y.columns)
 
     return fig, ax
