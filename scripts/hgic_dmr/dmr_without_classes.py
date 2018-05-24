@@ -160,22 +160,23 @@ if __name__ == "__main__":
 
     k_open_sea = 'open_sea'
     cats = {
-        'N_Shore': 'n_shore',
-        'S_Shore': 's_shore',
+        'N_Shore': 'shore',
+        'S_Shore': 'shore',
         'Island': 'island',
-        'N_Shelf': 'n_shelf',
-        'S_Shelf': 's_shelf',
+        'N_Shelf': 'shelf',
+        'S_Shelf': 'shelf',
         k_open_sea: 'open_sea',
     }
+    empty_counts = {'open_sea': 0, 'island': 0, 'shore': 0, 'shelf': 0}
     island_counts = {}
 
     for pid_typ, pid_set in pid_sets.items():
         for pid in pids:
             p = pid_set[pid]
             this_counts = anno.loc[p, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea).value_counts().to_dict()
-            island_counts.setdefault(pid_typ, {})[pid] = dict([
-                (v, this_counts.get(k, 0)) for k, v in cats.items()
-            ])
+            island_counts.setdefault(pid_typ, {}).setdefault(pid, dict(empty_counts))
+            for k, v in cats.items():
+                island_counts[pid_typ][pid][v] += this_counts.get(k, 0)
 
     # sanity check
     for pid in pids:
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     ])
 
     # save this in a 'nice' format for sharing
-    cols = cats.values()
+    cols = sorted(set(cats.values()))
     to_export = pd.DataFrame(
         index=pd.MultiIndex.from_product([pids, ['background', 'dmr', 'hypo', 'hyper']], names=['patient ID', 'probe list']),
         columns=cols
