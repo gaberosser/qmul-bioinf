@@ -234,10 +234,11 @@ if __name__ == "__main__":
         for typ in ['dmr', 'hyper', 'hypo']:
             ps = pid_sets[typ][pid]
             this_anno = anno.loc[ps]
-            for p, row in this_anno:
+            for p, row in this_anno.iterrows():
                 strand = '+' if row.Strand == 'F' else '-'
-                this_regions[p] = [row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
+                # we'll prepend the chrom name with 'chr' to ensure compatibility with hg19 (built in to Homer)
+                this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
 
-        bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
-        genomics.write_bed_file(this_regions, bed_fn)
+            bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
+            genomics.write_bed_file(this_regions, bed_fn)
 
