@@ -1,7 +1,7 @@
 from plotting import bar, venn
 from methylation import loader, dmr, process
 import pandas as pd
-from utils import output, setops
+from utils import output, setops, genomics
 import multiprocessing as mp
 import os
 from matplotlib import pyplot as plt
@@ -46,7 +46,9 @@ def pair_dmr(me_meta, me_data, dmr_results_obj, pids, **dmr_params):
         the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'iNSC')
         the_idx = the_idx1 | the_idx2
         the_groups = me_meta.loc[the_idx, 'type'].values
-        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+        the_samples = me_meta.index[the_idx].groupby(the_groups)
+        the_samples = [the_samples['GBM'], the_samples['iNSC']]
+
         obj.test_clusters(me_data,
                               samples=the_samples,
                               n_jobs=dmr_params['n_jobs'],
@@ -58,6 +60,10 @@ def pair_dmr(me_meta, me_data, dmr_results_obj, pids, **dmr_params):
         dmr_res[pid] = obj
 
     return dmr.DmrResultCollection(**dmr_res)
+
+
+def bed_file_from_regions():
+    pass
 
 
 if __name__ == "__main__":
@@ -219,4 +225,19 @@ if __name__ == "__main__":
     axs[-1].legend(loc='center left', bbox_to_anchor=(1, 0.5))
     fig.subplots_adjust(left=0.05, right=0.89, bottom=0.15, top=0.95, wspace=0.05)
     fig.savefig(os.path.join(outdir, "probe_cpg_dist.png"), dpi=200)
+
+    # export the probe regions for each patient to a BED file for motif enrichment
+    # probes are CpG +/- 60 bp: https://support.illumina.com/content/dam/illumina-marketing/documents/products/technotes/technote_cpg_loci_identification.pdf
+    probe_half_len = 61
+    for pid in pids:
+        this_regions = {}
+        for typ in ['dmr', 'hyper', 'hypo']:
+            ps = pid_sets[typ][pid]
+            this_anno = anno.loc[ps]
+            for p, row in this_anno:
+                strand = '+' if row.Strand == 'F' else '-'
+                this_regions[p] = [row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
+
+        bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
+        genomics.write_bed_file(this_regions, bed_fn)
 

@@ -183,6 +183,7 @@ def reshape_data(dat):
 def test_cluster_data_values(y1, y2, min_median_change=1.4, method='mwu_permute', test_kwargs=None):
     """
     Runs tests for relevance (min median change) and significance (Mann Whitney U) for the two datasets.
+    The test is run as y1 - y2.
     Mann Whitney is equivalent to the Wilcoxon rank-sum test for independent samples.
     :param y1: Data for group 1. If replicates are included, one column per replicate.
     :param y2: Data for group 2.

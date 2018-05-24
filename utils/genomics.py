@@ -276,3 +276,26 @@ def estimate_number_of_bam_reads(fn, bytes=10000000):
         shell=True
     ))
     return int((reads_in_subsample / float(bytes)) * total_size)
+
+
+def write_bed_file(region_data, fn):
+        """
+        :param region_data: Dict with values defining regions as an iterable of (chrom., start coord, end coord, strand)
+        Keys are the unique names for each region
+        :param fn: Filename to write BED file to
+        """
+        with open(fn, 'wb') as f:
+            c = csv.writer(f, delimiter='\t')
+            for name, row in region_data.items():
+                if not isinstance(name, str):
+                    name = ';'.join(name)
+                c.writerow(
+                    [
+                        row[0],
+                        row[1],
+                        row[2],
+                        name,
+                        '.',  # empty score field
+                        row[3]
+                    ]
+                )
