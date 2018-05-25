@@ -138,8 +138,6 @@ if __name__ == "__main__":
         'hyper': {},
     }
 
-    n_dmr_by_direction = {}
-
     for pid, s in zip(pids, pu_sets):
         for k, v in pid_sets.items():
             if k == 'background':
@@ -149,7 +147,7 @@ if __name__ == "__main__":
 
         the_dmr_res = dmr_res[pid]
         cids = venn_set[s]
-        this_res = pd.DataFrame.from_dict([dmr_res[pid].results[t] for t in cids])
+        this_res = pd.DataFrame.from_dict([the_dmr_res.results[t] for t in cids])
 
         for i, c in enumerate(cids):
             the_probe_ids = the_dmr_res.clusters[c].pids
@@ -230,8 +228,8 @@ if __name__ == "__main__":
     # probes are CpG +/- 60 bp: https://support.illumina.com/content/dam/illumina-marketing/documents/products/technotes/technote_cpg_loci_identification.pdf
     probe_half_len = 61
     for pid in pids:
-        this_regions = {}
         for typ in ['dmr', 'hyper', 'hypo']:
+            this_regions = {}
             ps = pid_sets[typ][pid]
             this_anno = anno.loc[ps]
             for p, row in this_anno.iterrows():
@@ -240,5 +238,61 @@ if __name__ == "__main__":
                 this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
 
             bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
+            genomics.write_bed_file(this_regions, bed_fn)
+
+    # for each patient, repeat this process but with the full set of DMRs
+    n_dmr_by_direction_full = {}
+    pid_sets_full = {}
+    for p in pids:
+        the_dmr_res = dmr_res[p]
+        cids, attrs = zip(*the_dmr_res.results_significant.items())
+        n_dmr_by_direction_full[p] = {
+            'Hyper': len([t for t in attrs if t['median_change'] > 0]),
+            'Hypo': len([t for t in attrs if t['median_change'] < 0]),
+        }
+        # probes
+        the_probe_ids_dmr = set()
+        the_probe_ids_hypo = set()
+        the_probe_ids_hyper = set()
+        for c, a in zip(cids, attrs):
+            the_probe_ids_dmr.update(the_dmr_res.clusters[c].pids)
+            if a['median_change'] > 0:
+                the_probe_ids_hyper.update(the_dmr_res.clusters[c].pids)
+            else:
+                the_probe_ids_hypo.update(the_dmr_res.clusters[c].pids)
+        pid_sets_full.setdefault('dmr', {})[p] = the_probe_ids_dmr
+        pid_sets_full.setdefault('hyper', {})[p] = the_probe_ids_hyper
+        pid_sets_full.setdefault('hypo', {})[p] = the_probe_ids_hypo
+
+
+    # another plot of hypo vs hyper cluster counts, this time on the full lists
+
+    for_plot_full = pd.DataFrame.from_dict(n_dmr_by_direction_full)[[
+        '017', '019', '030', '031', '018', '050', '054', '061', '026', '052'
+    ]].loc[['Hypo', 'Hyper']]
+    for_plot_pct_full = for_plot_full.divide(for_plot_full.sum(), axis=1) * 100.
+    colours = pd.Series({'Hyper': '#FF381F', 'Hypo': '#89CD61'})
+    fig, ax = bar.stacked_bar_chart(for_plot_pct_full, colours=colours)
+    ax.set_ylabel("Percentage of clusters")
+    ax.set_ylim([0, 100])
+    # shrink main axis and put legend on RHS
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+    fig.savefig(os.path.join(outdir, "pct_clusters_by_dm_direction_full.png"), dpi=200)
+
+    # export bed regions for the full lists
+    for pid in pids:
+        for typ in ['dmr', 'hyper', 'hypo']:
+            this_regions = {}
+            ps = pid_sets_full[typ][pid]
+            this_anno = anno.loc[ps]
+            for p, row in this_anno.iterrows():
+                strand = '+' if row.Strand == 'F' else '-'
+                # we'll prepend the chrom name with 'chr' to ensure compatibility with hg19 (built in to Homer)
+                this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
+
+            bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings_full.bed" % (pid, typ))
             genomics.write_bed_file(this_regions, bed_fn)
 
