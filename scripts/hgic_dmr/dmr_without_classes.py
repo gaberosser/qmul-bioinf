@@ -62,8 +62,15 @@ def pair_dmr(me_meta, me_data, dmr_results_obj, pids, **dmr_params):
     return dmr.DmrResultCollection(**dmr_res)
 
 
-def bed_file_from_regions():
-    pass
+def bed_file_from_probes(anno, probes, out_fn):
+    this_regions = {}
+    this_anno = anno.loc[probes]
+    for p, row in this_anno.iterrows():
+        strand = '+' if row.Strand == 'F' else '-'
+        # we'll prepend the chrom name with 'chr' to ensure compatibility with hg19 (built in to Homer)
+        this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
+
+    genomics.write_bed_file(this_regions, out_fn)
 
 
 if __name__ == "__main__":
@@ -177,10 +184,22 @@ if __name__ == "__main__":
     for pid_typ, pid_set in pid_sets.items():
         for pid in pids:
             p = pid_set[pid]
-            this_counts = anno.loc[p, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea).value_counts().to_dict()
+            this_cats = anno.loc[p, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea)
+            this_counts = this_cats.value_counts().to_dict()
             island_counts.setdefault(pid_typ, {}).setdefault(pid, dict(empty_counts))
             for k, v in cats.items():
                 island_counts[pid_typ][pid][v] += this_counts.get(k, 0)
+
+    pid_sets_by_island_status = {}
+    for pid_typ in ['dmr', 'hypo', 'hyper']:
+        pid_sets_by_island_status[pid_typ] =  {}
+        for pid in pids:
+            pid_sets_by_island_status[pid_typ][pid] = {}
+            probes = pid_sets[pid_typ][pid]
+            this_cats = anno.loc[probes, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea)
+            for k, v in cats.items():
+                this_cat_idx = this_cats.loc[probes] == k
+                pid_sets_by_island_status[pid_typ][pid].setdefault(v, set()).update(this_cat_idx.index[this_cat_idx])
 
     # sanity check
     for pid in pids:
@@ -229,20 +248,23 @@ if __name__ == "__main__":
     probe_half_len = 61
     for pid in pids:
         for typ in ['dmr', 'hyper', 'hypo']:
-            this_regions = {}
             ps = pid_sets[typ][pid]
-            this_anno = anno.loc[ps]
-            for p, row in this_anno.iterrows():
-                strand = '+' if row.Strand == 'F' else '-'
-                # we'll prepend the chrom name with 'chr' to ensure compatibility with hg19 (built in to Homer)
-                this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
-
             bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
-            genomics.write_bed_file(this_regions, bed_fn)
+            bed_file_from_probes(anno, ps, bed_fn)
+
+    # repeat with even more granularity: include probe types
+    for pid in pids:
+        for typ in ['dmr', 'hyper', 'hypo']:
+            for cs in cats.values():
+                ps = pid_sets_by_island_status[typ][pid][cs]
+                bed_fn = os.path.join(outdir, "%s_%s_%s_oligo_mappings.bed" % (pid, typ, cs))
+                bed_file_from_probes(anno, ps, bed_fn)
+
 
     # for each patient, repeat this process but with the full set of DMRs
     n_dmr_by_direction_full = {}
     pid_sets_full = {}
+
     for p in pids:
         the_dmr_res = dmr_res[p]
         cids, attrs = zip(*the_dmr_res.results_significant.items())
@@ -264,6 +286,16 @@ if __name__ == "__main__":
         pid_sets_full.setdefault('hyper', {})[p] = the_probe_ids_hyper
         pid_sets_full.setdefault('hypo', {})[p] = the_probe_ids_hypo
 
+    pid_sets_full_by_island_status = {}
+    for pid_typ in ['dmr', 'hypo', 'hyper']:
+        pid_sets_full_by_island_status[pid_typ] =  {}
+        for pid in pids:
+            pid_sets_full_by_island_status[pid_typ][pid] = {}
+            probes = pid_sets_full[pid_typ][pid]
+            this_cats = anno.loc[probes, 'Relation_to_UCSC_CpG_Island'].fillna(k_open_sea)
+            for k, v in cats.items():
+                this_cat_idx = this_cats.loc[probes] == k
+                pid_sets_full_by_island_status[pid_typ][pid].setdefault(v, set()).update(this_cat_idx.index[this_cat_idx])
 
     # another plot of hypo vs hyper cluster counts, this time on the full lists
 
@@ -285,14 +317,14 @@ if __name__ == "__main__":
     # export bed regions for the full lists
     for pid in pids:
         for typ in ['dmr', 'hyper', 'hypo']:
-            this_regions = {}
             ps = pid_sets_full[typ][pid]
-            this_anno = anno.loc[ps]
-            for p, row in this_anno.iterrows():
-                strand = '+' if row.Strand == 'F' else '-'
-                # we'll prepend the chrom name with 'chr' to ensure compatibility with hg19 (built in to Homer)
-                this_regions[p] = ["chr%s" % row.CHR, row.MAPINFO - probe_half_len, row.MAPINFO + probe_half_len, strand]
-
             bed_fn = os.path.join(outdir, "%s_%s_oligo_mappings_full.bed" % (pid, typ))
-            genomics.write_bed_file(this_regions, bed_fn)
+            bed_file_from_probes(anno, ps, bed_fn)
 
+    # output to bed file
+    for pid in pids:
+        for typ in ['dmr', 'hyper', 'hypo']:
+            for cs in cats.values():
+                ps = pid_sets_full_by_island_status[typ][pid][cs]
+                bed_fn = os.path.join(outdir, "%s_%s_%s_oligo_mappings_full.bed" % (pid, typ, cs))
+                bed_file_from_probes(anno, ps, bed_fn)
