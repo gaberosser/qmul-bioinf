@@ -144,6 +144,16 @@ class DatasetLoader(object):
         self.meta = self.meta.loc[idx]
         self.data = self.data.loc[:, self.meta.index]
 
+    def filter_samples(self, keep_idx):
+        """
+        Drop samples according to the supplied index. All data structures are updated in-place.
+        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        will be retained.
+        :return:
+        """
+        self.meta = self.meta.loc[keep_idx]
+        self.data = self.data.loc[:, self.meta.index]
+
 
 class SingleFileLoader(DatasetLoader):
     def load_data(self):
@@ -492,3 +502,14 @@ class MultipleBatchLoader(object):
         self.meta = self.meta.loc[idx]
         self.data = self.data.loc[:, self.meta.index]
         self.batch_id = self.batch_id.loc[idx]
+
+    def filter_samples(self, keep_idx):
+        """
+        Drop samples according to the supplied index. All data structures are updated in-place.
+        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        will be retained.
+        :return:
+        """
+        self.meta = self.meta.loc[keep_idx]
+        self.data = self.data.loc[:, self.meta.index]
+        self.batch_id = self.batch_id.loc[self.meta.index]

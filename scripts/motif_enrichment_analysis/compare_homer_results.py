@@ -30,6 +30,17 @@ def process_results(df, fdr=0.01):
     return df
 
 
+def load_one(indir, pid, typ, cpg_status=None):
+    """
+
+    :param indir:
+    :param pid:
+    :param typ:
+    :param cpg_status:
+    :return:
+    """
+
+
 if __name__ == '__main__':
     fdr = 0.01
     base_dir = os.path.join(OUTPUT_DIR, 'dmr_without_classes.3')

@@ -294,6 +294,16 @@ class StarCountLoader(loader.MultipleFileLoader):
         self.data_unassigned = self.data.loc[self.data.index.isin(unal)]
         self.data = self.data.loc[~self.data.index.isin(unal)]
 
+    def filter_samples(self, keep_idx):
+        """
+        Drop samples according to the supplied index. All data structures are updated in-place.
+        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        will be retained.
+        :return:
+        """
+        super(StarCountLoader, self).filter_samples(keep_idx)
+        self.data_unassigned = self.data_unassigned.loc[:, self.meta.index]
+
 
 class SalmonQuantLoader(loader.MultipleFileLoader):
     file_pattern = 'quant.sf'

@@ -52,6 +52,51 @@ def phenotypes_to_cls(groups, outfile):
         c.writerow([cls_map[t] for t in groups])
 
 
+def create_gsea_params_file(outfn, rpt_label='foo', permute='gene_set', **kwargs):
+    """
+    Write a params file that can be used when running GSEA with the -param_file input arg.
+    We apply a set of defaults - any supplied named / kw args will overwrite this.
+    :param outfn:
+    :param rpt_label: The label used as a prefix to the report files
+    :param permute: The type of permutation:
+    phenotype: permute across phenotypes
+    gene_set: permute across genes [default]. This should be used for small numbers of samples.
+    :param kwargs:
+    :return:
+    """
+    defaults = {
+        'collapse': 'false',
+        'norm': 'meandiv',
+        'nperm': 1000,
+        'rnd_type': 'no_balance',
+        'scoring_scheme': 'weighted',
+        'rpt_label': 'RTK_II',
+        'metric': 'Signal2Noise',
+        'sort': 'real',
+        'order': 'descending',
+        'create_gcts': 'false',
+        'create_svgs': 'false',
+        'include_only_symbols': 'true',
+        'make_sets': 'true',
+        'median': 'false',
+        'num': 1000,
+        'plot_top_x': 20,
+        'rnd_seed': 'timestamp',
+        'save_rnd_lists': 'false',
+        'set_max': 500,
+        'set_min': 15,
+        'zip_report': 'false',
+        'gui': 'false'
+    }
+    defaults['rpt_label'] = rpt_label
+    defaults['permute'] = permute
+    defaults.update(kwargs)
+
+    with open(outfn, 'wb') as f:
+        for x in defaults.items():
+            f.write("\t".join([str(t) for t in x]) + "\n")
+
+
 def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ecdf=False):
     """
     Run single sample gene set enrichment analysis (ssGSEA) on the supplied data, following the details given in:
