@@ -117,23 +117,31 @@ wtchg_p170644 = RnaSeqFileLocations(
     alignment_subdir='human',
 )
 
+wtchg_p180199 = RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p180199'),
+    alignment_subdir='human',
+)
+
 PATIENT_LOOKUP_CC = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
         ('GBM017_P4', wtchg_p170390),
         ('DURA017_NSC_N3C5_P4', wtchg_p170390),
+        ('DURA017_FB_P7', wtchg_p180199),
     ],
     '018': [
         ('GBM018_P12', wtchg_p170218),
         ('GBM018_P10', wtchg_p160704),
         ('DURA018_NSC_N4_P4', wtchg_p170218),
         ('DURA018_NSC_N2_P6', wtchg_p160704),
+        ('DURA018_FB_P6', wtchg_p180199),
     ],
     '019': [
         ('GBM019_P4', wtchg_p160704),
         ('GBM019_P3n6', wtchg_p170390),
         ('DURA019_NSC_N8C_P2', wtchg_p160704),
         ('DURA019_NSC_N5C1_P2', wtchg_p170582),
+        ('DURA019_IPSC_N8_P13', wtchg_p180199),
     ],
     '024': [
         ('GBM024_P9', wtchg_p160704),
@@ -143,18 +151,21 @@ PATIENT_LOOKUP_CC = {
         ('GBM026_P8', wtchg_p160704),
         ('GBM026_P3n4', wtchg_p170218),
         ('DURA026_NSC_N31D_P5', wtchg_p160704),
+        ('DURA026_FB_P8', wtchg_p180199),
     ],
     '030': [
         ('GBM030_P9n10', wtchg_p170390),
         ('GBM030_P5', wtchg_p170218),
         ('DURA030_NSC_N16B6_P1', wtchg_p170218),
         ('DURA030_NSC_N9_P2', wtchg_p170582),
+        ('DURA030_IPSC_N16B6_P13', wtchg_p180199),
     ],
     '031': [
         ('GBM031_P7', wtchg_p170390),
         ('GBM031_P4', wtchg_p160704),
         ('DURA031_NSC_N44B_P2', wtchg_p160704),
         ('DURA031_NSC_N44_P3', wtchg_p170582),
+        ('DURA031_IPSC_N44B_P10', wtchg_p180199),
     ],
     '044': [
         ('GBM044_P4', wtchg_p170218),
@@ -162,9 +173,14 @@ PATIENT_LOOKUP_CC = {
         ('DURA044_NSC_N17_P3', wtchg_p170218),
         ('DURA044_NSC_N8_P2', wtchg_p170218),
     ],
+    '047': [
+        ('GBM047_P8', wtchg_p180199),
+    ],
     '049': [
-        ('GBM049_P4', wtchg_p170503),
-        ('GBM049_P6', wtchg_p170503),
+        # ('GBM049_P4', wtchg_p170503),  # IDH1 mutant switchover
+        # ('GBM049_P6', wtchg_p170503),  # IDH1 mutant switchover
+        ('GBM049_P7', wtchg_p180199),
+        ('GBM049_P9', wtchg_p180199),
         ('DURA049_NSC_N19_P4', wtchg_p170503),
         ('DURA049_NSC_N5_P2', wtchg_p170503),
         ('DURA049_IPSC_N5_P10', wtchg_p170582)
@@ -174,20 +190,23 @@ PATIENT_LOOKUP_CC = {
         ('GBM050_P9', wtchg_p170503),
         ('DURA050_NSC_N12_P3', wtchg_p170503),
         ('DURA050_NSC_N16_P4', wtchg_p170503),
-        ('DURA050_IPSC_N12_P5', wtchg_p170582)
+        ('DURA050_IPSC_N12_P5', wtchg_p170582),
+        ('DURA050_FB_P7', wtchg_p180199),
     ],
     '052': [
         ('GBM052_P6n7', wtchg_p170503),
         ('GBM052_P4n5', wtchg_p170503),
         ('DURA052_NSC_N4_P3', wtchg_p170503),
         ('DURA052_NSC_N5_P2', wtchg_p170503),
+        ('DURA052_FB_P6', wtchg_p180199)
     ],
     '054': [
         ('GBM054_P4', wtchg_p170503),
         ('GBM054_P6', wtchg_p170503),
         ('DURA054_NSC_N3C_P2', wtchg_p170503),
         ('DURA054_NSC_N2E_P1', wtchg_p170503),
-        ('DURA054_IPSC_N3C_P11', wtchg_p170582)
+        ('DURA054_IPSC_N3C_P11', wtchg_p170582),
+        ('DURA054_FB_P5', wtchg_p180199),
     ],
     '061': [
         ('GBM061_P3', wtchg_p170503),
@@ -196,7 +215,8 @@ PATIENT_LOOKUP_CC = {
         ('DURA061_NSC_N6_P4', wtchg_p170503),
         ('DURA061_NSC_N1_P3', wtchg_p170644),
         ('DURA061_NSC_N1_P5', wtchg_p170644),
-        ('DURA061_IPSC_N4_P5', wtchg_p170582)
+        ('DURA061_IPSC_N4_P5', wtchg_p170582),
+        ('DURA061_FB_P7', wtchg_p180199),
     ],
     'GIBCO': [
         ('GIBCO_NSC_P4', wtchg_p170218),
@@ -210,6 +230,20 @@ PATIENT_LOOKUP_CC = {
         ('3021_2shB', wtchg_p170644),
         ('3021_2shC', wtchg_p170644),
         ('3021_2shB+C', wtchg_p170644),
+    ],
+    'ICb1299': [
+        ('shScr', wtchg_p170218),
+        ('shBmi1', wtchg_p170218),
+        ('shChd7', wtchg_p170218),
+        ('shB+C', wtchg_p170218),
+        ('1299_S', wtchg_p170582),
+        ('1299_B', wtchg_p170582),
+        ('1299_C', wtchg_p170582),
+        ('1299_B+C', wtchg_p170582),
+        ('ICb1299_3Scr', wtchg_p180199),
+        ('ICb1299_3shBmi1', wtchg_p180199),
+        ('ICb1299_3shChd7', wtchg_p180199),
+        ('ICb1299_3shB+C', wtchg_p180199),
     ]
 }
 
