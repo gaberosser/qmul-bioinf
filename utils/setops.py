@@ -249,6 +249,7 @@ def venn_set_to_wide_dataframe(
     return res
 
 
+## TODO: merge this with plotting.venn.upset_plot_with_groups (which looks more efficient?)
 def full_partial_unique_other_sets_from_groups(
         set_labels,
         subgroup_dict
@@ -306,3 +307,13 @@ def full_partial_unique_other_sets_from_groups(
         'specific': sets_unique,
         'mixed': sets_other
     }
+
+
+def specific_sets(set_labels):
+    n = len(set_labels)
+    res = {}
+    for i, lbl in enumerate(set_labels):
+        arr = np.array(['0'] * n)
+        arr[i] = '1'
+        res[lbl] = ''.join(arr)
+    return res

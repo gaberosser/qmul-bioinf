@@ -1,6 +1,6 @@
 import six
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Mm
 import pandas as pd
 from math import *
 
@@ -36,8 +36,7 @@ def _do_formatting(value, format_str):
     return value
 
 
-def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatters=None, rounding=None,
-                include_index=True):
+def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatters=None, include_index=True, units='mm'):
     """Converts a Pandas DataFrame to a PowerPoint table on the given
     Slide of a PowerPoint presentation.
 
@@ -52,11 +51,17 @@ def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatte
      - col_formatters: A n_columns element long list containing format specifications for each column.
      For example ['', ',', '.2'] does no special formatting for the first column, uses commas as thousands separators
      in the second column, and formats the third column as a float with 2 decimal places.
-     - rounding: A n_columns element long list containing a number for each integer column that requires rounding
-     that is then multiplied by -1 and passed to round(). The practical upshot of this is that you can give something like
-     ['', 3, ''], which does nothing for the 1st and 3rd columns (as they aren't integer values), but for the 2nd column,
-     rounds away the 3 right-hand digits (eg. taking 25437 to 25000).
+     - units: Default units are mm, but other options are inches, pt
      """
+    if units.lower() == 'mm':
+        unit_cls = Mm
+    elif units.lower() == 'inches':
+        unit_cls = Inches
+    elif units.lower() == 'pt':
+        unit_cls = Pt
+    else:
+        raise NotImplementedError("Unrecognised units %s" % units)
+
     rows, cols = df.shape
     nrows = rows + 1
     if include_index:
@@ -64,7 +69,14 @@ def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatte
     else:
         ncols = cols
 
-    res = slide.shapes.add_table(nrows, ncols, left, top, width, height)
+    res = slide.shapes.add_table(
+        nrows,
+        ncols,
+        unit_cls(left),
+        unit_cls(top),
+        unit_cls(width),
+        unit_cls(height)
+    )
 
     if colnames is None:
         colnames = list(df.columns)
@@ -91,7 +103,6 @@ def df_to_table(slide, df, left, top, width, height, colnames=None, col_formatte
             if col_formatters is None:
                 text = str(val)
             else:
-                # text = col_formatters[col].format(m[row, col])
                 text = _do_formatting(val, col_formatters[col])
 
             res.table.cell(row + 1, colidx).text = text
@@ -111,13 +122,19 @@ def df_to_powerpoint(filename, df, **kwargs):
      - filename: Filename to save the PowerPoint presentation as
      - df: Pandas DataFrame with the data
 
+     Kwargs:
+     NB. All units are in millimetres, unless a kwarg `unit` is supplied
+     - left: leftmost coordinate
+     - top: margin from top
+     - width, height: hopefully self-explanatory!
+
     All other arguments that can be taken by df_to_table() (such as col_formatters or rounding) can also
     be passed here.
     """
-    kwargs.setdefault('left', 0)
-    kwargs.setdefault('top', 0)
-    kwargs.setdefault('width', 1)
-    kwargs.setdefault('height', 1)
+    kwargs.setdefault('left', 25)
+    kwargs.setdefault('top', 25)
+    kwargs.setdefault('width', 200)
+    kwargs.setdefault('height', 150)
 
     if df.index.dtype != 'O':
         df = df.copy()

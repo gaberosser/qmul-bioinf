@@ -1,4 +1,6 @@
 import csv
+import os
+import re
 import pandas as pd
 from utils.log import get_console_logger
 from utils import rinterface
@@ -160,3 +162,77 @@ def _wang_ssgsea_classification(gct_file, n_perm=1000):
 
 
 wang_ssgsea_classification = rinterface.RFunctionDeferred(_wang_ssgsea_classification, imports=['ssgsea.GBM.classification'])
+
+
+def load_gsea_report_and_pathways(subdir, comparison='GBM', fdr=None, load_top_n_pathways=20):
+    """
+    Load a single GSEA report and (optionally) associated pathway details.
+    :param subdir: Top level subdirectory. We search exhaustively within this to identify candidate GSEA reports.
+    If >1 is found, a warning is issued and one is chosen arbitrarily.
+    :param comparison: String giving the name of the class of interest.
+    :param fdr: If supplied, we use this as a cutoff.
+    :param load_top_n_pathways: The number of pathways to search for when loading details. To disable pathway loading,
+    set this to None.
+    :return:
+    """
+    # dicover the report file to load
+    infiles = []
+    patt = re.compile("gsea_report_for_%s.*\.xls" % comparison)
+    for the_dir, _, the_files in os.walk(subdir):
+        for f in the_files:
+            if re.search(patt, f):
+                infiles.append(os.path.join(the_dir, f))
+
+    if len(infiles) == 0:
+        raise AttributeError("No report files found in subdir %s" % subdir)
+    elif len(infiles) > 1:
+        logger.warning(
+            "Found %d report files within subdirectory %s. Choosing one arbitrarily. "
+            "This may NOT be the desired behaviour!",
+            len(infiles),
+            subdir
+        )
+
+    infile = infiles[0]
+    indir = os.path.split(infile)[0]
+
+    report = pd.read_csv(infile, sep='\t', header=0, index_col=None, usecols=[0, 3, 4, 5, 6, 7, 8])
+    report.columns = [
+        'pathway',
+        'n_gene',
+        'es',
+        'nes',
+        'nom_pval',
+        'fdr',
+        'fwer',
+    ]
+
+    # before filtering, we need to record the pathways
+    pathways_to_load = report.pathway.copy()
+
+    if fdr is not None:
+        report = report.loc[report.fdr <= fdr]
+
+    if load_top_n_pathways is not None:
+        # load pathway details from separate files
+        # in case we have filtered previously, run an intersection
+        pathways_to_load = set(pathways_to_load.values[:load_top_n_pathways]).intersection(report.pathway.values)
+        pathways = {}
+        for p in pathways_to_load:
+            infile = os.path.join(indir, "%s.xls" % p)
+            if not os.path.isfile(infile):
+                logger.error("Unable to find expected file %s. Skipping." % infile)
+            else:
+                the_path = pd.read_csv(infile, sep='\t', header=0, index_col=None, usecols=[1, 5, 6, 7, 8])
+                the_path.columns = [
+                    'name',
+                    'rank_in_gene_list',
+                    'rank_metric',
+                    'running_es',
+                    'core_enrichment'
+                ]
+                the_path['core_enrichment'] = (the_path['core_enrichment'] == 'Yes')
+                pathways[p] = the_path
+        return report, pathways
+    else:
+        return report

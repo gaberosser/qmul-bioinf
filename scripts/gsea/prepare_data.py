@@ -7,75 +7,6 @@ import pandas as pd
 from settings import OUTPUT_DIR
 
 
-""" 
-Running GSEA from the command line - parameters specified in place:
-java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea -res /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.gct -cls /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.cls#GBM_versus_iNSC -gmx /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt -collapse false -norm meandiv -nperm 1000 -permute gene_set -rnd_type no_balance -scoring_scheme weighted -rpt_label RTK_II -metric Signal2Noise -sort real -order descending -create_gcts false -create_svgs false -include_only_symbols true -make_sets true -median false -num 1000 -plot_top_x 20 -rnd_seed timestamp -save_rnd_lists false -set_max 500 -set_min 15 -zip_report false -out /home/gabriel/gsea_home/output/rtk_II -gui false
-
-# Alternatively, use a parameter file. See rnaseq.gsea.create_gsea_params_file. Specify with -params_file
-
-
-#######################################
-# the parallel method for many files: #
-#######################################
-
-runGsea() {
-    # how do I make this globally accessible within parallel? export it?
-    gmx="/home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt"
-    b=$(basename $1 .params)
-    
-    if [[ $b = *"nsc"* ]]; then 
-        c="#GBM_versus_NSC"; 
-    else 
-        c="#GBM_versus_iNSC"; 
-    fi;
-     
-    java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
-    -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
-    -out ./${b} \
-    -param_file ${b}.params
-    
-    STATUS=$?
-    
-    if [ $STATUS == 0 ]; then
-        echo "SUCCESS: ${b}"
-        mv ${b}.gct ${b}.cls ${b}.params ${b}/
-    else
-        echo "FAILED: ${b}"
-    fi    
-}
-# export so that the parallel env has the function in scope
-export -f runGsea
-
-parallel -j 3 runGsea ::: *.params
-
-############################
-# the non-parallel method: #
-############################
-
-for i in *.params; 
-    do b=$(basename $i .params); 
-    if [[ $b = *"nsc"* ]]; then 
-        c="#GBM_versus_NSC"; 
-    else 
-        c="#GBM_versus_iNSC"; 
-    fi; 
-    java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
-    -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
-    -out ./${b} \
-    -param_file ${b}.params
-    
-    STATUS=$?
-    
-    if [ $STATUS == 0 ]; then
-        echo "SUCCESS: ${b}"
-        mv ${b}.gct ${b}.cls ${b}.params ${b}/
-    else
-        echo "FAILED: ${b}"
-    fi
-done
-"""
-
-
 def ens_index_to_gene_symbol(df):
     general.add_gene_symbols_to_ensembl_data(df)
     tmp = df['Gene Symbol'].dropna()
@@ -164,27 +95,77 @@ if __name__ == '__main__':
             out_fn = os.path.join(out_subdir, "%s_%s.{ext}" % (pid, rnm))
             gsea.create_gsea_params_file(out_fn.format(ext='params'), rpt_label="%s_%s" % (pid, rnm))
 
-    if False:
-        # write grouped RTK II data
-        rtkii_pids = ['017', '050', '054']
-        the_idx = dat.columns.str.contains(r'|'.join(rtkii_pids))
-        the_dat = dat.loc[:, the_idx]
-        # the_classes = obj.meta.loc[the_idx, 'type'].values
-        the_classes = pd.Series('GBM', index=the_dat.columns)
-        the_classes.loc[the_classes.index.str.contains('NSC')] = 'iNSC'
+    """
+    At this point, we need to run GSEA.
 
-        out_fn = os.path.join(outdir, "rtkii_fpkm.{ext}")
-        gsea.data_to_gct(the_dat, out_fn.format(ext='gct'))
-        gsea.phenotypes_to_cls(the_classes, out_fn.format(ext='cls'))
+    ##############################################
+    # 1. Running directly from the command line: #
+    ##############################################
 
-        # write grouped RTK I data
-        rtki_pids = ['019', '030', '031']
-        the_idx = dat.columns.str.contains(r'|'.join(rtki_pids))
-        the_dat = dat.loc[:, the_idx]
-        # the_classes = obj.meta.loc[the_idx, 'type'].values
-        the_classes = pd.Series('GBM', index=the_dat.columns)
-        the_classes.loc[the_classes.index.str.contains('NSC')] = 'iNSC'
+    java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea -res /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.gct -cls /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.cls#GBM_versus_iNSC -gmx /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt -collapse false -norm meandiv -nperm 1000 -permute gene_set -rnd_type no_balance -scoring_scheme weighted -rpt_label RTK_II -metric Signal2Noise -sort real -order descending -create_gcts false -create_svgs false -include_only_symbols true -make_sets true -median false -num 1000 -plot_top_x 20 -rnd_seed timestamp -save_rnd_lists false -set_max 500 -set_min 15 -zip_report false -out /home/gabriel/gsea_home/output/rtk_II -gui false
 
-        out_fn = os.path.join(outdir, "rtki_fpkm.{ext}")
-        gsea.data_to_gct(the_dat, out_fn.format(ext='gct'))
-        gsea.phenotypes_to_cls(the_classes, out_fn.format(ext='cls'))
+    #############################
+    # 2. Use a parameters file: #
+    #############################
+
+    # See rnaseq.gsea.create_gsea_params_file.
+    # Specify with -params_file
+
+    for i in *.params;
+        do b=$(basename $i .params);
+        if [[ $b = *"nsc"* ]]; then
+            c="#GBM_versus_NSC";
+        else
+            c="#GBM_versus_iNSC";
+        fi;
+        java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
+        -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
+        -out ./${b} \
+        -param_file ${b}.params
+
+        STATUS=$?
+
+        if [ $STATUS == 0 ]; then
+            echo "SUCCESS: ${b}"
+            mv ${b}.gct ${b}.cls ${b}.params ${b}/
+        else
+            echo "FAILED: ${b}"
+        fi
+    done
+
+    #######################################
+    # 3. parallel method for many files:  #
+    #######################################
+
+    runGsea() {
+        # how do I make this globally accessible within parallel? export it?
+        gmx="/home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt"
+        b=$(basename $1 .params)
+
+        if [[ $b = *"nsc"* ]]; then
+            c="#GBM_versus_NSC";
+        else
+            c="#GBM_versus_iNSC";
+        fi;
+
+        java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
+        -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
+        -out ./${b} \
+        -param_file ${b}.params
+
+        STATUS=$?
+
+        if [ $STATUS == 0 ]; then
+            echo "SUCCESS: ${b}"
+            mv ${b}.gct ${b}.cls ${b}.params ${b}/
+        else
+            echo "FAILED: ${b}"
+        fi
+    }
+    # export so that the parallel env has the function in scope
+    export -f runGsea
+
+    parallel -j 3 runGsea ::: *.params
+
+    """
+    

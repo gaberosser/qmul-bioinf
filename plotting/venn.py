@@ -97,7 +97,7 @@ def upset_set_size_plot(
     set_colours=None,
     order_by_n_members=False,
     include_singletons=False,
-    min_size=None,
+    min_size=1,
     n_plot=None,
     bar_width=0.9,
     point_ms=10,
@@ -123,7 +123,8 @@ def upset_set_size_plot(
     the effect of generating a bar chart that has multiple bunches of descending bars.
     :param include_singletons: If True, singleton sets are included in the main bar. Not really necessary as they are
     also plotted in the lower left bar.
-    :param min_size: If not None, this is used to exclude sets falling below the minimum size.
+    :param min_size: This is used to exclude sets falling below the minimum size. Can be disabled (set to None), but
+    this is pointless since it involves plotting empty sets, which cannot be ordered meaningfully.
     :param n_plot: If not None, this is used to limit the number of sets plotted.
     :param bar_width: Used for plotting bar charts.
     :param point_ms: Size of the circles in the lower right plot.
@@ -179,8 +180,8 @@ def upset_set_size_plot(
 
     if min_size is not None:
         sort_input = dict([
-                              (k, v) for k, v in sort_input.items() if v > min_size
-                              ])
+            (k, v) for k, v in sort_input.items() if v > min_size
+        ])
 
     if order_by_n_members:
         ordered_counts = []
@@ -292,3 +293,116 @@ def upset_set_size_plot(
         'figure': fig
     }
 
+
+def expanded_core_sets(venn_set, subgroup_ind):
+    """
+    Compute the sets that belong to the 'expanded core', which comprises any combination of members that bridges
+    multiple subgroups.
+    :param venn_set: As returned by setops.venn_from_arrays
+    :param subgroup_ind: Dict, keys are the names of the subgroups, values are boolean arrays with the membership for
+    each patient. It's important that the ordering here is the same as venn_set.
+    :return:
+    """
+    ecs = []
+    for k in venn_set:
+        this_k = np.array([t for t in k]).astype(bool)
+        nmatch = 0
+        for grp, grp_idx in subgroup_ind.items():
+            if this_k[grp_idx].any():
+                nmatch += 1
+        if nmatch > 1:
+            # add to the expanded core set
+            ecs.append(k)
+    return ecs
+
+
+def upset_plot_with_groups(
+        data,
+        set_labels,
+        subgroup_ind,
+        subgroup_colours,
+        venn_set=None,
+        other_lbl='Expanded core',
+        specific_lbl='Specific',
+        default_colour='gray',
+        **kwargs
+):
+    """
+    Wrapper around the basic upset plotting function. This allows us to highlight sets that fully or partially
+    overlap with a pre-defined subgroup.
+    :param data: Passed to upset_set_size_plot. Iterable of identifiers used to process venn sets.
+    :param set_labels: Iterable of set labels.
+    :param subgroup_ind: Dictionary, keys are set_labels, entries are Boolean indexes showing which of set_labels
+    are in this subgroup. If ordering is desired, use an OrderedDict.
+    :param subgroup_colours: Dict giving the colour for each of the subsets defined in subgroup ind. For each set S,
+    two entries are needed, keyed `S full` and `S partial`.
+    We can also define two additional colours, which otherwise have default values:
+    `Expanded core` (or whatever `other_lbl` is set to) and `Specific`.
+    :param venn_set: Output of setops.venn_from_arrays(data). Can supply it to skip recomputing.
+    :param other_lbl: Label used to identify those sets that span multiple subgroups.
+    :param specific_lbl: Label used to identify those sets that are specific to a single member.
+    :param kwargs: Passed to upset_set_size_plot
+    :return: Same output as upset plot function.
+    """
+    # UpsetR attribute plots
+    default_colour_other = '#4C72B0'
+    default_colour_specific = '#f4e842'
+
+    if venn_set is None:
+        venn_set, _ = setops.venn_from_arrays(*data)
+
+    # set colours for UpsetR plot
+    sets_full = {}
+    sets_partial = {}
+    sets_unique = []
+
+    ## TODO: merge this with setops.full_partial_unique_other_sets_from_groups
+    for k in venn_set:
+        this_k = np.array([t for t in k]).astype(bool)
+        if this_k.sum() == 1:
+            sets_unique.append(k)
+        elif this_k.sum() > 1:
+            for grp, grp_idx in subgroup_ind.items():
+                n_member = grp_idx.sum()
+                # no other matches
+                if this_k[~grp_idx].sum() == 0:
+                    if this_k[grp_idx].sum() == n_member:
+                        sets_full.setdefault(grp, []).append(k)
+                    else:
+                        sets_partial.setdefault(grp, []).append(k)
+
+    set_colours = []
+    for grp_name in subgroup_ind:
+        k_full = "%s full" % grp_name
+        if grp_name in sets_full:
+            set_colours.append(
+                (k_full, {'sets': sets_full[grp_name], 'colour': subgroup_colours.get(k_full, default_colour)})
+            )
+
+        k_part = "%s partial" % grp_name
+        if grp_name in sets_partial:
+            set_colours.append(
+                (k_part, {'sets': sets_partial[grp_name], 'colour': subgroup_colours.get(k_part, default_colour)})
+            )
+
+    set_colours.append(
+        (other_lbl, {
+            'sets': expanded_core_sets(venn_set, subgroup_ind),
+            'colour': subgroup_colours.get(other_lbl, default_colour_other)
+        }),
+    )
+
+    set_colours.append(
+        (specific_lbl, {
+            'sets': sets_unique,
+            'colour': subgroup_colours.get(specific_lbl, default_colour_specific)
+        }),
+    )
+
+    return upset_set_size_plot(
+        data,
+        set_labels,
+        set_colours=set_colours,
+        default_colour=default_colour,
+        **kwargs
+    )
