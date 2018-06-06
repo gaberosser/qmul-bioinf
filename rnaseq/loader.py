@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 import os
+import glob
 import references
 from load_data import loader
 from load_data.loader import MultipleBatchLoader
@@ -520,11 +521,14 @@ def load_references(
     source='star',
     tax_id=9606,
     batch_names=None,
+    alignment_subdir=None,
     **kwargs
 ):
     """
     Load one or more reference samples
     Optionally add batch names to each
+    :param alignment_subdir: If supplied, this overrides the default behaviour which is using tax_id to set the
+    subdirectory containing the alignment files. This may be necessary, e.g., when trimming is first applied.
     """
     if source == 'star':
         cls = StarCountLoader
@@ -535,12 +539,13 @@ def load_references(
     else:
         raise NotImplementedError()
 
-    if tax_id == 9606:
-        alignment_subdir = 'human'
-    elif tax_id == 10090:
-        alignment_subdir = 'mouse'
-    else:
-        raise ValueError("Unrecognised tax_id %d" % tax_id)
+    if alignment_subdir is None:
+        if tax_id == 9606:
+            alignment_subdir = 'human'
+        elif tax_id == 10090:
+            alignment_subdir = 'mouse'
+        else:
+            raise ValueError("Unrecognised tax_id %d" % tax_id)
 
     # ensure patient IDs are in correct form
     if not hasattr(ref_names, '__iter__'):
@@ -576,3 +581,45 @@ def load_references(
         res = objs[0]
 
     return res
+
+
+def hipsci_ipsc(aggregate_to_gene=True):
+    """
+    Load all samples associated with the HiPSCi database.
+    Since these arrived as pre-computed TSVs, they don't currently belong to a specific loader class
+    TODO: make one?
+    :return:
+    """
+    indir = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'tpm')
+    meta_fn = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'sources.csv')
+
+    # look for a pre-compiled csv file
+    if aggregate_to_gene:
+        fn = os.path.join(indir, 'tpm_values.gene.csv')
+    else:
+        fn = os.path.join(indir, 'tpm_values.transcript.csv')
+
+    meta = None
+
+    if os.path.isfile(fn):
+        logger.info("Found pre-compiled HiPSCi file at %s. Loading from this.", fn)
+        dat = pd.read_csv(fn, header=0, index_col=0)
+    else:
+        if aggregate_to_gene:
+            dat_raw, meta = hipsci_ipsc(False)
+            dat = ensembl_transcript_quant_to_gene(dat_raw, remove_ver=False)
+        else:
+            logger.info("No file at %s. Loading from individual files.", fn)
+            flist = glob.glob(os.path.join(indir, "*.tsv"))
+            col_names = [re.sub(r'^.*\/tpm\/([^\.]*)\.tsv', r'\1', t) for t in flist]
+            dat_dict = dict([
+                (cn, pd.read_csv(f, sep='\t', header=0, index_col=0)['tpm']) for cn, f in zip(col_names, flist)
+            ])
+            dat = pd.DataFrame.from_dict(dat_dict)
+        dat.to_csv(fn)
+
+    if meta is None:
+        meta = pd.read_csv(meta_fn, header=0, index_col=0)
+
+    return dat, meta
+

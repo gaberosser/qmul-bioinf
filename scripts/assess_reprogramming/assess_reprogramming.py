@@ -3,62 +3,62 @@ from plotting import clustering
 from stats import transformations
 import pandas as pd
 import numpy as np
+import copy
+
+
+class SetMe(object):
+    """
+    This is useful to determine which fields need to be set
+    """
 
 
 if __name__ == '__main__':
     pids = ['017', '018', '019', '030', '031', '049', '050', '054', '061', '026', '052']
     min_val = 1
-    source = 'star'
+    source = 'salmon'
+    load_kwds = {'source': source, 'alignment_subdir': SetMe}
     if source == 'salmon':
         units = 'tpm'
-    else:
-        units = None
+        load_kwds['units'] = 'tpm'
+    if source == 'star':
+        # set strandedness as a cue to import for each
+        load_kwds['strandedness'] = SetMe
 
     obj = loader.load_by_patient(pids, source=source)
     dat_home = obj.data.loc[:, obj.meta.type.isin(['iPSC', 'FB'])]
 
-    ref_dats = [
-        (None, 'Yang et al.', loader.load_references('GSE80732', source=source, units=units),),
-        (None, 'Shahbazi et al.', loader.load_references('GSE64882', source=source, units=units),),
-        (None, 'Kelley and Rinn', loader.load_references('GSE38993', source=source, units=units),),
-        (None, 'ENCODE Wold', loader.load_references('encode_roadmap/ENCSR000EYP', source=source, units=units),),
-        (['H1 PSC Costello_PSB'], 'ENCODE Costello', loader.load_references('encode_roadmap/ENCSR950PSB', source=source, units=units),),
-        (['ENCSR000COU rep 1', 'ENCSR000COU rep 2'], 'ENCODE Gingeras', loader.load_references('encode_roadmap/ENCSR000COU', source=source, units=units),),
-        (None, 'ENCODE Gingeras', loader.load_references('encode_roadmap/ENCSR490SQH', source=source, units=units),),
-        (['H1 PSC Ecker_WQY'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR670WQY', source=source, units=units),),
-        (['H1 PSC Ecker_RSE'], 'ENCODE Ecker', loader.load_references('encode_roadmap/ENCSR043RSE', source=source, units=units),),
-    ]
+    dat_hip, meta_hip = loader.hipsci_ipsc(aggregate_to_gene=True)
 
-    ref_arr = []
-    ref_labels = []
-    ref_cols = []
-    batches = []
+    ref_dict = {
+        'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
+        'GSE38993': {'batch': 'Kelley and Rinn', 'strandedness': 'u'},
+        'encode_roadmap/ENCSR000EYP': {'batch': 'ENCODE Wold', 'strandedness': 'u'},
+        'encode_roadmap/ENCSR000COU': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
+        'encode_roadmap/ENCSR490SQH': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
+        'encode_roadmap/ENCSR670WQY': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        'encode_roadmap/ENCSR043RSE': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+    }
 
-    for i, r in enumerate(ref_dats):
-        the_dat = r[2].data
-        if r[0] is not None:
-            the_cols = r[0]
-        else:
-            the_cols = the_dat.columns
-        ref_cols.extend(the_cols)
-        ref_labels.extend(the_dat.columns)
-        ref_arr.append(the_dat)
-        batches.extend([r[1]] * the_dat.shape[1])
+    ref_objs_arr = []
 
-    ref = pd.concat(ref_arr, axis=1)
-    ref.columns = ref_cols
-    batches = pd.Series(batches, index=ref_cols)
-    labels = pd.Series(ref_labels, ref_cols)
-    # ref.index = ref.index.str.replace(r'.[0-9]+$', '')
+    for k, v in ref_dict.items():
+        the_kwds = copy.copy(load_kwds)
+        for k1, v1 in the_kwds.items():
+            if v1 is SetMe:
+                the_kwds[k1] = v.get(k1)
+        the_obj = loader.load_references(k, **the_kwds)
+        the_obj.batch_id = v['batch']
+        ref_objs_arr.append(the_obj)
 
-    # discard Barres irrelevant samples
-    # discard immortalised cell line
-    # discard fibroblasts (careful, need to be selective here)
+    ref_obj = loader.loader.MultipleBatchLoader(ref_objs_arr)
+    dat_ref = ref_obj.data
+
+    # discard irrelevant samples
 
     to_discard = [
-        'INSC fibroblast',
-        'fetal NSC',
-        'H1 NSC',
+        # 'INSC fibroblast',
+        # 'fetal NSC',
+        # 'H1 NSC',
     ]
     for td in to_discard:
         the_idx = ~ref.columns.str.contains(td)
@@ -66,8 +66,22 @@ if __name__ == '__main__':
         batches = batches.loc[the_idx]
         labels = labels.loc[the_idx]
 
-    dat = pd.concat((dat_home, ref), axis=1).dropna(axis=0)
-    dat = dat.loc[(dat > min_val).sum(axis=1) > 6] + 1
+    dat = pd.concat((dat_home, dat_ref), axis=1).dropna(axis=0)
+    meta = pd.concat((obj.meta, ref_obj.meta), axis=0).loc[dat.columns]
+    meta['type'].loc[meta['type'].isnull()] = meta['cell type'].loc[meta['type'].isnull()]
+
+    dat = dat.loc[(dat > min_val).sum(axis=1) > 6]
     dat_qn = transformations.quantile_normalisation(dat)
-    dat = np.log2(dat + 1)
-    cc = pd.DataFrame('k', index=dat.columns, columns=['foo'])
+    dat_qn_log = transformations.quantile_normalisation(np.log2(dat + 1))
+
+    cc = pd.DataFrame('gray', index=dat.columns, columns=['Cell type'])
+    cc.loc[meta['type'] == 'FB'] = '#fff89e'
+    cc.loc[(meta['type'] == 'iPSC') & (meta['batch'].str.contains('wtchg'))] = 'blue'
+    cc.loc[(meta['type'] == 'iPSC') & (~meta['batch'].str.contains('wtchg'))] = '#96daff'
+    cc.loc[meta['type'] == 'ESC'] = 'green'
+    cc.loc[meta['type'] == 'EPS'] = '#7fc97f'
+
+
+    dat = pd.concat((dat_home, dat_ref, dat_hip), axis=1).dropna(axis=0)
+    dat = dat.loc[(dat > min_val).sum(axis=1) > 6]
+    dat_qn = transformations.quantile_normalisation(dat)

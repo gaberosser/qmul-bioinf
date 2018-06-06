@@ -24,7 +24,7 @@ def log_cpm_ecdf_plot(
     :return:
     """
     units = units.lower()
-    if units not in {'counts', 'cpm'}:
+    if units not in {'counts', 'cpm', 'tpm'}:
         raise NotImplementedError("Unrecognised units '%s'" % units)
 
     if ax is None:

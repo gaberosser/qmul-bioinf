@@ -117,10 +117,11 @@ def ensembl_transcript_quant_to_gene(dat, tax_id=9606, remove_ver=True):
     # shouldn't be necessary, but remove transcripts that have no translation
     to_keep = dat.index.intersection(gene_transcript.index)
     if len(to_keep) != dat.shape[0]:
-        to_drop = dat.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
-        print "Discarding %d transcripts that have no associated gene: %s" % (
-            len(to_drop), ', '.join(to_drop)
-        )
+        ## FIXME - columns have changed names?
+        # to_drop = dat.index.difference(gene_transcript.loc[:, 'Transcript stable ID'])
+        # print "Discarding %d transcripts that have no associated gene: %s" % (
+        #     len(to_drop), ', '.join(to_drop)
+        # )
         dat = dat.loc[to_keep]
 
     # gene list in same order as data
