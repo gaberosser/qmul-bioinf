@@ -98,7 +98,7 @@ def variance_stabilizing_transform(data):
 
     rmat = pandas2ri.py2ri(data)
     rmat = robjects.r['data.matrix'](rmat)
-    v = robjects.r['vsn2'](rmat, blind=True)
+    v = robjects.r['vsn2'](rmat)
     v = robjects.r['predict'](v, newdata=rmat)
     dat = np.asarray(v)
     return pd.DataFrame(dat, index=data.index, columns=data.columns)
@@ -163,3 +163,25 @@ def _edger_tmm_normalisation_cpm(count_data):
 
 
 edger_tmm_normalisation_cpm = rinterface.RFunctionDeferred(_edger_tmm_normalisation_cpm, imports=['edgeR'])
+
+
+def quantile_normalisation(df, method='mean'):
+    """
+    Apply quantile normalisation to the supplied pd DataFrame.
+    Assume that samples are in columns.
+    Succinct method taken from https://stackoverflow.com/questions/37935920/quantile-normalization-on-pandas-dataframe
+    :param df:
+    :param method:
+    :return:
+    """
+    t = df.stack().groupby(df.rank(method='first').stack().astype(int))
+    if method == 'mean':
+        rank = t.mean()
+    elif method == 'median':
+        rank = t.median()
+    else:
+        raise NotImplemented("Unrecognised method %s" % method)
+
+    return df.rank(method='min').stack().astype(int).map(rank).unstack()
+
+
