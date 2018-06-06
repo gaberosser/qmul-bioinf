@@ -490,12 +490,16 @@ def load_by_patient(
     for ldr, samples in by_loader.items():
         the_kwargs = dict(ldr.loader_kwargs(source))
         the_kwargs.update(kwargs)
-        objs.append(
-            cls(
-                samples=samples,
-                **the_kwargs
+        try:
+            objs.append(
+                cls(
+                    samples=samples,
+                    **the_kwargs
+                )
             )
-        )
+        except Exception:
+            logger.exception("Failed to load from location %s.", ldr.root_dir)
+            # import ipdb; ipdb.set_trace()
 
     if len(objs) > 1:
         res = loader.MultipleBatchLoader(objs)

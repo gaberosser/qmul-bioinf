@@ -249,13 +249,16 @@ class MultipleFileLoader(DatasetLoader):
         if self.meta_is_linked:
             # get the filenames directly from the meta data
             not_found = []
-            for i, f in self.meta.loc[:, self.meta_col_filename].iteritems():
+            for sn, f in self.meta.loc[:, self.meta_col_filename].iteritems():
                 ff = self.generate_input_path(f)
                 if os.path.isfile(ff):
-                    sn = i
                     inputs.loc[sn] = ff
                 else:
-                    not_found.append(f)
+                    not_found.append(sn)
+
+            if inputs.size == 0:
+                raise AttributeError("No files listed in the meta data were found.")
+
             if len(not_found):
                 if self.verbose:
                     self.logger.warn(
@@ -263,8 +266,20 @@ class MultipleFileLoader(DatasetLoader):
                         len(not_found),
                         ', '.join(not_found)
                     )
-            if inputs.size == 0:
-                raise AttributeError("No files listed in the meta data were found.")
+                    # remove from the samples_to_keep if supplied
+                    if self.samples_to_keep is not None:
+                        ## FIXME?
+                        requested_but_missing = sorted(set(self.samples_to_keep).intersection(not_found))
+                        if len(requested_but_missing) > 0:
+                            self.logger.warn(
+                                "Of the %d samples requested, %d cannot be loaded as they are missing: %s.",
+                                len(self.samples_to_keep),
+                                len(requested_but_missing),
+                                ', '.join(requested_but_missing)
+                            )
+                            for t in self.samples_to_keep:
+                                if t in requested_but_missing:
+                                    self.samples_to_keep.remove(t)
 
         else:
             # no meta file names -> find the files by pattern
@@ -465,7 +480,7 @@ class MultipleBatchLoader(object):
                 else:
                     extra_df_attributes[fld] = pd.concat((extra_df_attributes[fld], getattr(l, fld)), axis=1)
 
-                    # rebuild meta
+            # rebuild meta
             if l.meta is not None:
                 for i in this_meta.index:
                     this_row = dict(blank_meta_row)

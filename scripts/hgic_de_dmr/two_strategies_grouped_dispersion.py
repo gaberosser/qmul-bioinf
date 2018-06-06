@@ -138,54 +138,6 @@ def expanded_core_sets(venn_set, subgroup_ind):
     return ecs
 
 
-def upset_plot_de(de_data, venn_set, subgroup_ind, set_labels):
-    # UpsetR attribute plots
-
-    # set colours for UpsetR plot
-    sets_full = {}
-    sets_partial = {}
-    sets_unique = []
-
-    for k in venn_set:
-        this_k = np.array([t for t in k]).astype(bool)
-        if this_k.sum() == 1:
-            sets_unique.append(k)
-        elif this_k.sum() == 2:
-            for grp, grp_idx in subgroup_ind.items():
-                if this_k[grp_idx].sum() == this_k.sum():
-                    sets_partial.setdefault(grp, []).append(k)
-        elif this_k.sum() == 3:
-            for grp, grp_idx in subgroup_ind.items():
-                if this_k[grp_idx].sum() == this_k.sum():
-                    sets_full.setdefault(grp, []).append(k)
-
-    set_colours = [
-        ('RTK I full', {'sets': sets_full['RTK I'], 'colour': '#0d680f'}),
-        ('RTK I partial', {'sets': sets_partial['RTK I'], 'colour': '#6ecc70'}),
-        ('RTK II full', {'sets': sets_full['RTK II'], 'colour': '#820505'}),
-        ('RTK II partial', {'sets': sets_partial['RTK II'], 'colour': '#d67373'}),
-        ('Expanded core', {'sets': expanded_core_sets(venn_set, subgroup_ind), 'colour': '#4C72B0'}),
-        ('Unique', {'sets': sets_unique, 'colour': '#f4e842'})
-    ]
-
-    # 1. Descending order
-    return venn.upset_set_size_plot(
-        de_data,
-        set_labels,
-        set_colours=set_colours,
-        min_size=10,
-        n_plot=30,
-        default_colour='gray'
-    )
-
-
-def upset_plot_dmr(dmr_data, venn_set, subgroup_ind, set_labels):
-    res = upset_plot_de(dmr_data, venn_set, subgroup_ind, set_labels)
-    res['axes']['main'].set_ylabel('Number of DMRs in set')
-    res['axes']['set_size'].set_xlabel('Number of DMRs in single comparison')
-    return res
-
-
 def de_dmr_hash(dat, cols=('gene', 'dmr_cid')):
     """
     Generate a list of hash values from the supplied DataFrame
@@ -377,25 +329,11 @@ if __name__ == "__main__":
         'RTK I partial': '#6ecc70',
         'RTK II partial': '#d67373',
         'MES partial': '#cc88ea',
-        'mixed': '#4C72B0',
-        'specific': '#f4e842',
+        'Expanded core': '#4C72B0',
+        'Specific': '#f4e842',
     }
 
     sets_all = setops.full_partial_unique_other_sets_from_groups(pids, subgroups)
-    set_colours = []
-    for sg in subgroups:
-        for x in ['full', 'partial']:
-            k = "%s %s" % (sg, x)
-            if sg in sets_all[x]:
-                set_colours.append(
-                    (k, {'sets': sets_all[x][sg], 'colour': subgroup_set_colours[k]})
-                )
-    set_colours.append(
-        ('Expanded core', {'sets': sets_all['mixed'], 'colour': subgroup_set_colours['mixed']})
-    )
-    set_colours.append(
-        ('Specific', {'sets': sets_all['specific'], 'colour': subgroup_set_colours['specific']})
-    )
 
     ##################
     ### Strategy 1 ###
@@ -515,10 +453,11 @@ if __name__ == "__main__":
     venn_set[k_null] = list(dat_s1.index.difference(de_genes_all))
     venn_ct[k_null] = len(venn_set[k_null])
 
-    upset = venn.upset_set_size_plot(
+    upset = venn.upset_plot_with_groups(
         de_by_member,
-        set_labels=pids,
-        set_colours=set_colours,
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
         min_size=10,
         n_plot=30,
         default_colour='gray'
@@ -563,12 +502,20 @@ if __name__ == "__main__":
     venn_set[k_null] = list(set(dmr_res_full_s1[pids[0]].keys()).difference(dmr_id_all))
     venn_ct[k_null] = len(venn_set[k_null])
 
-    upset1 = upset_plot_dmr(
-        dmr_by_member, venn_set, subgroup_ind, pids
+    upset = venn.upset_plot_with_groups(
+        dmr_by_member,
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
+        min_size=10,
+        n_plot=30,
+        default_colour='gray'
     )
+    upset['axes']['main'].set_ylabel('Number of DMRs in set')
+    upset['axes']['set_size'].set_xlabel('Number of DMRs in single comparison')
 
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.png"), dpi=200)
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.tiff"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.png"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.tiff"), dpi=200)
 
     # generate wide-form lists and save to Excel file
     data_for_dmr_table = {}
@@ -791,15 +738,21 @@ if __name__ == "__main__":
 
     excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de_dmr_concordant.xlsx'))
 
-    upset1 = upset_plot_de(
-        de_dmr_by_member_concordant, venn_set, subgroup_ind, pids
+    upset = venn.upset_plot_with_groups(
+        de_dmr_by_member_concordant,
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
+        min_size=5,
+        n_plot=30,
+        default_colour='gray'
     )
-    upset1['axes']['main'].set_ylabel('Number of DM-concordant DE genes in set')
-    upset1['axes']['set_size'].set_xlabel('Number of DM-concordant DE genes\nin single comparison')
-    upset1['gs'].update(bottom=0.11)
+    upset['axes']['main'].set_ylabel('Number of DM-concordant DE genes in set')
+    upset['axes']['set_size'].set_xlabel('Number of DM-concordant DE genes\nin single comparison')
+    upset['gs'].update(bottom=0.11)
 
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
-    upset1['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
 
     ##################
     ### Strategy 2 ###
