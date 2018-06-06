@@ -386,7 +386,13 @@ class MultipleBatchLoader(object):
             except AttributeError:
                 # occurs when we are loading a single file
                 # FIXME: find a better catch - this is too general
-                this_samples = [l.input_files]
+                if hasattr(l, 'input_files'):
+                    # this occurs if l is a single file loader
+                    this_samples = [l.input_files]
+                else:
+                    # this occurs if l is a batch loader
+                    # FIXME: may not give us valid sample names?
+                    this_samples = l.meta.index
 
             # get a copy of the data
             if self.row_indexed:
