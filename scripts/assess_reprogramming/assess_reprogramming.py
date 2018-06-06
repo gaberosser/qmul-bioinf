@@ -81,7 +81,9 @@ if __name__ == '__main__':
     cc.loc[meta['type'] == 'ESC'] = 'green'
     cc.loc[meta['type'] == 'EPS'] = '#7fc97f'
 
+    dend = clustering.dendrogram_with_colours(dat_qn_log, cc, vertical=False)
 
+    # now add all HiPSCi and repeat - don't plot sample names for clarity
     dat = pd.concat((dat_home, dat_ref, dat_hip), axis=1).dropna(axis=0)
     dat = dat.loc[(dat > min_val).sum(axis=1) > 6]
     dat_qn = transformations.quantile_normalisation(dat)
