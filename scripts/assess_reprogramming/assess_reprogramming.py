@@ -1,5 +1,5 @@
 from rnaseq import loader, general, filter
-from plotting import clustering
+from plotting import clustering, common
 from stats import transformations
 import pandas as pd
 import numpy as np
@@ -28,10 +28,11 @@ if __name__ == '__main__':
     dat_home = obj.data.loc[:, obj.meta.type.isin(['iPSC', 'FB'])]
 
     dat_hip, meta_hip = loader.hipsci_ipsc(aggregate_to_gene=True)
+    meta_hip.insert(3, 'batch', 'HipSci')
 
     ref_dict = {
         'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
-        'GSE38993': {'batch': 'Kelley and Rinn', 'strandedness': 'u'},
+        # 'GSE38993': {'batch': 'Kelley and Rinn', 'strandedness': 'u'},
         'encode_roadmap/ENCSR000EYP': {'batch': 'ENCODE Wold', 'strandedness': 'u'},
         'encode_roadmap/ENCSR000COU': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
         'encode_roadmap/ENCSR490SQH': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
@@ -58,13 +59,11 @@ if __name__ == '__main__':
     to_discard = [
         # 'INSC fibroblast',
         # 'fetal NSC',
-        # 'H1 NSC',
+        'H1 NSC',
     ]
     for td in to_discard:
-        the_idx = ~ref.columns.str.contains(td)
-        ref = ref.loc[:, the_idx]
-        batches = batches.loc[the_idx]
-        labels = labels.loc[the_idx]
+        the_idx = ~dat_ref.columns.str.contains(td)
+        dat_ref = dat_ref.loc[:, the_idx]
 
     dat = pd.concat((dat_home, dat_ref), axis=1).dropna(axis=0)
     meta = pd.concat((obj.meta, ref_obj.meta), axis=0).loc[dat.columns]
@@ -83,7 +82,33 @@ if __name__ == '__main__':
 
     dend = clustering.dendrogram_with_colours(dat_qn_log, cc, vertical=False)
 
-    # now add all HiPSCi and repeat - don't plot sample names for clarity
-    dat = pd.concat((dat_home, dat_ref, dat_hip), axis=1).dropna(axis=0)
+    # now add some HiPSCi and repeat
+    n_hipsci = 50
+    rs = np.random.RandomState(42)
+    idx = np.arange(dat_hip.shape[1])
+    rs.shuffle(idx)
+    this_dat_hip = dat_hip.iloc[:, idx[:n_hipsci]]
+    this_meta_hip = meta_hip.loc[this_dat_hip.columns]
+
+    dat = pd.concat((dat_home, dat_ref, this_dat_hip), axis=1).dropna(axis=0)
+    meta = pd.concat((obj.meta, ref_obj.meta, this_meta_hip), axis=0).loc[dat.columns]
+    meta['type'].loc[meta['type'].isnull()] = meta['cell type'].loc[meta['type'].isnull()]
+
     dat = dat.loc[(dat > min_val).sum(axis=1) > 6]
-    dat_qn = transformations.quantile_normalisation(dat)
+    dat_qn_log = transformations.quantile_normalisation(np.log2(dat + 1))
+
+    cc = pd.DataFrame('gray', index=dat.columns, columns=['Cell type', 'Study'])
+
+    cc.loc[meta['type'] == 'FB', 'Cell type'] = '#fff89e'
+    cc.loc[(meta['type'] == 'iPSC') & (meta['batch'].str.contains('wtchg')), 'Cell type'] = 'blue'
+    cc.loc[(meta['type'] == 'iPSC') & (~meta['batch'].str.contains('wtchg')), 'Cell type'] = '#96daff'
+    cc.loc[meta['type'] == 'ESC', 'Cell type'] = 'green'
+    cc.loc[meta['type'] == 'EPS', 'Cell type'] = '#7fc97f'
+
+    batches = meta.batch.unique()
+    n_study = len(batches)
+    study_colours = common.COLOUR_BREWERS[n_study]
+    for i, c in enumerate(study_colours):
+        cc.loc[meta['batch'] == batches[i], 'Study'] = c
+
+    dend = clustering.dendrogram_with_colours(dat_qn_log, cc, vertical=False)

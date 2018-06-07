@@ -610,8 +610,10 @@ def hipsci_ipsc(aggregate_to_gene=True):
             dat = ensembl_transcript_quant_to_gene(dat_raw, remove_ver=False)
         else:
             logger.info("No file at %s. Loading from individual files.", fn)
+            # files may either be .tsv or .tsv.gz
             flist = glob.glob(os.path.join(indir, "*.tsv"))
-            col_names = [re.sub(r'^.*\/tpm\/([^\.]*)\.tsv', r'\1', t) for t in flist]
+            flist += glob.glob(os.path.join(indir, "*.tsv.gz"))
+            col_names = [re.sub(r'^.*\/tpm\/([^\.]*).*', r'\1', t) for t in flist]
             dat_dict = dict([
                 (cn, pd.read_csv(f, sep='\t', header=0, index_col=0)['tpm']) for cn, f in zip(col_names, flist)
             ])

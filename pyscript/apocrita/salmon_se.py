@@ -10,4 +10,4 @@ from pyscript import salmon
 
 
 if __name__ == "__main__":
-    salmon.run_salmon("pe_multilane_apocrita")
+    salmon.run_salmon("se_apocrita")

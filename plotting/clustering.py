@@ -105,6 +105,7 @@ def dendrogram_with_colours(
     fig_kws=None,
     legend_labels=None,
     vertical=True,
+    show_labels=True,
 ):
     """
     IMPORTANT: it is assumed that samples are in COLUMNS. If not, this routine might crash due to memory overflow!
@@ -123,6 +124,8 @@ def dendrogram_with_colours(
     dictionaries as above for each separate legend block
     :param vertical: If True (default), the root is at the top and descendants travel downwards. Otherwise, the root
     is at the left and descendants travel right.
+    :param show_labels: If True (default), include sample labels in the plot. Need to disable this when the number of
+    samples is large.
     :return:
     """
     if distance_threshold is None:
@@ -207,8 +210,9 @@ def dendrogram_with_colours(
         xrot = 0
         yrot = 90
 
-    xax.set_ticks(np.arange(nsample) + 0.5)
-    xax.set_ticklabels(r['ivl'], rotation=xrot)
+    if show_labels:
+        xax.set_ticks(np.arange(nsample) + 0.5)
+        xax.set_ticklabels(r['ivl'], rotation=xrot)
     yax.set_ticks(np.arange(ngroup) + 0.5)
     yax.set_ticklabels(col_colours.columns, rotation=yrot)
 
