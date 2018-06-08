@@ -213,8 +213,11 @@ def dendrogram_with_colours(
     if show_labels:
         xax.set_ticks(np.arange(nsample) + 0.5)
         xax.set_ticklabels(r['ivl'], rotation=xrot)
+    else:
+        xax.set_ticks([])
+
     yax.set_ticks(np.arange(ngroup) + 0.5)
-    yax.set_ticklabels(col_colours.columns, rotation=yrot)
+    yax.set_ticklabels(col_colours.columns[::-1], rotation=yrot)
 
     if legend_labels is not None:
         # draw legend outside of the main axis
