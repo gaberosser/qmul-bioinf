@@ -689,7 +689,9 @@ class DmrResults(object):
         :return:
         """
         # convert classes to a list to ensure reproducible iteration order
-        classes = list(self.classes)
+        classes = []
+        if self._classes is not None:
+            classes = list(self.classes)
         cols = ['cluster_id', 'chr', 'genes'] + \
                ['class_%s' % t for t in classes] + \
                ['median_1', 'median_2', 'median_delta', 'padj']

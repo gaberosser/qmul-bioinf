@@ -4,6 +4,7 @@ import os
 import gzip
 import re
 import multiprocessing as mp
+import numpy as np
 from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 
 from utils import rinterface, log
@@ -612,5 +613,9 @@ def hipsci():
     meta_fn = os.path.join(base_dir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
     data = pd.read_csv(beta_fn, header=0, index_col=0)
-    data = data.loc[:, meta.index].dropna()
+
+    ## FIXME: this is just a workaround because the data file is deliberately incomplete
+    meta = meta.loc[data.columns]
+    meta.insert(1, 'batch', 'HipSci')
+    data = data.dropna().replace(' ', np.nan).astype(float).dropna()
     return meta, data

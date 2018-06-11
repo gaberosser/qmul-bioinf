@@ -1,4 +1,7 @@
 import numpy as np
+from stats import basic
+from matplotlib import pyplot as plt
+
 
 COLOUR_BREWERS = {
     2: ['#1f78b4', '#b2df8a'],
@@ -60,3 +63,64 @@ def align_labels(axs, axis='x'):
         mt = inv.transform([m, 0])[0]
         for ax in axs:
             ax.yaxis.set_label_coords(mt, .5)
+
+
+def ecdf_plot(
+        data_dict,
+        label_dict=None,
+        style_dict=None,
+        xi=None,
+        ax=None,
+        xmin=None,
+        xmax=None,
+        legend=True
+):
+    """
+    Generate a plot showing the ECDF for each of the elements of data_dict.
+    :param data: Iterable of pd.Series or np.array objects, each containing data for one sample.
+    :param label_dict: If supplied, it is a dictionary containing alternative labels to those used in data_dict.
+    Keys must match those in data_dict.
+    :param style_dict:
+    :param xi: Values to use for the x axis of the ECDF. These are automatically sele
+    :param xmin: If specified, data are discarded below this value
+    :param ax:
+    :return:
+    """
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    if xmin is None:
+        xmin = 1e12
+        for v in data_dict.values():
+            xmin = min(xmin, min(v))
+
+    if xmax is None:
+        xmax = -1e12
+        for v in data_dict.values():
+            xmax = max(xmax, max(v))
+
+    if xi is None:
+        xi = np.linspace(xmin, xmax, 100)
+
+    for k, v in data_dict.items():
+        lbl = None
+        sd = {}
+        lbl = k
+        if label_dict is not None:
+            lbl = label_dict[k]
+
+        if style_dict is not None:
+            sd = style_dict[k]
+
+        this_dat = v.loc[v >= xmin]
+        this_ecdf_fun = basic.ecdf_func(this_dat)
+
+        yi = this_ecdf_fun(xi)
+        ax.plot(xi, yi, label=lbl, **sd)
+
+    if legend:
+        ax.legend(loc='lower right')
+
+    return ax

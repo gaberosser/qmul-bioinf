@@ -403,6 +403,8 @@ class MultipleBatchLoader(object):
                 # FIXME: find a better catch - this is too general
                 if hasattr(l, 'input_files'):
                     # this occurs if l is a single file loader
+                    ## FIXME: single file loaders may contain multiple samples
+                    ## in that case, this doesn't spot name clashes!!
                     this_samples = [l.input_files]
                 else:
                     # this occurs if l is a batch loader
