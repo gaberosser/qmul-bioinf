@@ -31,6 +31,7 @@ project_dirs = {
     "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
     "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
     "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
+    "2018-03-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-19'),
     "2018-04-09": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-04-09'),
     "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
     "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
@@ -94,7 +95,9 @@ PATIENT_LOOKUP_CELL = {
         ('GBM019_P3n6', "2017-09-19"),
         ('DURA019_NSC_N8C_P2', '2016-12-19_ucl_genomics'),
         ('DURA019_NSC_N5C1_P2', '2018-01-12'),
-        ('DURA019_FB_P7', '2018-01-12')
+        ('DURA019_FB_P7', '2018-01-12'),
+        ('DURA019_OPC', '2018-03-19'),
+        ('DURA019_IPSC_N8C_P13', '2018-03-19'),
     ],
     '026': [
         ('GBM026_P8', '2016-12-19_ucl_genomics'),
@@ -107,6 +110,7 @@ PATIENT_LOOKUP_CELL = {
         ('DURA030_NSC_N16B6_P1', '2017-05-12'),
         ('DURA030_NSC_N9_P2', '2018-01-12'),
         ('DURA030_FB_P8', '2018-01-12'),
+        ('DURA030_IPSC_N16B6_P13', '2018-03-19'),
     ],
     '031': [
         ('GBM031_P7', "2017-09-19"),
@@ -114,12 +118,15 @@ PATIENT_LOOKUP_CELL = {
         ('DURA031_NSC_N44B_P2', '2016-12-19_ucl_genomics'),
         ('DURA031_NSC_N44F_P3', '2018-01-12'),
         ('DURA031_FB_P7', '2018-01-12'),
+        ('DURA031_OPC', '2018-03-19'),
+        ('DURA031_IPSC_N44B_P10', '2018-03-19'),
     ],
     '044': [
         ('GBM044_P4', '2017-05-12'),
         ('GBM044_P8', '2017-05-12'),
         ('DURA044_NSC_N17_P3', '2017-05-12'),
         ('DURA044_NSC_N8_P2', '2017-05-12'),
+        ('DURA044_OPC', '2018-03-19'),
     ],
     '049': [
         ('GBM049_P4', "2017-08-23"),
@@ -127,6 +134,9 @@ PATIENT_LOOKUP_CELL = {
         ('DURA049_NSC_N19_P4', "2017-08-23"),
         ('DURA049_NSC_N5_P2', "2017-08-23"),
         ('DURA049_IPSC_ N5_P10', '2018-01-12'),
+        ('DURA049_OPC', '2018-03-19'),
+        ('GBM049_P7', '2018-03-19'),
+        ('GBM049_P9', '2018-03-19'),
     ],
     '050': [
         ('GBM050_P7n8', "2017-08-23"),
@@ -135,12 +145,14 @@ PATIENT_LOOKUP_CELL = {
         ('DURA050_NSC_N16_P4', "2017-08-23"),
         ('DURA050_IPSC_N12_P5', "2018-01-12"),
         ('DURA050_FB_P7', "2018-01-12"),
+        ('DURA050_OPC', '2018-03-19'),
     ],
     '052': [
         ('GBM052_P6n7', "2017-09-19"),
         ('GBM052_P4n5', "2017-09-19"),
         ('DURA052_NSC_N4_P3', "2017-09-19"),
         ('DURA052_NSC_N5_P2', "2017-09-19"),
+        ('DURA052_OPC', '2018-03-19'),
     ],
     '054': [
         ('GBM054_P4', "2017-08-23"),
@@ -480,6 +492,19 @@ def load_by_patient(
     res.meta = res.meta.loc[sample_order]
     res.data = res.data.loc[:, res.meta.index]
 
+    # check for missing data and warn if too substantial
+    n_init = res.data.shape[0]
+    dat = res.data.dropna()
+    n_after = dat.shape[0]
+    if (n_init - n_after) / float(n_init) > 0.05:
+        logger.warn(
+            "Dropping probes with null values results in %d probes being lost (%.2f%%). Number remaining: %d.",
+            n_init - n_after,
+            (n_init - n_after) / float(n_init) * 100.,
+            n_after
+        )
+    res.data = dat
+
     return res
 
 
@@ -579,3 +604,13 @@ def encode_450k(norm_method='bmiq', samples=None):
         norm_method=norm_method,
         samples=samples
     )
+
+
+def hipsci():
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation',  'hipsci_ipsc')
+    beta_fn = os.path.join(base_dir, 'beta', 'beta.csv.gz')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    meta = pd.read_csv(meta_fn, header=0, index_col=0)
+    data = pd.read_csv(beta_fn, header=0, index_col=0)
+    data = data.loc[:, meta.index].dropna()
+    return meta, data

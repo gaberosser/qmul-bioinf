@@ -312,7 +312,7 @@ def test_clusters_in_place(clusters, data, samples, min_median_change=1.4, n_job
                 res_all[cl.cluster_id] = test_cluster_data_values(this_y1, this_y2, **test_kwargs)
                 res_all[cl.cluster_id].update(cl.summary_dict)
             except Exception:
-                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+                logger.exception("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
 
     if n_jobs > 1:
         # close pool and wait for execution to complete
@@ -320,8 +320,13 @@ def test_clusters_in_place(clusters, data, samples, min_median_change=1.4, n_job
         for cl, task in jobs.iteritems():
             try:
                 res_all[cl.cluster_id].update(task.get(1e3))
-            except Exception:
-                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+            except Exception as exc:
+                logger.exception(
+                    "Failed on chr %s class %s number %d: %s",
+                    str(cl.chr),
+                    str(cl.cls),
+                    cl.cluster_id,
+                )
 
     if add_nested_classes:
     # for convenience, provide nested dictionaries allowing access to single class type
@@ -393,7 +398,7 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, mht=
                 this_y2 = y2.loc[pids].dropna()
                 res[cl.cluster_id] = test_cluster_data_values(this_y1, this_y2, **test_kwargs)
             except Exception:
-                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+                logger.exception("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
 
     if n_jobs > 1:
         # close pool and wait for execution to complete
@@ -403,7 +408,7 @@ def test_clusters(clusters, data, samples, min_median_change=1.4, n_jobs=1, mht=
             try:
                 res[cl.cluster_id] = task.get(1e3)
             except Exception:
-                logger.error("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
+                logger.exception("Failed on chr %s class %s number %d", str(cl.chr), str(cl.cls), cl.cluster_id)
 
 
     if mht:

@@ -1,4 +1,4 @@
-from rnaseq import loader, general, filter
+from rnaseq import loader
 from plotting import clustering, common
 from stats import transformations
 import pandas as pd
