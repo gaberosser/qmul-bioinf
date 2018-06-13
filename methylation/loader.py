@@ -607,15 +607,30 @@ def encode_450k(norm_method='bmiq', samples=None):
     )
 
 
-def hipsci():
+def hipsci(norm_method='bmiq', n_sample=None):
+    """
+    :oad HipSci methylation array data
+    :param norm_method:
+    :param n_sample: If supplied, use this to limit the numebr of samples loaded.
+    :return:
+    """
     base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation',  'hipsci_ipsc')
-    beta_fn = os.path.join(base_dir, 'beta', 'beta.csv.gz')
+    beta_fn = os.path.join(base_dir, 'beta', 'beta_%s.csv.gz' % norm_method)
+    if not os.path.isfile(beta_fn):
+        raise AttributeError("Unable to find file %s, are you sure you chose a valid norm_method?" % beta_fn)
     meta_fn = os.path.join(base_dir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
-    data = pd.read_csv(beta_fn, header=0, index_col=0)
-
-    ## FIXME: this is just a workaround because the data file is deliberately incomplete
-    meta = meta.loc[data.columns]
+    if n_sample is None:
+        data = pd.read_csv(beta_fn, header=0, index_col=0)
+        data = data.loc[meta.index]
+    else:
+        usecols = meta.index[:n_sample]
+        data = pd.read_csv(beta_fn, header=0, index_col=None, usecols=usecols)
+        row_names = pd.read_csv(beta_fn, header=0, index_col=0, usecols=[0])
+        data.index = row_names.index
+        # not sure if this is necessary
+        data = data.loc[:, usecols]
+        meta = meta.loc[usecols]
     meta.insert(1, 'batch', 'HipSci')
-    data = data.dropna().replace(' ', np.nan).astype(float).dropna()
+    data = data.dropna().astype(float)
     return meta, data

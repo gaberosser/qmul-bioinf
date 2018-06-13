@@ -98,6 +98,7 @@ if __name__ == "__main__":
     pids = ['019', '030', '031', '050', '054']
 
     # these are the only two norming methods available in all data sets
+    # norm_method = 'raw'
     norm_method = 'bmiq'
     # norm_method = 'pbc'
 
@@ -145,7 +146,7 @@ if __name__ == "__main__":
     ref_data = ref_data.loc[:, ref_meta.index]
 
     # HipSci data
-    hip_meta, hip_data = loader.hipsci()
+    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=30)
 
     # clustering genome-wide
 
@@ -310,99 +311,99 @@ if __name__ == "__main__":
             this_comb.drop('%s_H7' % col, axis=1, inplace=True)
         core_dmr_our_ipsc_ref_esc[pid] = this_comb
 
-        # for each PID, plot the Venn diag
-        fig, axs = plt.subplots(nrows=len(pids), figsize=(3, 11))
-        for i, pid in enumerate(pids):
-            ax = axs[i]
-            this_sets = []
-            for r in ['H9', 'H7']:
-                this_res = dmr_res_s2['%s-%s' % (pid, r)]
-                this_sets.append(this_res.results_significant.keys())
-            venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
-            ax.set_title(pid)
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_our_ipsc_vs_ref.png"), dpi=200)
+    # for each PID, plot the Venn diag
+    fig, axs = plt.subplots(nrows=len(pids), figsize=(3, 11))
+    for i, pid in enumerate(pids):
+        ax = axs[i]
+        this_sets = []
+        for r in ['H9', 'H7']:
+            this_res = dmr_res_s2['%s-%s' % (pid, r)]
+            this_sets.append(this_res.results_significant.keys())
+        venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
+        ax.set_title(pid)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_our_ipsc_vs_ref.png"), dpi=200)
 
-        # starting with core DMRs, split into hyper and hypo and check agreement between refs
-        our_ipsc_ref_esc_direction = {}
-        for pid, v in core_dmr_our_ipsc_ref_esc.items():
-            disagree_ix = np.sign(v.median_delta_H7) != np.sign(v.median_delta_H9)
-            n_disagree = disagree_ix.sum()
-            print "Patient %s. Of the %d DMRs (iPSC - ref. ESC), %d do not agree in direction." % (
-                pid, v.shape[0], n_disagree
+    # starting with core DMRs, split into hyper and hypo and check agreement between refs
+    our_ipsc_ref_esc_direction = {}
+    for pid, v in core_dmr_our_ipsc_ref_esc.items():
+        disagree_ix = np.sign(v.median_delta_H7) != np.sign(v.median_delta_H9)
+        n_disagree = disagree_ix.sum()
+        print "Patient %s. Of the %d DMRs (iPSC - ref. ESC), %d do not agree in direction." % (
+            pid, v.shape[0], n_disagree
+        )
+        this_med_delta = v.loc[~disagree_ix].median_delta_H9
+        our_ipsc_ref_esc_direction[pid] = {
+            'hypo': (this_med_delta < 0).sum(),
+            'hyper': (this_med_delta > 0).sum(),
+        }
+    our_ipsc_ref_esc_direction = pd.DataFrame.from_dict(our_ipsc_ref_esc_direction)
+    ax = our_ipsc_ref_esc_direction.transpose().plot.bar()
+    ax.figure.savefig(os.path.join(outdir, "our_ipsc_esc_ref_dmr_direction.png"), dpi=200)
+
+
+    # DMRs: iPSC (HipSci) vs ESC
+    # Let's use H7 and H9 by Zimmerlin for this purpose
+    res_hipsci_esc = {}
+    suff = ' hESC_Zimmerlin et al.'
+    hip_ids = hip_meta.index[:12]
+    for pid in hip_ids:
+        for r in ['H9', 'H7']:
+            this = dmr_clusters.copy()
+            the_idx1 = meta.index.str.contains(pid) & (meta.loc[:, 'type'] == 'iPSC')
+            the_idx2 = meta.index == (r + suff)
+            the_idx = the_idx1 | the_idx2
+            the_groups = meta.loc[the_idx, 'type'].values
+            the_samples = meta.index[the_idx].groupby(the_groups)
+            the_samples = [the_samples['iPSC'], the_samples['ESC']]
+
+            this.test_clusters(
+                dat_m,
+                samples=the_samples,
+                n_jobs=dmr_params['n_jobs'],
+                min_median_change=dmr_params['delta_m_min'],
+                method=dmr_params['dmr_test_method'],
+                alpha=dmr_params['alpha'],
+                **dmr_params['test_kwargs']
             )
-            this_med_delta = v.loc[~disagree_ix].median_delta_H9
-            our_ipsc_ref_esc_direction[pid] = {
-                'hypo': (this_med_delta < 0).sum(),
-                'hyper': (this_med_delta > 0).sum(),
-            }
-        our_ipsc_ref_esc_direction = pd.DataFrame.from_dict(our_ipsc_ref_esc_direction)
-        ax = our_ipsc_ref_esc_direction.transpose().plot.bar()
-        ax.figure.savefig(os.path.join(outdir, "our_ipsc_esc_ref_dmr_direction.png"), dpi=200)
+            res_hipsci_esc["%s-%s" % (pid, r)] = this
+    dmr_res_hipsci_esc = dmr.DmrResultCollection(**res_hipsci_esc)
 
+    # for each PID, define the core DMRs (shared by both ref comparisons)
+    core_dmr_hipsci_ref_esc = {}
+    for pid in hip_ids:
+        this_sets = []
+        for r in ['H9', 'H7']:
+            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
+            this_sets.append(this_res.results_significant.keys())
+        core_cids = setops.reduce_intersection(*this_sets)
+        tbls = []
+        for r in ['H9', 'H7']:
+            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
+            ## FIXME: this ugly hack is necessary if classes are not defined (make it not so) to run to_table
+            this_res._classes = []
+            this_tbl = this_res.to_table(include='significant', skip_geneless=False).loc[core_cids]
+            this_tbl.columns = ["%s_%s" % (t, r) for t in this_tbl.columns]
+            tbls.append(this_tbl)
+        this_comb = pd.concat(tbls, axis=1)
+        for col in ['chr', 'genes', 'median_1']:
+            this_comb.insert(0, col, this_comb['%s_H9' % col])
+            this_comb.drop('%s_H9' % col, axis=1, inplace=True)
+            this_comb.drop('%s_H7' % col, axis=1, inplace=True)
+        core_dmr_hipsci_ref_esc[pid] = this_comb
 
-        # DMRs: iPSC (HipSci) vs ESC
-        # Let's use H7 and H9 by Zimmerlin for this purpose
-        res_hipsci_esc = {}
-        suff = ' hESC_Zimmerlin et al.'
-        hip_ids = hip_meta.index[:12]
-        for pid in hip_ids:
-            for r in ['H9', 'H7']:
-                this = dmr_clusters.copy()
-                the_idx1 = meta.index.str.contains(pid) & (meta.loc[:, 'type'] == 'iPSC')
-                the_idx2 = meta.index == (r + suff)
-                the_idx = the_idx1 | the_idx2
-                the_groups = meta.loc[the_idx, 'type'].values
-                the_samples = meta.index[the_idx].groupby(the_groups)
-                the_samples = [the_samples['iPSC'], the_samples['ESC']]
-
-                this.test_clusters(
-                    dat_m,
-                    samples=the_samples,
-                    n_jobs=dmr_params['n_jobs'],
-                    min_median_change=dmr_params['delta_m_min'],
-                    method=dmr_params['dmr_test_method'],
-                    alpha=dmr_params['alpha'],
-                    **dmr_params['test_kwargs']
-                )
-                res_hipsci_esc["%s-%s" % (pid, r)] = this
-        dmr_res_hipsci_esc = dmr.DmrResultCollection(**res_hipsci_esc)
-
-        # for each PID, define the core DMRs (shared by both ref comparisons)
-        core_dmr_hipsci_ref_esc = {}
-        for pid in hip_ids:
-            this_sets = []
-            for r in ['H9', 'H7']:
-                this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-                this_sets.append(this_res.results_significant.keys())
-            core_cids = setops.reduce_intersection(*this_sets)
-            tbls = []
-            for r in ['H9', 'H7']:
-                this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-                ## FIXME: this ugly hack is necessary if classes are not defined (make it not so) to run to_table
-                this_res._classes = []
-                this_tbl = this_res.to_table(include='significant', skip_geneless=False).loc[core_cids]
-                this_tbl.columns = ["%s_%s" % (t, r) for t in this_tbl.columns]
-                tbls.append(this_tbl)
-            this_comb = pd.concat(tbls, axis=1)
-            for col in ['chr', 'genes', 'median_1']:
-                this_comb.insert(0, col, this_comb['%s_H9' % col])
-                this_comb.drop('%s_H9' % col, axis=1, inplace=True)
-                this_comb.drop('%s_H7' % col, axis=1, inplace=True)
-            core_dmr_hipsci_ref_esc[pid] = this_comb
-
-        # for each PID, plot the Venn diag
-        fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(9, 8))
-        for i, pid in enumerate(hip_ids):
-            ax = axs.flat[i]
-            this_sets = []
-            for r in ['H9', 'H7']:
-                this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-                this_sets.append(this_res.results_significant.keys())
-            venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
-            ax.set_title(pid)
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_hipsci_ipsc_vs_ref.png"), dpi=200)
+    # for each PID, plot the Venn diag
+    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(9, 8))
+    for i, pid in enumerate(hip_ids):
+        ax = axs.flat[i]
+        this_sets = []
+        for r in ['H9', 'H7']:
+            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
+            this_sets.append(this_res.results_significant.keys())
+        venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
+        ax.set_title(pid)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_hipsci_ipsc_vs_ref.png"), dpi=200)
 
     # starting with core DMRs, split into hyper and hypo and check agreement between refs
     hipsci_ref_esc_direction = {}
