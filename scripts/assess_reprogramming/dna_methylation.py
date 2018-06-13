@@ -123,7 +123,7 @@ if __name__ == "__main__":
     # discard unneeded samples
     our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB'])]
     our_data = our_data.loc[:, our_meta.index]
-    our_meta['batch'] = 'Our data'
+    our_meta.loc[:, 'batch'] = 'Our data'
 
     # ref data
     refs = [

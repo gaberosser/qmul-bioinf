@@ -503,11 +503,15 @@ class MultipleBatchLoader(object):
                     meta_auto_idx += 1
 
         self.meta = pd.DataFrame(meta_values, index=meta_index, columns=meta_cols)
+        if intersection_only:
+            join = 'inner'
+        else:
+            join = 'outer'
 
         if self.row_indexed:
             dat = pd.concat(
                 [row_indexed_dat_arr[k] for k in self.meta.index],
-                axis=1
+                axis=1, sort=True, join=join
             )
 
         self.data = dat

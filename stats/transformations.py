@@ -183,5 +183,3 @@ def quantile_normalisation(df, method='mean'):
         raise NotImplemented("Unrecognised method %s" % method)
 
     return df.rank(method='min').stack().astype(int).map(rank).unstack()
-
-
