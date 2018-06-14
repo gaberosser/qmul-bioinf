@@ -1,5 +1,5 @@
 from methylation import loader, dmr, process
-from plotting import clustering, common, venn
+from plotting import clustering, common, venn, pca as pca_plotting
 from stats import transformations
 import pandas as pd
 import numpy as np
@@ -7,11 +7,60 @@ import copy
 import os
 from utils import output, setops
 import references
-from scipy.stats import zscore
+from scipy.stats import zscore, spearmanr
+from scipy.cluster import hierarchy as hc
 import numpy as np
 import multiprocessing as mp
 from matplotlib import pyplot as plt
 import seaborn as sns
+from sklearn.decomposition import pca
+
+
+def init_pool_shared_obj(obj):
+    global the_obj
+    the_obj = obj
+
+
+def spearmanr_compute_one(i, j):
+    return spearmanr(the_obj.iloc[:, i], the_obj.iloc[:, j])[0]
+
+
+def spearman_rank_corr(dat, n_job=None):
+    """
+    For the supplied data, generate a square matrix with the Spearman rank corr coeff for each pairwise comparison.
+    Parallelise this as it can be quite slow.
+    :param dat: pd.DataFrame, samples in columns, features in rows.
+    :return: Symmetric pd.DataFrame, containing the corr coeff for each comparison
+    """
+    pool = None
+    jobs = {}
+    m, n = dat.shape
+    if (m * n) > 50000:
+        if n_job is None:
+            n_job = mp.cpu_count()
+        if n_job > 1:
+            pool = mp.Pool(processes=n_job, initializer=init_pool_shared_obj, initargs=(dat,))
+
+    pdist = pd.DataFrame(1., index=dat.columns, columns=dat.columns)
+
+    for i in range(dat.shape[1]):
+        for j in range(i + 1, dat.shape[1]):
+            if pool is None:
+                pdist.iloc[i, j] = spearmanr(dat.iloc[:, i], dat.iloc[:, j])[0]
+                pdist.iloc[j, i] = pdist.iloc[i, j]
+            else:
+                jobs[(i, j)] = pool.apply_async(
+                    spearmanr_compute_one,
+                    args=(i, j)
+                )
+
+    if pool is not None:
+        pool.close()
+        pool.join()
+        for i, j in jobs:
+            pdist.iloc[i, j] = pdist.iloc[j, i] = jobs[(i, j)].get()
+
+    return pdist
 
 
 def construct_colour_array_legend_studies(meta):
@@ -178,7 +227,6 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "edf_our_data_%s.png" % norm_method), dpi=200)
 
-
     # plot distribution of beta values (all data)
     leg_marker = set()
     plt_colours = {
@@ -212,6 +260,12 @@ if __name__ == "__main__":
     # filter data (include only probes meth. in at least n samples)
     dat = dat.loc[(dat > min_val).sum(axis=1) >= n_above_min]
 
+    groups = pd.Series(index=dat.columns)
+    groups[groups.index.str.contains('FB')] = 'FB'
+    groups[groups.index.str.contains('IPSC')] = 'iPSC (this study)'
+    groups[groups.index.str.contains('HPS')] = 'iPSC (HipSci)'
+    groups[groups.index.str.contains('ESC')] = 'ESC'
+
     cc, st = construct_colour_array_legend_studies(meta)
     leg_dict = {
         'Cell type': {
@@ -224,10 +278,72 @@ if __name__ == "__main__":
         'Study': st,
     }
 
+    # PCA
+    pca_colour_map = copy.copy(leg_dict['Cell type'])
+    pca_colour_map['iPSC (HipSci)'] = pca_colour_map.pop('iPSC')
+    p = pca.PCA()
+    pca_dat = p.fit_transform(dat.transpose())
+    fig = plt.figure(figsize=(7, 4))
+    ax = fig.add_subplot(111)
+
+    grp_id, grp_nm = groups.factorize()
+    for i, nm in enumerate(['FB', 'iPSC (HipSci)', 'ESC', 'iPSC (this study)']):
+        this_ix = groups == nm
+        ax.scatter(
+            pca_dat[this_ix, 0],
+            pca_dat[this_ix, 1],
+            c=pca_colour_map[nm],
+            edgecolor='k',
+            zorder=i+1,
+            s=40,
+            label=nm
+        )
+    ax.set_xlabel("Principle component 1")
+    ax.set_ylabel("Principle component 2")
+    ax.legend(frameon=True, edgecolor='k', facecolor='w', framealpha=0.5)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "pca_all_data.png"), dpi=200)
+
+    # MAD for ranking probes by variability across samples
+    mad = transformations.median_absolute_deviation(dat).sort_values(ascending=False)
+
+    # dendrogram
+
+    # Spearman rank correlation distance
+    # pdist = spearman_rank_corr(dat)
+    # dist = hc.distance.squareform(1 - pdist.values)
+    # lnk = hc.linkage(dist)
+    # dend = clustering.dendrogram_with_colours(
+    #     dat,
+    #     cc,
+    #     linkage=lnk,
+    #     vertical=True,
+    #     legend_labels=leg_dict,
+    #     fig_kws={'figsize': [14, 6]}
+    # )
+
+    # Pearson correlation distance
     dend = clustering.dendrogram_with_colours(dat, cc, vertical=True, legend_labels=leg_dict, fig_kws={'figsize': [14, 6]})
+
+    # Pearson with a limited number of probes
+    # dend = clustering.dendrogram_with_colours(dat.loc[mad.index[:5000]], cc, vertical=True, legend_labels=leg_dict, fig_kws={'figsize': [14, 6]})
+
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_all_probes.png"), dpi=200)
 
+    # similar, but clustermap (dendrogram + heatmap)
+    gc = clustering.plot_clustermap(
+        dat.loc[mad.index[:5000]],
+        cmap='RdBu_r',
+        col_linkage=dend['linkage'],
+        col_colors=cc
+    )
+    clustering.add_legend(leg_dict, gc.ax_heatmap, loc='right')
+    gc.gs.update(bottom=0.2, right=0.82)
+
+    gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_all_probes.png"), dpi=200)
+
     # Run DMR: iPSC vs matched FB
+    # TODO: try with ONLY EPIC
 
     # include all probes again
     dat = pd.concat(

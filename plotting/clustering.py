@@ -8,6 +8,27 @@ from matplotlib import pyplot as plt, colors, patches
 from scipy.cluster import hierarchy as hc
 
 
+def add_legend(legend_labels, ax, loc='right'):
+    # draw legend outside of the main axis
+    handles = []
+    for grp, d in legend_labels.items():
+        for ttl, c in d.items():
+            handles.append(patches.Patch(color=colors.colorConverter.to_rgb(c), label=ttl))
+        handles.append(patches.Patch(color='w', alpha=0., label=''))
+    handles.pop()
+
+    if loc == 'right':
+        leg_loc = 'upper left'
+        bbox_to_anchor = (1., 0.9)
+    elif loc == 'top':
+        leg_loc = 'upper right'
+        bbox_to_anchor = (-0.02, 0.9)
+    else:
+        raise NotImplementedError("Unrecogised legend location %s" % loc)
+
+    ax.legend(handles=handles, loc=leg_loc, borderaxespad=0., bbox_to_anchor=bbox_to_anchor)
+
+
 def generate_colour_map_dict(
         meta,
         colname,

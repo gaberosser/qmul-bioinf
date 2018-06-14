@@ -607,19 +607,23 @@ def encode_450k(norm_method='bmiq', samples=None):
     )
 
 
-def hipsci(norm_method='bmiq', n_sample=None):
+def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
     """
     :oad HipSci methylation array data
     :param norm_method:
     :param n_sample: If supplied, use this to limit the numebr of samples loaded.
     :return:
     """
+    if array_type.lower() not in {'all', '450k', 'epic'}:
+        raise AttributeError("array_type %s is not supported" % array_type)
     base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation',  'hipsci_ipsc')
-    beta_fn = os.path.join(base_dir, 'beta', 'beta_%s.csv.gz' % norm_method)
+    beta_fn = os.path.join(base_dir, 'beta', array_type.lower(), 'beta_%s.csv.gz' % norm_method)
     if not os.path.isfile(beta_fn):
         raise AttributeError("Unable to find file %s, are you sure you chose a valid norm_method?" % beta_fn)
     meta_fn = os.path.join(base_dir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
+    ## FIXME: filter by array type if necessary (it's a column in meta)
+
     if n_sample is None:
         data = pd.read_csv(beta_fn, header=0, index_col=0)
         data = data.loc[meta.index]

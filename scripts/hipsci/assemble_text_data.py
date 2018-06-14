@@ -85,9 +85,9 @@ if __name__ == "__main__":
     subdir = os.path.join(outdir, 'EPIC')
     if not os.path.exists(subdir):
         os.makedirs(subdir)
-    epic_res.to_csv(os.path.join(subdir, 'beta_raw.csv'), compression='gzip')
+    epic_res.to_csv(os.path.join(subdir, 'beta_raw.csv.gz'), compression='gzip')
 
     subdir = os.path.join(outdir, '450K')
     if not os.path.exists(subdir):
         os.makedirs(subdir)
-    four50k_res.to_csv(os.path.join(subdir, 'beta_raw.csv'), compression='gzip')
+    four50k_res.to_csv(os.path.join(subdir, 'beta_raw.csv.gz'), compression='gzip')
