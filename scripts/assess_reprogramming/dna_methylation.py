@@ -7,6 +7,7 @@ import copy
 import os
 from utils import output, setops
 import references
+import collections
 from scipy.stats import zscore, spearmanr
 from scipy.cluster import hierarchy as hc
 import numpy as np
@@ -118,6 +119,22 @@ def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=N
     return obj, anno
 
 
+def compute_dmr_clusters(anno, dmr_params):
+    clusters = []
+    cid = 0
+
+    for cc in anno.CHR.unique():
+        coords = anno.loc[anno.CHR == cc, 'MAPINFO'].sort_values()
+        this_clust = dmr.identify_cluster(coords, dmr_params['n_min'], dmr_params['d_max'])
+
+        for cl in this_clust.values():
+            clusters.append(
+                dmr.ProbeCluster(cl, this_anno, cluster_id=cid, chr=cc)
+            )
+            cid += 1
+    return dmr.DmrResults(clusters=clusters, anno=this_anno)
+
+
 def pair_dmr(me_meta, me_data, dmr_clusters, pids, type1='iPSC', type2='FB', **dmr_params):
     res = {}
 
@@ -141,6 +158,36 @@ def pair_dmr(me_meta, me_data, dmr_clusters, pids, type1='iPSC', type2='FB', **d
         )
         res[pid] = this
     return dmr.DmrResultCollection(**res)
+
+
+def combine_data_meta(data_arr, meta_arr, units='beta'):
+    if len(data_arr) != len(meta_arr):
+        raise ValueError("data_arr and meta_arr must have the same size")
+
+    # include all probes again
+    dat = pd.concat(
+        data_arr,
+        axis=1,
+        join='inner'
+    )
+    meta = pd.concat(
+        meta_arr,
+        axis=0,
+        join='outer',
+        sort=True
+    )
+    if units.lower() == 'm':
+        # convert to M values
+        dat = process.m_from_beta(dat)
+
+    # drop any infinite valued probes (should be very few)
+    inft = (~np.isfinite(dat)).sum(axis=1) > 0
+
+    if inft.any():
+        dat = dat.loc[~inft]
+        print "Dropped %d probes with infinite M values" % inft.sum()
+
+    return meta, dat
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir("assess_reprogramming_methylation")
@@ -195,20 +242,20 @@ if __name__ == "__main__":
     ref_data = ref_data.loc[:, ref_meta.index]
 
     # HipSci data
-    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=30)
+    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='epic')
+    # hip_450k_meta, hip_450k_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='450k')
+    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='all')
+    hip_meta.batch = ["HipSci (%s)" % t for t in hip_meta.array_type]
 
     # clustering genome-wide
-
     # iPSC, FB, ESC
-    dat = pd.concat(
+
+    # mix of HipSci samples by array_type
+    meta, dat = combine_data_meta(
         (our_data, ref_data, hip_data),
-        axis=1,
-        join='inner'
+        (our_meta, ref_meta, hip_meta)
     )
-    meta = pd.concat(
-        (our_meta, ref_meta, hip_meta),
-        axis=0
-    )
+
     meta.loc[meta.type == 'PSC', 'type'] = 'ESC'
 
     # plot distribution of beta values (our data only)
@@ -263,7 +310,8 @@ if __name__ == "__main__":
     groups = pd.Series(index=dat.columns)
     groups[groups.index.str.contains('FB')] = 'FB'
     groups[groups.index.str.contains('IPSC')] = 'iPSC (this study)'
-    groups[groups.index.str.contains('HPS')] = 'iPSC (HipSci)'
+    groups[groups.index.isin(hip_epic_meta.index)] = 'iPSC (HipSci EPIC)'
+    # groups[groups.index.isin(hip_450k_meta.index)] = 'iPSC (HipSci 450K)'
     groups[groups.index.str.contains('ESC')] = 'ESC'
 
     cc, st = construct_colour_array_legend_studies(meta)
@@ -279,15 +327,21 @@ if __name__ == "__main__":
     }
 
     # PCA
-    pca_colour_map = copy.copy(leg_dict['Cell type'])
-    pca_colour_map['iPSC (HipSci)'] = pca_colour_map.pop('iPSC')
+    pca_colour_map = collections.OrderedDict([
+        ('FB', '#fff89e'),
+        ('iPSC (HipSci EPIC)', '#96daff'),
+        ('iPSC (HipSci 450K)', '#96ffb2'),
+        ('ESC', 'green'),
+        ('iPSC (this study)', 'blue'),
+    ])
+
     p = pca.PCA()
     pca_dat = p.fit_transform(dat.transpose())
     fig = plt.figure(figsize=(7, 4))
     ax = fig.add_subplot(111)
 
     grp_id, grp_nm = groups.factorize()
-    for i, nm in enumerate(['FB', 'iPSC (HipSci)', 'ESC', 'iPSC (this study)']):
+    for i, nm in enumerate(pca_colour_map.keys()):
         this_ix = groups == nm
         ax.scatter(
             pca_dat[this_ix, 0],
@@ -343,11 +397,23 @@ if __name__ == "__main__":
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_all_probes.png"), dpi=200)
 
     # Run DMR: iPSC vs matched FB
-    # TODO: try with ONLY EPIC
+    meta, dat_m = combine_data_meta(
+        (our_data, hip_epic_data),
+        (our_meta, hip_epic_meta),
+        units='m'
+    )
 
-    # include all probes again
+    this_anno = anno.loc[dat_m.index]
+    dmr_clusters = compute_dmr_clusters(this_anno, dmr_params)
+
+    # DMRs: iPSC vs matched parental FB
+    dmr_res = pair_dmr(meta, dat_m, dmr_clusters, pids, **dmr_params)
+
+    # DMRs: iPSC vs ESC
+    ## TODO: update from here
+
     dat = pd.concat(
-        (our_data, ref_data, hip_data),
+        (our_data, ref_data, hip_epic_data),
         axis=1,
         join='inner'
     )
@@ -358,27 +424,9 @@ if __name__ == "__main__":
 
     if inft.any():
         dat_m = dat_m.loc[~inft]
-        print "Dropped %d probes with infinite M values" % inft.sum()
+        print "EPIC data: Dropped %d probes with infinite M values" % inft.sum()
 
-    this_anno = anno.loc[dat_m.index]
-    clusters = []
-    cid = 0
 
-    for cc in this_anno.CHR.unique():
-        coords = this_anno.loc[anno.CHR == cc, 'MAPINFO'].sort_values()
-        this_clust = dmr.identify_cluster(coords, dmr_params['n_min'], dmr_params['d_max'])
-
-        for cl in this_clust.values():
-            clusters.append(
-                dmr.ProbeCluster(cl, this_anno, cluster_id=cid, chr=cc)
-            )
-            cid += 1
-    dmr_clusters = dmr.DmrResults(clusters=clusters, anno=this_anno)
-
-    # DMRs: iPSC vs matched parental FB
-    dmr_res = pair_dmr(meta, dat_m, dmr_clusters, pids, **dmr_params)
-
-    # DMRs: iPSC vs ESC
     # Let's use H7 and H9 by Zimmerlin for this purpose
     res_s2 = {}
     suff = ' hESC_Zimmerlin et al.'

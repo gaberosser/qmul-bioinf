@@ -635,6 +635,13 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
         # not sure if this is necessary
         data = data.loc[:, usecols]
         meta = meta.loc[usecols]
-    meta.insert(1, 'batch', 'HipSci')
+    if array_type == 'all':
+        meta.insert(1, 'batch', 'HipSci')
+    elif array_type == 'epic':
+        meta.insert(1, 'batch', 'HipSci (EPIC)')
+    elif array_type == '450k':
+        meta.insert(1, 'batch', 'HipSci (450K)')
+    else:
+        raise AttributeError("array_type %s is not supported" % array_type)
     data = data.dropna().astype(float)
     return meta, data
