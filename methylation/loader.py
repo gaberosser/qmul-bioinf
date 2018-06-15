@@ -609,9 +609,9 @@ def encode_450k(norm_method='bmiq', samples=None):
 
 def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
     """
-    :oad HipSci methylation array data
+    Load HipSci methylation array data.
     :param norm_method:
-    :param n_sample: If supplied, use this to limit the numebr of samples loaded.
+    :param n_sample: If supplied, use this to limit the number of samples loaded.
     :return:
     """
     if array_type.lower() not in {'all', '450k', 'epic'}:
@@ -622,11 +622,13 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
         raise AttributeError("Unable to find file %s, are you sure you chose a valid norm_method?" % beta_fn)
     meta_fn = os.path.join(base_dir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
-    ## FIXME: filter by array type if necessary (it's a column in meta)
+
+    if array_type != 'all':
+        meta = meta.loc[meta.array_type.str.lower() == array_type]
 
     if n_sample is None:
         data = pd.read_csv(beta_fn, header=0, index_col=0)
-        data = data.loc[meta.index]
+        data = data.loc[:, meta.index]
     else:
         usecols = meta.index[:n_sample]
         data = pd.read_csv(beta_fn, header=0, index_col=None, usecols=usecols)
@@ -635,6 +637,15 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
         # not sure if this is necessary
         data = data.loc[:, usecols]
         meta = meta.loc[usecols]
-    meta.insert(1, 'batch', 'HipSci')
+
+    if array_type == 'all':
+        meta.insert(1, 'batch', 'HipSci')
+    elif array_type == 'epic':
+        meta.insert(1, 'batch', 'HipSci (EPIC)')
+    elif array_type == '450k':
+        meta.insert(1, 'batch', 'HipSci (450K)')
+    else:
+        raise AttributeError("array_type %s is not supported" % array_type)
+
     data = data.dropna().astype(float)
     return meta, data
