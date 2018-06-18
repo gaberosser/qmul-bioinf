@@ -37,6 +37,9 @@ project_dirs = {
     "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
     "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
     "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
+    "E-MTAB-6194": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194'),
+    "encode_epic": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_EPIC'),
+    "encode_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_450k'),
 }
 
 PATIENT_LOOKUP_FFPE = {
@@ -537,7 +540,7 @@ def load_reference(ref_names, norm_method='pbc', samples=None):
         res = objs[0]
 
     if samples is not None:
-        res = res.filter_by_sample_name(samples)
+        res.filter_by_sample_name(samples)
 
     return res
 

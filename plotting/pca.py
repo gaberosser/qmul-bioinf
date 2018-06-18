@@ -1,5 +1,5 @@
 from scipy.stats import chi2
-from scipy.linalg import expm3, norm
+from scipy.linalg import expm, norm
 import matplotlib.colors as colors
 import seaborn as sns
 from matplotlib import pyplot as plt
@@ -11,7 +11,9 @@ from plotting.threed import plot_ellipsoid
 
 
 def rotation(axis, theta):
-    return expm3(np.cross(np.eye(3), axis/norm(axis)*theta))
+    # was using expm3, but this has been removed in a more recent version of Scipy
+    # check that this still performs as expected (if anything, it should be more accurate)
+    return expm(np.cross(np.eye(3), axis/norm(axis)*theta))
 
 
 def get_cmap(N, cmap='jet'):

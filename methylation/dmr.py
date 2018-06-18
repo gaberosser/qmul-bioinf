@@ -851,8 +851,6 @@ class DmrResultCollection(object):
     Represents a collection of DmrResult objects. All objects must share the same clusters and anno attributes,
     but can differ in the results dictionary.
     """
-    # TODO?
-    # __metaclass__ = _DmrResultCollection
 
     def __init__(self, **objs):
         """

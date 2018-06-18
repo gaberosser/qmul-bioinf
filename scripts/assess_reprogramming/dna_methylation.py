@@ -129,35 +129,10 @@ def compute_dmr_clusters(anno, dmr_params):
 
         for cl in this_clust.values():
             clusters.append(
-                dmr.ProbeCluster(cl, this_anno, cluster_id=cid, chr=cc)
+                dmr.ProbeCluster(cl, anno, cluster_id=cid, chr=cc)
             )
             cid += 1
-    return dmr.DmrResults(clusters=clusters, anno=this_anno)
-
-
-def pair_dmr(me_meta, me_data, dmr_clusters, pids, type1='iPSC', type2='FB', **dmr_params):
-    res = {}
-
-    for pid in pids:
-        this = dmr_clusters.copy()
-        the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == type1)
-        the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == type2)
-        the_idx = the_idx1 | the_idx2
-        the_groups = me_meta.loc[the_idx, 'type'].values
-        the_samples = me_meta.index[the_idx].groupby(the_groups)
-        the_samples = [the_samples[type1], the_samples[type2]]
-
-        this.test_clusters(
-            me_data,
-            samples=the_samples,
-            n_jobs=dmr_params['n_jobs'],
-            min_median_change=dmr_params['delta_m_min'],
-            method=dmr_params['dmr_test_method'],
-            alpha=dmr_params['alpha'],
-            **dmr_params['test_kwargs']
-        )
-        res[pid] = this
-    return dmr.DmrResultCollection(**res)
+    return dmr.DmrResults(clusters=clusters, anno=anno)
 
 
 def combine_data_meta(data_arr, meta_arr, units='beta'):
@@ -188,6 +163,28 @@ def combine_data_meta(data_arr, meta_arr, units='beta'):
         print "Dropped %d probes with infinite M values" % inft.sum()
 
     return meta, dat
+
+
+def aggregate_samples(search_repl_arr, data, meta):
+    data = data.copy()
+    meta = meta.copy()
+    for srch, repl in search_repl_arr:
+        idx = data.columns.str.contains(srch)
+        if idx.sum() == 0:
+            print "No columns matched the search string %s;  skipping" % srch
+            continue
+
+        new_col = data.loc[:, idx].mean(axis=1)
+
+        data = data.loc[:, ~idx]
+        meta_col = meta.loc[data.columns[0]]
+        meta = meta.loc[data.columns]
+
+        data.insert(data.shape[1], repl, new_col, allow_duplicates=True)
+        meta.loc[repl] = meta_col
+    return meta, data
+
+
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir("assess_reprogramming_methylation")
@@ -220,31 +217,79 @@ if __name__ == "__main__":
     our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB'])]
     our_data = our_data.loc[:, our_meta.index]
     our_meta.loc[:, 'batch'] = 'Our data'
+    our_meta.insert(1, 'array_type', 'EPIC')
 
     # ref data
+
+    # Encode EPIC data
+    encode_epic_obj = loader.load_reference(
+        'encode_epic',
+        norm_method=norm_method,
+        samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90']
+    )
+    encode_epic_obj.meta.insert(1, 'array_type', 'EPIC')
+    encode_epic_obj.batch_id = 'Encode EPIC'
+    # encode_epic_obj = loader.encode_epic(norm_method=norm_method, samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90'])
+
+    # Encode 450K data
+    encode_450k_obj = loader.encode_450k(norm_method=norm_method, samples=['H1 hESC'])
+    encode_450k_obj.meta.insert(1, 'array_type', '450K')
+
+    # Zimmerlin et al. (450K, 3 x hESC samples)
+    zimmerlin_obj = loader.gse65214(norm_method=norm_method)
+    zimmerlin_obj.batch_id = 'Zimmerlin et al.'
+    zimmerlin_obj.meta.insert(1, 'array_type', '450K')
+
+    # E-MTAB-6194
+    e6194_obj = loader.load_reference(
+        'E-MTAB-6194',
+        norm_method=norm_method,
+    )
+    discard_ix = e6194_obj.meta.cell_line.isin([
+        'NA07057',
+        'HCT116',
+        'HEL46.11',
+    ])
+    e6194_obj.meta = e6194_obj.meta.loc[~discard_ix]
+    e6194_obj.data = e6194_obj.data[e6194_obj.meta.index]
+    e6194_obj.meta.insert(1, 'array_type', 'EPIC')
+
     refs = [
-        ('Kim et al.', loader.gse38216(norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2', 'H9 NPC 1', 'H9 NPC 2'])),
-        ('Zimmerlin et al.', loader.gse65214(norm_method=norm_method)),
-        ('Encode EPIC', loader.encode_epic(norm_method=norm_method)),
-        ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
+        encode_epic_obj,
+        encode_450k_obj,
+        zimmerlin_obj,
+        e6194_obj
     ]
-    for bid, r in refs:
-        r.batch_id = bid
-        r.meta.index = ["%s_%s" % (t, bid) for t in r.meta.index]
+
+    for r in refs:
+        r.meta.index = ["%s_%s" % (t, r.batch_id) for t in r.meta.index]
         r.data.columns = r.meta.index
-    ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
+
+    # refs = [
+    #     ('Kim et al.', loader.gse38216(norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2', 'H9 NPC 1', 'H9 NPC 2'])),
+    #     ('Zimmerlin et al.', loader.gse65214(norm_method=norm_method)),
+    #     ('Encode EPIC', loader.encode_epic(norm_method=norm_method)),
+    #     ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
+    # ]
+    # for bid, r in refs:
+    #     r.batch_id = bid
+    #     r.meta.index = ["%s_%s" % (t, bid) for t in r.meta.index]
+    #     r.data.columns = r.meta.index
+    # ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
+    # ref_meta = ref_obj.meta.loc[ref_obj.meta.index.str.contains('ESC')]
+    # ref_data = ref_data.loc[:, ref_meta.index]
+
+    # combine all loaders
+    # this will reduce the probe list to the intersection (i.e. 450K)
+    ref_obj = loader.loader.MultipleBatchLoader(refs)
 
     ref_meta = ref_obj.meta
     ref_data = ref_obj.data.dropna()
 
-    # drop unneeded ref data
-    ref_meta = ref_obj.meta.loc[ref_obj.meta.index.str.contains('ESC')]
-    ref_data = ref_data.loc[:, ref_meta.index]
-
     # HipSci data
-    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='epic')
+    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
     # hip_450k_meta, hip_450k_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='450k')
-    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='all')
+    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='all')
     hip_meta.batch = ["HipSci (%s)" % t for t in hip_meta.array_type]
 
     # clustering genome-wide
@@ -255,8 +300,6 @@ if __name__ == "__main__":
         (our_data, ref_data, hip_data),
         (our_meta, ref_meta, hip_meta)
     )
-
-    meta.loc[meta.type == 'PSC', 'type'] = 'ESC'
 
     # plot distribution of beta values (our data only)
     xi = np.linspace(0, 1, 101)
@@ -305,40 +348,25 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "edf_all_data_%s.png" % norm_method), dpi=200)
 
     # filter data (include only probes meth. in at least n samples)
-    dat = dat.loc[(dat > min_val).sum(axis=1) >= n_above_min]
+    # dat = dat.loc[(dat > min_val).sum(axis=1) >= n_above_min]
 
-    groups = pd.Series(index=dat.columns)
-    groups[groups.index.str.contains('FB')] = 'FB'
+    # two PCA plots, different groupings
+    p = pca.PCA()
+    pca_dat = p.fit_transform(dat.transpose())
+
+    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(10.3, 5.5))
+
+    # 1. cell type
+    groups = meta.type.copy()
     groups[groups.index.str.contains('IPSC')] = 'iPSC (this study)'
-    groups[groups.index.isin(hip_epic_meta.index)] = 'iPSC (HipSci EPIC)'
-    # groups[groups.index.isin(hip_450k_meta.index)] = 'iPSC (HipSci 450K)'
-    groups[groups.index.str.contains('ESC')] = 'ESC'
-
-    cc, st = construct_colour_array_legend_studies(meta)
-    leg_dict = {
-        'Cell type': {
-            'FB': '#fff89e',
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-        },
-        'Study': st,
-    }
-
-    # PCA
+    # ordered dict to ensure our samples are always on top
     pca_colour_map = collections.OrderedDict([
         ('FB', '#fff89e'),
-        ('iPSC (HipSci EPIC)', '#96daff'),
-        ('iPSC (HipSci 450K)', '#96ffb2'),
+        ('iPSC', '#96ffb2'),
         ('ESC', 'green'),
         ('iPSC (this study)', 'blue'),
     ])
-
-    p = pca.PCA()
-    pca_dat = p.fit_transform(dat.transpose())
-    fig = plt.figure(figsize=(7, 4))
-    ax = fig.add_subplot(111)
+    ax = axs[0]
 
     grp_id, grp_nm = groups.factorize()
     for i, nm in enumerate(pca_colour_map.keys()):
@@ -355,8 +383,58 @@ if __name__ == "__main__":
     ax.set_xlabel("Principle component 1")
     ax.set_ylabel("Principle component 2")
     ax.legend(frameon=True, edgecolor='k', facecolor='w', framealpha=0.5)
+
+    # 2. array type
+    groups = meta.batch.copy()
+    pca_colour_map = dict(zip(meta.batch.unique(), common.COLOUR_BREWERS[len(meta.batch.unique())]))
+    ax = axs[1]
+
+    grp_id, grp_nm = groups.factorize()
+    for i, nm in enumerate(pca_colour_map.keys()):
+        this_ix = groups == nm
+        ax.scatter(
+            pca_dat[this_ix, 0],
+            pca_dat[this_ix, 1],
+            c=pca_colour_map[nm],
+            edgecolor='k',
+            zorder=i+1,
+            s=40,
+            label=nm
+        )
+    ax.set_xlabel("Principle component 1")
+    ax.legend(frameon=True, edgecolor='k', facecolor='w', framealpha=0.5)
+
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "pca_all_data.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "pca_all_data_two_label_sets.png"), dpi=200)
+
+    # same again, zoomed for more detail on ESC/iPSC cluster
+    ax.axis([-40, 5, -8, 8])
+    fig.savefig(os.path.join(outdir, "pca_all_data_two_label_sets_zoom.png"), dpi=200)
+
+    # Clustering / dendrogram
+    # It is helpful to aggregate over some replicates for clarity here
+    # NB before doing so, check the PCA (or clustering) plot(s) to be sure the samples are similar
+    aggr_arr = [
+        ('_HEL141.1_', 'HEL141.1_E-MTAB-6194'),
+        ('_HEL140.1_', 'HEL140.1_E-MTAB-6194'),
+        ('_HEL139.', 'HEL139.1_E-MTAB-6194'),
+        ('_HFF_', 'HFF_E-MTAB-6194'),
+        ('_H9_p50_', 'H9_E-MTAB-6194'),
+    ]
+    meta, dat = aggregate_samples(aggr_arr, dat, meta)
+
+
+    cc, st = construct_colour_array_legend_studies(meta)
+    leg_dict = {
+        'Cell type': {
+            'FB': '#fff89e',
+            'iPSC (this study)': 'blue',
+            'iPSC': '#96daff',
+            'ESC': 'green',
+            'Enhanced PSC': '#7fc97f',
+        },
+        'Study': st,
+    }
 
     # MAD for ranking probes by variability across samples
     mad = transformations.median_absolute_deviation(dat).sort_values(ascending=False)
@@ -396,193 +474,3 @@ if __name__ == "__main__":
 
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_all_probes.png"), dpi=200)
 
-    # Run DMR: iPSC vs matched FB
-    meta, dat_m = combine_data_meta(
-        (our_data, hip_epic_data),
-        (our_meta, hip_epic_meta),
-        units='m'
-    )
-
-    this_anno = anno.loc[dat_m.index]
-    dmr_clusters = compute_dmr_clusters(this_anno, dmr_params)
-
-    # DMRs: iPSC vs matched parental FB
-    dmr_res = pair_dmr(meta, dat_m, dmr_clusters, pids, **dmr_params)
-
-    # DMRs: iPSC vs ESC
-    ## TODO: update from here
-
-    dat = pd.concat(
-        (our_data, ref_data, hip_epic_data),
-        axis=1,
-        join='inner'
-    )
-    # convert to M values
-    dat_m = process.m_from_beta(dat)
-    # drop any infinite valued probes (should be very few)
-    inft = (~np.isfinite(dat_m)).sum(axis=1) > 0
-
-    if inft.any():
-        dat_m = dat_m.loc[~inft]
-        print "EPIC data: Dropped %d probes with infinite M values" % inft.sum()
-
-
-    # Let's use H7 and H9 by Zimmerlin for this purpose
-    res_s2 = {}
-    suff = ' hESC_Zimmerlin et al.'
-    for pid in pids:
-        for r in ['H9', 'H7']:
-            this = dmr_clusters.copy()
-            the_idx1 = meta.index.str.contains(pid) & (meta.loc[:, 'type'] == 'iPSC')
-            the_idx2 = meta.index == (r + suff)
-            the_idx = the_idx1 | the_idx2
-            the_groups = meta.loc[the_idx, 'type'].values
-            the_samples = meta.index[the_idx].groupby(the_groups)
-            the_samples = [the_samples['iPSC'], the_samples['ESC']]
-
-            this.test_clusters(
-                dat_m,
-                samples=the_samples,
-                n_jobs=dmr_params['n_jobs'],
-                min_median_change=dmr_params['delta_m_min'],
-                method=dmr_params['dmr_test_method'],
-                alpha=dmr_params['alpha'],
-                **dmr_params['test_kwargs']
-            )
-            res_s2["%s-%s" % (pid, r)] = this
-    dmr_res_s2 = dmr.DmrResultCollection(**res_s2)
-
-    # for each PID, define the core DMRs (shared by both ref comparisons)
-    core_dmr_our_ipsc_ref_esc = {}
-    for pid in pids:
-        this_sets = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_s2['%s-%s' % (pid, r)]
-            this_sets.append(this_res.results_significant.keys())
-        core_cids = setops.reduce_intersection(*this_sets)
-        tbls = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_s2['%s-%s' % (pid, r)]
-            ## FIXME: this ugly hack is necessary if classes are not defined (make it not so) to run to_table
-            this_res._classes = []
-            this_tbl = this_res.to_table(include='significant', skip_geneless=False).loc[core_cids]
-            this_tbl.columns = ["%s_%s" % (t, r) for t in this_tbl.columns]
-            tbls.append(this_tbl)
-        this_comb = pd.concat(tbls, axis=1)
-        for col in ['chr', 'genes', 'median_1']:
-            this_comb.insert(0, col, this_comb['%s_H9' % col])
-            this_comb.drop('%s_H9' % col, axis=1, inplace=True)
-            this_comb.drop('%s_H7' % col, axis=1, inplace=True)
-        core_dmr_our_ipsc_ref_esc[pid] = this_comb
-
-    # for each PID, plot the Venn diag
-    fig, axs = plt.subplots(nrows=len(pids), figsize=(3, 11))
-    for i, pid in enumerate(pids):
-        ax = axs[i]
-        this_sets = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_s2['%s-%s' % (pid, r)]
-            this_sets.append(this_res.results_significant.keys())
-        venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
-        ax.set_title(pid)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_our_ipsc_vs_ref.png"), dpi=200)
-
-    # starting with core DMRs, split into hyper and hypo and check agreement between refs
-    our_ipsc_ref_esc_direction = {}
-    for pid, v in core_dmr_our_ipsc_ref_esc.items():
-        disagree_ix = np.sign(v.median_delta_H7) != np.sign(v.median_delta_H9)
-        n_disagree = disagree_ix.sum()
-        print "Patient %s. Of the %d DMRs (iPSC - ref. ESC), %d do not agree in direction." % (
-            pid, v.shape[0], n_disagree
-        )
-        this_med_delta = v.loc[~disagree_ix].median_delta_H9
-        our_ipsc_ref_esc_direction[pid] = {
-            'hypo': (this_med_delta < 0).sum(),
-            'hyper': (this_med_delta > 0).sum(),
-        }
-    our_ipsc_ref_esc_direction = pd.DataFrame.from_dict(our_ipsc_ref_esc_direction)
-    ax = our_ipsc_ref_esc_direction.transpose().plot.bar()
-    ax.figure.savefig(os.path.join(outdir, "our_ipsc_esc_ref_dmr_direction.png"), dpi=200)
-
-
-    # DMRs: iPSC (HipSci) vs ESC
-    # Let's use H7 and H9 by Zimmerlin for this purpose
-    res_hipsci_esc = {}
-    suff = ' hESC_Zimmerlin et al.'
-    hip_ids = hip_meta.index[:12]
-    for pid in hip_ids:
-        for r in ['H9', 'H7']:
-            this = dmr_clusters.copy()
-            the_idx1 = meta.index.str.contains(pid) & (meta.loc[:, 'type'] == 'iPSC')
-            the_idx2 = meta.index == (r + suff)
-            the_idx = the_idx1 | the_idx2
-            the_groups = meta.loc[the_idx, 'type'].values
-            the_samples = meta.index[the_idx].groupby(the_groups)
-            the_samples = [the_samples['iPSC'], the_samples['ESC']]
-
-            this.test_clusters(
-                dat_m,
-                samples=the_samples,
-                n_jobs=dmr_params['n_jobs'],
-                min_median_change=dmr_params['delta_m_min'],
-                method=dmr_params['dmr_test_method'],
-                alpha=dmr_params['alpha'],
-                **dmr_params['test_kwargs']
-            )
-            res_hipsci_esc["%s-%s" % (pid, r)] = this
-    dmr_res_hipsci_esc = dmr.DmrResultCollection(**res_hipsci_esc)
-
-    # for each PID, define the core DMRs (shared by both ref comparisons)
-    core_dmr_hipsci_ref_esc = {}
-    for pid in hip_ids:
-        this_sets = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-            this_sets.append(this_res.results_significant.keys())
-        core_cids = setops.reduce_intersection(*this_sets)
-        tbls = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-            ## FIXME: this ugly hack is necessary if classes are not defined (make it not so) to run to_table
-            this_res._classes = []
-            this_tbl = this_res.to_table(include='significant', skip_geneless=False).loc[core_cids]
-            this_tbl.columns = ["%s_%s" % (t, r) for t in this_tbl.columns]
-            tbls.append(this_tbl)
-        this_comb = pd.concat(tbls, axis=1)
-        for col in ['chr', 'genes', 'median_1']:
-            this_comb.insert(0, col, this_comb['%s_H9' % col])
-            this_comb.drop('%s_H9' % col, axis=1, inplace=True)
-            this_comb.drop('%s_H7' % col, axis=1, inplace=True)
-        core_dmr_hipsci_ref_esc[pid] = this_comb
-
-    # for each PID, plot the Venn diag
-    fig, axs = plt.subplots(nrows=3, ncols=4, figsize=(9, 8))
-    for i, pid in enumerate(hip_ids):
-        ax = axs.flat[i]
-        this_sets = []
-        for r in ['H9', 'H7']:
-            this_res = dmr_res_hipsci_esc['%s-%s' % (pid, r)]
-            this_sets.append(this_res.results_significant.keys())
-        venn.venn_diagram(*this_sets, set_labels=['H9', 'H7'], ax=ax)
-        ax.set_title(pid)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "venn_overlap_dmrs_hipsci_ipsc_vs_ref.png"), dpi=200)
-
-    # starting with core DMRs, split into hyper and hypo and check agreement between refs
-    hipsci_ref_esc_direction = {}
-    for pid, v in core_dmr_hipsci_ref_esc.items():
-        disagree_ix = np.sign(v.median_delta_H7) != np.sign(v.median_delta_H9)
-        n_disagree = disagree_ix.sum()
-        print "HipSci %s. Of the %d DMRs (iPSC - ref. ESC), %d do not agree in direction." % (
-            pid, v.shape[0], n_disagree
-        )
-        this_med_delta = v.loc[~disagree_ix].median_delta_H9
-        hipsci_ref_esc_direction[pid] = {
-            'hypo': (this_med_delta < 0).sum(),
-            'hyper': (this_med_delta > 0).sum(),
-        }
-    hipsci_ref_esc_direction = pd.DataFrame.from_dict(hipsci_ref_esc_direction)
-    ax = hipsci_ref_esc_direction.transpose().plot.bar()
-    ax.figure.tight_layout()
-    ax.figure.savefig(os.path.join(outdir, "hipsci_esc_ref_dmr_direction.png"), dpi=200)
