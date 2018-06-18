@@ -1026,6 +1026,22 @@ class DmrResultCollection(object):
 
         return cls(**flat_dict_to_nested(objects))
 
+    def summarise_dmr_count(self, kind='significant'):
+        """
+        Generate a dict summarising the number of DMRs in each result set
+        :param kind: Specify the type of results to include. Valid options: significant, relevant, all
+        :return:
+        """
+        if kind == 'significant':
+            func = lambda x: len(x.results_significant)
+        elif kind == 'relevant':
+            func = lambda x: len(x.results_relevant)
+        elif kind == 'all':
+            func = lambda x: len(x.results)
+        else:
+            raise NotImplementedError("Unrecognised kind of result to include %s" % kind)
+        return self.apply(func)
+
 
 # TODO: work in progress!!
 # class _DmrResultCollection(type):

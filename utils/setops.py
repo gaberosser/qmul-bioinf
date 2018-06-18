@@ -74,14 +74,16 @@ def venn_from_arrays(*args, **kwargs):
     return venn_sets, venn_counts
 
 
-def intersection_with_threshold(min_n=None, *args):
+def intersection_with_threshold(*args, **kwargs):
     """
     Each element in args is an iterable. We compute the intersection amongst all of the items in those iterables.
     If min_n is supplied, we relax the requirement that an item must be in every iterable. Instead, it must be in
     gte min_n of them.
     NB if min_n == 1, we effectively compute a union.
     :param args:
+    :param kwargs: If min_n is specified, use this
     """
+    min_n = kwargs.get('min_n')
     if min_n is None or min_n == len(args):
         return reduce(lambda x, y: set(x).intersection(y), args)
 
