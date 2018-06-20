@@ -7,6 +7,7 @@ import multiprocessing as mp
 from matplotlib import pyplot as plt
 import seaborn as sns
 import os
+from scipy import stats
 from settings import OUTPUT_DIR
 
 
@@ -143,6 +144,29 @@ def run_dmr_set(fn, meta, dat_m, dmr_clusters, anno, comparisons, type1, type2, 
     return res
 
 
+def get_dmr_number_direction(res_obj):
+    out = {}
+    for k in res_obj.keys():
+        this_res = pd.DataFrame(res_obj[k].results_significant)
+        ix = this_res.loc['median_change'] < 0
+        out[k] = {
+            'Hypermethylated': (~ix).sum(),
+            'Hypomethylated': ix.sum(),
+        }
+    return out
+
+
+def get_dmr_cid_direction(res_obj):
+    out = {}
+    for k in res_obj.keys():
+        this_res = pd.DataFrame(res_obj[k].results_significant)
+        ix = this_res.loc['median_change'] < 0
+        out[k] = {
+            'Hypermethylated': this_res.loc[:, ~ix].columns,
+            'Hypomethylated': this_res.loc[:, ix].columns,
+        }
+    return out
+
 
 if __name__ == "__main__":
 
@@ -224,16 +248,28 @@ if __name__ == "__main__":
     dmr_clusters = compute_dmr_clusters(this_anno, dmr_params)
 
     ipsc_ref_names_6194 = ['HEL139', 'HEL140', 'HEL141']
+    ipsc_ref_names_6194_n1 = ['HEL139.2_p17', 'HEL139.5_p14', 'HEL139.8_p13', 'HEL140.1_p12', 'HEL141.1_p11']
+    fb_ref_name_6194_n1 = '27_HFF_p7'
     esc_ref_names = ['H7', 'H9']
 
     # 1. iPSC vs FB
 
-    # 1a) Our iPSC vs matched parental FB
+    # 1a-i) Our iPSC vs our (matched) FB
     fn = os.path.join(indir, "our_ipsc_vs_our_fb.pkl")
     comparisons = {}
     for pid in pids:
         comparisons[pid] = ("DURA%s" % pid, "DURA%s" % pid)
     dmr_res_our_ipsc_vs_our_fb = run_dmr_set(
+        fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
+    )
+
+    # 1a-ii) Our iPSC vs our FB (all possible comparisons)
+    fn = os.path.join(indir, "our_ipsc_vs_our_fb_all.pkl")
+    comparisons = {}
+    for pid in pids:
+        for pid2 in pids:
+            comparisons["%s-%s" % (pid, pid2)] = ("DURA%s" % pid, "DURA%s" % pid2)
+    dmr_res_our_ipsc_vs_our_fb_all = run_dmr_set(
         fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
     )
 
@@ -247,7 +283,7 @@ if __name__ == "__main__":
         fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
     )
 
-    # 1c) E-MTAB-6194 iPSC vs our FB
+    # 1c-i) E-MTAB-6194 iPSC (all replicates) vs our FB
     fn = os.path.join(indir, "e6194_ipsc_vs_our_fb.pkl")
     comparisons = {}
     for pid in pids:
@@ -266,7 +302,26 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 1d) E-MTAB-6194 vs matched FB (only those iPSC derived from CRL2429)
+    # 1c-ii) E-MTAB-6194 iPSC (n=1) vs our FB
+    fn = os.path.join(indir, "e6194_ipsc_n1_vs_our_fb.pkl")
+    comparisons = {}
+    for pid in pids:
+        for r in ipsc_ref_names_6194_n1:
+            comparisons["%s-%s" % (r, pid)] = (r, "DURA%s" % pid)
+
+    dmr_res_e6194_ipsc_n1_vs_our_fb = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1d-i) E-MTAB-6194 (all replicates) vs matched FB (only those iPSC derived from CRL2429)
     fn = os.path.join(indir, "e6194_ipsc_vs_e6194_fb.pkl")
     comparisons = {}
     for r in ['HEL140', 'HEL141']:
@@ -284,7 +339,25 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 1e) Our iPSC vs E-MTAB-6194 FB (CRL2429)
+    # 1d-ii) E-MTAB-6194 (n=1) vs matched FB (n=1)
+    fn = os.path.join(indir, "e6194_ipsc_n1_vs_e6194_fb_n1.pkl")
+    comparisons = {}
+    for r in ipsc_ref_names_6194_n1:
+        comparisons[r] = (r, fb_ref_name_6194_n1)
+
+    dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1 = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1e-i) Our iPSC vs E-MTAB-6194 FB (CRL2429, all replicates)
     fn = os.path.join(indir, "our_ipsc_vs_e6194_fb.pkl")
     comparisons = {}
     for pid in pids:
@@ -302,13 +375,49 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 1f) HipSci iPSC vs E-MTAB-6194 FB (CRL2429)
-    fn = os.path.join(indir, "dmr_res_hipsci_vs_e6194_fb.pkl")
+    # 1e-ii) Our iPSC vs E-MTAB-6194 FB (CRL2429, n=1)
+    fn = os.path.join(indir, "our_ipsc_vs_e6194_fb_n1.pkl")
+    comparisons = {}
+    for pid in pids:
+        comparisons["%s-HFF" % pid] = ("DURA%s" % pid, fb_ref_name_6194_n1)
+
+    dmr_res_our_ipsc_vs_e6194_fb_n1 = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1f-i) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, all replicates)
+    fn = os.path.join(indir, "hipsci_vs_e6194_fb.pkl")
     comparisons = {}
     for hid in hip_epic_meta.index:
         comparisons["%s-HFF" % hid] = ("%s" % hid, "HFF_p7")
 
     dmr_res_hipsci_vs_e6194_fb= run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1f-ii) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, n=1)
+    fn = os.path.join(indir, "hipsci_vs_e6194_fb_n1.pkl")
+    comparisons = {}
+    for hid in hip_epic_meta.index:
+        comparisons["%s-HFF" % hid] = ("%s" % hid, fb_ref_name_6194_n1)
+
+    dmr_res_hipsci_vs_e6194_fb_n1 = run_dmr_set(
         fn,
         meta,
         dat_m,
@@ -440,56 +549,195 @@ if __name__ == "__main__":
 
     # Analyse these results
 
+    colours = {
+        'Hypermethylated': '#e09191',  # red
+        'Hypomethylated': '#91e097',  # green
+    }
+
+    colour_by_pid = {
+        '019': '#7fc97f',
+        '030': '#beaed4',
+        '031': '#fdc086',
+        '050': '#ffff99',
+        '054': '#386cb0',
+    }
+
+    def jitter_points(x, spacing_buffer=1, jitter_step=0.02):
+        curr = 0
+        prev = -1e9
+        out = np.zeros_like(x, dtype=float)
+        for i in np.argsort(x):
+            if np.abs(x[i] - prev) > spacing_buffer:
+                curr = max(0., curr - jitter_step)
+            else:
+                curr += jitter_step
+            out[i] = curr
+            prev = x[i]
+        return out
+
+
+
+    # Our iPSC vs our FB: is there any obvious increased similarity between matched and unmatached comparisons?
+
+    t = pd.DataFrame(get_dmr_number_direction(dmr_res_our_ipsc_vs_our_fb_all)).transpose()
+
+    matched = {}
+    unmatched = {}
+
+    for pid in pids:
+        for pid2 in pids:
+            if pid2 == pid:
+                the_dict = matched
+                loc = 0.
+                scale = 0.
+            else:
+                the_dict = unmatched
+                loc = 1.
+                scale = 0.05
+
+            y = t.loc["%s-%s" % (pid, pid2), 'Hypomethylated']
+            the_dict.setdefault('hypo', {}).setdefault(pid, []).append(y)
+            y = t.loc["%s-%s" % (pid, pid2), 'Hypermethylated']
+            the_dict.setdefault('hyper', {}).setdefault(pid, []).append(y)
+
+    spacings = {
+        'hypo': 2,
+        'hyper': 7,
+    }
+    fig, axs = plt.subplots(1, 2, sharex=True)
+    y = {}
+    c = {}
+    for pid in pids:
+        for i, k in enumerate(['hypo', 'hyper']):
+            ax = axs[i]
+            this_y = unmatched[k][pid]
+            y.setdefault(k, []).extend(this_y)
+            this_c = [colour_by_pid[pid]] * len(this_y)
+            c.setdefault(k, []).extend(this_c)
+            ax.scatter(
+                [0.],
+                matched[k][pid],
+                marker='o',
+                facecolor=colour_by_pid[pid],
+                s=40,
+                edgecolor='k',
+                linewidths=1.0,
+                label=pid
+            )
+
+    for i, k in enumerate(['hypo', 'hyper']):
+        ax = axs[i]
+        this_y = y[k]
+        this_x = jitter_points(this_y, spacing_buffer=spacings[k], jitter_step=0.05) + 1.
+        this_c = c[k]
+        ax.scatter(
+            this_x,
+            this_y,
+            marker='o',
+            facecolors=this_c,
+            s=40,
+            edgecolor='k',
+            linewidths=1.0,
+        )
+
+    for ax in axs:
+        ax.set_xlim([-.5, 1.5])
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(['Matched', 'Cross-compared'])
+        ax.set_ylim([0, ax.get_ylim()[1]])
+
+    axs[0].set_title("Hypomethylated DMRs")
+    axs[0].set_ylabel("Number of DMRs")
+    axs[1].set_title("Hypermethylated DMRs")
+    axs[1].legend(loc='lower right', facecolor='w', framealpha=0.6, frameon=True)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "our_ipsc_vs_our_fb_number_dmrs.png"), dpi=200)
+
+    # confidence intervals
+    alpha = 0.95
+    for pid in pids:
+        for k in ['hypo', 'hyper']:
+            arr = unmatched[k][pid]
+            ci = stats.norm.interval(alpha, loc=np.mean(arr), scale=np.std(arr, ddof=1))
+            if ci[0] <= matched[k][pid][0] <= ci[1]:
+                pass
+            else:
+                print "%s %s %s -> %d" % (pid, k, str(ci), matched[k][pid][0])
+                print "Patient %s, %s DMRs, reject H0 at %.1f%% level." % (pid, k, alpha * 100)
+
+
     # iPSC vs FB: numbers and direction
 
-    def get_dmr_number_direction(res_obj):
-        out = {}
-        for k in res_obj.keys():
-            this_res = pd.DataFrame(res_obj[k].results_significant)
-            ix = this_res.loc['median_change'] < 0
-            out[k] = {
-                'Hypermethylated': (~ix).sum(),
-                'Hypomethylated': ix.sum(),
-            }
-        return out
+    # Nesting format: iNSC then FB
 
-    def get_dmr_cid_direction(res_obj):
-        out = {}
-        for k in res_obj.keys():
-            this_res = pd.DataFrame(res_obj[k].results_significant)
-            ix = this_res.loc['median_change'] < 0
-            out[k] = {
-                'Hypermethylated': this_res.loc[:, ~ix].columns,
-                'Hypomethylated': this_res.loc[:, ix].columns,
-            }
-        return out
+    # to_plot = {
+    #     'Our data': {'Our data': dmr_res_our_ipsc_vs_our_fb, 'E-MTAB-6194': dmr_res_our_ipsc_vs_e6194_fb},
+    #     'E-MTAB-6194': {'Our data': dmr_res_e6194_ipsc_vs_our_fb, 'E-MTAB-6194': dmr_res_e6194_ipsc_vs_e6194_fb},
+    #     'HipSci': {'Our data': dmr_res_hipsci_vs_our_fb, 'E-MTAB-6194': dmr_res_hipsci_vs_e6194_fb}
+    # }
+
+    k_our_fb = 'Our data (n=%d)' % (our_meta.type == 'FB').sum()
+    k_our_ipsc = 'Our data (n=%d)' % (our_meta.type == 'iPSC').sum()
+    k_e6194_fb = 'E-MTAB-6194 (n=1)'
+    k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_ref_names_6194_n1)
+    k_hipsci_ipsc = 'HipSci (n=%d)' % hip_epic_meta.shape[0]
 
     to_plot = {
-        'Our data': {'Our data': dmr_res_our_ipsc_vs_our_fb, 'E-MTAB-6194': dmr_res_our_ipsc_vs_e6194_fb},
-        'E-MTAB-6194': {'Our data': dmr_res_e6194_ipsc_vs_our_fb, 'E-MTAB-6194': dmr_res_e6194_ipsc_vs_e6194_fb},
-        'HipSci': {'Our data': dmr_res_hipsci_vs_our_fb, 'E-MTAB-6194': dmr_res_hipsci_vs_e6194_fb}
+        k_our_ipsc: {
+            k_our_fb: dmr_res_our_ipsc_vs_our_fb,
+            k_e6194_fb: dmr_res_our_ipsc_vs_e6194_fb_n1
+        },
+        k_e6194_ipsc: {
+            k_our_fb: dmr_res_e6194_ipsc_n1_vs_our_fb,
+            k_e6194_fb: dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1
+        },
+        k_hipsci_ipsc: {
+            k_our_fb: dmr_res_hipsci_vs_our_fb,
+            k_e6194_fb: dmr_res_hipsci_vs_e6194_fb_n1}
     }
-    fig, axs = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(7, 6))
-    colours = ['#91e097', '#e09191']
+
+
+    fig_hypo, axs_hypo = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(3.5, 6))
+    fig_hyper, axs_hyper = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(3.5, 6))
+    # colours = ['#91e097', '#e09191']
+
+    marker_styles = ['o', 's', '>', '<', '^', 'v', 'X', 'P', 'd', 'H', '*', 'p']
+
     medianprops = dict(linestyle='-', linewidth=2., color='k')
 
+    ymax = {}
+
     for i, (k1, d) in enumerate(to_plot.items()):
-        axs[i, 0].set_ylabel(k1)
+        axs_hyper[i, 0].set_ylabel(k1)
+        axs_hypo[i, 0].set_ylabel(k1)
         for j, (k2, obj) in enumerate(d.items()):
-            axs[-1, j].set_xlabel(k2)
-            ax = axs[i, j]
             t = pd.DataFrame(get_dmr_number_direction(obj)).transpose()
-            bplot = ax.boxplot(
-                t.values,
-                vert=True,
-                patch_artist=True,
-                labels=t.columns,
-                medianprops=medianprops
-            )
-            for p, c in zip(bplot['boxes'], colours):
-                p.set_facecolor(c)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "iPSC_vs_FB_number_dmr.png"), dpi=200)
+            for axs, k3 in zip([axs_hyper, axs_hypo], ['Hypermethylated', 'Hypomethylated']):
+                this_y = t.loc[:, k3].values
+                this_x = np.random.normal(scale=0.05, size=this_y.size) + 1
+                ymax[k3] = max(ymax.get(k3, 0), this_y.max())
+                axs[-1, j].set_xlabel(k2)
+                ax = axs[i, j]
+                bplot = ax.boxplot(
+                    this_y,
+                    vert=True,
+                    patch_artist=True,
+                    medianprops=medianprops,
+                    widths=0.7
+                )
+                # for xx, yy, mm in zip(this_x, this_y, marker_styles):
+                ax.scatter(this_x, this_y, facecolor='none', edgecolor='k', linewidths=1., s=40, marker='o', zorder=5)
+                ax.set_xticks([])
+                plt.setp(bplot['boxes'], facecolor=colours[k3])
+                # for p, c in zip(bplot['boxes'], colours):
+                #     p.set_facecolor(c)
+    axs_hyper[0, 0].set_ylim([0, ymax['Hypermethylated'] * 1.1])
+    axs_hypo[0, 0].set_ylim([0, ymax['Hypomethylated'] * 1.1])
+    fig_hyper.tight_layout()
+    fig_hypo.tight_layout()
+    fig_hyper.savefig(os.path.join(outdir, "iPSC_vs_FB_number_dmr_hyper.png"), dpi=200)
+    fig_hypo.savefig(os.path.join(outdir, "iPSC_vs_FB_number_dmr_hypo.png"), dpi=200)
 
     # iPSC vs FB: core DMRs in each comparison type
 
@@ -616,20 +864,19 @@ if __name__ == "__main__":
         core_dmrs_hypo[k1] = setops.reduce_intersection(*[
             setops.reduce_intersection(*[x['Hypomethylated'] for k, x in u.items() if r in k])
             for r in esc_ref_names
-        ])
+            ])
         core_dmrs_hyper[k1] = setops.reduce_intersection(*[
             setops.reduce_intersection(*[x['Hypermethylated'] for k, x in u.items() if r in k])
             for r in esc_ref_names
-        ])
+            ])
 
     # outcome
     vs, vc = setops.venn_from_arrays(*core_dmrs_hypo.values())
     print "Hypomethylated core DMRs (hypo in both ESC comparisons). "
-    "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
+    print "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
         len(core_dmrs_hypo['Our iPSC']),
         vc['111']
     )
-
 
 
     # TODO: refactor from here

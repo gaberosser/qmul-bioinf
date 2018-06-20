@@ -67,6 +67,10 @@ class RnaSeqFileLocations(object):
         else:
             raise NotImplementedError("Unrecognised type: %s" % typ)
 
+xz_2499 = RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'Xinyu_Zhang_NEB_mRNASeq_GC-XZ-2499_270115-19825815'),
+    alignment_subdir='human',
+)
 
 wtchg_p160704 = RnaSeqFileLocations(
     root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p160704'),
@@ -233,6 +237,14 @@ PATIENT_LOOKUP_CC = {
         ('3021_2shB+C', wtchg_p170644),
     ],
     'ICb1299': [
+        ('Scramble_1', xz_2499),
+        ('Scramble_2', xz_2499),
+        ('ShBmi1_1', xz_2499),
+        ('ShBmi1_2', xz_2499),
+        ('ShCHD7_1', xz_2499),
+        ('ShCHD7_2', xz_2499),
+        ('ShBmi1_CHD7_1', xz_2499),
+        ('ShBmi1_CHD7_2', xz_2499),
         ('shScr', wtchg_p170218),
         ('shBmi1', wtchg_p170218),
         ('shChd7', wtchg_p170218),
