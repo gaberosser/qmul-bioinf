@@ -301,6 +301,33 @@ class MultipleFileLoader(DatasetLoader):
                 ))
 
         if self.samples_to_keep is not None:
+            dd = pd.Index(self.samples_to_keep).difference(inputs.index)
+            ii = pd.Index(self.samples_to_keep).intersection(inputs.index)
+            if len(ii) == 0:
+                raise AttributeError("None of the %d requested samples could be found in the metadata. "
+                                     "Check the sample names for typos?" % len(self.samples_to_keep))
+            elif len(dd):
+                self.logger.warning(
+                    "%d of the %d named samples requested were not in the metadata and will be ignored: %s. Check "
+                    "sample names for typos?",
+                    len(dd),
+                    len(self.samples_to_keep),
+                    ', '.join(dd)
+                )
+
+                # quick check: do we find these samples if we match based on lowercase names?
+                dd_lc = dd.str.lower()
+                ii_lc = dd_lc.intersection(inputs.index.str.lower())
+                if len(ii_lc):
+                    self.logger.warning(
+                        "%d of the missing samples are found if we ignore case: %s. Consider revising the sample names "
+                        "requested?",
+                        len(ii_lc),
+                        ', '.join(ii_lc)
+                    )
+
+                # drop the requested samples, but keep the previous order where possible
+                self.samples_to_keep = [t for t in self.samples_to_keep if t in ii]
             inputs = inputs.loc[self.samples_to_keep]
 
         self.input_files = inputs

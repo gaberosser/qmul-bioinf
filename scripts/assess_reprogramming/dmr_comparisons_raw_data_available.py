@@ -227,14 +227,11 @@ def get_dmr_cid_direction(res_obj):
 
 if __name__ == "__main__":
 
-    outdir = output.unique_output_dir("assess_reprogramming_dmr")
-    indir = os.path.join(OUTPUT_DIR, "assess_reprogramming_dmr")
+    outdir = output.unique_output_dir("assess_reprogramming_dmr_raw_avail")
+    indir = os.path.join(OUTPUT_DIR, "assess_reprogramming_dmr_raw_avail")
     pids = ['019', '030', '031', '050', '054']
 
-    # these are the only two norming methods available in all data sets
-    # norm_method = 'raw'
-    norm_method = 'bmiq'
-    # norm_method = 'pbc'
+    norm_method = 'swan'
 
     dmr_params = {
         'd_max': 400,
@@ -268,10 +265,6 @@ if __name__ == "__main__":
     encode_epic_obj.meta.insert(1, 'array_type', 'EPIC')
     encode_epic_obj.batch_id = 'Encode EPIC'
 
-    # Encode 450K data
-    encode_450k_obj = loader.encode_450k(norm_method=norm_method, samples=['H1 hESC'])
-    encode_450k_obj.meta.insert(1, 'array_type', '450K')
-
     # E-MTAB-6194
     e6194_obj = loader.load_reference(
         'E-MTAB-6194',
@@ -288,16 +281,12 @@ if __name__ == "__main__":
 
     refs = [
         encode_epic_obj,
-        encode_450k_obj,
         e6194_obj
     ]
 
-    # HipSci data
-    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
-
     meta, dat_m = combine_data_meta(
-        (our_data, hip_epic_data, e6194_obj.data, encode_epic_obj.data),
-        (our_meta, hip_epic_meta, e6194_obj.meta, encode_epic_obj.meta),
+        (our_data, e6194_obj.data, encode_epic_obj.data),
+        (our_meta, e6194_obj.meta, encode_epic_obj.meta),
         units='m'
     )
 
@@ -327,16 +316,6 @@ if __name__ == "__main__":
         for pid2 in pids:
             comparisons["%s-%s" % (pid, pid2)] = ("DURA%s" % pid, "DURA%s" % pid2)
     dmr_res_our_ipsc_vs_our_fb_all = run_dmr_set(
-        fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
-    )
-
-    # 1b) HipSci iPSC vs our FB
-    fn = os.path.join(indir, "hipsci_vs_our_fb.pkl")
-    comparisons = {}
-    for pid in pids:
-        for hid in hip_epic_meta.index:
-            comparisons["%s-%s" % (pid, hid)] = (hid, "DURA%s" % pid)
-    dmr_res_hipsci_vs_our_fb = run_dmr_set(
         fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
     )
 
@@ -450,42 +429,6 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 1f-i) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, all replicates)
-    fn = os.path.join(indir, "hipsci_vs_e6194_fb.pkl")
-    comparisons = {}
-    for hid in hip_epic_meta.index:
-        comparisons["%s-HFF" % hid] = ("%s" % hid, "HFF_p7")
-
-    dmr_res_hipsci_vs_e6194_fb= run_dmr_set(
-        fn,
-        meta,
-        dat_m,
-        dmr_clusters,
-        anno,
-        comparisons,
-        'iPSC',
-        'FB',
-        dmr_params
-    )
-
-    # 1f-ii) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, n=1)
-    fn = os.path.join(indir, "hipsci_vs_e6194_fb_n1.pkl")
-    comparisons = {}
-    for hid in hip_epic_meta.index:
-        comparisons["%s-HFF" % hid] = ("%s" % hid, fb_ref_name_6194_n1)
-
-    dmr_res_hipsci_vs_e6194_fb_n1 = run_dmr_set(
-        fn,
-        meta,
-        dat_m,
-        dmr_clusters,
-        anno,
-        comparisons,
-        'iPSC',
-        'FB',
-        dmr_params
-    )
-
     # 2. iPSC vs ESC
 
     # 2a) Our iPSC vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
@@ -496,25 +439,6 @@ if __name__ == "__main__":
             comparisons["%s-%s" % (pid, r)] = ("DURA%s" % pid, r)
 
     dmr_res_our_ipsc_vs_esc = run_dmr_set(
-        fn,
-        meta,
-        dat_m,
-        dmr_clusters,
-        anno,
-        comparisons,
-        'iPSC',
-        'ESC',
-        dmr_params
-    )
-
-    # 2b) HipSci iPSC vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
-    fn = os.path.join(indir, "hipsci_vs_esc.pkl")
-    comparisons = {}
-    for hid in hip_epic_meta.index:
-        for r in esc_ref_names:
-            comparisons["%s-%s" % (hid, r)] = (hid, r)
-
-    dmr_res_hipsci_vs_esc = run_dmr_set(
         fn,
         meta,
         dat_m,
@@ -569,24 +493,6 @@ if __name__ == "__main__":
     meta.loc[meta.batch.str.contains('HipSci').fillna(False), 'type'] = 'iPSC_HipSci'
     meta.loc[meta.index.str.contains('HEL1'), 'type'] = 'iPSC_E6194'
 
-    # 3a) Our iPSC vs HipSci iPSC
-    fn = os.path.join(indir, "hipsci_vs_our_ipsc.pkl")
-    comparisons = {}
-    for hid in hip_epic_meta.index:
-        for pid in pids:
-            comparisons["%s-%s" % (pid, hid)] = ("DURA%s" % pid, hid)
-    dmr_res_hipsci_vs_our_ipsc = run_dmr_set(
-        fn,
-        meta,
-        dat_m,
-        dmr_clusters,
-        anno,
-        comparisons,
-        'iPSC',
-        'iPSC_HipSci',
-        dmr_params
-    )
-
     # 3b) Our iPSC vs E-MTAB-6194 iPSC
     fn = os.path.join(indir, "e6194_ipsc_vs_our_ipsc.pkl")
     comparisons = {}
@@ -601,24 +507,6 @@ if __name__ == "__main__":
         anno,
         comparisons,
         'iPSC',
-        'iPSC_E6194',
-        dmr_params
-    )
-
-    # 3c) HipSci vs E-MTAB-6194 iPSC
-    fn = os.path.join(indir, "hipsci_vs_e6194_ipsc.pkl")
-    comparisons = {}
-    for hid in hip_epic_meta.index:
-        for r in ipsc_ref_names_6194:
-            comparisons["%s-%s" % (hid, r)] = (hid, r)
-    dmr_res_hipsci_vs_e6194_ipsc = run_dmr_set(
-        fn,
-        meta,
-        dat_m,
-        dmr_clusters,
-        anno,
-        comparisons,
-        'iPSC_HipSci',
         'iPSC_E6194',
         dmr_params
     )
@@ -783,7 +671,6 @@ if __name__ == "__main__":
     k_our_ipsc = 'Our data (n=%d)' % (our_meta.type == 'iPSC').sum()
     k_e6194_fb = 'E-MTAB-6194 (n=1)'
     k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_ref_names_6194_n1)
-    k_hipsci_ipsc = 'HipSci (n=%d)' % hip_epic_meta.shape[0]
 
     to_plot = {
         k_our_ipsc: {
@@ -794,15 +681,11 @@ if __name__ == "__main__":
             k_our_fb: dmr_res_e6194_ipsc_n1_vs_our_fb,
             k_e6194_fb: dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1
         },
-        k_hipsci_ipsc: {
-            k_our_fb: dmr_res_hipsci_vs_our_fb,
-            k_e6194_fb: dmr_res_hipsci_vs_e6194_fb_n1}
     }
 
 
-    fig_hypo, axs_hypo = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(3.5, 6))
-    fig_hyper, axs_hyper = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(3.5, 6))
-    # colours = ['#91e097', '#e09191']
+    fig_hypo, axs_hypo = plt.subplots(len(to_plot), len(to_plot.values()[0]), sharex=True, sharey=True, figsize=(3.5, 6))
+    fig_hyper, axs_hyper = plt.subplots(len(to_plot), len(to_plot.values()[0]), sharex=True, sharey=True, figsize=(3.5, 6))
 
     marker_styles = ['o', 's', '>', '<', '^', 'v', 'X', 'P', 'd', 'H', '*', 'p']
 
@@ -844,7 +727,6 @@ if __name__ == "__main__":
     to_plot = {
         'Our data': {'Our data': dmr_res_our_ipsc_vs_our_fb, 'E-MTAB-6194': dmr_res_our_ipsc_vs_e6194_fb_n1},
         'E-MTAB-6194': {'Our data': dmr_res_e6194_ipsc_n1_vs_our_fb, 'E-MTAB-6194': dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1},
-        'HipSci': {'Our data': dmr_res_hipsci_vs_our_fb, 'E-MTAB-6194': dmr_res_hipsci_vs_e6194_fb_n1}
     }
 
     members = {'hypo': {}, 'hyper': {}}
@@ -880,22 +762,15 @@ if __name__ == "__main__":
 
     # iPSC vs ESC: numbers and direction
 
-    # to_plot = {
-    #     'Our iPSC': dmr_res_our_ipsc_vs_esc,
-    #     'E-MTAB-6194 iPSC': dmr_res_e6914_ipsc_vs_esc,
-    #     'HipSci iPSC': dmr_res_hipsci_vs_esc
-    # }
-
     to_plot = {
         k_our_ipsc: dmr_res_our_ipsc_vs_esc,
         k_e6194_ipsc: dmr_res_e6914_ipsc_n1_vs_esc,
-        k_hipsci_ipsc: dmr_res_hipsci_vs_esc
     }
     ax1 = None
-    gs = plt.GridSpec(6, 3)
+    gs = plt.GridSpec(2 * len(to_plot), 3)
     fig = plt.figure(figsize=(5, 6))
-    axs = np.empty((3, 3), dtype=object)
-    colours = ['#e09191', '#91e097']  # red, green (hyper, hypo)
+    axs = np.empty((len(to_plot), 3), dtype=object)
+    colours = ['#91e097', '#e09191']
     medianprops = dict(linestyle='-', linewidth=2., color='k')
 
     for i, (k1, obj) in enumerate(to_plot.items()):
@@ -939,14 +814,14 @@ if __name__ == "__main__":
             *u_hypo.values(),
             ax=ax,
             set_labels=u_hypo.keys(),
-            set_colors=[colours[1]] * 2
+            set_colors=[colours[0]] * 2
         )
         ax = fig.add_subplot(gs[ax_i, 2], facecolor='none', frame_on=False, xticks=[], yticks=[])
         v = venn.venn_diagram(
             *u_hyper.values(),
             ax=ax,
             set_labels=u_hyper.keys(),
-            set_colors=[colours[0]] * 2,
+            set_colors=[colours[1]] * 2,
             alpha=0.7
         )
 
@@ -978,18 +853,19 @@ if __name__ == "__main__":
             ])
 
     # outcome
+    the_key = ''.join(['1'] * len(core_dmrs_hypo))
     vs, vc = setops.venn_from_arrays(*core_dmrs_hypo.values())
     print "Hypomethylated core DMRs (hypo in both ESC comparisons). "
-    print "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
+    print "Of the %d DMRs in our data, %d are shared with E-MTAB-6194" % (
         len(core_dmrs_hypo[k_our_ipsc]),
-        vc['111']
+        vc[the_key]
     )
 
     vs, vc = setops.venn_from_arrays(*core_dmrs_hyper.values())
     print "Hypermethylated core DMRs (hyper in both ESC comparisons). "
-    print "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
+    print "Of the %d DMRs in our data, %d are shared with E-MTAB-6194" % (
         len(core_dmrs_hyper[k_our_ipsc]),
-        vc['111']
+        vc[the_key]
     )
 
     # for each PID in iPSC vs ESC, define the core DMRs (shared by both ref comparisons)
@@ -1001,13 +877,9 @@ if __name__ == "__main__":
     core_dmr_e6194_ipsc_n1_ref_esc = core_dmrs(dmr_res_e6914_ipsc_n1_vs_esc, ipsc_ref_names_6194_n1, esc_ref_names)
     core_dmr_direction_e6194_ipsc_n1_ref_esc = core_dmr_by_direction(core_dmr_e6194_ipsc_n1_ref_esc, esc_ref_names)
 
-    core_dmr_hipsci_ref_esc = core_dmrs(dmr_res_hipsci_vs_esc, hip_epic_meta.index, esc_ref_names)
-    core_dmr_direction_hipsci_ref_esc = core_dmr_by_direction(core_dmr_hipsci_ref_esc, esc_ref_names)
-
     # big plot showing all the Venn diagrams
     for_venns = {
         'Our iPSC': core_dmr_our_ipsc_ref_esc,
-        'HipSci iPSC': dict(core_dmr_hipsci_ref_esc.items()[:5]),
         'E-MTAB-6194 iPSC': core_dmr_e6194_ipsc_n1_ref_esc,
     }
 
@@ -1018,9 +890,9 @@ if __name__ == "__main__":
     # All venns will be normalised relative to this value
     set_size_base = 60.
 
-    gs_base = plt.GridSpec(1, 3)
+    gs_base = plt.GridSpec(1, 2)
     gs_base.update(hspace=0.01, wspace=0.01)
-    fig = plt.figure(figsize=(9, 5))
+    fig = plt.figure(figsize=(3. * len(for_venns), 5))
     for i, (k1, v1) in enumerate(for_venns.items()):
         big_ax = fig.add_subplot(gs_base[i], frameon=False)
         big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
@@ -1074,7 +946,6 @@ if __name__ == "__main__":
     # big bar plot showing all the hyper / hypo core DMRs
     for_bars = collections.OrderedDict([
         ('Our iPSC', core_dmr_direction_our_ipsc_ref_esc),
-        ('HipSci iPSC', core_dmr_direction_hipsci_ref_esc),
         ('E-MTAB-6194 iPSC', core_dmr_direction_e6194_ipsc_n1_ref_esc),
     ])
 
@@ -1201,7 +1072,6 @@ if __name__ == "__main__":
         esc_m_arr = [
             dat_m.loc[probes, meta.index.str.contains(r)] for r in esc_ref_names
         ]
-        # esc_m = dat_m.loc[probes, meta.index.str.contains(re.compile('|'.join(esc_ref_names)))]
 
         ax = axs.flat[i]
         ax.scatter([0] * fb_m.shape[0], fb_m.squeeze(), c=colour_by_line['FB'], s=mrk_size, edgecolor='k', label='Fibroblast')
@@ -1226,9 +1096,5 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.subplots_adjust(right=0.83)
     fig.savefig(os.path.join(outdir, "%s_examples_of_dmr.png" % pid), dpi=200)
-
-
-
-
 
 

@@ -87,7 +87,7 @@ def multi_grouped_bar_chart(dict_of_series_lists, width=0.8, figsize=None, equal
 
     n_plot = len(dict_of_series_lists)
     max_series_length = max([len(s[0]) for s in dict_of_series_lists.values()])
-    fig, axs = plt.subplots(ncols=n_plot, sharey=True, figsize=(10, 5))
+    fig, axs = plt.subplots(ncols=n_plot, sharey=True, figsize=figsize)
     for i, (subplot_lab, arr) in enumerate(dict_of_series_lists.items()):
         ax = axs[i]
         grouped_bar_chart(arr, width=width, ax=ax, **kwargs)
