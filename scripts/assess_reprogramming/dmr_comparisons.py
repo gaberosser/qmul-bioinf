@@ -225,6 +225,46 @@ def get_dmr_cid_direction(res_obj):
     return out
 
 
+def classify_dmrs_residual_denovo(dmr_tables_ipsc, dmr_res_parent, ref_names, exclude=None):
+    res = {}
+    for k in dmr_tables_ipsc.keys():
+        this_tbl = dmr_tables_ipsc[k]
+        if exclude is not None:
+            this_tbl = this_tbl.loc[this_tbl.index.difference(exclude)]
+        this_tbl.insert(0, 'mean_median_delta', this_tbl[['median_delta_%s' % r for r in ref_names]].mean(axis=1))
+
+        par_res = dmr_res_parent[k]
+        par_res._classes = []
+        par_tbl = par_res.to_table(include='significant', skip_geneless=False)
+        # is this the new suggested way to inner join?!
+        par_tbl = par_tbl.reindex(this_tbl.index).dropna(how='all')
+
+        this_df = this_tbl.copy()
+        this_df.insert(0, '_classification_', 'hyper_de_novo')
+        ix = par_tbl.index[this_df.loc[par_tbl.index, 'mean_median_delta'] < 0]
+        this_df.loc[ix, '_classification_'] = 'hypo_de_novo'
+
+        ix = this_tbl.drop(par_tbl.index)[this_tbl.drop(par_tbl.index).loc[:, 'mean_median_delta'] > 0].index
+        this_df.loc[ix, '_classification_'] = 'hyper_residual'
+
+        ix = this_tbl.drop(par_tbl.index)[this_tbl.drop(par_tbl.index).loc[:, 'mean_median_delta'] < 0].index
+        this_df.loc[ix, '_classification_'] = 'hypo_residual'
+
+        res[k] = this_df
+
+    # also create a dict of dataframes containing the counts
+    counts = {}
+    for k, v in res.items():
+        t = v._classification_.value_counts()
+        this_df = pd.DataFrame(index=['hypo', 'hyper'], columns=['residual', 'de_novo'])
+        for a in this_df.index:
+            for b in this_df.columns:
+                this_df.loc[a, b] = t.get('_'.join([a, b]), 0)
+        counts[k] = this_df
+
+    return res, counts
+
+
 if __name__ == "__main__":
 
     outdir = output.unique_output_dir("assess_reprogramming_dmr")
@@ -1098,46 +1138,34 @@ if __name__ == "__main__":
     print "For context, there are %d DMRs between the two reference ESC lines." % len(esc_dmr_cids)
 
     # Our DMRs
-    core_dmr_labelled_our_ipsc = {}
-    for pid in pids:
-        this_tbl = core_dmr_our_ipsc_ref_esc[pid]
-        this_tbl = this_tbl.loc[this_tbl.index.difference(esc_dmr_cids)]
-        this_tbl.insert(0, 'mean_median_delta', this_tbl[['median_delta_%s' % r for r in esc_ref_names]].mean(axis=1))
+    core_dmr_our_ipsc_classified, core_dmr_our_ipsc_classified_count = classify_dmrs_residual_denovo(
+        core_dmr_our_ipsc_ref_esc,
+        dmr_res_our_ipsc_vs_our_fb,
+        esc_ref_names,
+        exclude=esc_dmr_cids
+    )
 
-        fb_res = dmr_res_our_ipsc_vs_our_fb[pid]
-        fb_res._classes = []
-        fb_tbl = fb_res.to_table(include='significant', skip_geneless=False)
-        # is this the new suggested way to inner join?!
-        fb_tbl = fb_tbl.reindex(this_tbl.index).dropna(how='all')
+    # export to CSV format (one file per patient)
+    # also generate a list of genes linked to DMRs in residual hypomethylated regions
+    residual_hypo = {}
+    for k, v in core_dmr_our_ipsc_classified.items():
+        v.to_csv(os.path.join(outdir, "%s_core_dmrs.csv" % k))
+        genes = sorted(set(
+            v.loc[v._classification_ == 'hypo_residual', 'genes'].sum()
+        ))
+        residual_hypo[k] = genes
 
-        this_df = pd.DataFrame(0, index=['hyper', 'hypo'], columns=['residual', 'de_novo'])
-        this_df.loc['hyper', 'de_novo'] = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] > 0).sum()
-        this_df.loc['hypo', 'de_novo'] = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] < 0).sum()
-        this_df.loc['hyper', 'residual'] = (this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] > 0).sum()
-        this_df.loc['hypo', 'residual'] = (this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] < 0).sum()
 
-        core_dmr_labelled_our_ipsc[pid] = this_df
 
     # E6194
-    core_dmr_labelled_e6194_ipsc_n1 = {}
-    for pid in ipsc_ref_names_6194_n1[-2:]:
-        this_tbl = core_dmr_e6194_ipsc_n1_ref_esc[pid]
-        this_tbl = this_tbl.loc[this_tbl.index.difference(esc_dmr_cids)]
-        this_tbl.insert(0, 'mean_median_delta', this_tbl[['median_delta_%s' % r for r in esc_ref_names]].mean(axis=1))
-
-        fb_res = dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1[pid]
-        fb_res._classes = []
-        fb_tbl = fb_res.to_table(include='significant', skip_geneless=False)
-        # is this the new suggested way to inner join?!
-        fb_tbl = fb_tbl.reindex(this_tbl.index).dropna(how='all')
-
-        this_df = pd.DataFrame(0, index=['hyper', 'hypo'], columns=['residual', 'de_novo'])
-        this_df.loc['hyper', 'de_novo'] = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] > 0).sum()
-        this_df.loc['hypo', 'de_novo'] = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] < 0).sum()
-        this_df.loc['hyper', 'residual'] = (this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] > 0).sum()
-        this_df.loc['hypo', 'residual'] = (this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] < 0).sum()
-
-        core_dmr_labelled_e6194_ipsc_n1[pid] = this_df
+    # here we only keep two of the iPSC lines, HEL140 and HEL141, because these match the FB line
+    # (the others are derived from FBs that aren't included in the dataset)
+    core_dmr_e6194_n1_classified, core_dmr_e6194_n1_classified_count = classify_dmrs_residual_denovo(
+        dict([x for x in core_dmr_e6194_ipsc_n1_ref_esc.items() if re.search(r'HEL(140|141)', x[0])]),
+        dmr_res_e6194_ipsc_n1_vs_e6194_fb_n1,
+        esc_ref_names,
+        exclude=esc_dmr_cids
+    )
 
     # combine these results to generate bar charts
     plot_colours = {'hypo': set_colours_hypo[::-1], 'hyper': set_colours_hyper[::-1]}
@@ -1145,12 +1173,12 @@ if __name__ == "__main__":
     for i, typ in enumerate(['hyper', 'hypo']):
         ax = axs[i]
         df1 = pd.DataFrame(
-            [core_dmr_labelled_our_ipsc[pid].loc[typ] for pid in core_dmr_labelled_our_ipsc],
-            index=core_dmr_labelled_our_ipsc.keys()
+            [core_dmr_our_ipsc_classified_count[pid].loc[typ] for pid in core_dmr_our_ipsc_classified_count],
+            index=core_dmr_our_ipsc_classified_count.keys()
         )
         df2 = pd.DataFrame(
-            [core_dmr_labelled_e6194_ipsc_n1[pid].loc[typ] for pid in core_dmr_labelled_e6194_ipsc_n1],
-            index=core_dmr_labelled_e6194_ipsc_n1.keys()
+            [core_dmr_e6194_n1_classified_count[pid].loc[typ] for pid in core_dmr_e6194_n1_classified_count],
+            index=core_dmr_e6194_n1_classified_count.keys()
         )
         df = pd.concat((df1, df2), axis=0)
         df.plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
