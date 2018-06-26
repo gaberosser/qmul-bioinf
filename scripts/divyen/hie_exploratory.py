@@ -94,7 +94,7 @@ if __name__ == "__main__":
     X = impute_missing(peaks_dat, strategy='median')
 
     ## 1) Correlation between variables
-    corr = peaks_dat.corr(method='spearman')
+    corr = X.corr(method='spearman')
     fig = plt.figure(figsize=(6.7, 5.5))
     ax = fig.add_subplot(111)
     sns.heatmap(corr, ax=ax, cmap='RdBu_r')
