@@ -20,6 +20,39 @@ COLOUR_BREWERS = {
 }
 
 
+def legend_outside_axes(ax, horiz_loc='right', vert_loc='centre', **kwargs):
+    if horiz_loc == 'right':
+        x = 1.
+        xa = 'left'
+    elif horiz_loc == 'left':
+        x = 0.
+        xa = 'right'
+    elif horiz_loc == 'centre':
+        x = 0.5
+        xa = 'center'
+    else:
+        raise NotImplementedError("Unsupported horiz_loc %s" % horiz_loc)
+
+    if vert_loc == 'top':
+        y = 1.
+        ya = 'upper'
+    elif vert_loc == 'bottom':
+        y = 0.
+        ya = 'lower'
+    elif vert_loc == 'centre':
+        y = 0.5
+        ya = 'center'
+    else:
+        raise NotImplementedError("Unsupported vert_loc %s" % vert_loc)
+
+    loc_str = ' '.join([ya, xa])
+    if loc_str == 'center center':
+        loc_str = 'center'
+
+    ax.legend(loc=loc_str, bbox_to_anchor=(x, y), **kwargs)
+
+
+
 def axis_border(ax, c=None, lw=1):
     """
     Add a border around the supplied axis.

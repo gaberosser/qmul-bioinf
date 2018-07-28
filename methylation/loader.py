@@ -33,6 +33,7 @@ project_dirs = {
     "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
     "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
     "2018-03-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-19'),
+    "2018-03-26": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-26'),
     "2018-04-09": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-04-09'),
     "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
     "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
@@ -175,7 +176,28 @@ PATIENT_LOOKUP_CELL = {
     ],
     'GIBCO': [
         ('GIBCONSC_P4', '2017-05-12'),
-    ]
+    ],
+    'ICb1299': [
+        ('ICb1299_Scr', '2017-09-19'),
+        ('ICb1299_shBMI1', '2017-09-19'),
+        ('ICb1299_shCHD7', '2017-09-19'),
+        ('ICb1299_shBMI1CHD7', '2017-09-19'),
+        ('p62_3_shBmi1', '2018-03-26'),
+        ('p62_3_shChd7', '2018-03-26'),
+        ('p62_3_shB+C', '2018-03-26'),
+        ('p62_3_Scr', '2018-04-09'),  # rerun
+    ],
+    '3021': [
+        ('3021_1_Scr', '2018-01-12'),
+        ('3021_1_shB', '2018-01-12'),
+        ('3021_1_shC', '2018-01-12'),
+        ('3021_1_shB+C', '2018-01-12'),
+        ('S', '2018-03-19'),
+        ('B', '2018-03-19'),
+        ('C', '2018-03-19'),
+        ('B+C', '2018-03-19'),
+    ],
+
 }
 
 

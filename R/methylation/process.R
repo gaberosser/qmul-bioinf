@@ -21,7 +21,6 @@ get_idat_basenames <- function(idat.dir) {
   basenames <- file.path(idat.dir, sub(pattern = "_Red.idat", "", flist))
 }
 
-
 process_and_save_idat_ucl <- function(
   idat.dir, 
   meta.file, 
@@ -51,19 +50,27 @@ process_and_save_idat_ucl <- function(
   }
   
   # rgSet@annotation <- c(array="IlluminaHumanMethylationEPIC",annotation="ilm10b2.hg19")
+  
+  # reorder meta based on rgSet (if required)
+  # every other matrix will now follow this ordering
+  meta <- meta[colnames(rgSet),]
 
   mset <- preprocessRaw(rgSet)
   detP <- detectionP(rgSet)
 
   beta.raw <- getBeta(mset, "Illumina")
   
-  # ensure that meta and detP have the same order
-  meta <- meta[colnames(beta.raw),]
-  detP <- detP[, colnames(beta.raw)]
+  # ensure that rgSet, meta and detP have the same order
+  # rgSet <- rgSet[, colnames(beta.raw)]
+  # meta <- meta[colnames(beta.raw),]
+  # detP <- detP[, colnames(beta.raw)]
   
-  colnames(beta.raw) <- meta[, name.col]
-  colnames(detP) <- meta[, name.col]
-  colnames(mset) <- meta[, name.col]
+  # rename using actual sample names
+  snames <- meta[, name.col]
+  colnames(beta.raw) <- snames
+  colnames(rgSet) <- snames
+  colnames(detP) <- snames
+  colnames(mset) <- snames
   
   if (!is.null(samples)) {
     keep <- meta[, name.col] %in% samples
@@ -71,6 +78,9 @@ process_and_save_idat_ucl <- function(
       warning(sprintf("The number of samples supplied (%i) != the number of samples kept (%i)", length(samples), sum(keep)))
     }
     beta.raw <- beta.raw[,keep]
+    rgSet <- rgSet[,keep]
+    mset <- mset[,keep]
+    detP <- detP[,keep]
     meta <- meta[keep,]
   }
   
@@ -79,42 +89,46 @@ process_and_save_idat_ucl <- function(
   beta.raw <- champLoad$beta
   write.csv(beta.raw, file = open_func(file.path(output.dir, paste0("beta_raw", file_ext))))
 
-  beta.bmiq <- champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = arraytype, cores=4)
-  write.csv(beta.bmiq, file = open_func(file.path(output.dir, paste0("beta_bmiq", file_ext))))
+  beta.bmiq <- tryCatch(
+    champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = arraytype, cores=4)
+  )
+  if (!is.na(beta.bmiq)) {
+    write.csv(beta.bmiq, file = open_func(file.path(output.dir, paste0("beta_bmiq", file_ext))))
+  } else {
+    message("BMIQ failed")
+  }
   
-  beta.pbc <- champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
-  write.csv(beta.pbc, file = open_func(file.path(output.dir, paste0("beta_pbc", file_ext))))
-
-  mset.swan <- preprocessSWAN(rgSet, mSet = mset)
-  beta.swan <- getBeta(mset.swan)
-  beta.swan <- beta.swan[rownames(beta.raw),]
-  write.csv(beta.swan, file = open_func(file.path(output.dir, paste0("beta_swan", file_ext))))
-
+  beta.pbc <- tryCatch(
+    champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
+  )
+  if (!is.na(beta.pbc)) {
+    write.csv(beta.pbc, file = open_func(file.path(output.dir, paste0("beta_pbc", file_ext))))
+  } else {
+    message("PBC failed")
+  }
+  
+  mset.swan <- tryCatch(
+    preprocessSWAN(rgSet, mSet = mset)
+  )
+  if (!is.na(mset.swan)) {
+    beta.swan <- getBeta(mset.swan)
+    beta.swan <- beta.swan[rownames(beta.raw),]
+    write.csv(beta.swan, file = open_func(file.path(output.dir, paste0("beta_swan", file_ext))))
+  } else {
+    message("Swan failed")
+  }
+  
   if (arraytype == 'EPIC') {
-    grSet.funnorm <- preprocessFunnorm(rgSet)
-    beta.funnorm <- getBeta(grSet.funnorm)[rownames(beta.raw),]
-    colnames(beta.funnorm) <- meta[colnames(beta.funnorm), name.col]
-    write.csv(beta.funnorm, file = open_func(file.path(output.dir, paste0("beta_funnorm", file_ext))))
+    rgSet.funnorm <- tryCatch(preprocessFunnorm(rgSet))
+    if (!is.na(rgSet.funnorm)) {
+      beta.funnorm <- getBeta(rgSet.funnorm)[rownames(beta.raw),]
+      colnames(beta.funnorm) <- meta[colnames(beta.funnorm), name.col]
+      write.csv(beta.funnorm, file = open_func(file.path(output.dir, paste0("beta_funnorm", file_ext))))
+    } else {
+      message("Fun norm failed")
+    }
   }
 
-  # if (gzip) {
-  #   write.csv(beta.raw, file=gzfile(file.path(output.dir, "beta_raw.csv.gz")))
-  #   write.csv(beta.bmiq, file=gzfile(file.path(output.dir, "beta_bmiq.csv.gz")))
-  #   write.csv(beta.swan, file=gzfile(file.path(output.dir, "beta_swan.csv.gz")))
-  #   write.csv(beta.pbc, file=gzfile(file.path(output.dir, "beta_pbc.csv.gz")))
-  #   if (arraytype == 'EPIC') {
-  #     write.csv(beta.funnorm, file =gzfile(file.path(output.dir, "beta_funnorm.csv.gz")))
-  #   }
-  # } else {
-  #   write.csv(beta.raw, file = file.path(output.dir, "beta_raw.csv"))
-  #   write.csv(beta.bmiq, file = file.path(output.dir, "beta_bmiq.csv"))
-  #   write.csv(beta.swan, file = file.path(output.dir, "beta_swan.csv"))
-  #   write.csv(beta.pbc, file = file.path(output.dir, "beta_pbc.csv"))
-  #   if (arraytype == 'EPIC') {
-  #     write.csv(beta.funnorm, file = file.path(output.dir, "beta_funnorm.csv"))
-  #   }
-  # }
-  
 }
 
 
@@ -313,13 +327,24 @@ GenomicMethylSetfromGEORaw <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', 'ENCODE_450k')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-04-09')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-19')
-base.dir <- file.path(data.dir.raid, 'methylation', 'E-MTAB-6194')
+# base.dir <- file.path(data.dir.raid, 'methylation', 'E-MTAB-6194')
+base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-26')
 
 idat.dir <- file.path(base.dir, 'idat')
 # raw.file <- file.path(base.dir, 'geo_raw.txt')
 meta.file <- file.path(base.dir, 'sources.csv')
+
+samples <- c(
+  'p62_3_shBmi1',
+  'p62_3_shChd7',
+  'p62_3_shB+C',
+  'DURA018_NH15_1877_P6_15/05/2017',
+  'DURA026_NH16_270_P8_15/05/2017',
+  'DURA052_NH16_2214_P6_14/04/2017'
+)
+
 # process_and_save(idat.dir, meta.file, arraytype = "450K")
-process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC", name.col = "sample")
+process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC", name.col = "sample", samples = samples)
 # process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "450k", name.col="sample")
 
 # meta <- read.csv(meta.file)

@@ -96,6 +96,38 @@ xx <- model.matrix(outcome ~ Hb.peak + Plt.peak + Neutrophil.peak +
                      ALT.peak + CRP.peak + Plt.trough, data=Xs)
 yy <- as.integer(y == 'Unfav')
 
+# since this is stochastic, run it several times
+n.lasso <- 100
+lambda.mins <- list()
+lasso.coefs <- list()
+for (i in seq(1, n.lasso)) {
+  lasso.cv <- cv.glmnet(xx, yy, alpha=1, family="binomial", nfolds = 10)
+  lambda.mins[[i]] <- lasso.cv$lambda.min
+  lasso.coefs[[i]] <- coef(lasso.cv, s=lasso.cv$lambda.min)
+}
+# count number of times each variable appears
+a <- lasso.coefs[[1]]
+coef.count <- data.frame(count=rep(0, 10), row.names = unique(rownames(a))[2:11])
+coef.values <- list()
+
+for (i in seq(1, n.lasso)) {
+  a <- lasso.coefs[[i]]
+  ix <- a@i[a@i > 1] - 1
+  coef.count[ix,] <- coef.count[ix,] + 1
+  for (i in a@i[a@i > 1]) {
+    rn <- rownames(a)[i + 1]
+    coef.values[[rn]] <- c(coef.values[[rn]], a[i + 1])
+  }
+}
+
+# only keep those biomarkers present in 1/2 of the iterations or more
+coef.values <- coef.values[rownames(coef.count)[coef.count > n.lasso / 2]]
+
+longform <- do.call(rbind, lapply(names(coef.values), function (x) {data.frame(coef=coef.values[[x]], name=x)}))
+ggplot(longform, aes(coef, fill=name)) + geom_histogram(alpha=0.4, position = 'identity') + xlab('Coefficient value') + ylab('Frequency') + labs(fill='Biomarker')
+ggsave('coefficient_value_histogram.png', device='png', dpi=300)
+
+
 lasso.cv <- cv.glmnet(xx, yy, alpha=1, family="binomial", nfolds = 10)
 plot(lasso.cv)
 coef(lasso.cv, s=lasso.cv$lambda.min)

@@ -436,6 +436,10 @@ def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
             pvals.append(v['pval'])
             keys.append(k)
 
+    if len(pvals) == 0:
+        logger.warn("No DMR results have associated pvalues. Possibly no relevant comparisons?")
+        return
+
     rej, padj, _, _ = multicomp.multipletests(pvals, alpha=alpha, method=method)
 
     # add results back to results dictionary

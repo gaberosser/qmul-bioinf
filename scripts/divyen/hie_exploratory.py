@@ -93,6 +93,21 @@ if __name__ == "__main__":
     nvar = peaks_dat.shape[1]
     X = impute_missing(peaks_dat, strategy='median')
 
+    ## Generate summary table with pvalues
+    st_mf = dat.Gender.groupby(outcomes).value_counts()
+    st_mf_pval = stats.fisher_exact(st_mf.values.reshape((2, 2)))
+
+    st_ga_med = dat['Gestational Age'].groupby(outcomes).median()
+    st_ga_iqr = dat['Gestational Age'].groupby(outcomes).quantile(q=[0.25, 0.75])
+    st_ga_pval = stats.mannwhitneyu(
+        *dat['Gestational Age'].groupby(outcomes).apply(lambda x: x.values)
+    )
+
+    
+
+
+
+
     ## 1) Correlation between variables
     corr = X.corr(method='spearman')
     fig = plt.figure(figsize=(6.7, 5.5))
