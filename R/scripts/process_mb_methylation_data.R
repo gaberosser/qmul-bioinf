@@ -253,11 +253,5 @@ for (cl in c('3021', '1299')) {
 }
 
 for (cl in c('3021', '1299')) {
-  dmps[[cl]] <- list()
-  print(paste0("Cell line ", cl))
-  for (i in seq(ncol(contrasts))) {
-    ttl <- colnames(contrasts)[i]
-    ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
-    dmps[[cl]][[ttl]] <- dmps2[[cl]][[colnames(contrasts)[i]]]
-  }
+  write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"), colNames = T, rowNames = T)
 }
