@@ -342,7 +342,6 @@ idat_files_to_beta = rinterface.RFunctionDeferred(
 )
 
 
-
 def load_illumina_methylationepic_annotation(split_genes=True):
     """
 

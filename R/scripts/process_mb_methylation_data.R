@@ -6,7 +6,7 @@ library("minfi")
 library("wateRmelon")
 library("data.table")
 library(RColorBrewer)
-# library('openxlsx')
+library('openxlsx')
 
 MfromBeta <- function(beta) {
   log2(beta / (1 - beta))
@@ -242,11 +242,22 @@ for (cl in c('3021', '1299')) {
   print(summary(decideTests(fit2)))
   
   for (i in seq(ncol(contrasts))) {
-    dmps[[cl]][[colnames(contrasts)[i]]] <- topTable(fit2, coef = i, number = Inf, p.value = 0.05)
+    ttl <- colnames(contrasts)[i]
+    ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
+    dmps[[cl]][[ttl]] <- topTable(fit2, coef = i, number = Inf, p.value = 0.05)
     ## TODO: export results to xlsx or similar
     # write.csv(dmps[[cl]][[colnames(contrasts)[i]]])
-    # write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"))
   }
+  write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"))
 
 }
 
+for (cl in c('3021', '1299')) {
+  dmps[[cl]] <- list()
+  print(paste0("Cell line ", cl))
+  for (i in seq(ncol(contrasts))) {
+    ttl <- colnames(contrasts)[i]
+    ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
+    dmps[[cl]][[ttl]] <- dmps2[[cl]][[colnames(contrasts)[i]]]
+  }
+}

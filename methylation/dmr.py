@@ -21,7 +21,7 @@ import logging
 import multiprocessing as mp
 import types
 from statsmodels.sandbox.stats import multicomp
-from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary
+from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary, nested_dict_to_flat, flat_dict_to_nested
 
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
@@ -803,51 +803,6 @@ class DmrResults(object):
         if cls is None:
             return self._results_significant_by_class
         return self._results_significant_by_class[cls]
-
-
-
-def nested_dict_to_flat(x):
-    """
-    From the supplied nested dictionary, generate a flat dictionary in which the keys are tuples showing the
-    original structure. Any object that is *not* a dictionary is considered an end node.
-    """
-    res = {}
-    stack = [(None, None)] + x.items()
-    key = []
-    while True:
-        k, x = stack.pop()
-        if k is None and x is None:
-            # signal to move up one in the nesting hierarchy
-            if len(stack) == 0:
-                # all done
-                break
-            else:
-                # remove from the key
-                key.pop()
-        elif isinstance(x, dict):
-            # leave a marker telling us where this nesting happened
-            stack += [(None, None)]
-            # append items to the stack
-            stack.extend(x.items())
-            # add to the key
-            key.append(k)
-        else:
-            res[tuple(key + [k])] = x
-    return res
-
-
-def flat_dict_to_nested(x):
-    res = {}
-    for k, v in x.items():
-        # create nesting structure
-        parent = res
-        for (i, t) in enumerate(k):
-            if i == (len(k) - 1):
-                parent[t] = v
-            else:
-                parent.setdefault(t, {})
-                parent = parent[t]
-    return res
 
 
 class DmrResultCollection(object):

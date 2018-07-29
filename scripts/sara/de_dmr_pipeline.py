@@ -12,6 +12,10 @@ from settings import GIT_LFS_DATA_DIR, OUTPUT_DIR
 import multiprocessing as mp
 
 
+def run_dmr(norm_method='swan', **dmr_params):
+    pass
+
+
 if __name__ == "__main__":
     dmr_params = {
         'd_max': 400,
