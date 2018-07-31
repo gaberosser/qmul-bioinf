@@ -1,5 +1,5 @@
 from methylation import loader, process
-from plotting import clustering
+from plotting import clustering, pca, common
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -9,6 +9,88 @@ from stats import transformations
 import os
 from settings import LOCAL_DATA_DIR
 
+
+def plot_pca(
+        dat,
+        colour_subgroups,
+        p=None,
+        components=(0, 1),
+        marker_subgroups=None,
+        ax=None,
+        colour_map=None,
+        marker_map=None,
+        marker_size=40,
+        legend='outside',
+        default_colour='gray',
+        default_marker='o',
+        edge_colour='k',
+):
+    if p is None:
+        p = pca.PCA()
+        pca_data = p.fit_transform(dat.transpose())
+    else:
+        pca_data = p.transform(dat.transpose())
+    variance_explained = p.explained_variance_ratio_ * 100.
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, aspect='equal')
+
+    cidx, clabels = colour_subgroups.factorize()
+
+    m_label_same_as_c = False
+    if marker_subgroups is None:
+        m_label_same_as_c = True
+        marker_subgroups = colour_subgroups
+
+    if colour_map is None:
+        cmap = pca.get_cmap(len(clabels))
+        colour_map = dict([
+            (k, cmap(i)) for i, k in enumerate(clabels)
+        ])
+
+    midx, mlabels = marker_subgroups.factorize()
+
+    if marker_map is None:
+        marker_map = dict([(k, 'o') for k in clabels])
+
+    for i, l in enumerate(clabels):
+        for i2, l2 in enumerate(mlabels):
+            c = colour_map.get(l, default_colour)
+            m = marker_map.get(l2, default_marker)
+            j = (cidx == i) & (midx == i2)
+            if j.sum() != 0:
+                if m_label_same_as_c:
+                    lbl = l
+                else:
+                    lbl = None
+                ax.scatter(
+                    pca_data[j, components[0]],
+                    pca_data[j, components[1]],
+                    c=c,
+                    s=marker_size,
+                    label=lbl,
+                    marker=m,
+                    edgecolor=edge_colour
+                )
+
+    # set legend manually if it requires two groups
+    if not m_label_same_as_c:
+        pass
+        #TODO
+
+    ax.set_xlabel("PCA component %s (%.1f%%)" % (components[0] + 1, variance_explained[components[0]]))
+    ax.set_ylabel("PCA component %s (%.1f%%)" % (components[1] + 1, variance_explained[components[1]]))
+
+    if (legend is not None) and (legend != False):
+        if legend == 'outside':
+            common.legend_outside_axes(ax)
+        elif isinstance(legend, str):
+            ax.legend(loc=legend)
+        else:
+            ax.legend()
+
+    return p, ax
 
 
 def hc_plot_dendrogram_vary_n_gene(
@@ -88,6 +170,28 @@ if __name__ == "__main__":
 
     bdat = obj.data
     mdat = process.m_from_beta(bdat)
+
+    # PCA plots
+    # 1. By batch and cell type
+    subgroups = obj.batch_id
+    cmap = pd.Series(
+        common.COLOUR_BREWERS[len(subgroups.unique())],
+        index=subgroups.unique()
+    )
+    m_subgroups = obj.meta.type
+    mmap = pd.Series(
+        common.FILLED_MARKERS[len(m_subgroups.unique())],
+        index=m_subgroups.unique()
+    )
+
+    plot_pca(
+        mdat,
+        subgroups,
+        marker_subgroups=m_subgroups,
+        marker_map=mmap
+    )
+
+
     bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
     mmad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
 

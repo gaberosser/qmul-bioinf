@@ -19,6 +19,10 @@ COLOUR_BREWERS = {
          '#ffff99', '#b15928'],
 }
 
+_FILLED_MARKERS = ['o', 'v', '8', 's', 'd', 'p', '*', 'D', '^', '<', '>', 'h', 'H']
+
+FILLED_MARKERS = dict([(i, _FILLED_MARKERS[:i]) for i in range(2, len(_FILLED_MARKERS))])
+
 
 def legend_outside_axes(ax, horiz_loc='right', vert_loc='centre', **kwargs):
     if horiz_loc == 'right':

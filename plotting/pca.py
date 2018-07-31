@@ -5,6 +5,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib import animation, cm
+from sklearn.decomposition import PCA
 import numpy as np
 import pandas as pd
 from plotting.threed import plot_ellipsoid
@@ -81,8 +82,11 @@ def autoscale(data, components, ax, **additional_data):
 def pca_plot_by_group_2d(
         pca_data,
         subgroups,
+        data_supplied_as='pca',
+        variance_explained=None,
         components=(0, 1),
         colour_map=None,
+        marker_subgroups=None,
         marker_map=None,
         ellipses=True,
         ellipse_p=0.95,
@@ -97,20 +101,29 @@ def pca_plot_by_group_2d(
     2D plot showing PCA respresentation of data, optionally overlaid with ellipses
     :param pca_data: Samples in rows, features in columns
     :param subgroups: The labelling for the pca_data
+    :param data_supplied_as: Either 'pca' or 'raw'. If the latter, run PCA fitting first.
     :param components: An iterable of length 2 giving the 2 PCs to use
     :param colour_map: Optionally provide a dictionary, where key is the subgroup label and value is the plotting colour
     :param marker_map: Optionally provide a dictionary, where key is the subgroup label and value is the marker style
+    TODO: The way subgroups is implemented here is a bit messy and could do with a refactor!
     :param ellipses: If True, plot ellipses
     :param ellipse_p: The 'probability' to include in the ellipse
     :param ax: If supplied, plot here, else create a new figure and axes
     :param legend: If True, add a legend
     :param auto_scale: If True, automatically set axis scaling
+    :param variance_explained: If provided, this gives the % variance explained for each component. If None (default),
+    do not plot, unless raw data are provided.
     :param additional_data_dict, additional_data: Dictionary containing optional addition data for the plot.
      Either specify as kwargs (**additional_data) or a single dict. Only one may be supplied.
     If included, the key is the label used for the legend and the value is the same format as pca_data.
     To specify the colour, include the key in the colour_map, otherwise random colours will be selected.
     :return:
     """
+    if data_supplied_as != 'pca':
+        p = PCA()
+        pca_data = p.fit_transform(pca_data.transpose())
+        variance_explained = p.explained_variance_ratio_ * 100.
+
     if additional_data_dict is not None:
         if len(additional_data) > 0:
             raise AttributeError("Must supply EITHER additional_data kwargs OR additional_data_dict, but not both.")
@@ -159,8 +172,13 @@ def pca_plot_by_group_2d(
         ax.scatter(v[:, components[0]], v[:, components[1]], c=c, s=markersize, label=k, zorder=10, marker=m)
     if legend:
         plt.legend(frameon=False, loc='upper right')
-    ax.set_xlabel("PCA component %s" % (components[0] + 1))
-    ax.set_ylabel("PCA component %s" % (components[1] + 1))
+
+    if variance_explained is None:
+        ax.set_xlabel("PCA component %s" % (components[0] + 1))
+        ax.set_ylabel("PCA component %s" % (components[1] + 1))
+    else:
+        ax.set_xlabel("PCA component %s (%.1f%%)" % (components[0] + 1, variance_explained[components[0]]))
+        ax.set_ylabel("PCA component %s (%.1f%%)" % (components[1] + 1, variance_explained[components[1]]))
 
     # (2D) ellipses
     if ellipses:
