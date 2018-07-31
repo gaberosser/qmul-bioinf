@@ -194,7 +194,8 @@ fit <- lmFit(this.m, design)
 contrasts <- makeContrasts(
   conditionshBMI1-conditionScr, 
   conditionshCHD7-conditionScr, 
-  conditionshBMI1shCHD7-conditionScr, 
+  conditionshBMI1shCHD7-conditionshBMI1, 
+  conditionshBMI1shCHD7-conditionshCHD7, 
   levels=design
 )
 fit2 <- contrasts.fit(fit, contrasts)
@@ -233,9 +234,11 @@ for (cl in c('3021', '1299')) {
   contrasts <- makeContrasts(
     conditionshBMI1-conditionScr, 
     conditionshCHD7-conditionScr, 
-    conditionshBMI1shCHD7-conditionScr, 
+    conditionshBMI1shCHD7-conditionshBMI1, 
+    conditionshBMI1shCHD7-conditionshCHD7, 
     levels=design
   )
+  
   fit2 <- contrasts.fit(fit, contrasts)
   fit2 <- eBayes(fit2)
   
