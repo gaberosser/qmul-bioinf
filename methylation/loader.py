@@ -566,6 +566,19 @@ def load_reference(ref_names, norm_method='pbc', samples=None):
     return res
 
 
+def gse31848(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="GSE31848",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
 def gse38216(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216')
     beta_dir = os.path.join(base_dir, 'beta')

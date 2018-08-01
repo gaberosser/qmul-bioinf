@@ -1,6 +1,8 @@
 import numpy as np
 from stats import basic
 from matplotlib import pyplot as plt
+import matplotlib.colors as colors
+from matplotlib import cm
 
 
 COLOUR_BREWERS = {
@@ -19,7 +21,7 @@ COLOUR_BREWERS = {
          '#ffff99', '#b15928'],
 }
 
-_FILLED_MARKERS = ['o', 'v', '8', 's', 'd', 'p', '*', 'D', '^', '<', '>', 'h', 'H']
+_FILLED_MARKERS = ['o', 'v', 's', 'd', 'p', '*', 'D', 'P', '^', '<', '>', 'h', 'H', '8']
 
 FILLED_MARKERS = dict([(i, _FILLED_MARKERS[:i]) for i in range(2, len(_FILLED_MARKERS))])
 
@@ -55,6 +57,33 @@ def legend_outside_axes(ax, horiz_loc='right', vert_loc='centre', **kwargs):
 
     ax.legend(loc=loc_str, bbox_to_anchor=(x, y), **kwargs)
 
+
+def get_best_cmap(N, cmap='jet'):
+    """
+    Get the best colourmap we can create for the given number of categories.
+    We preferentially use colour brewer, but if the number of categories exceeds 12 then we revert to a continuous
+    cmap
+    :param N: Number of categories
+    :param cmap: The colourmap to use if we need to work with a continuous scale (not used if N<=12).
+    :return: List of colours, either RGB or hex.
+    """
+    if N in COLOUR_BREWERS:
+        return COLOUR_BREWERS[N]
+    else:
+        func = continuous_cmap(N, cmap=cmap)
+        return [func(i) for i in range(N)]
+
+
+def continuous_cmap(N, cmap='jet'):
+    '''
+    Returns a function that maps each index in 0, 1, ... N-1 to a distinct
+    RGB color, defined by cmap.
+    '''
+    color_norm  = colors.Normalize(vmin=0, vmax=N-1)
+    scalar_map = cm.ScalarMappable(norm=color_norm, cmap=cmap)
+    def map_index_to_rgb_color(index):
+        return scalar_map.to_rgba(index)
+    return map_index_to_rgb_color
 
 
 def axis_border(ax, c=None, lw=1):
