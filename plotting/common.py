@@ -21,7 +21,7 @@ COLOUR_BREWERS = {
          '#ffff99', '#b15928'],
 }
 
-_FILLED_MARKERS = ['o', 'v', 's', 'd', 'p', '*', 'D', 'P', '^', '<', '>', 'h', 'H', '8']
+_FILLED_MARKERS = ['o', 'v', 's', 'd', 'p', 'X', '*', 'D', 'P', '^', '<', '>', 'h', 'H', '8']
 
 FILLED_MARKERS = dict([(i, _FILLED_MARKERS[:i]) for i in range(2, len(_FILLED_MARKERS))])
 

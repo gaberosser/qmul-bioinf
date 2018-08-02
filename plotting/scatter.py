@@ -6,6 +6,10 @@ from plotting import common
 import numpy as np
 
 
+# these markers tend to look smaller (more vertices?) so need to be boosted a little
+FILLED_MARKERS_TO_EXPAND = ('P', '*', 'h', 'H', 'p', 'X', '8')
+
+
 def scatter_with_colour_and_markers(
     dat,
     colour_subgroups=None,
@@ -72,6 +76,10 @@ def scatter_with_colour_and_markers(
         for im, lm in enumerate(mlabels):
             c = colour_map.get(lc, default_colour)
             m = marker_map.get(lm, default_marker)
+            this_ms = ms
+            if m in FILLED_MARKERS_TO_EXPAND:
+                # apply a 10% increase to these markers (only)
+                this_ms *= 1.1
             j = (cidx == ic) & (midx == im)
             if j.sum() != 0:
                 if c_has_labels and not m_has_labels:
@@ -84,7 +92,7 @@ def scatter_with_colour_and_markers(
                     dat.values[j, 0],
                     dat.values[j, 1],
                     c=c,
-                    s=ms,
+                    s=this_ms,
                     label=lbl,
                     marker=m,
                     edgecolor=ec,

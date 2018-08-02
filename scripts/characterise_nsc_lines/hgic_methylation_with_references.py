@@ -90,39 +90,95 @@ if __name__ == "__main__":
 
     ## TODO: can we include (some) of the HipSci samples?
     ## TODO: can we include (some) of the GSE31848 samples?
+    nazor_ldr = loader.gse31848(norm_method=norm_method)
+    ix = nazor_ldr.meta.index.str.contains(r'(ES__WA)|(iPS__HDF)')
+    nazor_ldr.filter_samples(ix)
 
     refs = [
         ('Kim et al.', loader.gse38216(norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2', 'H9 NPC 1', 'H9 NPC 2'])),
         ('Morey et al.', loader.gse67283(norm_method=norm_method, samples=['NPC_wt'])),
         ('Zimmerlin et al.', loader.gse65214(norm_method=norm_method)),
+        ('Nazor et al.', nazor_ldr),
         ('Encode EPIC', loader.encode_epic(norm_method=norm_method, samples=['GM23338', 'H9 NPC', 'H7 hESC', 'Astrocyte'])),
         ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
     ]
 
+    ref_name_map = {
+        'GSE38216': 'Kim et al.',
+        'GSE67283': 'Morey et al.',
+        'GSE65214': 'Zimmerlin et al.',
+        'GSE31848': 'Nazor et al.',
+    }
+
     to_aggr = [
         (r'H9 ESC [12]', 'H9 ESC'),
         (r'H9 NPC [12]', 'H9 NPC'),
+        ('ES__WA09_', 'H9 ESC'),
+        ('ES__WA07_', 'H7 ESC'),
     ]
-
-    # TODO make this nicer
-    r = refs[0][1]
-    for srch, repl in to_aggr:
-        idx = r.data.columns.str.contains(srch)
-        new_col = r.data.loc[:, idx].mean(axis=1)
-        r.data = r.data.loc[:, ~idx]
-        r.data.insert(r.data.shape[1], repl, new_col)
-        new_meta_row = r.meta.loc[idx].iloc[0]
-        new_meta_row.name = repl
-        r.meta = r.meta.loc[~idx]
-        r.meta = r.meta.append(new_meta_row)
-
-    # rename based on study
-    for nm, t in refs:
-        new_idx = ["%s (%s)" % (i, nm) for i in t.meta.index]
-        t.meta.index = new_idx
-        t.data.columns = new_idx
+    for i in range(1, 15):
+        to_aggr.append(
+            (r'iPS__HDF51IPS%d_' % i, 'iPS_HDF51_%d' % i)
+        )
 
     ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
+
+    for srch, repl in to_aggr:
+        idx = ref_obj.meta.index.str.contains(srch)
+        if idx.sum() == 0:
+            print "Warning: search string %s matches no samples." % srch
+            continue
+
+        #define new data and meta entries
+        new_col = ref_obj.data.loc[:, idx].mean(axis=1)
+        new_meta_row = ref_obj.meta.loc[idx].iloc[0]
+        new_meta_row.name = repl
+
+        # filter out old entries
+        ref_obj.filter_samples(~idx)
+
+        # add new entries: data, meta and batch_id
+        ref_obj.data.insert(ref_obj.data.shape[1], repl, new_col, allow_duplicates=True)
+        ref_obj.meta = ref_obj.meta.append(new_meta_row)
+        ref_obj.batch_id.loc[repl] = new_meta_row.batch
+
+        # ref_obj.data = ref_obj.data.loc[:, ~idx]
+        # ref_obj.meta = ref_obj.meta.loc[~idx]
+
+    # rename to include publication / reference
+    new_index = np.array(ref_obj.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
+    for b in ref_obj.meta.batch.unique():
+        if b in ref_name_map:
+            suff = ref_name_map[b]
+        else:
+            suff = b
+        ix = ref_obj.meta.batch == b
+        old_names = ref_obj.meta.index[ix]
+        new_names = ["%s (%s)" % (t, suff) for t in old_names]
+        new_index[ix] = new_names
+
+    ref_obj.meta.index = new_index
+    ref_obj.data.columns = new_index
+
+    # TODO make this nicer
+    # r = refs[0][1]
+    # for srch, repl in to_aggr:
+    #     idx = r.data.columns.str.contains(srch)
+    #     new_col = r.data.loc[:, idx].mean(axis=1)
+    #     r.data = r.data.loc[:, ~idx]
+    #     r.data.insert(r.data.shape[1], repl, new_col, allow_duplicates=True)
+    #     new_meta_row = r.meta.loc[idx].iloc[0]
+    #     new_meta_row.name = repl
+    #     r.meta = r.meta.loc[~idx]
+    #     r.meta = r.meta.append(new_meta_row)
+
+    # rename based on study
+    # for nm, t in refs:
+    #     new_idx = ["%s (%s)" % (i, nm) for i in t.meta.index]
+    #     t.meta.index = new_idx
+    #     t.data.columns = new_idx
+    #
+    # ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
 
     obj = loader.loader.MultipleBatchLoader([patient_obj, ref_obj])
 
@@ -194,6 +250,21 @@ if __name__ == "__main__":
     )
     ax.figure.subplots_adjust(left=0.1, right=0.8)
     ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_all_qn.png"), dpi=200)
+
+    # now try without GBM
+    ix = m_subgroups != 'GBM'
+    mdat_qn_nogbm = mdat_qn.loc[:, ix]
+    m_subgroups_nogbm = m_subgroups.loc[ix]
+    colour_subgroups_nogbm = colour_subgroups.loc[ix]
+    p_qn_nogbm, ax = plot_pca(
+        mdat_qn_nogbm,
+        colour_subgroups_nogbm,
+        marker_subgroups=m_subgroups_nogbm,
+        marker_map=mmap
+    )
+    ax.figure.subplots_adjust(left=0.1, right=0.8)
+    ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_nogbm_qn.png"), dpi=200)
+
 
     # plot dendrograms
 
