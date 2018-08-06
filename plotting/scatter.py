@@ -70,7 +70,11 @@ def scatter_with_colour_and_markers(
         ])
 
     if marker_map is None:
-        marker_map = dict([(k, 'o') for k in mlabels])
+        # marker_map = dict([(k, 'o') for k in mlabels])
+        mmap = common.get_best_marker_map(len(mlabels))
+        marker_map = dict([
+            (k, mmap[i]) for i, k in enumerate(mlabels)
+        ])
 
     for ic, lc in enumerate(clabels):
         for im, lm in enumerate(mlabels):

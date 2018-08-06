@@ -325,6 +325,7 @@ if __name__ == "__main__":
 
     row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_')] = '#990000'  # dark red
     row_colours_all.loc[row_colours_all.index.str.contains('HPSI')] = '#990000'
+    row_colours_all.loc[row_colours_all.index.str.contains('HEL1')] = '#990000'
 
     row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
     row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'  # pink

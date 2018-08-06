@@ -2256,7 +2256,7 @@ def gse73721_salmon(units='tpm'):
 def pollard_salmon(units='tpm'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'E-MTAB-3867')
     meta_fn = os.path.join(indir, 'sources.csv')
-    count_dir = os.path.join(indir, 'salmon')
+    count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
@@ -2284,7 +2284,7 @@ def gse84166_salmon(units='tpm'):
 def gse61794_salmon(units='tpm'):
     indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
     meta_fn = os.path.join(indir, 'sources.csv')
-    count_dir = os.path.join(indir, 'salmon')
+    count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 

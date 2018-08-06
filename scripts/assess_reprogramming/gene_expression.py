@@ -1,13 +1,15 @@
 from rnaseq import loader
-from plotting import clustering, common
+from plotting import clustering, common, scatter
 from stats import transformations
 import pandas as pd
 import numpy as np
-import copy
+from copy import copy
 import os
 from utils import output
 import references
 from scipy.stats import zscore
+from copy import copy
+from sklearn.decomposition import pca
 
 
 class SetMe(object):
@@ -20,7 +22,7 @@ def load_refs(ref_dict, **load_kwds):
     ref_objs_arr = []
 
     for k, v in ref_dict.items():
-        the_kwds = copy.copy(load_kwds)
+        the_kwds = copy(load_kwds)
         for k1, v1 in the_kwds.items():
             if v1 is SetMe:
                 the_kwds[k1] = v.get(k1)
@@ -41,35 +43,132 @@ def combine_filter(dat_arr, meta_arr, min_val=1, n_above_min=3):
     # merge the batch for our data
     meta.loc[meta['batch'].str.contains('wtchg'), 'batch'] = 'WTCHG'
 
-    # filter and QN
+    # filter
     dat = dat.loc[(dat > min_val).sum(axis=1) > n_above_min]
 
     return dat, meta
 
 
+def filter_loader(obj, min_val=1, n_above_min=3):
+    dat = obj.data
+    idx = (dat > min_val).sum(axis=1) > n_above_min
+    dat = dat.loc[idx]
+    obj.data = dat
+    return obj
+
+
 def construct_colour_array_legend_studies(meta):
+    ct_leg = {
+        'FB': '#fff89e',
+        'iPSC (this study)': 'blue',
+        'iPSC': '#96daff',
+        'ESC': 'green',
+        'iNSC (this study)': '#9e3900',
+        'iNSC': '#db7b00',
+        'NSC': '#db7b00',
+        'Fetal NSC': '#ffaf47',
+    }
+
     studies = {}
     cc = pd.DataFrame('gray', index=meta.index, columns=['Cell type', 'Study'])
 
-    cc.loc[meta['type'] == 'FB', 'Cell type'] = '#fff89e'
-    cc.loc[(meta['type'] == 'iPSC') & (meta['batch'].str.contains('WTCHG')), 'Cell type'] = 'blue'
-    cc.loc[(meta['type'] == 'iPSC') & (~meta['batch'].str.contains('WTCHG')), 'Cell type'] = '#96daff'
-    cc.loc[meta['type'] == 'ESC', 'Cell type'] = 'green'
-    cc.loc[meta['type'] == 'EPS', 'Cell type'] = '#7fc97f'
-    cc.loc[(meta['type'] == 'iNSC') & (meta['batch'].str.contains('WTCHG')), 'Cell type'] = '#9e3900'  # chestnut
-    cc.loc[meta['type'] == 'iNSC', 'Cell type'] = '#db7b00'  # orange
-    cc.loc[meta['type'] == 'NPC', 'Cell type'] = '#db7b00'  # orange
-    cc.loc[meta['type'] == 'NSC', 'Cell type'] = '#db7b00'  # orange
-    cc.loc[(meta['type'] == 'NSC') & (meta.index.str.contains('fetal')), 'Cell type'] = '#ffaf47'  # light orange
+    cols_incl = ['FB', 'ESC', 'NSC']
+    for t in cols_incl:
+        cc.loc[meta['type'] == t, 'Cell type'] = ct_leg[t]
+
+    cc.loc[meta['type'] == 'NPC', 'Cell type'] = ct_leg['NSC']
+    cc.loc[(meta['type'] == 'iPSC') & (meta['batch'].str.contains('WTCHG')), 'Cell type'] = ct_leg['iPSC (this study)']
+    cc.loc[(meta['type'] == 'iPSC') & (~meta['batch'].str.contains('WTCHG')), 'Cell type'] = ct_leg['iPSC']
+    cc.loc[(meta['type'] == 'iNSC') & (meta['batch'].str.contains('WTCHG')), 'Cell type'] = ct_leg['iNSC (this study)']  # chestnut
+    cc.loc[(meta['type'] == 'iNSC') & (~meta['batch'].str.contains('WTCHG')), 'Cell type'] = ct_leg['iNSC']  # chestnut
+    cc.loc[(meta['type'] == 'NSC') & (meta.index.str.contains('fetal')), 'Cell type'] = ct_leg['Fetal NSC']  # light orange
 
     batches = meta.batch.unique()
     n_study = len(batches)
-    study_colours = common.COLOUR_BREWERS[n_study]
+    study_colours = common.get_best_cmap(n_study)
     for i, c in enumerate(study_colours):
         cc.loc[meta['batch'] == batches[i], 'Study'] = c
         studies[batches[i]] = c
 
-    return cc, studies
+    all_colours = cc.loc[:, 'Cell type'].unique()
+    for k in ct_leg.keys():
+        if ct_leg[k] not in all_colours:
+            ct_leg.pop(k)
+
+    # legend dictionary
+    leg_dict = {
+        'Cell type': ct_leg,
+        'Study': studies
+    }
+
+    return cc, studies, leg_dict
+
+
+def plot_dendrogram(
+        obj_arr,
+        qn_method=None,
+        eps=0.01,
+        min_val=1,
+        n_above_min=3,
+        vertical=False,
+        figsize=(7, 8),
+        **kwargs
+):
+    if len(obj_arr) > 1:
+        the_obj = loader.MultipleBatchLoader(obj_arr)
+    else:
+        the_obj = obj_arr[0]
+
+    the_obj = filter_loader(the_obj, min_val=min_val, n_above_min=n_above_min)
+    dat = np.log2(the_obj.data + eps)
+    if qn_method is not None:
+        dat = transformations.quantile_normalisation(dat, method=qn_method)
+    cc, st, leg_dict = construct_colour_array_legend_studies(the_obj.meta)
+
+    dend = clustering.dendrogram_with_colours(
+        dat,
+        cc,
+        vertical=vertical,
+        legend_labels=leg_dict,
+        fig_kws={'figsize': figsize},
+        **kwargs
+    )
+
+    return dend
+
+
+def plot_pca(
+        dat,
+        colour_subgroups,
+        p=None,
+        components=(0, 1),
+        marker_subgroups=None,
+        ax=None,
+        colour_map=None,
+        marker_map=None,
+        **kwargs
+):
+    if p is None:
+        p = pca.PCA()
+        pca_data = p.fit_transform(dat.transpose())
+    else:
+        pca_data = p.transform(dat.transpose())
+    variance_explained = p.explained_variance_ratio_ * 100.
+
+    ax = scatter.scatter_with_colour_and_markers(
+        pca_data[:, components],
+        colour_subgroups=colour_subgroups,
+        colour_map=colour_map,
+        marker_subgroups=marker_subgroups,
+        marker_map=marker_map,
+        ax=ax,
+        **kwargs
+    )
+
+    ax.set_xlabel("PCA component %s (%.1f%%)" % (components[0] + 1, variance_explained[components[0]]))
+    ax.set_ylabel("PCA component %s (%.1f%%)" % (components[1] + 1, variance_explained[components[1]]))
+
+    return p, ax
 
 
 if __name__ == '__main__':
@@ -78,6 +177,11 @@ if __name__ == '__main__':
     n_above_min = 3
     source = 'salmon'
     n_hipsci = 30  # only plot a limited number to avoid flooding the plots
+    eps = 0.01  # offset to use when applying log transform
+
+    # Set True to enable QN
+    # I think this is inappropriate, since we expect a large variation between different cell types
+    quantile_norm = 'median'
 
     ref_dict = {
         'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
@@ -118,25 +222,24 @@ if __name__ == '__main__':
     # our data (everything)
     obj = loader.load_by_patient(pids, source=source)
 
-    dat_hip, meta_hip = loader.hipsci_ipsc(aggregate_to_gene=True)
-    meta_hip.insert(3, 'batch', 'HipSci')
+    # HipSci data
+    hip_obj = loader.hipsci_ipsc(aggregate_to_gene=True)
+    hip_obj.meta.insert(3, 'batch', hip_obj.batch_id)
+    # hip_obj.meta.insert(3, 'batch', 'HipSci')
 
     # reduce the number in a (repeatably) random fashion
     rs = np.random.RandomState(42)  # set the seed so we always get the same samples
-    idx = np.arange(dat_hip.shape[1])
+    keep = np.zeros(hip_obj.meta.shape[0]).astype(bool)
+    idx = hip_obj.meta.index.tolist()
     rs.shuffle(idx)
-    dat_hip_reduced = dat_hip.iloc[:, idx[:n_hipsci]]
-    meta_hip_reduced = meta_hip.loc[dat_hip_reduced.columns]
+    idx = idx[:n_hipsci]
+    hip_obj.meta = hip_obj.meta.loc[idx]
+    hip_obj.data = hip_obj.data.loc[:, idx]
 
+    # References without NSC
     ref_obj = load_refs(ref_dict, **load_kwds)
-    dat_ref = ref_obj.data.copy()
-    meta_ref = ref_obj.meta.copy()
-
-    # our data - more selective
-    dat_home = obj.data.loc[:, obj.meta.type.isin(['iPSC', 'FB'])]
 
     # discard irrelevant samples
-
     to_discard = [
         '_rapamycin_',
         'HFF_PD16', 'HFF_PD46', 'HFF_PD64', 'HFF_PD74',
@@ -144,202 +247,118 @@ if __name__ == '__main__':
         'IMR90_O',
         'MRC_5_PD52', 'MRC_5_PD62', 'MRC_5_PD72',
         'WI_38_O',
+        '-EPS-',
     ]
     for td in to_discard:
-        the_idx = ~dat_ref.columns.str.contains(td)
-        dat_ref = dat_ref.loc[:, the_idx]
-        meta_ref = meta_ref.loc[the_idx]
+        the_idx = ~ref_obj.data.columns.str.contains(td)
+        ref_obj.filter_samples(the_idx)
+    # fill in missing cell types
+    ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'type'] = ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'cell type']
 
-    dat, meta = combine_filter(
-        (dat_home, dat_ref),
-        (obj.meta, ref_obj.meta),
-        min_val=min_val,
-        n_above_min=n_above_min,
-    )
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
+    dat_ref = ref_obj.data.copy()
+    meta_ref = ref_obj.meta.copy()
 
-    cc, st = construct_colour_array_legend_studies(meta)
+    # References with NSC
+    nsc_ref_obj = load_refs(nsc_ref_dict, **load_kwds)
+    # discard
+    to_discard = [
+        'INSC fibroblast',
+    ]
+    for td in to_discard:
+        the_idx = ~nsc_ref_obj.data.columns.str.contains(td)
+        nsc_ref_obj.filter_samples(the_idx)
 
-    leg_dict = {
-        'Cell type': {
-            'FB': '#fff89e',
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-        },
-        'Study': st,
-    }
+    # fill in missing cell types
+    nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'type'] = nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'cell type']
+    dat_nsc_ref = nsc_ref_obj.data
 
-    dend = clustering.dendrogram_with_colours(dat_qn, cc, vertical=True, legend_labels=leg_dict, fig_kws={'figsize': [14, 6]})
+    # 1. Our data: iPSC and FB only
+    obj1 = copy(obj)
+    ix = obj1.meta.type.isin(['iPSC', 'FB'])
+    obj1.filter_samples(ix)
+
+    obj2 = ref_obj
+
+    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb.png"), dpi=200)
 
-    # Only iPSC and ESC
+    # 2. Only iPSC and ESC
+    obj1 = copy(obj)
+    ix = obj1.meta.type.isin(['iPSC'])
+    obj1.filter_samples(ix)
 
-    dat = dat.loc[:, meta.type != 'FB']
-    meta = meta.loc[dat.columns]
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
+    obj2 = copy(ref_obj)
+    ix = obj2.meta.type == 'ESC'
+    obj2.filter_samples(ix)
 
-    cc, st = construct_colour_array_legend_studies(meta)
-
-    leg_dict = {
-        'Cell type': {
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-        },
-        'Study': st,
-    }
-
-    dend = clustering.dendrogram_with_colours(dat_qn, cc, vertical=True, legend_labels=leg_dict, fig_kws={'figsize': [14, 6]})
+    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc.png"), dpi=200)
 
-    # Ruiz signature (only)
+    # 3. iPSC, ESC, Ruiz signature (only)
+    the_obj = loader.MultipleBatchLoader([obj1, obj2])
+    dat_r_z = pd.DataFrame(np.log2(the_obj.data + eps))
+    dat_r_z = dat_r_z.reindex(gene_sign_ens.values).dropna()
+    for r in dat_r_z.index:
+        dat_r_z.loc[r] = zscore(dat_r_z.loc[r])
 
-    dat_r_z = np.log2(dat + 1).loc[gene_sign_ens.values].dropna().apply(zscore, axis=1)
     dat_r_z.index = gene_sign_ens.index[gene_sign_ens.isin(dat_r_z.index)]
 
     cg = clustering.plot_clustermap(dat_r_z, show_gene_labels=True, cmap='RdBu_r')
     cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(outdir, "clustermap_ruiz_ipsc_esc_ztrans.png"), dpi=200)
 
-    # now add some HiPSCi and repeat
+    # 4. HipSci, iPSC, ESC, FB
+    obj1 = copy(obj)
+    ix = obj1.meta.type.isin(['iPSC', 'FB'])
+    obj1.filter_samples(ix)
 
-    dat, meta = combine_filter(
-        (dat_home, dat_ref, dat_hip_reduced),
-        (obj.meta, ref_obj.meta, meta_hip_reduced),
-        min_val=min_val,
-        n_above_min=n_above_min,
-    )
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
-
-    cc, st = construct_colour_array_legend_studies(meta)
-    leg_dict = {
-        'Cell type': {
-            'FB': '#fff89e',
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-        },
-        'Study': st,
-    }
-
-    dend = clustering.dendrogram_with_colours(
-        dat_qn,
-        cc,
-        vertical=True,
-        legend_labels=leg_dict,
-        fig_kws={'figsize': [14, 6]},
-        # show_labels=False
-    )
+    dend = plot_dendrogram([obj1, ref_obj, hip_obj], qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_with_hipsci%d.png" % n_hipsci), dpi=200)
 
-    # remove FB and repeat
-    dat = dat.loc[:, meta.type != 'FB']
-    meta = meta.loc[dat.columns]
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
+    # 5. HipSci, iPSC, ESC
+    obj1 = copy(obj)
+    ix = obj1.meta.type.isin(['iPSC'])
+    obj1.filter_samples(ix)
 
-    cc, st = construct_colour_array_legend_studies(meta)
+    obj2 = copy(ref_obj)
+    ix = obj2.meta.type == 'ESC'
+    obj2.filter_samples(ix)
 
-    leg_dict = {
-        'Cell type': {
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-        },
-        'Study': st,
-    }
-
-    dend = clustering.dendrogram_with_colours(dat_qn, cc, vertical=True, legend_labels=leg_dict, fig_kws={'figsize': [14, 6]})
+    dend = plot_dendrogram([obj1, obj2, hip_obj], qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_with_hipsci%d.png" % n_hipsci), dpi=200)
 
-    # Ruiz signature (only)
+    # 6. HipSci, iPSC, ESC Ruiz signature (only)
+    the_obj = loader.MultipleBatchLoader([obj1, obj2, hip_obj])
 
-    dat_r_z = np.log2(dat + 1).loc[gene_sign_ens.values].dropna().apply(zscore, axis=1)
+    dat_r_z = pd.DataFrame(np.log2(the_obj.data + 1))
+    dat_r_z = dat_r_z.reindex(gene_sign_ens.values).dropna()
+    for r in dat_r_z.index:
+        dat_r_z.loc[r] = zscore(dat_r_z.loc[r])
+
     dat_r_z.index = gene_sign_ens.index[gene_sign_ens.isin(dat_r_z.index)]
 
     cg = clustering.plot_clustermap(dat_r_z, show_gene_labels=True, cmap='RdBu_r', )
     cg.gs.update(bottom=0.2)
     cg.savefig(os.path.join(outdir, "clustermap_ruiz_ipsc_esc_with_hipsci%d.png" % n_hipsci), dpi=200)
 
-    # Let's bring in our NSC and ref NSC now
+    # 7. iPSC, ESC, FB, iNSC
+    obj1 = copy(obj)
+    ix = obj1.meta.type.isin(['iPSC', 'FB', 'iNSC'])
+    obj1.filter_samples(ix)
 
-    dat_home = obj.data.loc[:, obj.meta.type.isin(['iPSC', 'FB', 'NSC', 'iNSC'])]
-
-    # load additional NSC ref data, previously withheld
-    nsc_ref_obj = load_refs(nsc_ref_dict, **load_kwds)
-    dat_nsc_ref = nsc_ref_obj.data
-
-    dat, meta = combine_filter(
-        (dat_home, dat_ref, dat_nsc_ref),
-        (obj.meta, ref_obj.meta, nsc_ref_obj.meta),
-        min_val=min_val,
-        n_above_min=n_above_min
-    )
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
-
-    cc, st = construct_colour_array_legend_studies(meta)
-
-    leg_dict = {
-        'Cell type': {
-            'FB': '#fff89e',
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-            'iNSC (this study)': '#9e3900',
-            'iNSC': '#db7b00',
-            'Fetal NSC': '#ffaf47'
-        },
-        'Study': st,
-    }
-
-    dend = clustering.dendrogram_with_colours(
-        dat_qn,
-        cc,
-        vertical=True,
-        legend_labels=leg_dict,
-        fig_kws={'figsize': [16, 6]},
-        # show_labels=False
-    )
-
+    dend = plot_dendrogram([obj1, ref_obj, nsc_ref_obj], vertical=True, figsize=(14, 7), qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc.png"), dpi=200)
 
-    # all of that AND HipSci samples
-
-    dat, meta = combine_filter(
-        (dat_home, dat_ref, dat_nsc_ref, dat_hip_reduced),
-        (obj.meta, ref_obj.meta, nsc_ref_obj.meta, meta_hip_reduced),
-        min_val=min_val,
-        n_above_min=n_above_min
-    )
-    dat_qn = transformations.quantile_normalisation(np.log2(dat + 1))
-
-    cc, st = construct_colour_array_legend_studies(meta)
-
-    leg_dict = {
-        'Cell type': {
-            'FB': '#fff89e',
-            'iPSC (this study)': 'blue',
-            'iPSC': '#96daff',
-            'ESC': 'green',
-            'Enhanced PSC': '#7fc97f',
-            'iNSC (this study)': '#9e3900',
-            'iNSC': '#db7b00',
-            'Fetal NSC': '#ffaf47'
-        },
-        'Study': st,
-    }
-
-    dend = clustering.dendrogram_with_colours(
-        dat_qn,
-        cc,
-        vertical=True,
-        legend_labels=leg_dict,
-        fig_kws={'figsize': [16, 6]},
-    )
-
+    # 8. HipSci, iPSC, ESC, FB, iNSC
+    dend = plot_dendrogram([obj1, ref_obj, nsc_ref_obj, hip_obj], vertical=True, figsize=(16, 7), qn_method=quantile_norm)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc_hipsci%d.png" % n_hipsci), dpi=200)
+
+    # 9. PCA with all samples
+    the_obj = loader.MultipleBatchLoader([obj1, ref_obj, nsc_ref_obj, hip_obj])
+    the_dat = np.log2(the_obj.data + eps)
+    if quantile_norm is not None:
+        the_dat = transformations.quantile_normalisation(the_dat, method=quantile_norm)
+    p, ax = plot_pca(the_dat, the_obj.meta.type, marker_subgroups=the_obj.meta.batch)
+    ax.figure.subplots_adjust(right=0.78)
+    ax.figure.savefig(os.path.join(outdir, "pca_all_samples.png"), dpi=200)
+

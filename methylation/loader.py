@@ -743,10 +743,13 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
 
     if array_type == 'all':
         meta.insert(1, 'batch', 'HipSci')
+        batch_id = 'HipSci'
     elif array_type == 'epic':
         meta.insert(1, 'batch', 'HipSci (EPIC)')
+        batch_id = 'HipSci (EPIC)'
     elif array_type == '450k':
         meta.insert(1, 'batch', 'HipSci (450K)')
+        batch_id = 'HipSci (450K)'
     else:
         raise AttributeError("array_type %s is not supported" % array_type)
     data = data.dropna().astype(float)
@@ -760,7 +763,7 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
     obj = HipsciMethylationLoader()
     obj.data = data
     obj.meta = meta
-    obj.batch_id = 'HipSci (EPIC)'
+    obj.batch_id = batch_id
 
     return obj
 

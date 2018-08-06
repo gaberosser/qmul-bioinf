@@ -92,7 +92,7 @@ process_and_save_idat_ucl <- function(
   beta.bmiq <- tryCatch(
     champ.norm(beta = beta.raw, method = 'BMIQ', arraytype = arraytype, cores=4)
   )
-  if (!is.na(beta.bmiq)) {
+  if (!is.null(beta.bmiq)) {
     write.csv(beta.bmiq, file = open_func(file.path(output.dir, paste0("beta_bmiq", file_ext))))
   } else {
     message("BMIQ failed")
@@ -101,7 +101,7 @@ process_and_save_idat_ucl <- function(
   beta.pbc <- tryCatch(
     champ.norm(beta = beta.raw, method = 'PBC', arraytype = arraytype)
   )
-  if (!is.na(beta.pbc)) {
+  if (!is.null(beta.pbc)) {
     write.csv(beta.pbc, file = open_func(file.path(output.dir, paste0("beta_pbc", file_ext))))
   } else {
     message("PBC failed")
@@ -110,7 +110,7 @@ process_and_save_idat_ucl <- function(
   mset.swan <- tryCatch(
     preprocessSWAN(rgSet, mSet = mset)
   )
-  if (!is.na(mset.swan)) {
+  if (!is.null(mset.swan)) {
     beta.swan <- getBeta(mset.swan)
     beta.swan <- beta.swan[rownames(beta.raw),]
     write.csv(beta.swan, file = open_func(file.path(output.dir, paste0("beta_swan", file_ext))))
@@ -120,7 +120,7 @@ process_and_save_idat_ucl <- function(
   
   if (arraytype == 'EPIC') {
     rgSet.funnorm <- tryCatch(preprocessFunnorm(rgSet))
-    if (!is.na(rgSet.funnorm)) {
+    if (!is.null(rgSet.funnorm)) {
       beta.funnorm <- getBeta(rgSet.funnorm)[rownames(beta.raw),]
       colnames(beta.funnorm) <- meta[colnames(beta.funnorm), name.col]
       write.csv(beta.funnorm, file = open_func(file.path(output.dir, paste0("beta_funnorm", file_ext))))
@@ -328,24 +328,25 @@ GenomicMethylSetfromGEORaw <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-04-09')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-19')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'E-MTAB-6194')
-base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-26')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-26')
+base.dir <- file.path(data.dir.raid, 'methylation', 'GSE60274')
 
 idat.dir <- file.path(base.dir, 'idat')
 # raw.file <- file.path(base.dir, 'geo_raw.txt')
 meta.file <- file.path(base.dir, 'sources.csv')
 
-samples <- c(
-  'p62_3_shBmi1',
-  'p62_3_shChd7',
-  'p62_3_shB+C',
-  'DURA018_NH15_1877_P6_15/05/2017',
-  'DURA026_NH16_270_P8_15/05/2017',
-  'DURA052_NH16_2214_P6_14/04/2017'
-)
+# samples <- c(
+#  'p62_3_shBmi1',
+#  'p62_3_shChd7',
+#  'p62_3_shB+C',
+#  'DURA018_NH15_1877_P6_15/05/2017',
+#  'DURA026_NH16_270_P8_15/05/2017',
+#  'DURA052_NH16_2214_P6_14/04/2017'
+# )
 
 # process_and_save(idat.dir, meta.file, arraytype = "450K")
-process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC", name.col = "sample", samples = samples)
-# process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "450k", name.col="sample")
+# process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "EPIC", name.col = "sample", samples = samples)
+process_and_save_idat_ucl(idat.dir, meta.file, arraytype = "450K", name.col="sample")
 
 # meta <- read.csv(meta.file)
 # rownames(meta) <- meta$Sample_Name

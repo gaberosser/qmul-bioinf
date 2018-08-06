@@ -86,6 +86,21 @@ def continuous_cmap(N, cmap='jet'):
     return map_index_to_rgb_color
 
 
+def get_best_marker_map(N, repeat=True):
+    nmax = max(FILLED_MARKERS.keys())
+    if not repeat and N > nmax:
+        raise AttributeError("Too many different markers requested")
+    if N in FILLED_MARKERS:
+        return FILLED_MARKERS[N]
+    else:
+        nrep = int(np.ceil(float(N) / nmax))
+        res = FILLED_MARKERS[nmax] * nrep
+        res = res[:N]
+        return res
+
+
+
+
 def axis_border(ax, c=None, lw=1):
     """
     Add a border around the supplied axis.

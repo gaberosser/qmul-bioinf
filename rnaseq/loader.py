@@ -602,6 +602,13 @@ def hipsci_ipsc(aggregate_to_gene=True):
     TODO: make one?
     :return:
     """
+
+    class HipsciRnaseqLoader(object):
+        extra_df_attributes = tuple()
+        tax_id = 9606
+        row_indexed = True
+        meta_is_linked = True
+
     indir = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'tpm')
     meta_fn = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'sources.csv')
 
@@ -635,5 +642,10 @@ def hipsci_ipsc(aggregate_to_gene=True):
     if meta is None:
         meta = pd.read_csv(meta_fn, header=0, index_col=0)
 
-    return dat, meta
+    obj = HipsciRnaseqLoader()
+    obj.data = dat
+    obj.meta = meta
+    obj.batch_id = 'HipSci'
+
+    return obj
 
