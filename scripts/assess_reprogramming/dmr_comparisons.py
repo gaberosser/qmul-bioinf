@@ -332,8 +332,12 @@ if __name__ == "__main__":
         e6194_obj
     ]
 
+    ## TODO: we should now be able to use a MultipleBatchLoader to combine everything (now HipSci has its own loader)
+
     # HipSci data
-    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
+    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
+    hip_epic_meta = hip_epic_ldr.meta
+    hip_epic_data = hip_epic_ldr.data
 
     meta, dat_m = combine_data_meta(
         (our_data, hip_epic_data, e6194_obj.data, encode_epic_obj.data),

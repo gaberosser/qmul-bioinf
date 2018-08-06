@@ -354,7 +354,6 @@ class MultipleFileLoader(DatasetLoader):
 
 
 class MultipleBatchLoader(object):
-    ## FIXME: respect the batch ID somehow - so that MultipleBatch instances can also be combined
     def __init__(self, loaders, intersection_only=True):
         """
         Class to combine multiple loader objects.
@@ -432,11 +431,15 @@ class MultipleBatchLoader(object):
                     # this occurs if l is a single file loader
                     ## FIXME: single file loaders may contain multiple samples
                     ## in that case, this doesn't spot name clashes!!
+
+                    # FIXME: here's a workaround for now: may not be bulletproof
                     this_samples = [l.input_files]
+                    if len(this_samples) != len(l.meta.index):
+                        this_samples = l.meta.index.tolist()
                 else:
                     # this occurs if l is a batch loader
                     # FIXME: may not give us valid sample names?
-                    this_samples = l.meta.index
+                    this_samples = l.meta.index.tolist()
 
             # get a copy of the data
             if self.row_indexed:
@@ -560,10 +563,10 @@ class MultipleBatchLoader(object):
     def filter_samples(self, keep_idx):
         """
         Drop samples according to the supplied index. All data structures are updated in-place.
-        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        :param keep_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
         will be retained.
         :return:
         """
         self.meta = self.meta.loc[keep_idx]
-        self.data = self.data.loc[:, self.meta.index]
-        self.batch_id = self.batch_id.loc[self.meta.index]
+        self.data = self.data.loc[:, keep_idx]
+        self.batch_id = self.batch_id.loc[keep_idx]

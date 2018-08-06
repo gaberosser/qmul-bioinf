@@ -76,10 +76,13 @@ def scatter_with_colour_and_markers(
         for im, lm in enumerate(mlabels):
             c = colour_map.get(lc, default_colour)
             m = marker_map.get(lm, default_marker)
-            this_ms = ms
+
             if m in FILLED_MARKERS_TO_EXPAND:
                 # apply a 10% increase to these markers (only)
-                this_ms *= 1.1
+                this_ms = 1.1 * ms
+            else:
+                this_ms = ms
+
             j = (cidx == ic) & (midx == im)
             if j.sum() != 0:
                 if c_has_labels and not m_has_labels:

@@ -287,9 +287,15 @@ if __name__ == "__main__":
     ref_data = ref_obj.data.dropna()
 
     # HipSci data
-    hip_epic_meta, hip_epic_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
+    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
+    hip_epic_meta = hip_epic_ldr.meta
+    hip_epic_data = hip_epic_ldr.data
+
     # hip_450k_meta, hip_450k_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='450k')
-    hip_meta, hip_data = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='all')
+
+    hip_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='all')
+    hip_meta = hip_ldr.meta
+    hip_data = hip_ldr.data
     hip_meta.batch = ["HipSci (%s)" % t for t in hip_meta.array_type]
 
     # clustering genome-wide

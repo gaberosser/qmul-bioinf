@@ -566,6 +566,72 @@ def load_reference(ref_names, norm_method='pbc', samples=None):
     return res
 
 
+def e_mtab_6194(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="E-MTAB-6194",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
+
+def gse92462_epic(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_EPIC')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="GSE92462_EPIC",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
+def gse92462_450k(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_450K')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="GSE92462_450K",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
+def gse110544(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE110544')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="GSE110544",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
+def gse60274(norm_method='raw', samples=None):
+    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE60274')
+    beta_dir = os.path.join(base_dir, 'beta')
+    meta_fn = os.path.join(base_dir, 'sources.csv')
+    return IlluminaHumanMethylationLoader(
+        base_dir=beta_dir,
+        meta_fn=meta_fn,
+        batch_id="GSE60274",
+        norm_method=norm_method,
+        samples=samples
+    )
+
+
 def gse31848(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848')
     beta_dir = os.path.join(base_dir, 'beta')
@@ -684,4 +750,18 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
     else:
         raise AttributeError("array_type %s is not supported" % array_type)
     data = data.dropna().astype(float)
-    return meta, data
+
+    class HipsciMethylationLoader(object):
+        extra_df_attributes = tuple()
+        tax_id = 9606
+        row_indexed = True
+        meta_is_linked = True
+
+    obj = HipsciMethylationLoader()
+    obj.data = data
+    obj.meta = meta
+    obj.batch_id = 'HipSci (EPIC)'
+
+    return obj
+
+    # return meta, data

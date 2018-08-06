@@ -34,6 +34,7 @@ def plot_pca(
         colour_map=colour_map,
         marker_subgroups=marker_subgroups,
         marker_map=marker_map,
+        ax=ax,
         **kwargs
     )
 
@@ -88,11 +89,34 @@ if __name__ == "__main__":
     patient_obj.batch_id = patient_obj.batch_id[ix]
     patient_obj.data = patient_obj.data.loc[:, patient_obj.meta.index]
 
-    ## TODO: can we include (some) of the HipSci samples?
-    ## TODO: can we include (some) of the GSE31848 samples?
     nazor_ldr = loader.gse31848(norm_method=norm_method)
     ix = nazor_ldr.meta.index.str.contains(r'(ES__WA)|(iPS__HDF)')
+    ix = ix & (~nazor_ldr.meta.index.str.contains(r'HDF51IPS7'))  # this sample is an outlier, so remove it now
     nazor_ldr.filter_samples(ix)
+
+    # Zhou et al.: lots of samples here, but we'll only keep 2 x ESC lines
+    zhou_ldr = loader.gse92462_450k(norm_method=norm_method)
+    ix = zhou_ldr.meta.index.str.contains(r'^H[19]ES')
+    zhou_ldr.filter_samples(ix)
+
+
+    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
+    ## FIXME: this is required to avoid a BUG where the meta column gets renamed to batch_1 in all other loaders
+    hip_epic_ldr.meta.drop('batch', axis=1, inplace=True)
+    # hip_450k_meta, hip_450k_data = loader.hipsci(norm_method=norm_method, n_sample=30, array_type='450k')
+
+    # Kurscheid et al.: only interested in the GSC spheroids here
+    # kurs_ldr = loader.gse60274(norm_method=norm_method, samples=['LN-2207GS', 'LN-2540GS', 'LN-2669GS', 'LN-2683GS'])
+
+    # Weltner et al. (E-MTAB-6194)
+    e6194_ldr = loader.e_mtab_6194(norm_method=norm_method)
+    ix = ~e6194_ldr.meta.cell_line.isin([
+        'NA07057',
+        'HCT116',
+        'HEL46.11',
+        'CCD-1112Sk (CRL-2429)'
+    ])
+    e6194_ldr.filter_samples(ix)
 
     refs = [
         ('Kim et al.', loader.gse38216(norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2', 'H9 NPC 1', 'H9 NPC 2'])),
@@ -101,6 +125,10 @@ if __name__ == "__main__":
         ('Nazor et al.', nazor_ldr),
         ('Encode EPIC', loader.encode_epic(norm_method=norm_method, samples=['GM23338', 'H9 NPC', 'H7 hESC', 'Astrocyte'])),
         ('Encode 450k', loader.encode_450k(norm_method=norm_method)),
+        ('Zhou et al.', zhou_ldr),
+        ('Hipsci EPIC', hip_epic_ldr),
+        ('Weltner et al.', e6194_ldr)
+        # ('Kurscheid et al.', kurs_ldr)
     ]
 
     ref_name_map = {
@@ -108,6 +136,9 @@ if __name__ == "__main__":
         'GSE67283': 'Morey et al.',
         'GSE65214': 'Zimmerlin et al.',
         'GSE31848': 'Nazor et al.',
+        'GSE92462_450K': 'Zhou et al.',
+        'GSE60274': 'Kurscheid et al.',
+        'E-MTAB-6194': 'Weltner et al.'
     }
 
     to_aggr = [
@@ -115,6 +146,13 @@ if __name__ == "__main__":
         (r'H9 NPC [12]', 'H9 NPC'),
         ('ES__WA09_', 'H9 ESC'),
         ('ES__WA07_', 'H7 ESC'),
+        ('22_H9_', 'H9 ESC'),
+        ('HEL139.2_', 'HEL139.2'),
+        ('HEL139.5_', 'HEL139.5'),
+        ('HEL139.8_', 'HEL139.8'),
+        ('HEL140.1_', 'HEL140.1'),
+        ('HEL141.1_', 'HEL141.1'),
+
     ]
     for i in range(1, 15):
         to_aggr.append(
@@ -129,7 +167,7 @@ if __name__ == "__main__":
             print "Warning: search string %s matches no samples." % srch
             continue
 
-        #define new data and meta entries
+        # define new data and meta entries
         new_col = ref_obj.data.loc[:, idx].mean(axis=1)
         new_meta_row = ref_obj.meta.loc[idx].iloc[0]
         new_meta_row.name = repl
@@ -140,10 +178,7 @@ if __name__ == "__main__":
         # add new entries: data, meta and batch_id
         ref_obj.data.insert(ref_obj.data.shape[1], repl, new_col, allow_duplicates=True)
         ref_obj.meta = ref_obj.meta.append(new_meta_row)
-        ref_obj.batch_id.loc[repl] = new_meta_row.batch
-
-        # ref_obj.data = ref_obj.data.loc[:, ~idx]
-        # ref_obj.meta = ref_obj.meta.loc[~idx]
+        ref_obj.batch_id = ref_obj.batch_id.append(pd.Series({repl: new_meta_row.batch}))
 
     # rename to include publication / reference
     new_index = np.array(ref_obj.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
@@ -159,26 +194,7 @@ if __name__ == "__main__":
 
     ref_obj.meta.index = new_index
     ref_obj.data.columns = new_index
-
-    # TODO make this nicer
-    # r = refs[0][1]
-    # for srch, repl in to_aggr:
-    #     idx = r.data.columns.str.contains(srch)
-    #     new_col = r.data.loc[:, idx].mean(axis=1)
-    #     r.data = r.data.loc[:, ~idx]
-    #     r.data.insert(r.data.shape[1], repl, new_col, allow_duplicates=True)
-    #     new_meta_row = r.meta.loc[idx].iloc[0]
-    #     new_meta_row.name = repl
-    #     r.meta = r.meta.loc[~idx]
-    #     r.meta = r.meta.append(new_meta_row)
-
-    # rename based on study
-    # for nm, t in refs:
-    #     new_idx = ["%s (%s)" % (i, nm) for i in t.meta.index]
-    #     t.meta.index = new_idx
-    #     t.data.columns = new_idx
-    #
-    # ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
+    ref_obj.batch_id.index = new_index
 
     obj = loader.loader.MultipleBatchLoader([patient_obj, ref_obj])
 
@@ -198,12 +214,16 @@ if __name__ == "__main__":
     # shorten batch name
     colour_subgroups = colour_subgroups.replace('2016-12-19_ucl_genomics', '2016-12-19')
 
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111)
     p, ax = plot_pca(
         mdat,
         colour_subgroups,
         marker_subgroups=m_subgroups,
-        marker_map=mmap
+        marker_map=mmap,
+        ax=ax
     )
+    ax.figure.subplots_adjust(left=0.1, right=0.8)
     ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_all.png"), dpi=200)
 
     # ECDF plot (separate for cell types) to show batch effects
@@ -242,20 +262,35 @@ if __name__ == "__main__":
 
     # normalise and repeat PCA
     mdat_qn = transformations.quantile_normalisation(mdat)
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111)
     p_qn, ax = plot_pca(
         mdat_qn,
         colour_subgroups,
         marker_subgroups=m_subgroups,
-        marker_map=mmap
+        marker_map=mmap,
+        ax=ax
     )
     ax.figure.subplots_adjust(left=0.1, right=0.8)
     ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_all_qn.png"), dpi=200)
 
     # now try without GBM
-    ix = m_subgroups != 'GBM'
-    mdat_qn_nogbm = mdat_qn.loc[:, ix]
+
+    # (a) no QN
+    ix = ~m_subgroups.str.contains('GBM')
+    mdat_nogbm = mdat.loc[:, ix]
     m_subgroups_nogbm = m_subgroups.loc[ix]
     colour_subgroups_nogbm = colour_subgroups.loc[ix]
+    p_nogbm, ax = plot_pca(
+        mdat_nogbm,
+        colour_subgroups_nogbm,
+        marker_subgroups=m_subgroups_nogbm,
+        marker_map=mmap
+    )
+    ax.figure.subplots_adjust(left=0.1, right=0.8)
+    ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_nogbm.png"), dpi=200)
+
+    mdat_qn_nogbm = mdat_qn.loc[:, ix]
     p_qn_nogbm, ax = plot_pca(
         mdat_qn_nogbm,
         colour_subgroups_nogbm,
@@ -268,42 +303,106 @@ if __name__ == "__main__":
 
     # plot dendrograms
 
-    bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
-    mmad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
+    # bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
+    # mmad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
 
-    row_colours_all = pd.DataFrame('gray', index=mdat.columns, columns=[''])
+    row_colours_all = pd.DataFrame('white', index=mdat.columns, columns=[''])
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = '#fff89e'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = '#fff89e'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'_FB_')] = '#fff89e'  # yellow
 
-    row_colours_all.loc[row_colours_all.index.str.contains('H9')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = '#e6e6e6'  # light gray
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = '#4d4d4d'  # dark grey
+
+    row_colours_all.loc[row_colours_all.index.str.contains('H9')] = '#ff7777'  # light red
     row_colours_all.loc[row_colours_all.index.str.contains('H7')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('ESO3')] = '#ff7777'
     row_colours_all.loc[row_colours_all.index.str.contains('GM23338')] = '#ff7777'
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = 'blue'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = 'blue'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = '#ccffcc'  # pale green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = '#ccffcc'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#006600'  # dark green
+
+    row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_')] = '#990000'  # dark red
+    row_colours_all.loc[row_colours_all.index.str.contains('HPSI')] = '#990000'
 
     row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'  # pink
 
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
     row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#96daff'  # light blue
 
-    n_ftr = [1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000, 1000000]
-    plt_dict = hc_plot_dendrogram_vary_n_gene(mdat, row_colours_all, mad=mmad, n_ftr=n_ftr)
 
+    # by M value, keeping only variable probes
+
+    # min_delta_m = 14
+    # m_range = mdat.max(axis=1) - mdat.min(axis=1)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # ax.hist(m_range.loc[m_range < 20], 300)
+    # ax.set_xlabel('M range')
+    # ax.axvline(min_delta_m, c='k', ls='--', lw=2.)
+    # fig.tight_layout()
+    # fig.savefig(os.path.join(outdir, "m_range_hist.png"), dpi=200)
+    #
+    # ix = m_range > min_delta_m
+    # the_dat = mdat.loc[ix]
+
+    n_ftr = [1000, 2000, 3000, 5000, 10000, 20000, int(1e7)]
+
+    the_dat = mdat
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(the_dat, row_colours_all, n_ftr=n_ftr)
     for ng, x in plt_dict.items():
-        if ng > bdat.shape[0]:
+        if ng > the_dat.shape[0]:
             fname = "dendrogram_M_corr_all.{ext}"
         else:
             fname = "dendrogram_M_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
+    plt.close('all')
 
-    plt_dict = hc_plot_dendrogram_vary_n_gene(bdat, row_colours_all, mad=bmad, n_ftr=n_ftr)
+    # heatmap: use clustering from n=20000 probes (M vals), but only show top 500 most variable between clusters
+    clust_n_ftr = 20000
+    n_probe_to_show = 500
+    lkg = plt_dict[clust_n_ftr]['linkage']
+    this_mad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
+    this_dat = mdat.loc[this_mad.index[:n_probe_to_show]]
+
+    # heatmap for 3000 probes
+    cm = clustering.plot_clustermap(
+        this_dat,
+        cmap='RdYlBu_r',
+        metric='correlation',
+        col_colors=row_colours_all,
+        col_linkage=lkg,
+        vmin=-10,
+        vmax=10,
+        figsize=(11.8, 10.)
+    )
+    cm.gs.update(bottom=0.25, right=0.99)
+
+    cm.savefig(os.path.join(outdir, "clustermap_M_corr_linkage%d_heatmap%d.png" % (clust_n_ftr, n_probe_to_show)), dpi=200)
+    cm.savefig(os.path.join(outdir, "clustermap_M_corr_linkage%d_heatmap%d.tiff" % (clust_n_ftr, n_probe_to_show)), dpi=200)
+
+    # by beta value, keeping only variable probes
+    # min_delta_beta = 0.6
+    # b_range = bdat.max(axis=1) - bdat.min(axis=1)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # ax.hist(b_range, 300)
+    # ax.set_xlabel('Beta range')
+    # ax.axvline(min_delta_beta, c='k', ls='--', lw=2.)
+    # fig.tight_layout()
+    # fig.savefig(os.path.join(outdir, "beta_range_hist.png"), dpi=200)
+    #
+    # ix = b_range > min_delta_beta
+    # the_dat = bdat.loc[ix]
+
+    the_dat = bdat
+
+    plt_dict = hc_plot_dendrogram_vary_n_gene(the_dat, row_colours_all, n_ftr=n_ftr)
+
     for ng, x in plt_dict.items():
         if ng > bdat.shape[0]:
             fname = "dendrogram_B_corr_all.{ext}"
@@ -311,22 +410,27 @@ if __name__ == "__main__":
             fname = "dendrogram_B_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
+    plt.close('all')
 
     ## no GBM, no FB, no astrocytes, various numbers of probes, beta values
 
     idx = (
         (~mdat.columns.str.contains('GBM')) &
+        (~mdat.columns.str.contains('GSC')) &
+        (~mdat.columns.str.contains('LN-')) &
         (~mdat.columns.str.contains('Astrocyte')) &
-        (~mdat.columns.str.contains('_FB')) &
-        (~mdat.columns.str.contains('DURA030_NSC_N9_P2'))
+        (~mdat.columns.str.contains('_FB'))
+        # I had been removing one of the iNSC030 lines, having branded it an outlier
+        # can't see the evidence for this any more?
+        # (~mdat.columns.str.contains('DURA030_NSC_N9_P2'))
     )
 
     bdat_nogbm = bdat.loc[:, idx]
 
-    bmad_nogbm = transformations.median_absolute_deviation(bdat_nogbm)
+    # bmad_nogbm = transformations.median_absolute_deviation(bdat_nogbm)
     row_colours_nogbm = row_colours_all.loc[bdat_nogbm.columns]
 
-    plt_dict = hc_plot_dendrogram_vary_n_gene(bdat_nogbm, row_colours_nogbm, mad=bmad_nogbm, n_ftr=n_ftr)
+    plt_dict = hc_plot_dendrogram_vary_n_gene(bdat_nogbm, row_colours_nogbm, n_ftr=n_ftr)
     for ng, x in plt_dict.items():
         if ng > bdat.shape[0]:
             fname = "nogbm_dendrogram_B_corr_all.{ext}"
@@ -334,20 +438,41 @@ if __name__ == "__main__":
             fname = "nogbm_dendrogram_B_corr_top%d_by_mad.{ext}" % ng
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
-
     plt.close('all')
 
+    mdat_nogbm = mdat.loc[:, idx]
+    plt_dict = hc_plot_dendrogram_vary_n_gene(mdat_nogbm, row_colours_nogbm, n_ftr=n_ftr)
+    for ng, x in plt_dict.items():
+        if ng > bdat.shape[0]:
+            fname = "nogbm_dendrogram_M_corr_all.{ext}"
+        else:
+            fname = "nogbm_dendrogram_M_corr_top%d_by_mad.{ext}" % ng
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='png')), dpi=200)
+        x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
+    plt.close('all')
+
+    # heatmap: use clustering from n=20000 probes (M vals), but only show top 500 most variable between clusters
+
+    clust_n_ftr = 20000
+    n_probe_to_show = 500
+    lkg = plt_dict[clust_n_ftr]['linkage']
+    this_mad = transformations.median_absolute_deviation(mdat_nogbm).sort_values(ascending=False)
+    this_dat = mdat_nogbm.loc[this_mad.index[:n_probe_to_show]]
+
     # heatmap for 3000 probes
-    ng = 3000
     cm = clustering.plot_clustermap(
-        bdat_nogbm.loc[bmad_nogbm.index[:ng]],
-        # cmap='RdBu_r',
+        this_dat,
         cmap='RdYlBu_r',
         metric='correlation',
-        col_colors=row_colours_nogbm
+        col_colors=row_colours_nogbm,
+        col_linkage=lkg,
+        vmin=-10,
+        vmax=10
     )
-    cm.savefig(os.path.join(outdir, "nogbm_clustermap_B_corr_top%d_by_mad.png" % ng), dpi=200)
-    cm.savefig(os.path.join(outdir, "nogbm_clustermap_B_corr_top%d_by_mad.tiff" % ng), dpi=200)
+    cm.gs.update(bottom=0.25, right=0.99)
+
+    cm.savefig(os.path.join(outdir, "nogbm_clustermap_M_corr_linkage%d_heatmap%d.png" % (clust_n_ftr, n_probe_to_show)), dpi=200)
+    cm.savefig(os.path.join(outdir, "nogbm_clustermap_M_corr_linkage%d_heatmap%d.tiff" % (clust_n_ftr, n_probe_to_show)), dpi=200)
 
     ## our samples only, all probes, beta values
 

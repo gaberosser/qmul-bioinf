@@ -82,7 +82,7 @@ def continuous_cmap(N, cmap='jet'):
     color_norm  = colors.Normalize(vmin=0, vmax=N-1)
     scalar_map = cm.ScalarMappable(norm=color_norm, cmap=cmap)
     def map_index_to_rgb_color(index):
-        return scalar_map.to_rgba(index)
+        return colors.to_hex(scalar_map.to_rgba(index))
     return map_index_to_rgb_color
 
 
