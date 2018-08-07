@@ -30,7 +30,10 @@ def load_refs(ref_dict, **load_kwds):
         the_obj.batch_id = v['batch']
         ref_objs_arr.append(the_obj)
 
-    return loader.loader.MultipleBatchLoader(ref_objs_arr)
+    if len(ref_objs_arr) == 1:
+        return ref_objs_arr[0]
+    else:
+        return loader.loader.MultipleBatchLoader(ref_objs_arr)
 
 
 def combine_filter(dat_arr, meta_arr, min_val=1, n_above_min=3):
@@ -65,11 +68,10 @@ def construct_colour_array_legend_studies(meta):
         'ESC': 'green',
         'iNSC (this study)': '#9e3900',
         'iNSC': '#db7b00',
-        'NSC': '#db7b00',
+        'NSC': '#f4b342',
         'Fetal NSC': '#ffaf47',
     }
 
-    studies = {}
     cc = pd.DataFrame('gray', index=meta.index, columns=['Cell type', 'Study'])
 
     cols_incl = ['FB', 'ESC', 'NSC']
@@ -83,11 +85,15 @@ def construct_colour_array_legend_studies(meta):
     cc.loc[(meta['type'] == 'iNSC') & (~meta['batch'].str.contains('WTCHG')), 'Cell type'] = ct_leg['iNSC']  # chestnut
     cc.loc[(meta['type'] == 'NSC') & (meta.index.str.contains('fetal')), 'Cell type'] = ct_leg['Fetal NSC']  # light orange
 
-    batches = meta.batch.unique()
+    all_batches = meta.batch.copy()
+    # to keep individual batches, comment out this next line
+    all_batches[all_batches.str.contains('wtchg')] = 'This study'
+    batches = all_batches.unique()
     n_study = len(batches)
     study_colours = common.get_best_cmap(n_study)
+    studies = {}
     for i, c in enumerate(study_colours):
-        cc.loc[meta['batch'] == batches[i], 'Study'] = c
+        cc.loc[all_batches == batches[i], 'Study'] = c
         studies[batches[i]] = c
 
     all_colours = cc.loc[:, 'Cell type'].unique()
@@ -106,6 +112,7 @@ def construct_colour_array_legend_studies(meta):
 
 def plot_dendrogram(
         obj_arr,
+        n_by_mad=None,
         qn_method=None,
         eps=0.01,
         min_val=1,
@@ -123,6 +130,11 @@ def plot_dendrogram(
     dat = np.log2(the_obj.data + eps)
     if qn_method is not None:
         dat = transformations.quantile_normalisation(dat, method=qn_method)
+
+    if n_by_mad is not None:
+        mad = transformations.median_absolute_deviation(dat).sort_values(ascending=False)
+        dat = dat.loc[mad.index[:n_by_mad]]
+
     cc, st, leg_dict = construct_colour_array_legend_studies(the_obj.meta)
 
     dend = clustering.dendrogram_with_colours(
@@ -175,17 +187,17 @@ if __name__ == '__main__':
     pids = ['017', '018', '019', '030', '031', '049', '050', '054', '061', '026', '052']
     min_val = 1
     n_above_min = 3
+    n_gene_by_mad = 5000
     source = 'salmon'
     n_hipsci = 30  # only plot a limited number to avoid flooding the plots
     eps = 0.01  # offset to use when applying log transform
 
-    # Set True to enable QN
-    # I think this is inappropriate, since we expect a large variation between different cell types
+    # Switch QN on here ('mean' or 'median')
     quantile_norm = 'median'
 
     ref_dict = {
         'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
-        'GSE63577': {'batch': 'Marthandan et al.', 'strandedness': 'TODO: run STAR'},
+        # 'GSE63577': {'batch': 'Marthandan et al.', 'strandedness': 'TODO: run STAR'},
         'GSE107965': {'batch': 'Yilmaz et al.', 'strandedness': 'TODO: run STAR'},
         'encode_roadmap/ENCSR000EYP': {'batch': 'ENCODE Wold', 'strandedness': 'u'},
         'encode_roadmap/ENCSR000COU': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
@@ -194,16 +206,30 @@ if __name__ == '__main__':
         'encode_roadmap/ENCSR670WQY': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
         'encode_roadmap/ENCSR043RSE': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
     }
+    to_aggr = [
+        (r'Fibroblasts_control_rep[123]', 'FB control'),
+        (r'H1-hESC rep (1_1|2_1|3|4)', 'H1 hESC'),
+        (r'H1-hESC rep [12]', 'H1 hESC'),
+        (r'H1-[12]', 'H1 hESC'),
+        (r'H1-hESC(|_2)$', 'H1 hESC'),
+        (r'H7-hESC rep [12]', 'H7 hESC'),
+        (r'hESCs_control_rep[123]', 'CSES9 hESC'),
+    ]
 
     nsc_ref_dict = {
-        'E-MTAB-3867': {'batch': 'Caren et al.', 'strandedness': '?'},
+        # 'E-MTAB-3867': {'batch': 'Caren et al.', 'strandedness': '?'},
         'GSE61794': {'batch': 'Duan et al.', 'strandedness': '?'},
-        'GSE64882': {'batch': 'Shahbazi et al.', 'strandedness': '?'},
-        'encode_roadmap/ENCSR244ISQ': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
-        'encode_roadmap/ENCSR291IZK': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
-        'encode_roadmap/ENCSR572EET': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
-        'encode_roadmap/ENCSR977XUX': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        # 'GSE64882': {'batch': 'Shahbazi et al.', 'strandedness': '?'},
+        # 'encode_roadmap/ENCSR244ISQ': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
+        # 'encode_roadmap/ENCSR291IZK': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        # 'encode_roadmap/ENCSR572EET': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        # 'encode_roadmap/ENCSR977XUX': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
     }
+
+    to_aggr_nsc = [
+        (r'H9_NSC_[12]', 'H9 NSC'),
+        # (r'Pollard NSC [12]', 'Fetal NSC'),
+    ]
 
     # Ruiz 9 gene signature - should distinguish ESC and iPSC
     gene_sign = ['PTPRT', 'TMEM132C', 'TMEM132D', 'TCERG1L', 'DPP6', 'FAM19A5', 'RBFOX1', 'CSMD1', 'C22orf34']
@@ -255,8 +281,10 @@ if __name__ == '__main__':
     # fill in missing cell types
     ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'type'] = ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'cell type']
 
-    dat_ref = ref_obj.data.copy()
-    meta_ref = ref_obj.meta.copy()
+    for srch, repl in to_aggr:
+        ref_obj.aggregate_by_pattern(srch, repl)
+
+    ref_obj.rename_with_attributes(existing_attr='batch')
 
     # References with NSC
     nsc_ref_obj = load_refs(nsc_ref_dict, **load_kwds)
@@ -268,9 +296,15 @@ if __name__ == '__main__':
         the_idx = ~nsc_ref_obj.data.columns.str.contains(td)
         nsc_ref_obj.filter_samples(the_idx)
 
+    for srch, repl in to_aggr_nsc:
+        nsc_ref_obj.aggregate_by_pattern(srch, repl)
+
+    nsc_ref_obj.rename_with_attributes(existing_attr='batch')
+
     # fill in missing cell types
-    nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'type'] = nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'cell type']
-    dat_nsc_ref = nsc_ref_obj.data
+    # only necessary if some of the references have a differently named column
+    if 'cell type' in nsc_ref_obj.meta.columns:
+        nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'type'] = nsc_ref_obj.meta.loc[nsc_ref_obj.meta.type.isnull(), 'cell type']
 
     # 1. Our data: iPSC and FB only
     obj1 = copy(obj)
@@ -343,14 +377,26 @@ if __name__ == '__main__':
 
     # 7. iPSC, ESC, FB, iNSC
     obj1 = copy(obj)
-    ix = obj1.meta.type.isin(['iPSC', 'FB', 'iNSC'])
+    ix = obj1.meta.type.isin(['iPSC', 'FB', 'iNSC', 'NSC'])
     obj1.filter_samples(ix)
 
-    dend = plot_dendrogram([obj1, ref_obj, nsc_ref_obj], vertical=True, figsize=(14, 7), qn_method=quantile_norm)
+    dend = plot_dendrogram(
+        [obj1, ref_obj, nsc_ref_obj],
+        vertical=False,
+        figsize=(7, 14),
+        qn_method=quantile_norm,
+        n_by_mad=n_gene_by_mad
+    )
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc.png"), dpi=200)
 
     # 8. HipSci, iPSC, ESC, FB, iNSC
-    dend = plot_dendrogram([obj1, ref_obj, nsc_ref_obj, hip_obj], vertical=True, figsize=(16, 7), qn_method=quantile_norm)
+    dend = plot_dendrogram(
+        [obj1, ref_obj, nsc_ref_obj, hip_obj],
+        vertical=False,
+        figsize=(7, 12),
+        qn_method=quantile_norm,
+        n_by_mad=n_gene_by_mad
+    )
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc_hipsci%d.png" % n_hipsci), dpi=200)
 
     # 9. PCA with all samples
@@ -358,7 +404,11 @@ if __name__ == '__main__':
     the_dat = np.log2(the_obj.data + eps)
     if quantile_norm is not None:
         the_dat = transformations.quantile_normalisation(the_dat, method=quantile_norm)
-    p, ax = plot_pca(the_dat, the_obj.meta.type, marker_subgroups=the_obj.meta.batch)
+    studies = the_obj.meta.batch.copy()
+    # to keep individual batches, comment out this next line
+    studies[studies.str.contains('wtchg')] = 'This study'
+
+    p, ax = plot_pca(the_dat, the_obj.meta.type, marker_subgroups=studies)
     ax.figure.subplots_adjust(right=0.78)
     ax.figure.savefig(os.path.join(outdir, "pca_all_samples.png"), dpi=200)
 

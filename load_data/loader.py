@@ -37,6 +37,27 @@ def _filter_by_sample_name_index(sample_names, filt, exact=True):
     return idx
 
 
+def _aggregate_by_regex(obj, search_patt, new_name):
+    idx = obj.meta.index.str.contains(search_patt)
+    if idx.sum() == 0:
+        print "Warning: search string %s matches no samples." % search_patt
+    else:
+        # define new data and meta entries
+        new_col = obj.data.loc[:, idx].mean(axis=1)
+        new_meta_row = obj.meta.loc[idx].iloc[0]
+        new_meta_row.name = new_name
+
+        # filter out old entries
+        obj.filter_samples(~idx)
+
+        # add new entries: data, meta, batch_id (if Series)
+        obj.data.insert(obj.data.shape[1], new_name, new_col, allow_duplicates=True)
+        obj.meta = obj.meta.append(new_meta_row)
+        if isinstance(obj.batch_id, pd.Series):
+            obj.batch_id = obj.batch_id.append(pd.Series({new_name: new_meta_row.batch}))
+    return obj
+
+
 class DatasetLoader(object):
     meta_col_sample_name = 'sample'
     meta_col_filename = 'filename'
@@ -153,6 +174,9 @@ class DatasetLoader(object):
         """
         self.meta = self.meta.loc[keep_idx]
         self.data = self.data.loc[:, self.meta.index]
+
+    def aggregate_by_pattern(self, search_patt, new_name):
+        _aggregate_by_regex(self, search_patt, new_name)
 
 
 class SingleFileLoader(DatasetLoader):
@@ -570,3 +594,35 @@ class MultipleBatchLoader(object):
         self.meta = self.meta.loc[keep_idx]
         self.data = self.data.loc[:, keep_idx]
         self.batch_id = self.batch_id.loc[keep_idx]
+
+    def aggregate_by_pattern(self, search_patt, new_name):
+        _aggregate_by_regex(self, search_patt, new_name)
+
+    def rename_with_attributes(self, new_attr=None, existing_attr='batch'):
+        """
+        Append attribute to the sample names. This can be useful to avoid duplicate names.
+        Either provide the attributes in a pd.Series, or specify the meta column to use
+        :param new_attr: pd.Series specifying the attribute to append (one per sample)
+        :param existing_attr: String giving the name of a column in meta.
+        :return:
+        """
+        if new_attr is None and existing_attr is None:
+            raise AttributeError("Must specify one of new_attr or existing attr")
+
+        if new_attr is not None and existing_attr is not None:
+            raise AttributeError("Must specify one of new_attr or existing attr")
+
+        if existing_attr is not None:
+            new_attr = self.meta.loc[:, existing_attr]
+
+        # rename to include publication / reference
+        new_index = np.array(self.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
+        for suff in new_attr.unique():
+            ix = new_attr == suff
+            old_names = self.meta.index[ix]
+            new_names = ["%s (%s)" % (t, suff) for t in old_names]
+            new_index[ix] = new_names
+
+        self.meta.index = new_index
+        self.data.columns = new_index
+        self.batch_id.index = new_index
