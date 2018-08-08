@@ -132,10 +132,10 @@ for (b in base.dirs) {
 }
 
 # manually remove a failed sample
-idx <- in.files != "/home/gabriel/data/methylation/2018-03-26/idat/202081130238/202081130238_R01C01"
-in.files <- in.files[idx]
-snames <- snames[idx]
-batches <- batches[idx]
+idx <- grep("202081130238/202081130238_R01C01", in.files)
+in.files <- in.files[-idx]
+snames <- snames[-idx]
+batches <- batches[-idx]
 
 res <- process_idats(in.files, snames, norm.fun=norm.fun)
 beta <- res$beta
@@ -196,12 +196,17 @@ contrasts <- makeContrasts(
   conditionshCHD7-conditionScr, 
   conditionshBMI1shCHD7-conditionshBMI1, 
   conditionshBMI1shCHD7-conditionshCHD7, 
+  conditionshBMI1shCHD7-conditionScr, 
   levels=design
 )
 fit2 <- contrasts.fit(fit, contrasts)
 fit2 <- eBayes(fit2)
 
 summary(decideTests(fit2))
+
+this_res <- topTable(fit2, coef = i, number = Inf)
+this_res <- this_res[this_res$P.Value < 0.05,]
+write.xlsx(this_res, paste0("dmps_lumped.xlsx"), colNames = T, rowNames = T)
 
 #' Outcome: no DMPs
 
@@ -236,6 +241,7 @@ for (cl in c('3021', '1299')) {
     conditionshCHD7-conditionScr, 
     conditionshBMI1shCHD7-conditionshBMI1, 
     conditionshBMI1shCHD7-conditionshCHD7, 
+    conditionshBMI1shCHD7-conditionScr, 
     levels=design
   )
   
@@ -247,14 +253,16 @@ for (cl in c('3021', '1299')) {
   for (i in seq(ncol(contrasts))) {
     ttl <- colnames(contrasts)[i]
     ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
-    dmps[[cl]][[ttl]] <- topTable(fit2, coef = i, number = Inf, p.value = 0.05)
+    this_res <- topTable(fit2, coef = i, number = Inf)
+    this_res <- this_res[this_res$P.Value < 0.05,]
+    dmps[[cl]][[ttl]] <- this_res
     ## TODO: export results to xlsx or similar
     # write.csv(dmps[[cl]][[colnames(contrasts)[i]]])
   }
-  write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"))
-
-}
-
-for (cl in c('3021', '1299')) {
   write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"), colNames = T, rowNames = T)
+
 }
+
+# for (cl in c('3021', '1299')) {
+  # write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"), colNames = T, rowNames = T)
+# }

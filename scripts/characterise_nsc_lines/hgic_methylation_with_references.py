@@ -99,7 +99,6 @@ if __name__ == "__main__":
     ix = zhou_ldr.meta.index.str.contains(r'^H[19]ES')
     zhou_ldr.filter_samples(ix)
 
-
     hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
     ## FIXME: this is required to avoid a BUG where the meta column gets renamed to batch_1 in all other loaders
     hip_epic_ldr.meta.drop('batch', axis=1, inplace=True)
@@ -162,57 +161,41 @@ if __name__ == "__main__":
     ref_obj = loader.loader.MultipleBatchLoader([t[1] for t in refs])
 
     for srch, repl in to_aggr:
-        idx = ref_obj.meta.index.str.contains(srch)
-        if idx.sum() == 0:
-            print "Warning: search string %s matches no samples." % srch
-            continue
-
-        # define new data and meta entries
-        new_col = ref_obj.data.loc[:, idx].mean(axis=1)
-        new_meta_row = ref_obj.meta.loc[idx].iloc[0]
-        new_meta_row.name = repl
-
-        # filter out old entries
-        ref_obj.filter_samples(~idx)
-
-        # add new entries: data, meta and batch_id
-        ref_obj.data.insert(ref_obj.data.shape[1], repl, new_col, allow_duplicates=True)
-        ref_obj.meta = ref_obj.meta.append(new_meta_row)
-        ref_obj.batch_id = ref_obj.batch_id.append(pd.Series({repl: new_meta_row.batch}))
+        ref_obj.aggregate_by_pattern(srch, repl)
 
     # rename to include publication / reference
-    new_index = np.array(ref_obj.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
-    for b in ref_obj.meta.batch.unique():
-        if b in ref_name_map:
-            suff = ref_name_map[b]
-        else:
-            suff = b
-        ix = ref_obj.meta.batch == b
-        old_names = ref_obj.meta.index[ix]
-        new_names = ["%s (%s)" % (t, suff) for t in old_names]
-        new_index[ix] = new_names
-
-    ref_obj.meta.index = new_index
-    ref_obj.data.columns = new_index
-    ref_obj.batch_id.index = new_index
+    for k, v in ref_name_map.items():
+        ix = ref_obj.meta.batch == k
+        if ix.sum() > 0:
+            ref_obj.meta.loc[ix, 'batch'] = v
+    ref_obj.rename_with_attributes(existing_attr='batch')
 
     obj = loader.loader.MultipleBatchLoader([patient_obj, ref_obj])
+
+    # remove a few
+    ix = obj.meta.type != 'astrocyte'
+    obj.filter_samples(ix)
+
+    ix = obj.meta.index != 'H9 NPC (Encode EPIC)'
+    obj.filter_samples(ix)
 
     bdat = obj.data
     mdat = process.m_from_beta(bdat)
 
+    # tidy up batch IDs
+    obj.meta.batch = obj.meta.batch.str.replace('2016-12-19_ucl_genomics', '2016-12-19')
+    # the only batch names without letters are ours
+    obj.meta.loc[~obj.meta.batch.str.contains(r'[A-Z]'), 'batch'] = 'This study'
+
     # PCA plot (by batch and cell type)
 
-    colour_subgroups = obj.batch_id
+    colour_subgroups = obj.meta.batch
 
     m_subgroups = obj.meta.type
     mmap = pd.Series(
         common.FILLED_MARKERS[len(m_subgroups.unique())],
         index=m_subgroups.unique()
     )
-
-    # shorten batch name
-    colour_subgroups = colour_subgroups.replace('2016-12-19_ucl_genomics', '2016-12-19')
 
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111)
@@ -336,19 +319,6 @@ if __name__ == "__main__":
 
     # by M value, keeping only variable probes
 
-    # min_delta_m = 14
-    # m_range = mdat.max(axis=1) - mdat.min(axis=1)
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111)
-    # ax.hist(m_range.loc[m_range < 20], 300)
-    # ax.set_xlabel('M range')
-    # ax.axvline(min_delta_m, c='k', ls='--', lw=2.)
-    # fig.tight_layout()
-    # fig.savefig(os.path.join(outdir, "m_range_hist.png"), dpi=200)
-    #
-    # ix = m_range > min_delta_m
-    # the_dat = mdat.loc[ix]
-
     n_ftr = [1000, 2000, 3000, 5000, 10000, 20000, int(1e7)]
 
     the_dat = mdat
@@ -386,20 +356,6 @@ if __name__ == "__main__":
     cm.savefig(os.path.join(outdir, "clustermap_M_corr_linkage%d_heatmap%d.png" % (clust_n_ftr, n_probe_to_show)), dpi=200)
     cm.savefig(os.path.join(outdir, "clustermap_M_corr_linkage%d_heatmap%d.tiff" % (clust_n_ftr, n_probe_to_show)), dpi=200)
 
-    # by beta value, keeping only variable probes
-    # min_delta_beta = 0.6
-    # b_range = bdat.max(axis=1) - bdat.min(axis=1)
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111)
-    # ax.hist(b_range, 300)
-    # ax.set_xlabel('Beta range')
-    # ax.axvline(min_delta_beta, c='k', ls='--', lw=2.)
-    # fig.tight_layout()
-    # fig.savefig(os.path.join(outdir, "beta_range_hist.png"), dpi=200)
-    #
-    # ix = b_range > min_delta_beta
-    # the_dat = bdat.loc[ix]
-
     the_dat = bdat
 
     plt_dict = hc_plot_dendrogram_vary_n_gene(the_dat, row_colours_all, n_ftr=n_ftr)
@@ -419,8 +375,8 @@ if __name__ == "__main__":
         (~mdat.columns.str.contains('GBM')) &
         (~mdat.columns.str.contains('GSC')) &
         (~mdat.columns.str.contains('LN-')) &
-        (~mdat.columns.str.contains('Astrocyte')) &
-        (~mdat.columns.str.contains('_FB'))
+        (~mdat.columns.str.contains('Astrocyte'))
+        # (~mdat.columns.str.contains('_FB'))
         # I had been removing one of the iNSC030 lines, having branded it an outlier
         # can't see the evidence for this any more?
         # (~mdat.columns.str.contains('DURA030_NSC_N9_P2'))
@@ -452,15 +408,20 @@ if __name__ == "__main__":
         x['fig'].savefig(os.path.join(outdir, fname.format(ext='tiff')), dpi=200)
     plt.close('all')
 
-    # heatmap: use clustering from n=20000 probes (M vals), but only show top 500 most variable between clusters
-
+    # heatmap: use clustering from n=20000 probes (M vals), but show fewer probes values
     clust_n_ftr = 20000
-    n_probe_to_show = 500
-    lkg = plt_dict[clust_n_ftr]['linkage']
+    n_probe_to_show = 2000
+
+    # how to pick these? Can use MAD:
     this_mad = transformations.median_absolute_deviation(mdat_nogbm).sort_values(ascending=False)
     this_dat = mdat_nogbm.loc[this_mad.index[:n_probe_to_show]]
 
-    # heatmap for 3000 probes
+    # or range?
+    # this_range = (mdat_nogbm.max(axis=1) - mdat_nogbm.min(axis=1)).sort_values(ascending=False)
+    # this_dat = mdat_nogbm.loc[this_range.index[:n_probe_to_show]]
+
+    lkg = plt_dict[clust_n_ftr]['linkage']
+
     cm = clustering.plot_clustermap(
         this_dat,
         cmap='RdYlBu_r',
