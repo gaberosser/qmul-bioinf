@@ -34,7 +34,7 @@ class SRAGetterBase(jobs.ArrayJob):
     SRA_FILE="{out_dir}/$ID"
     echo $URL
     wget -P {out_dir} $URL \
-    && parallel-fastq-dump.py --threads {threads} {extra} -O {out_dir} -s $SRA_FILE \
+    && parallel_fastq_dump.py --threads {threads} {extra} -O {out_dir} -s $SRA_FILE \
     && rm $SRA_FILE
     """
 
