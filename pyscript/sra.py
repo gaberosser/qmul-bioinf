@@ -4,14 +4,19 @@ import os
 from pyscript import jobs, sge
 
 
+"""
+Requirements: we need to have parallel_fastq_dump (also in this dir) on the path and executable.
+"""
+
+
 class SRASgeRequirements(sge.ApocritaArrayJobMixin):
     @property
     def ram_per_core(self):
-        return "1G"
+        return "512M"
 
     @property
     def runtime_mins(self):
-        return 180
+        return 360
 
 
 class SRAGetterBase(jobs.ArrayJob):
@@ -20,10 +25,18 @@ class SRAGetterBase(jobs.ArrayJob):
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
-        ('$ID', None),
+        ('$ID', '! -z'),
+        ('$URL', '! -z')
     ]
-    param_delim = ':'
-    core_cmd = "fastq-dump {extra} $ID -O {out_dir}"
+    param_delim = ','
+
+    core_cmd = """
+    SRA_FILE="{out_dir}/$ID"
+    echo $URL
+    wget -P {out_dir} $URL \
+    && parallel-fastq-dump.py --threads {threads} {extra} -O {out_dir} -s $SRA_FILE \
+    && rm $SRA_FILE
+    """
 
     def set_default_extras(self):
         if '--gzip' not in self.extra_args:

@@ -682,7 +682,12 @@ class SraRunIteratorMixin(object):
         CMD = "esearch -db sra -query {pid} | efetch --format runinfo | cut -d ',' -f 1 | grep 'SRR'"
         srr_list = subprocess.check_output(CMD.format(pid=project_id), shell=True)
         self.run_names = [t for t in srr_list.split('\n') if len(t)]
-        self.params = [[t, t] for t in self.run_names]
+        # we now have the SRR run names
+        # use these to lookup the direct download path for the SRA file
+        PATH_CMD = "srapath " + ' '.join(self.run_names)
+        url_list = subprocess.check_output(PATH_CMD, shell=True)
+        urls = [t.strip('"') for t in url_list.split('\n') if len(t)]
+        self.params = [[t, u] for t, u in zip(self.run_names, urls)]
 
 
 class Macs2PeaksIteratorMixin(FileIteratorMixin):

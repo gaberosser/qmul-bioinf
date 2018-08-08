@@ -58,6 +58,35 @@ def _aggregate_by_regex(obj, search_patt, new_name):
     return obj
 
 
+def _rename_with_attributes(obj, new_attr=None, existing_attr='batch'):
+    """
+    Append attribute to the sample names. This can be useful to avoid duplicate names.
+    Either provide the attributes in a pd.Series, or specify the meta column to use
+    :param new_attr: pd.Series specifying the attribute to append (one per sample)
+    :param existing_attr: String giving the name of a column in meta.
+    :return:
+    """
+    if new_attr is None and existing_attr is None:
+        raise AttributeError("Must specify one of new_attr or existing attr")
+
+    if new_attr is not None and existing_attr is not None:
+        raise AttributeError("Must specify one of new_attr or existing attr")
+
+    if existing_attr is not None:
+        new_attr = obj.meta.loc[:, existing_attr]
+
+    # rename to include publication / reference
+    new_index = np.array(obj.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
+    for suff in new_attr.unique():
+        ix = new_attr == suff
+        old_names = obj.meta.index[ix]
+        new_names = ["%s (%s)" % (t, suff) for t in old_names]
+        new_index[ix] = new_names
+
+    obj.meta.index = new_index
+    obj.data.columns = new_index
+
+
 class DatasetLoader(object):
     meta_col_sample_name = 'sample'
     meta_col_filename = 'filename'
@@ -177,6 +206,9 @@ class DatasetLoader(object):
 
     def aggregate_by_pattern(self, search_patt, new_name):
         _aggregate_by_regex(self, search_patt, new_name)
+
+    def rename_with_attributes(self, new_attr=None, existing_attr='batch'):
+        _rename_with_attributes(self, new_attr=new_attr, existing_attr=existing_attr)
 
 
 class SingleFileLoader(DatasetLoader):
@@ -606,23 +638,25 @@ class MultipleBatchLoader(object):
         :param existing_attr: String giving the name of a column in meta.
         :return:
         """
-        if new_attr is None and existing_attr is None:
-            raise AttributeError("Must specify one of new_attr or existing attr")
-
-        if new_attr is not None and existing_attr is not None:
-            raise AttributeError("Must specify one of new_attr or existing attr")
-
-        if existing_attr is not None:
-            new_attr = self.meta.loc[:, existing_attr]
-
-        # rename to include publication / reference
-        new_index = np.array(self.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
-        for suff in new_attr.unique():
-            ix = new_attr == suff
-            old_names = self.meta.index[ix]
-            new_names = ["%s (%s)" % (t, suff) for t in old_names]
-            new_index[ix] = new_names
-
-        self.meta.index = new_index
-        self.data.columns = new_index
-        self.batch_id.index = new_index
+        # if new_attr is None and existing_attr is None:
+        #     raise AttributeError("Must specify one of new_attr or existing attr")
+        #
+        # if new_attr is not None and existing_attr is not None:
+        #     raise AttributeError("Must specify one of new_attr or existing attr")
+        #
+        # if existing_attr is not None:
+        #     new_attr = self.meta.loc[:, existing_attr]
+        #
+        # # rename to include publication / reference
+        # new_index = np.array(self.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
+        # for suff in new_attr.unique():
+        #     ix = new_attr == suff
+        #     old_names = self.meta.index[ix]
+        #     new_names = ["%s (%s)" % (t, suff) for t in old_names]
+        #     new_index[ix] = new_names
+        #
+        # self.meta.index = new_index
+        # self.data.columns = new_index
+        # self.batch_id.index = new_index
+        _rename_with_attributes(self, new_attr=new_attr, existing_attr=existing_attr)
+        self.batch_id.index = self.meta.index

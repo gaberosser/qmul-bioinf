@@ -189,7 +189,7 @@ if __name__ == '__main__':
     n_above_min = 3
     n_gene_by_mad = 5000
     source = 'salmon'
-    n_hipsci = 30  # only plot a limited number to avoid flooding the plots
+    n_hipsci = 10  # only plot a limited number to avoid flooding the plots
     eps = 0.01  # offset to use when applying log transform
 
     # Switch QN on here ('mean' or 'median')
@@ -299,6 +299,9 @@ if __name__ == '__main__':
     for srch, repl in to_aggr_nsc:
         nsc_ref_obj.aggregate_by_pattern(srch, repl)
 
+    if 'batch' not in nsc_ref_obj.meta.columns:
+        batch = pd.Series(nsc_ref_obj.batch_id, index=nsc_ref_obj.meta.index)
+        nsc_ref_obj.meta.insert(nsc_ref_obj.meta.shape[1], 'batch', batch)
     nsc_ref_obj.rename_with_attributes(existing_attr='batch')
 
     # fill in missing cell types
@@ -313,7 +316,7 @@ if __name__ == '__main__':
 
     obj2 = ref_obj
 
-    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm)
+    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm, n_by_mad=n_gene_by_mad)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb.png"), dpi=200)
 
     # 2. Only iPSC and ESC
@@ -325,7 +328,7 @@ if __name__ == '__main__':
     ix = obj2.meta.type == 'ESC'
     obj2.filter_samples(ix)
 
-    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm)
+    dend = plot_dendrogram([obj1, obj2], qn_method=quantile_norm, n_by_mad=n_gene_by_mad)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc.png"), dpi=200)
 
     # 3. iPSC, ESC, Ruiz signature (only)
@@ -346,7 +349,7 @@ if __name__ == '__main__':
     ix = obj1.meta.type.isin(['iPSC', 'FB'])
     obj1.filter_samples(ix)
 
-    dend = plot_dendrogram([obj1, ref_obj, hip_obj], qn_method=quantile_norm)
+    dend = plot_dendrogram([obj1, ref_obj, hip_obj], qn_method=quantile_norm, n_by_mad=n_gene_by_mad)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_with_hipsci%d.png" % n_hipsci), dpi=200)
 
     # 5. HipSci, iPSC, ESC
@@ -358,7 +361,7 @@ if __name__ == '__main__':
     ix = obj2.meta.type == 'ESC'
     obj2.filter_samples(ix)
 
-    dend = plot_dendrogram([obj1, obj2, hip_obj], qn_method=quantile_norm)
+    dend = plot_dendrogram([obj1, obj2, hip_obj], qn_method=quantile_norm, n_by_mad=n_gene_by_mad)
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_with_hipsci%d.png" % n_hipsci), dpi=200)
 
     # 6. HipSci, iPSC, ESC Ruiz signature (only)
@@ -410,5 +413,5 @@ if __name__ == '__main__':
 
     p, ax = plot_pca(the_dat, the_obj.meta.type, marker_subgroups=studies)
     ax.figure.subplots_adjust(right=0.78)
-    ax.figure.savefig(os.path.join(outdir, "pca_all_samples.png"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb_nsc_hipsci%d.png" % n_hipsci), dpi=200)
 
