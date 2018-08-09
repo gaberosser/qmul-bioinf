@@ -245,19 +245,12 @@ if __name__ == "__main__":
 
     # our data
     me_obj, anno = load_methylation(pids, norm_method=norm_method)
-    # our_data = me_obj.data
-    # our_meta = me_obj.meta
 
     # discard unneeded samples
     ix = me_obj.meta.type.isin(['iPSC', 'FB', 'iNSC', 'NSC'])
     me_obj.filter_samples(ix)
     me_obj.batch_id.loc[:] = 'Our data'
     me_obj.meta.insert(1, 'array_type', 'EPIC')
-
-    # our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB', 'iNSC'])]
-    # our_data = our_data.loc[:, our_meta.index]
-    # our_meta.loc[:, 'batch'] = 'Our data'
-    # our_meta.insert(1, 'array_type', 'EPIC')
 
     # ref data
 
@@ -289,6 +282,7 @@ if __name__ == "__main__":
     # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
     banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
     banov_obj.meta.insert(1, 'array_type', 'EPIC')
+    banov_obj.meta.insert(1, 'type', 'iPSC')
 
     # combine all data
     obj = loader.loader.MultipleBatchLoader(
@@ -666,6 +660,9 @@ if __name__ == "__main__":
         dmr_params
     )
 
+    # 5) Our iNSC vs parental FB (matched)
+    # We can use this comparison to assess whether observed residual/de novo DMRs
+
     # Analyse these results
 
     colours = {
@@ -694,7 +691,7 @@ if __name__ == "__main__":
             prev = x[i]
         return out
 
-    # Our iPSC vs our FB: is there any obvious increased similarity between matched and unmatached comparisons?
+    # Our iPSC vs our FB: is there any obvious increased similarity between matched and unmatched comparisons?
 
     t = pd.DataFrame(get_dmr_number_direction(dmr_res_our_ipsc_vs_our_fb_all)).transpose()
 
@@ -786,9 +783,9 @@ if __name__ == "__main__":
 
     # iPSC vs FB: numbers and direction
 
-    # to_plot nesting format: iNSC then FB
-    k_our_fb = 'Our data (n=%d)' % (our_meta.type == 'FB').sum()
-    k_our_ipsc = 'Our data (n=%d)' % (our_meta.type == 'iPSC').sum()
+    # to_plot nesting format: iPSC then FB
+    k_our_fb = 'Our data (n=%d)' % (me_obj.meta.type == 'FB').sum()
+    k_our_ipsc = 'Our data (n=%d)' % (me_obj.meta.type == 'iPSC').sum()
     k_e6194_fb = 'E-MTAB-6194 (n=1)'
     k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_ref_names_6194_n1)
 
