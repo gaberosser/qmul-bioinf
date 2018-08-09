@@ -5,7 +5,6 @@ import multiprocessing as mp
 # add root of project dir to the path
 sys.path.append(os.path.dirname(__file__) + '/../../')
 
-from methylation import dmr
 import pandas as pd
 import argparse
 
@@ -97,3 +96,7 @@ def main():
     tbl.to_csv(fn_out)
     sys.stderr.write("Wrote results table to output file %s.\n" % fn_out)
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
