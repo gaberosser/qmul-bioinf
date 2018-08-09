@@ -1,13 +1,9 @@
 from load_data import methylation_array
 from methylation.process import m_from_beta, beta_from_m, merge_illumina_probe_gene_classes
-from methylation import plots
 from scipy import ndimage, stats
 from stats import nht
 import pandas as pd
-from matplotlib import pyplot as plt
-import seaborn as sns
 import pickle
-import types
 import operator
 import itertools
 from functools import partial
