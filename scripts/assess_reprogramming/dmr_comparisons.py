@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt, gridspec
 import seaborn as sns
 import os
 import re
+import csv
 import collections
 from scipy import stats
 from settings import OUTPUT_DIR
@@ -288,14 +289,10 @@ if __name__ == "__main__":
 
     # our data
     me_obj, anno = load_methylation(pids, norm_method=norm_method)
-    our_data = me_obj.data
-    our_meta = me_obj.meta
-
-    # discard unneeded samples
-    our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB'])]
-    our_data = our_data.loc[:, our_meta.index]
-    our_meta.loc[:, 'batch'] = 'Our data'
-    our_meta.insert(1, 'array_type', 'EPIC')
+    ix = me_obj.meta.type.isin(['iPSC', 'FB', 'iNSC', 'NSC'])
+    me_obj.filter_samples(ix)
+    me_obj.batch_id.loc[:] = 'Our data'
+    me_obj.meta.insert(1, 'array_type', 'EPIC')
 
     # ref data
 
@@ -308,42 +305,32 @@ if __name__ == "__main__":
     encode_epic_obj.meta.insert(1, 'array_type', 'EPIC')
     encode_epic_obj.batch_id = 'Encode EPIC'
 
-    # Encode 450K data
-    encode_450k_obj = loader.encode_450k(norm_method=norm_method, samples=['H1 hESC'])
-    encode_450k_obj.meta.insert(1, 'array_type', '450K')
-
     # E-MTAB-6194
     e6194_obj = loader.load_reference(
         'E-MTAB-6194',
         norm_method=norm_method,
     )
-    discard_ix = e6194_obj.meta.cell_line.isin([
+    ix = ~e6194_obj.meta.cell_line.isin([
         'NA07057',
         'HCT116',
         'HEL46.11',
     ])
-    e6194_obj.meta = e6194_obj.meta.loc[~discard_ix]
-    e6194_obj.data = e6194_obj.data[e6194_obj.meta.index]
+    e6194_obj.filter_samples(ix)
     e6194_obj.meta.insert(1, 'array_type', 'EPIC')
 
-    refs = [
-        encode_epic_obj,
-        encode_450k_obj,
-        e6194_obj
-    ]
-
-    ## TODO: we should now be able to use a MultipleBatchLoader to combine everything (now HipSci has its own loader)
+    # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
+    banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
+    banov_obj.meta.insert(1, 'array_type', 'EPIC')
 
     # HipSci data
-    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=12, array_type='epic')
-    hip_epic_meta = hip_epic_ldr.meta
-    hip_epic_data = hip_epic_ldr.data
+    hip_epic_obj = loader.hipsci(norm_method=norm_method, array_type='epic')
 
-    meta, dat_m = combine_data_meta(
-        (our_data, hip_epic_data, e6194_obj.data, encode_epic_obj.data),
-        (our_meta, hip_epic_meta, e6194_obj.meta, encode_epic_obj.meta),
-        units='m'
+    # combine all data
+    obj = loader.loader.MultipleBatchLoader(
+        [me_obj, encode_epic_obj, e6194_obj, hip_epic_obj, banov_obj]
     )
+    meta = obj.meta
+    dat_m = process.m_from_beta(obj.data)
 
     this_anno = anno.loc[dat_m.index]
     dmr_clusters = compute_dmr_clusters(this_anno, dmr_params)
@@ -352,6 +339,102 @@ if __name__ == "__main__":
     ipsc_ref_names_6194_n1 = ['HEL139.2_p17', 'HEL139.5_p14', 'HEL139.8_p13', 'HEL140.1_p12', 'HEL141.1_p11']
     fb_ref_name_6194_n1 = '27_HFF_p7'
     esc_ref_names = ['H7', 'H9']
+    encode_esc_ref_name = 'H7 hESC'
+    e6194_esc_ref_name = 'H9_p50'
+
+    # enumerate all comparisons - this is helpful for running on Apocrita
+    def get_sample_names(batch_meta, batch, type, lookup):
+        ix1 = batch_meta == batch
+        if batch == 'Our data':
+            if type == 'FB':
+                ix2 = batch_meta.index.str.contains("DURA%s_FB" % lookup)
+            elif type == 'iPSC':
+                ix2 = batch_meta.index.str.contains("DURA%s_IPSC" % lookup)
+            elif type == 'iNSC':
+                ix2 = batch_meta.index.str.contains("DURA%s_NSC" % lookup)
+        else:
+            ix2 = batch_meta.index.str.contains(r"%s" % lookup)
+
+        return batch_meta.index[ix1 & ix2].tolist()
+
+    ## iPSC vs FB
+    ipsc_options = {
+        'Our data': pids,
+        'HipSci (EPIC)': hip_epic_obj.meta.index,
+        'E-MTAB-6194': ipsc_ref_names_6194_n1,
+        'gse110544': banov_obj.meta.index,
+    }
+
+    fb_options = {
+        'Our data': pids,
+        'E-MTAB-6194': [fb_ref_name_6194_n1],
+    }
+
+    esc_options = {
+        'Encode EPIC': [encode_esc_ref_name],
+        'E-MTAB-6194': [e6194_esc_ref_name]
+    }
+
+    insc_options = {
+        'Our data': pids,
+    }
+
+    comparisons = {}
+    batch_meta = obj.meta.batch_1
+
+    # iPSC vs FB
+    for i in ipsc_options:
+        for j in fb_options:
+            for u in ipsc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
+                for v in fb_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'FB', v)
+                    comparisons["iPSC%s-FB%s" % (u, v)] = (ix_u, ix_v)
+
+    # iPSC vs ESC
+    for i in ipsc_options:
+        for j in esc_options:
+            for u in ipsc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
+                for v in esc_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'ESC', v)
+                    comparisons["iPSC%s-ESC%s" % (u, v)] = (ix_u, ix_v)
+
+    # # iPSC vs iPSC
+    # for i in ipsc_options:
+    #     for j in ipsc_options:
+    #         if i == j:
+    #             continue
+    #         for u in ipsc_options[i]:
+    #             ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
+    #             for v in ipsc_options[j]:
+    #                 ix_v = get_sample_names(batch_meta, j, 'iPSC', v)
+    #                 comparisons["iPSC%s-iPSC%s" % (u, v)] = (ix_u, ix_v)
+
+    # ESC vs ESC
+    for i in esc_options:
+        for j in esc_options:
+            for u in esc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'ESC', u)
+                for v in esc_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'ESC', v)
+                    comparisons["ESC%s-ESC%s" % (u, v)] = (ix_u, ix_v)
+
+    # iNSC vs iPSC
+    # only compare with our own data here
+    j = 'Our data'
+    for i in insc_options:
+        for u in ipsc_options[i]:
+            ix_u = get_sample_names(batch_meta, i, 'iNSC', u)
+            for v in ipsc_options[j]:
+                ix_v = get_sample_names(batch_meta, j, 'iPSC', v)
+                comparisons["iNSC%s-iPSC%s" % (u, v)] = (ix_u, ix_v)
+
+    with open(os.path.join(outdir, "comparisons.txt"), 'wb') as f:
+        c = csv.writer(f, delimiter=':')
+        for k, v in comparisons.items():
+            c.writerow([k, ','.join(v[0]), ','.join(v[1])])
+
 
     # 1. iPSC vs FB
 
@@ -378,7 +461,7 @@ if __name__ == "__main__":
     fn = os.path.join(indir, "hipsci_vs_our_fb.pkl")
     comparisons = {}
     for pid in pids:
-        for hid in hip_epic_meta.index:
+        for hid in hip_epic_obj.meta.index:
             comparisons["%s-%s" % (pid, hid)] = (hid, "DURA%s" % pid)
     dmr_res_hipsci_vs_our_fb = run_dmr_set(
         fn, meta, dat_m, dmr_clusters, anno, comparisons, 'iPSC', 'FB', dmr_params
@@ -497,7 +580,7 @@ if __name__ == "__main__":
     # 1f-i) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, all replicates)
     fn = os.path.join(indir, "hipsci_vs_e6194_fb.pkl")
     comparisons = {}
-    for hid in hip_epic_meta.index:
+    for hid in hip_epic_obj.meta.index:
         comparisons["%s-HFF" % hid] = ("%s" % hid, "HFF_p7")
 
     dmr_res_hipsci_vs_e6194_fb= run_dmr_set(
@@ -515,7 +598,7 @@ if __name__ == "__main__":
     # 1f-ii) HipSci iPSC vs E-MTAB-6194 FB (CRL2429, n=1)
     fn = os.path.join(indir, "hipsci_vs_e6194_fb_n1.pkl")
     comparisons = {}
-    for hid in hip_epic_meta.index:
+    for hid in hip_epic_obj.meta.index:
         comparisons["%s-HFF" % hid] = ("%s" % hid, fb_ref_name_6194_n1)
 
     dmr_res_hipsci_vs_e6194_fb_n1 = run_dmr_set(
@@ -554,7 +637,7 @@ if __name__ == "__main__":
     # 2b) HipSci iPSC vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
     fn = os.path.join(indir, "hipsci_vs_esc.pkl")
     comparisons = {}
-    for hid in hip_epic_meta.index:
+    for hid in hip_epic_obj.meta.index:
         for r in esc_ref_names:
             comparisons["%s-%s" % (hid, r)] = (hid, r)
 
@@ -616,7 +699,7 @@ if __name__ == "__main__":
     # 3a) Our iPSC vs HipSci iPSC
     fn = os.path.join(indir, "hipsci_vs_our_ipsc.pkl")
     comparisons = {}
-    for hid in hip_epic_meta.index:
+    for hid in hip_epic_obj.meta.index:
         for pid in pids:
             comparisons["%s-%s" % (pid, hid)] = ("DURA%s" % pid, hid)
     dmr_res_hipsci_vs_our_ipsc = run_dmr_set(
@@ -652,7 +735,7 @@ if __name__ == "__main__":
     # 3c) HipSci vs E-MTAB-6194 iPSC
     fn = os.path.join(indir, "hipsci_vs_e6194_ipsc.pkl")
     comparisons = {}
-    for hid in hip_epic_meta.index:
+    for hid in hip_epic_obj.meta.index:
         for r in ipsc_ref_names_6194:
             comparisons["%s-%s" % (hid, r)] = (hid, r)
     dmr_res_hipsci_vs_e6194_ipsc = run_dmr_set(
@@ -823,11 +906,11 @@ if __name__ == "__main__":
     # iPSC vs FB: numbers and direction
 
     # to_plot nesting format: iNSC then FB
-    k_our_fb = 'Our data (n=%d)' % (our_meta.type == 'FB').sum()
-    k_our_ipsc = 'Our data (n=%d)' % (our_meta.type == 'iPSC').sum()
+    k_our_fb = 'Our data (n=%d)' % (me_obj.meta.type == 'FB').sum()
+    k_our_ipsc = 'Our data (n=%d)' % (me_obj.meta.type == 'iPSC').sum()
     k_e6194_fb = 'E-MTAB-6194 (n=1)'
     k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_ref_names_6194_n1)
-    k_hipsci_ipsc = 'HipSci (n=%d)' % hip_epic_meta.shape[0]
+    k_hipsci_ipsc = 'HipSci (n=%d)' % hip_epic_obj.meta.shape[0]
 
     to_plot = {
         k_our_ipsc: {
@@ -1045,7 +1128,7 @@ if __name__ == "__main__":
     core_dmr_e6194_ipsc_n1_ref_esc = core_dmrs(dmr_res_e6914_ipsc_n1_vs_esc, ipsc_ref_names_6194_n1, esc_ref_names)
     core_dmr_direction_e6194_ipsc_n1_ref_esc = core_dmr_by_direction(core_dmr_e6194_ipsc_n1_ref_esc, esc_ref_names)
 
-    core_dmr_hipsci_ref_esc = core_dmrs(dmr_res_hipsci_vs_esc, hip_epic_meta.index, esc_ref_names)
+    core_dmr_hipsci_ref_esc = core_dmrs(dmr_res_hipsci_vs_esc, hip_epic_obj.meta.index, esc_ref_names)
     core_dmr_direction_hipsci_ref_esc = core_dmr_by_direction(core_dmr_hipsci_ref_esc, esc_ref_names)
 
     # big plot showing all the Venn diagrams
