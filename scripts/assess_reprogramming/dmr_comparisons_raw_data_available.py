@@ -245,14 +245,19 @@ if __name__ == "__main__":
 
     # our data
     me_obj, anno = load_methylation(pids, norm_method=norm_method)
-    our_data = me_obj.data
-    our_meta = me_obj.meta
+    # our_data = me_obj.data
+    # our_meta = me_obj.meta
 
     # discard unneeded samples
-    our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB'])]
-    our_data = our_data.loc[:, our_meta.index]
-    our_meta.loc[:, 'batch'] = 'Our data'
-    our_meta.insert(1, 'array_type', 'EPIC')
+    ix = me_obj.meta.type.isin(['iPSC', 'FB', 'iNSC', 'NSC'])
+    me_obj.filter_samples(ix)
+    me_obj.batch_id.loc[:] = 'Our data'
+    me_obj.meta.insert(1, 'array_type', 'EPIC')
+
+    # our_meta = our_meta.loc[our_meta.type.isin(['iPSC', 'FB', 'iNSC'])]
+    # our_data = our_data.loc[:, our_meta.index]
+    # our_meta.loc[:, 'batch'] = 'Our data'
+    # our_meta.insert(1, 'array_type', 'EPIC')
 
     # ref data
 
@@ -270,25 +275,27 @@ if __name__ == "__main__":
         'E-MTAB-6194',
         norm_method=norm_method,
     )
-    discard_ix = e6194_obj.meta.cell_line.isin([
+    ix = ~e6194_obj.meta.cell_line.isin([
         'NA07057',
         'HCT116',
         'HEL46.11',
     ])
-    e6194_obj.meta = e6194_obj.meta.loc[~discard_ix]
-    e6194_obj.data = e6194_obj.data[e6194_obj.meta.index]
+    e6194_obj.filter_samples(ix)
     e6194_obj.meta.insert(1, 'array_type', 'EPIC')
 
-    refs = [
-        encode_epic_obj,
-        e6194_obj
-    ]
+    # GSE31848 (Nazor et al.; iPSC lines + ESC) (450K)
+    # nazor_obj = loader.load_reference('gse31848', norm_method=norm_method)
 
-    meta, dat_m = combine_data_meta(
-        (our_data, e6194_obj.data, encode_epic_obj.data),
-        (our_meta, e6194_obj.meta, encode_epic_obj.meta),
-        units='m'
+    # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
+    banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
+    banov_obj.meta.insert(1, 'array_type', 'EPIC')
+
+    # combine all data
+    obj = loader.loader.MultipleBatchLoader(
+        [me_obj, encode_epic_obj, e6194_obj, banov_obj]
     )
+    meta = obj.meta
+    dat_m = process.m_from_beta(obj.data)
 
     this_anno = anno.loc[dat_m.index]
     dmr_clusters = compute_dmr_clusters(this_anno, dmr_params)
@@ -297,6 +304,7 @@ if __name__ == "__main__":
     ipsc_ref_names_6194_n1 = ['HEL139.2_p17', 'HEL139.5_p14', 'HEL139.8_p13', 'HEL140.1_p12', 'HEL141.1_p11']
     fb_ref_name_6194_n1 = '27_HFF_p7'
     esc_ref_names = ['H7', 'H9']
+    ipsc_ref_names_banov = banov_obj.meta.index.tolist()
 
     # 1. iPSC vs FB
 
@@ -429,6 +437,61 @@ if __name__ == "__main__":
         dmr_params
     )
 
+    # 1f) Banovich iPSC vs our FB
+    fn = os.path.join(indir, "banov_ipsc_vs_our_fb.pkl")
+    comparisons = {}
+    for r in ipsc_ref_names_banov:
+        for pid in pids:
+            comparisons["%s-DURA%s" % (r, pid)] = (r, "DURA%s" % pid)
+
+    dmr_res_banov_ipsc_vs_our_fb = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1g-i) Banovich iPSC vs E6194 FB (all replicates)
+    fn = os.path.join(indir, "banov_ipsc_vs_e6194_fb.pkl")
+    comparisons = {}
+    for r in ipsc_ref_names_banov:
+        comparisons["%s-HFF" % r] = (r, "HFF_p7")
+
+    dmr_res_banov_ipsc_vs_e6194_fb = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
+    # 1g-ii) Banovich iPSC vs E6194 FB (n=1)
+    fn = os.path.join(indir, "banov_ipsc_vs_e6194_fb_n1.pkl")
+    comparisons = {}
+    for r in ipsc_ref_names_banov:
+        comparisons["%s-HFF" % r] = (r, fb_ref_name_6194_n1)
+
+    dmr_res_banov_ipsc_vs_e6194_fb_n1 = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'FB',
+        dmr_params
+    )
+
     # 2. iPSC vs ESC
 
     # 2a) Our iPSC vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
@@ -450,7 +513,7 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 2c-i) E-MTAB-6194 iPSC (all replicates) vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
+    # 2b-i) E-MTAB-6194 iPSC (all replicates) vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
     fn = os.path.join(indir, "e6194_ipsc_vs_esc.pkl")
     comparisons = {}
     for hid in ipsc_ref_names_6194:
@@ -469,7 +532,7 @@ if __name__ == "__main__":
         dmr_params
     )
 
-    # 2c-ii) E-MTAB-6194 iPSC (n=1) vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
+    # 2b-ii) E-MTAB-6194 iPSC (n=1) vs 2 x EPIC reference ESC (Encode, E-MTAB-6194)
     fn = os.path.join(indir, "e6194_ipsc_n1_vs_esc.pkl")
     comparisons = {}
     for hid in ipsc_ref_names_6194_n1:
@@ -488,18 +551,38 @@ if __name__ == "__main__":
         dmr_params
     )
 
+    # 2c) Banovich iPSC vs 2 x EPIC reference ESC
+    fn = os.path.join(indir, "banov_ipsc_vs_esc.pkl")
+    comparisons = {}
+    for hid in ipsc_ref_names_banov:
+        for r in esc_ref_names:
+            comparisons["%s-%s" % (hid, r)] = (hid, r)
+
+    dmr_res_banov_ipsc_vs_esc = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'ESC',
+        dmr_params
+    )
+
     # 3. iPSC vs iPSC
     # for these comparisons, we need to modify the types to distinguish the batches
     meta.loc[meta.batch.str.contains('HipSci').fillna(False), 'type'] = 'iPSC_HipSci'
     meta.loc[meta.index.str.contains('HEL1'), 'type'] = 'iPSC_E6194'
+    meta.loc[meta.index.str.contains(r'NA1'), 'type'] = 'iPSC_Banovich'
 
-    # 3b) Our iPSC vs E-MTAB-6194 iPSC
+    # 3a) Our iPSC vs E-MTAB-6194 iPSC (all replicates)
     fn = os.path.join(indir, "e6194_ipsc_vs_our_ipsc.pkl")
     comparisons = {}
     for hid in ipsc_ref_names_6194:
         for pid in pids:
             comparisons["%s-%s" % (pid, hid)] = ("DURA%s" % pid, hid)
-    dmr_res_e6194_vs_our_ipsc = run_dmr_set(
+    dmr_res_e6194_ipsc_vs_our_ipsc = run_dmr_set(
         fn,
         meta,
         dat_m,
@@ -510,6 +593,43 @@ if __name__ == "__main__":
         'iPSC_E6194',
         dmr_params
     )
+
+    # 3b) Our iPSC vs Banovich iPSC
+    fn = os.path.join(indir, "banov_ipsc_vs_our_ipsc.pkl")
+    comparisons = {}
+    for hid in ipsc_ref_names_banov:
+        for pid in pids:
+            comparisons["%s-%s" % (pid, hid)] = ("DURA%s" % pid, hid)
+    dmr_res_banov_ipsc_vs_our_ipsc = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC',
+        'iPSC_Banovich',
+        dmr_params
+    )
+
+    # 3c) E6194 iPSC (all replicates) vs Banovich iPSC
+    fn = os.path.join(indir, "banov_ipsc_vs_e6194_ipsc.pkl")
+    comparisons = {}
+    for hid in ipsc_ref_names_banov:
+        for iid in ipsc_ref_names_6194:
+            comparisons["%s-%s" % (hid, iid)] = (hid, iid)
+    dmr_res_banov_ipsc_vs_e6194_ipsc = run_dmr_set(
+        fn,
+        meta,
+        dat_m,
+        dmr_clusters,
+        anno,
+        comparisons,
+        'iPSC_Banovich',
+        'iPSC_E6194',
+        dmr_params
+    )
+
 
     # 4. ESC vs ESC
     # This is useful for filtering out any DMRs that disagree between references

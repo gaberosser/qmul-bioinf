@@ -38,6 +38,8 @@ project_dirs = {
     "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
     "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
     "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
+    "gse31848": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848'),
+    "gse110544": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE110544'),
     "E-MTAB-6194": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194'),
     "encode_epic": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_EPIC'),
     "encode_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_450k'),
