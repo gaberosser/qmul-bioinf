@@ -42,7 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run a single DMR comparison")
     parser.add_argument("--clusters", help="path to clusters pkl file", required=True)
     parser.add_argument("--name", help="name for this comparison", required=True)
-    parser.add_argument("-t","--threads", help="number of threads", default=1, type=int)
+    parser.add_argument("-t","--threads", help="number of threads", default=0, type=int)
     parser.add_argument("-O","--outdir", help="output directory", default=".")
     parser.add_argument("--data_dir", help="directory containing methylation data files", required=True)
     parser.add_argument("--samples_1", help="comma-separated list of sample names for group 1", required=True)
@@ -86,6 +86,9 @@ def main():
             dat.columns = [s]
         else:
             dat.insert(dat.shape[1], s, this)
+
+    if args.threads != 0:
+        DMR_PARAMS['n_jobs'] = int(args.threads)
 
     sys.stderr.write("Successfully loaded %d samples with %d probes.\n" % (dat.shape[1], dat.shape[0]))
     res = run_dmr(dmr_clusters, dat, samples_1, samples_2, **DMR_PARAMS)
