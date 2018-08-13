@@ -431,7 +431,7 @@ if __name__ == "__main__":
                 comparisons["iNSC%s-iPSC%s" % (u, v)] = (ix_u, ix_v)
 
     with open(os.path.join(outdir, "comparisons.txt"), 'wb') as f:
-        c = csv.writer(f, delimiter=':')
+        c = csv.writer(f, delimiter=':', lineterminator='\n')
         for k, v in comparisons.items():
             c.writerow([k, ','.join(v[0]), ','.join(v[1])])
 

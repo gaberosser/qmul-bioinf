@@ -77,7 +77,7 @@ def main():
     for s in samples_1 + samples_2:
         fn = os.path.join(args.data_dir, "%s.csv.gz" % s)
         if not os.path.isfile(fn):
-            sys.stderr.write("ERROR: No file found at %s.\n" % fn)
+            sys.stderr.write("No file found at %s.\n" % fn)
             sys.exit(1)
         this = pd.read_csv(fn, header=None, index_col=0)
         this.index.name = s
