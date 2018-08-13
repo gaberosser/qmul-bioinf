@@ -319,15 +319,16 @@ if __name__ == "__main__":
     e6194_obj.meta.insert(1, 'array_type', 'EPIC')
 
     # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
-    banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
-    banov_obj.meta.insert(1, 'array_type', 'EPIC')
+    # banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
+    # banov_obj.meta.insert(1, 'array_type', 'EPIC')
 
     # HipSci data
-    hip_epic_obj = loader.hipsci(norm_method=norm_method, array_type='epic')
+    hip_epic_obj = loader.hipsci(norm_method=norm_method, array_type='epic', n_sample=12)
 
     # combine all data
     obj = loader.loader.MultipleBatchLoader(
-        [me_obj, encode_epic_obj, e6194_obj, hip_epic_obj, banov_obj]
+        # [me_obj, encode_epic_obj, e6194_obj, hip_epic_obj, banov_obj]
+        [me_obj, encode_epic_obj, e6194_obj, hip_epic_obj]
     )
     meta = obj.meta
     dat_m = process.m_from_beta(obj.data)
@@ -362,7 +363,7 @@ if __name__ == "__main__":
         'Our data': pids,
         'HipSci (EPIC)': hip_epic_obj.meta.index,
         'E-MTAB-6194': ipsc_ref_names_6194_n1,
-        'gse110544': banov_obj.meta.index,
+        # 'gse110544': banov_obj.meta.index,
     }
 
     fb_options = {
@@ -399,17 +400,6 @@ if __name__ == "__main__":
                 for v in esc_options[j]:
                     ix_v = get_sample_names(batch_meta, j, 'ESC', v)
                     comparisons["iPSC%s-ESC%s" % (u, v)] = (ix_u, ix_v)
-
-    # # iPSC vs iPSC
-    # for i in ipsc_options:
-    #     for j in ipsc_options:
-    #         if i == j:
-    #             continue
-    #         for u in ipsc_options[i]:
-    #             ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
-    #             for v in ipsc_options[j]:
-    #                 ix_v = get_sample_names(batch_meta, j, 'iPSC', v)
-    #                 comparisons["iPSC%s-iPSC%s" % (u, v)] = (ix_u, ix_v)
 
     # ESC vs ESC
     for i in esc_options:

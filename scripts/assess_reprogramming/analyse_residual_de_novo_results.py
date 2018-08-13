@@ -14,7 +14,7 @@ import seaborn as sns
 import os
 import re
 import csv
-import collections
+from ast import literal_eval as make_tuple
 from scipy import stats
 from settings import OUTPUT_DIR
 
@@ -22,11 +22,11 @@ from settings import OUTPUT_DIR
 logger = log.get_console_logger("analyse_residual_dmrs")
 
 
-def get_dmr_number_direction(res_dict, alpha=0.01):
+def get_dmr_number_direction(res_dict, fdr=0.01):
     out = {}
     for k, this_res in res_dict.items():
         ix1 = this_res.loc[:, 'median_delta'] < 0
-        ix2 = this_res.loc[:, 'padj'] < alpha
+        ix2 = this_res.loc[:, 'padj'] < fdr
         out[k] = {
             'Hypermethylated': ((~ix1) & ix2).sum(),
             'Hypomethylated': (ix1 & ix2).sum(),
@@ -34,17 +34,112 @@ def get_dmr_number_direction(res_dict, alpha=0.01):
     return pd.DataFrame(out).transpose()
 
 
-def get_dmr_cid_direction(res_dict):
+def get_dmr_cid_direction(res_dict, fdr=0.01):
     out = {}
     for k, this_res in res_dict.items():
         ix1 = this_res.loc[:, 'median_delta'] < 0
-        ix2 = this_res.loc[:, 'padj'] < alpha
+        ix2 = this_res.loc[:, 'padj'] < fdr
         out[k] = {
             'Hypermethylated': this_res.loc[((~ix1) & ix2)].index,
             'Hypomethylated': this_res.loc[(ix1 & ix2)].index,
         }
     return out
 
+
+def core_dmrs(ipsc_vs_esc, fdr=0.01):
+    """
+    For each result, get the set of core DMRs that are present in all ref comparisons
+    :return:
+    """
+    keep_cols = ['median_2', 'padj', 'median_delta']
+    core_tbl = {}
+    for k1, v1 in ipsc_vs_esc.items():
+        core_tbl[k1] = {}
+        for k2, v2 in v1.items():
+            for k3, df in v2.items():
+                this_ix = df.index[df.padj < fdr]
+                the_key = k3.split('-')[0]
+                if the_key in core_tbl[k1]:
+                    # reduce to intersection
+                    this_ix = this_ix.intersection(core_tbl[k1][the_key].index)
+                    core_tbl[k1][the_key] = core_tbl[k1][the_key].loc[this_ix]
+                else:
+                    core_tbl[k1][the_key] = df.loc[this_ix]
+                    # drop unneeded copies of columns that will be reinserted below
+                    for c in keep_cols:
+                        core_tbl[k1][the_key].drop(c, axis=1, inplace=True)
+
+                # either way, add columns
+                for c in keep_cols:
+                    core_tbl[k1][the_key].insert(core_tbl[k1][the_key].shape[1], '%s_%s' % (c, k2), df.loc[this_ix, c])
+
+        # run back through and check that direction is consistent
+        for the_key, df in core_tbl[k1].items():
+            the_sign = None
+            for the_col in df.columns[df.columns.str.contains('median_delta_')]:
+                if the_sign is None:
+                    the_sign = np.sign(df[the_col])
+                else:
+                    the_sign = the_sign == np.sign(df[the_col])
+            if the_sign.sum() != the_sign.size:
+                print "Of the %d consistent DMRs in comparison %s / %s, %d have different direction and will be removed." % (
+                    the_sign.size,
+                    k1,
+                    the_key,
+                    (~the_sign).sum()
+                )
+            core_tbl[k1][the_key] = core_tbl[k1][the_key].loc[the_sign]
+
+    return core_tbl
+
+
+def classify_dmrs_residual_denovo(core_tbl, parental, exclude=None):
+    """
+
+    :param core_tbl: From core_dmrs() function (e.g. iPSC vs ESC).
+    :param parental: Raw results from parental comparison (e.g. iPSC vs FB).
+    :param exclude: If present, this contains probes to exclude from the analysis.
+    :return:
+    """
+    res = {}
+
+    for k1, this_tbl in core_tbl.items():
+        if k1 not in parental:
+            logger.warning("Sample %s has no matching parental sample. Skipping", k1)
+            continue
+        # res[k1] = {}
+        # 1. get mmd from each comparison
+        # mmd = {}
+        # for k2, this_tbl in v1.items():
+        if exclude is not None:
+            this_tbl = this_tbl.loc[this_tbl.index.difference(exclude)]
+        mean_median_delta = this_tbl.loc[:, this_tbl.columns.str.contains('median_delta_')].mean(axis=1)
+
+        # look for the same DMRs in the parental comparison
+        this_par = parental[k1]
+        p_ix = this_par.index.intersection(this_tbl.index)
+        mmd_lookup = mean_median_delta.loc[p_ix]
+
+        res[k1] = this_tbl.copy()
+        clas = pd.Series('partial', index=this_tbl.index)
+
+        # de novo: DM in (A vs B) AND (A vs C) with same direction
+        ix = (mmd_lookup > 0.) & (this_par.loc[p_ix, 'median_delta'] > 0.)
+        clas.loc[ix.index[ix]] = 'hyper_de_novo'
+        ix = (mmd_lookup < 0.) & (this_par.loc[p_ix, 'median_delta'] < 0.)
+        clas.loc[ix.index[ix]] = 'hypo_de_novo'
+
+        # residual: DM in (A vs B) AND NOT in (A vs C)
+        not_p_ix = ~this_tbl.index.isin(this_par.index)
+        mmd_lookup = mean_median_delta.loc[not_p_ix]
+        ix = (mmd_lookup > 0)
+        clas.loc[ix.index[ix]] = 'hyper_residual'
+        ix = (mmd_lookup < 0)
+        clas.loc[ix.index[ix]] = 'hypo_residual'
+
+        res[k1].insert(2, 'classification', clas)
+
+    return res
 
 
 def jitter_points(x, spacing_buffer=1, jitter_step=0.02):
@@ -405,7 +500,7 @@ if __name__ == "__main__":
 
     ax1 = None
     gs = plt.GridSpec(2 * len(to_plot), 3)
-    fig = plt.figure(figsize=(5, 2 * len(to_plot)))
+    fig = plt.figure(figsize=(6, 2 * len(to_plot)))
     axs = np.empty((len(to_plot), 3), dtype=object)
     colours = ['#e09191', '#91e097']  # red, green (hyper, hypo)
 
@@ -436,17 +531,12 @@ if __name__ == "__main__":
             u_hypo[r] = setops.reduce_intersection(*[x['Hypomethylated'] for k, x in u.items()])
             u_hyper[r] = setops.reduce_intersection(*[x['Hypermethylated'] for k, x in u.items()])
 
-            # this_t = t.loc[t.index.str.contains(r)]
-            # ax = axs[i, j]
             sns.boxplot(
                 data=t.values,
                 orient='v',
-                # patch_artist=True,
-                # medianprops=medianprops,
                 width=0.7,
                 ax=ax
             )
-            # boxes = bplot['boxes']
             boxes = ax.artists
 
             ax.set_xticks([])
@@ -466,7 +556,7 @@ if __name__ == "__main__":
             set_colors=[colours[1]] * 2
         )
         if set_labels is not None:
-            plt.setp(v[0].set_labels, fontsize=12)
+            plt.setp(v[0].set_labels, fontsize=10)
 
         ax = fig.add_subplot(gs[ax_i, 2], facecolor='none', frame_on=False, xticks=[], yticks=[])
         set_labels = None
@@ -484,14 +574,112 @@ if __name__ == "__main__":
     for j, k in enumerate(to_plot.values()[0].keys()):
         axs[-1, j].set_xlabel(lbl_map[k])
 
-    gs.update(bottom=0.05, top=0.96, right=0.97, wspace=0.05)
+    gs.update(bottom=0.05, top=0.96, right=0.95, wspace=0.05)
     fig.savefig(os.path.join(outdir, "iPSC_vs_ESC_number_dmr.png"), dpi=200)
 
+    # resample the larger datasets to equalise the number of lines being considered
+    # n_sample = len(ipsc_samples['ours'])
+
+    n_sample = 5
+    n_iter = 1000
+    hypo_core = {}
+    hyper_core = {}
+    permuts_hyper_core_n = {}
+    permuts_hypo_core_n = {}
+
+    for k1, obj in to_plot.items():
+        this_n = len(obj.values()[0])
+        u_hypo = {}
+        u_hyper = {}
+        for j, (r, s) in enumerate(esc_samples.items()):
+            t = get_dmr_number_direction(obj[r])
+            u = get_dmr_cid_direction(obj[r])
+            u_hypo[r] = dict([(k.split('-')[0], x['Hypomethylated']) for k, x in u.items()])
+            u_hyper[r] = dict([(k.split('-')[0], x['Hypermethylated']) for k, x in u.items()])
+
+        u_hypo_core = dict([
+            (k, setops.reduce_intersection(*[u_hypo[r][k] for r in esc_samples])) for k in u_hypo.values()[0].keys()
+        ])
+        u_hyper_core = dict([
+            (k, setops.reduce_intersection(*[u_hyper[r][k] for r in esc_samples])) for k in
+            u_hyper.values()[0].keys()
+        ])
+
+        if this_n > n_sample:
+            print "Downsampling %s samples (from %d retaining %d)" % (
+                k1,
+                this_n,
+                n_sample
+            )
+            this_permuts_hypo_n = []
+            this_permuts_hyper_n = []
+            for i in range(n_iter):
+                # keys are same for hypo and hyper
+                ix = np.random.permutation(this_n)[:n_sample]
+                this_permuts_hypo_n.append(
+                    len(setops.reduce_intersection(*[u_hypo_core.values()[a] for a in ix]))
+                )
+                this_permuts_hyper_n.append(
+                    len(setops.reduce_intersection(*[u_hyper_core.values()[a] for a in ix]))
+                )
+            permuts_hypo_core_n[k1] = this_permuts_hypo_n
+            permuts_hyper_core_n[k1] = this_permuts_hyper_n
+
+        else:
+            hypo_core[k1] = setops.reduce_intersection(*u_hypo_core.values())
+            hyper_core[k1] = setops.reduce_intersection(*u_hyper_core.values())
+
+    # This next part needs to be adjusted depending on the samples being plotted
+    fmax = 0.999
+    fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(6.5, 8.2))
+
+    sns.violinplot(pd.DataFrame(permuts_hypo_core_n), bw=0.5, ax=axs[0], color=colours[1])
+    sns.violinplot(pd.DataFrame(permuts_hyper_core_n), bw=0.5, ax=axs[1], color=colours[0])
+    plt.setp(axs[0].xaxis.get_ticklabels(), visible=False)
+
+    markers = ['o', 's']
+    xi = range(len(permuts_hypo_core_n))
+
+    for i, (k1, v1) in enumerate(hypo_core.items()):
+        axs[0].scatter(
+            xi,
+            [len(v1)] * len(xi),
+            edgecolors='k',
+            marker=markers[i],
+            facecolors='none',
+            label=None,
+            lw=1.5,
+            zorder=100
+        )
+
+    for i, (k1, v1) in enumerate(hyper_core.items()):
+        axs[1].scatter(
+            xi,
+            [len(v1)] * len(xi),
+            edgecolors='k',
+            marker=markers[i],
+            facecolors='none',
+            label=k1,
+            lw=1.5,
+            zorder=100
+        )
+
+    axs[1].legend(loc='upper right')
+    axs[0].set_ylim([-.5, axs[0].get_ylim()[1]])
+    axs[1].set_ylim([-.5, axs[1].get_ylim()[1]])
+
+    axs[0].set_ylabel("Number hypomethylated DMRs")
+    axs[1].set_ylabel("Number hypermethylated DMRs")
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "num_core_dmrs_ipsc_vs_esc_resample.png"), dpi=200)
+
+    # IDEA
     # KS test: for each PAIR of iPSC lines, and each ESC line, is there evidence that the NUMBERS of DMRs are not
     # similarly distributed?
-    ## TODO
+    # I don't think this is valid: the result depends on the number of iterations.
 
-    # final piece of information: is there any overlap between the resultant core sets?
+    # Is there any overlap between the resultant core sets?
     core_dmrs_hypo = {}
     core_dmrs_hyper = {}
     for k1, obj in to_plot.items():
@@ -502,20 +690,168 @@ if __name__ == "__main__":
             u_hypo[k2] = setops.reduce_intersection(*[x['Hypomethylated'] for x in u.values()])
             u_hyper[k2] = setops.reduce_intersection(*[x['Hypermethylated'] for x in u.values()])
         core_dmrs_hypo[k1] = setops.reduce_intersection(*u_hypo.values())
-        core_dmrs_hyper[k1] = setops.reduce_intersection(*u_hypo.values())
+        core_dmrs_hyper[k1] = setops.reduce_intersection(*u_hyper.values())
 
 
     # outcome
     vs, vc = setops.venn_from_arrays(*core_dmrs_hypo.values())
     print "Hypomethylated core DMRs (hypo in both ESC comparisons). "
-    print "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
+    print "Of the %d DMRs in our data, %d are shared with all other refs" % (
         len(core_dmrs_hypo[k_our_ipsc]),
-        vc['111']
+        vc[''.join(['1'] * len(ipsc_vs_esc))]
     )
 
     vs, vc = setops.venn_from_arrays(*core_dmrs_hyper.values())
     print "Hypermethylated core DMRs (hyper in both ESC comparisons). "
-    print "Of the %d DMRs in our data, %d are shared with both HipSci and E-MTAB-6194" % (
+    print "Of the %d DMRs in our data, %d are shared with all other refs" % (
         len(core_dmrs_hyper[k_our_ipsc]),
-        vc['111']
+        vc[''.join(['1'] * len(ipsc_vs_esc))]
     )
+
+    # ESC vs ESC: for context, how many DMRs are there?
+
+    # all possible ESC pairings
+    esc_pairs_seen = set()
+    esc_esc_dmrs = set()
+    for r1 in esc_samples:
+        for r2 in esc_samples:
+            if r1 != r2 and tuple(sorted([r1, r2])) not in esc_pairs_seen:
+                # here we assume that there is only ONE comparison for each case - may need to change this
+                the_res = esc_vs_esc[r1][r2].values()[0]
+                hypo = ((the_res.padj < fdr) & (the_res.median_delta < 0)).sum()
+                hyper = ((the_res.padj < fdr) & (the_res.median_delta > 0)).sum()
+                print "Comparison %s - %s. %d hypo DMRs, %d hyper DMRs." % (
+                    r1, r2, hypo, hyper
+                )
+                esc_pairs_seen.add(tuple(sorted([r1, r2])))
+                esc_esc_dmrs.update(the_res.index[the_res.padj < fdr])
+
+
+    # Divide iPSC - ESC core DMRs into 'de novo' and 'residual' based on differences between iPSC, ESC and FB
+    # In each case, we repackage the iPSC - FB results so that they are keyed by the equivalent iPSC line
+    # For this, we will need to exclude any DMRs that also exist between the two ESCs.
+
+    # Our DMRs: only compare with parental lines
+    ipsc_esc_core = core_dmrs(ipsc_vs_esc, fdr=fdr)
+
+    ipsc_fb_ours = {}
+    for k, df in ipsc_vs_fb['ours']['ours'].items():
+        ii, jj = k.split('-')
+        if ii.replace('iPSC', '') == jj.replace('FB', ''):
+            ipsc_fb_ours[ii] = df.loc[df.padj < fdr]
+
+    core_dmr_classified_ours = classify_dmrs_residual_denovo(ipsc_esc_core['ours'], ipsc_fb_ours, exclude=esc_esc_dmrs)
+    core_dmr_classified_count_ours = dict(
+        [(k, v.classification.value_counts()) for k, v in core_dmr_classified_ours.items()]
+    )
+
+    # export to CSV format (one file per patient)
+    # also generate a list of genes linked to DMRs in residual hypomethylated regions
+    residual_hypo_genes = {}
+    for k, v in core_dmr_classified_ours.items():
+        v.to_csv(os.path.join(outdir, "%s_residual_hypo_dmrs.csv" % k))
+        genes = sorted(set(
+            v.loc[v.classification == 'hypo_residual', 'genes'].apply(make_tuple).sum()
+        ))
+        residual_hypo_genes[k] = genes
+
+    # Other matching comparisons
+    ipsc_fb_e6194 = {}
+    for k, df in ipsc_vs_fb['e6194']['e6194'].items():
+        ii, jj = k.split('-')
+        if re.search(r'HEL(140|141)', ii):
+            ipsc_fb_e6194[ii] = df.loc[df.padj < fdr]
+
+    core_dmr_classified_e6194 = classify_dmrs_residual_denovo(ipsc_esc_core['e6194'], ipsc_fb_e6194, exclude=esc_esc_dmrs)
+    core_dmr_classified_count_e6194 = dict(
+        [(k, v.classification.value_counts()) for k, v in core_dmr_classified_e6194.items()]
+    )
+
+    # combine these results to generate bar charts
+    set_colours_hypo = ['#b2df8a', '#33a02c']
+    set_colours_hyper = ['#fb9a99', '#e31a1c']
+    plot_colours = {'hypo': set_colours_hypo[::-1], 'hyper': set_colours_hyper[::-1]}
+
+    df1 = pd.DataFrame(core_dmr_classified_count_ours)
+    df2 = pd.DataFrame(core_dmr_classified_count_e6194)
+    df = pd.concat((df1, df2), axis=1).transpose()
+
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6.5, 5.5))
+    for i, typ in enumerate(['hyper', 'hypo']):
+        ax = axs[i]
+        df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
+        ax.set_ylabel('Number DMRs')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
+
+
+    # plot an example of each in one of our samples?
+    # pid = '019'
+    # this_tbl = core_dmr_our_ipsc_ref_esc[pid]
+    # this_tbl = this_tbl.loc[this_tbl.index.difference(esc_dmr_cids)]
+    # this_tbl.insert(0, 'mean_median_delta', this_tbl[['median_delta_%s' % r for r in esc_ref_names]].mean(axis=1))
+    #
+    # fb_res = dmr_res_our_ipsc_vs_our_fb[pid]
+    # fb_res._classes = []
+    # fb_tbl = fb_res.to_table(include='significant', skip_geneless=False)
+    # # is this the new suggested way to inner join?!
+    # fb_tbl = fb_tbl.reindex(this_tbl.index).dropna(how='all')
+    #
+    # ix_denovo_hyper = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] > 0)
+    # ix_residual_hyper = this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] > 0
+    # ix_denovo_hypo = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] < 0)
+    # ix_residual_hypo = this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] < 0
+    #
+    # to_plot = [
+    #     ('De novo hypermethylation', ix_denovo_hyper),
+    #     ('De novo hypomethylation', ix_denovo_hypo),
+    #     ('Residual hypermethylation', ix_residual_hyper),
+    #     ('Residual hypomethylation', ix_residual_hypo),
+    # ]
+    # colour_by_line = {
+    #     'iPSC': '#beaed4',
+    #     'H7': '#7fc97f',
+    #     'H9': '#33a02c',
+    #     'FB': '#ffff99',
+    # }
+    # mrk_size = 30
+    # med_size = 50
+    #
+    # fig, axs = plt.subplots(2, 2, sharey=True, sharex=True)
+    # i = 0
+    # for ttl, ix in to_plot:
+    #     cid = ix.index[ix][0]
+    #     probes = dmr_clusters.clusters[cid].pids
+    #     ipsc_m = dat_m.loc[probes, meta.index.str.contains(pid) & (meta.type == 'iPSC')]
+    #     fb_m = dat_m.loc[probes, meta.index.str.contains(pid) & (meta.type == 'FB')]
+    #     esc_m_arr = [
+    #         dat_m.loc[probes, meta.index.str.contains(r)] for r in esc_ref_names
+    #     ]
+    #     # esc_m = dat_m.loc[probes, meta.index.str.contains(re.compile('|'.join(esc_ref_names)))]
+    #
+    #     ax = axs.flat[i]
+    #     ax.scatter([0] * fb_m.shape[0], fb_m.squeeze(), c=colour_by_line['FB'], s=mrk_size, edgecolor='k', label='Fibroblast')
+    #     ax.scatter(0, fb_m.squeeze().median(), marker='X', s=med_size, edgecolor='k', c=colour_by_line['FB'], lw=1.5)
+    #     ax.scatter([1] * ipsc_m.shape[0], ipsc_m.squeeze(), c=colour_by_line['iPSC'], s=mrk_size, edgecolor='k', label='iPSC')
+    #     ax.scatter(1, ipsc_m.squeeze().median(), marker='X', s=med_size, edgecolor='k', c=colour_by_line['iPSC'], lw=1.5)
+    #     x = 1.9
+    #     for r, y in zip(esc_ref_names, esc_m_arr):
+    #         y = y.values.flatten()
+    #         ax.scatter([x] * y.size, y, c=colour_by_line[r], s=mrk_size, edgecolor='k', label='%s ESC' % r)
+    #         ax.scatter(x, np.median(y), marker='X', s=med_size, edgecolor='k', c=colour_by_line[r], lw=1.5)
+    #         x += 0.2
+    #     ax.set_title(ttl)
+    #
+    #     i += 1
+    #
+    # axs[0, 1].legend(loc='center left', frameon=True, facecolor='w', edgecolor='k', bbox_to_anchor=(1.0, 0.5))
+    # axs[0, 0].set_ylabel('Methylation value')
+    # axs[1, 0].set_ylabel('Methylation value')
+    # axs[1, 0].set_xticks([])
+    #
+    # fig.tight_layout()
+    # fig.subplots_adjust(right=0.83)
+    # fig.savefig(os.path.join(outdir, "%s_examples_of_dmr.png" % pid), dpi=200)
+
+    ## iNSC vs iPSC
+    ## TODO!
