@@ -7,7 +7,7 @@ import multiprocessing as mp
 from matplotlib import pyplot as plt, gridspec
 import seaborn as sns
 import os
-import re
+import csv
 import collections
 from scipy import stats
 from settings import OUTPUT_DIR
@@ -282,7 +282,6 @@ if __name__ == "__main__":
     # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
     banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
     banov_obj.meta.insert(1, 'array_type', 'EPIC')
-    banov_obj.meta.insert(1, 'type', 'iPSC')
 
     # combine all data
     obj = loader.loader.MultipleBatchLoader(
@@ -298,7 +297,91 @@ if __name__ == "__main__":
     ipsc_ref_names_6194_n1 = ['HEL139.2_p17', 'HEL139.5_p14', 'HEL139.8_p13', 'HEL140.1_p12', 'HEL141.1_p11']
     fb_ref_name_6194_n1 = '27_HFF_p7'
     esc_ref_names = ['H7', 'H9']
+    encode_esc_ref_name = 'H7 hESC'
+    e6194_esc_ref_name = 'H9_p50'
     ipsc_ref_names_banov = banov_obj.meta.index.tolist()
+
+    # enumerate all comparisons - this is helpful for running on Apocrita
+    def get_sample_names(batch_meta, batch, type, lookup):
+        ix1 = batch_meta == batch
+        if batch == 'Our data':
+            if type == 'FB':
+                ix2 = batch_meta.index.str.contains("DURA%s_FB" % lookup)
+            elif type == 'iPSC':
+                ix2 = batch_meta.index.str.contains("DURA%s_IPSC" % lookup)
+            elif type == 'iNSC':
+                ix2 = batch_meta.index.str.contains("DURA%s_NSC" % lookup)
+        else:
+            ix2 = batch_meta.index.str.contains(r"%s" % lookup)
+
+        return batch_meta.index[ix1 & ix2].tolist()
+
+    ## iPSC vs FB
+    ipsc_options = {
+        'Our data': pids,
+        'E-MTAB-6194': ipsc_ref_names_6194_n1,
+        'gse110544': banov_obj.meta.index,
+    }
+
+    fb_options = {
+        'Our data': pids,
+        'E-MTAB-6194': [fb_ref_name_6194_n1],
+    }
+
+    esc_options = {
+        'Encode EPIC': [encode_esc_ref_name],
+        'E-MTAB-6194': [e6194_esc_ref_name]
+    }
+
+    insc_options = {
+        'Our data': pids,
+    }
+
+    comparisons = {}
+    batch_meta = obj.meta.batch_1
+
+    # iPSC vs FB
+    for i in ipsc_options:
+        for j in fb_options:
+            for u in ipsc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
+                for v in fb_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'FB', v)
+                    comparisons["iPSC%s-FB%s" % (u, v)] = (ix_u, ix_v)
+
+    # iPSC vs ESC
+    for i in ipsc_options:
+        for j in esc_options:
+            for u in ipsc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'iPSC', u)
+                for v in esc_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'ESC', v)
+                    comparisons["iPSC%s-ESC%s" % (u, v)] = (ix_u, ix_v)
+
+    # ESC vs ESC
+    for i in esc_options:
+        for j in esc_options:
+            for u in esc_options[i]:
+                ix_u = get_sample_names(batch_meta, i, 'ESC', u)
+                for v in esc_options[j]:
+                    ix_v = get_sample_names(batch_meta, j, 'ESC', v)
+                    comparisons["ESC%s-ESC%s" % (u, v)] = (ix_u, ix_v)
+
+    # iNSC vs iPSC
+    # only compare with our own data here
+    j = 'Our data'
+    for i in insc_options:
+        for u in ipsc_options[i]:
+            ix_u = get_sample_names(batch_meta, i, 'iNSC', u)
+            for v in ipsc_options[j]:
+                ix_v = get_sample_names(batch_meta, j, 'iPSC', v)
+                comparisons["iNSC%s-iPSC%s" % (u, v)] = (ix_u, ix_v)
+
+    with open(os.path.join(outdir, "comparisons.txt"), 'wb') as f:
+        c = csv.writer(f, delimiter=':', lineterminator='\n')
+        for k, v in comparisons.items():
+            c.writerow([k, ','.join(v[0]), ','.join(v[1])])
+
 
     # 1. iPSC vs FB
 
