@@ -8,7 +8,7 @@ from plotting import venn, common
 import pandas as pd
 from utils import output, setops, log
 import numpy as np
-import multiprocessing as mp
+import pickle
 from matplotlib import pyplot as plt, gridspec
 import seaborn as sns
 import os
@@ -157,7 +157,8 @@ def jitter_points(x, spacing_buffer=1, jitter_step=0.02):
 
 
 if __name__ == "__main__":
-    indir = os.path.join(OUTPUT_DIR, "assess_reprog_alt1_apocrita", "results")
+    basedir = os.path.join(OUTPUT_DIR, "assess_reprog_alt1_apocrita")
+    indir = os.path.join(basedir, "results")
     outdir = output.unique_output_dir('assess_reprog_alt1_apocrita')
     names = [t.replace('.csv', '') for t in os.listdir(indir) if '.csv' in t]
 
@@ -577,6 +578,72 @@ if __name__ == "__main__":
     gs.update(bottom=0.05, top=0.96, right=0.95, wspace=0.05)
     fig.savefig(os.path.join(outdir, "iPSC_vs_ESC_number_dmr.png"), dpi=200)
 
+    # plot showing the number of DMRs (split by direction)
+    # we can try doing this by violin plot or similar
+    n_core_hypo = {}
+    n_core_hyper = {}
+    for i, (k1, obj) in enumerate(to_plot.items()):
+        u_hypo = {}
+        u_hyper = {}
+        for j, (r, s) in enumerate(esc_samples.items()):
+            t = get_dmr_number_direction(obj[r])
+            u = get_dmr_cid_direction(obj[r])
+            u_hypo[r] = dict([(k.split('-')[0], x['Hypomethylated']) for k, x in u.items()])
+            u_hyper[r] = dict([(k.split('-')[0], x['Hypermethylated']) for k, x in u.items()])
+        n_core_hypo[k1] = dict([
+            (k, len(setops.reduce_intersection(*[u_hypo[r][k] for r in esc_samples]))) for k in u_hypo.values()[0]
+        ])
+        n_core_hyper[k1] = dict([
+            (k, len(setops.reduce_intersection(*[u_hyper[r][k] for r in esc_samples]))) for k in u_hyper.values()[0]
+        ])
+
+    df_hyper = pd.concat([pd.DataFrame(dict(val=n_core_hyper[k1], typ=k1)) for k1 in n_core_hyper])
+    df_hypo = pd.concat([pd.DataFrame(dict(val=n_core_hypo[k1], typ=k1)) for k1 in n_core_hypo])
+
+    fig, axs = plt.subplots(nrows=2, figsize=(6.5, 7.5))
+    sns.swarmplot(
+        x='typ',
+        y='val',
+        data=df_hypo,
+        ax=axs[0],
+        edgecolor='k',
+        linewidth=1.5,
+        color='w'
+    )  # TODO: make markers unfilled?
+    sns.boxplot(
+        x='typ',
+        y='val',
+        data=df_hypo,
+        ax=axs[0],
+        whis="range"
+    )
+    sns.swarmplot(
+        x='typ',
+        y='val',
+        data=df_hyper,
+        ax=axs[1],
+        edgecolor='k',
+        linewidth=1.5,
+        color='w'
+    )  # TODO: make markers unfilled?
+    sns.boxplot(
+        x='typ',
+        y='val',
+        data=df_hyper,
+        ax=axs[1],
+        whis="range"
+    )
+
+    plt.setp(axs[0].xaxis.get_label(), visible=False)
+    plt.setp(axs[1].xaxis.get_label(), visible=False)
+    plt.setp(axs[0].xaxis.get_ticklabels(), visible=False)
+    axs[0].set_ylabel("Number hypomethylated DMRs")
+    axs[1].set_ylabel("Number hypermethylated DMRs")
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.png"), dpi=200)
+
+
     # resample the larger datasets to equalise the number of lines being considered
     # n_sample = len(ipsc_samples['ours'])
 
@@ -852,6 +919,229 @@ if __name__ == "__main__":
     # fig.tight_layout()
     # fig.subplots_adjust(right=0.83)
     # fig.savefig(os.path.join(outdir, "%s_examples_of_dmr.png" % pid), dpi=200)
+
+    # load iPSC, FB, iNSC data (only ours) + ESC
+    with open(os.path.join(basedir, "comparisons.txt"), 'rb') as f:
+        comps = list(csv.reader(f, delimiter=':'))
+    dat_m = {}
+    for nm, s1, s2 in comps:
+        n1, n2 = nm.split('-')
+        if re.search(ipsc_regex['ours'], n1) and s1 not in dat_m:
+            for s in s1.split(','):
+                if s not in dat_m:
+                    dat_m[s] = pd.read_csv(os.path.join(basedir, "%s.csv.gz" % s), header=None, index_col=0)
+                    dat_m[s].columns = [s]
+        if re.search(insc_regex['ours'], n1) and s1 not in dat_m:
+            for s in s1.split(','):
+                if s not in dat_m:
+                    dat_m[s] = pd.read_csv(os.path.join(basedir, "%s.csv.gz" % s), header=None, index_col=0)
+                    dat_m[s].columns = [s]
+        if re.search(fb_regex['ours'], n2) and s2 not in dat_m:
+            for s in s2.split(','):
+                if s not in dat_m:
+                    dat_m[s] = pd.read_csv(os.path.join(basedir, "%s.csv.gz" % s), header=None, index_col=0)
+                    dat_m[s].columns = [s]
+        if (re.search(esc_regex['e6194'], n2) or re.search(esc_regex['encode'], n2)) and s2 not in dat_m:
+            for s in s2.split(','):
+                if s not in dat_m:
+                    dat_m[s] = pd.read_csv(os.path.join(basedir, "%s.csv.gz" % s), header=None, index_col=0)
+                    dat_m[s].columns = [s]
+    dat_m['GIBCONSC_P4'] = pd.read_csv(os.path.join(basedir, 'GIBCONSC_P4.csv.gz'), header=None, index_col=0)
+    dat_m['GIBCONSC_P4'].columns = ['GIBCONSC_P4']
+
+    dat_m = pd.concat(dat_m.values(), axis=1)
+
+    # load clusters
+    with open(os.path.join(basedir, 'dmr_clusters.pkl'), 'rb') as f:
+        clusters = pickle.load(f)
+
+    # pick one of our samples and show how the residual / de novo meth shows up
+    chosen_one = '030'
+    chosen_ones_ipsc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('IPSC')]
+    chosen_ones_insc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('NSC')]
+    chosen_ones_fb = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('FB')]
+    escs_1 = dat_m.columns[dat_m.columns.str.contains('_H9_')]
+    escs_2 = dat_m.columns[dat_m.columns.str.contains('H7')]
+    gibco = dat_m.columns[dat_m.columns.str.contains('GIBCO')]
+
+    clas = core_dmr_classified_ours['iPSC%s' % chosen_one]
+    dat_ipsc = dat_m.loc[:, chosen_ones_ipsc].mean(axis=1)
+    dat_insc = dat_m.loc[:, chosen_ones_insc].mean(axis=1)
+    dat_fb = dat_m.loc[:, chosen_ones_fb].mean(axis=1)
+    dat_esc = dat_m.loc[:, escs_1].mean(axis=1)
+    dat_gibco = dat_m.loc[:, gibco].mean(axis=1)
+
+    # 1. scatter: iPSC-ESC vs FB-ESC
+    colours = common.get_best_cmap(4)
+    n_other = 500
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111)
+    all_pids = set()
+    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
+        # ax = axs.flat[i]
+        this = clas.loc[clas.classification == typ]
+        # convert clusters -> probes
+        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
+        all_pids.update(pids)
+        esc_vals = dat_esc.loc[pids]
+        ipsc_vals = dat_ipsc.loc[pids]
+        insc_vals = dat_insc.loc[pids]
+        fb_vals = dat_fb.loc[pids]
+        gibco_vals = dat_gibco[pids]
+
+        ax.scatter(
+            fb_vals - esc_vals,
+            ipsc_vals - esc_vals,
+            facecolors=colours[i],
+            edgecolors='k',
+            label=typ.replace('_', ' ').capitalize(),
+            zorder=2.
+        )
+
+    # add random other pids
+    others = dat_m.index.difference(all_pids).tolist()
+    np.random.shuffle(others)
+    others = others[:n_other]
+    ax.scatter(
+        dat_fb.loc[others] - dat_esc.loc[others],
+        dat_ipsc.loc[others] - dat_esc.loc[others],
+        facecolors='w',
+        edgecolors='k',
+        label='Other probes',
+        zorder=1.
+    )
+
+    ax.legend(loc='upper left')
+    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.set_aspect('equal')
+    ax.set_xlabel('M value of FB relative to ESC')
+    ax.set_ylabel('M value of iPSC relative to ESC')
+
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+
+    # now plot both limits against eachother
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified.png"), dpi=200)
+
+    # 2. scatter: iNSC - ESC vs iPSC - ESC
+
+    all_pids = set()
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111)
+    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
+        # ax = axs.flat[i]
+        this = clas.loc[clas.classification == typ]
+        # convert clusters -> probes
+        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
+        all_pids.update(pids)
+        esc_vals = dat_esc.loc[pids]
+        ipsc_vals = dat_ipsc.loc[pids]
+        insc_vals = dat_insc.loc[pids]
+        fb_vals = dat_fb.loc[pids]
+        gibco_vals = dat_gibco[pids]
+
+        ax.scatter(
+            insc_vals - esc_vals,
+            ipsc_vals - esc_vals,
+            facecolors=colours[i],
+            edgecolors='k',
+            label=typ.replace('_', ' ').capitalize(),
+            zorder=2.
+        )
+
+    # add random other pids
+    others = dat_m.index.difference(all_pids).tolist()
+    np.random.shuffle(others)
+    others = others[:n_other]
+    ax.scatter(
+        dat_fb.loc[others] - dat_esc.loc[others],
+        dat_ipsc.loc[others] - dat_esc.loc[others],
+        facecolors='w',
+        edgecolors='k',
+        label='Other probes',
+        zorder=1.
+    )
+
+    ax.legend(loc='upper left')
+    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.set_aspect('equal')
+    ax.set_xlabel('M value of iNSC relative to ESC')
+    ax.set_ylabel('M value of iPSC relative to ESC')
+
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+
+    # now plot both limits against eachother
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "insc_vs_ipsc_vs_esc_classified.png"), dpi=200)
+
+    # 3. scatter: iNSC - ESC vs NSC - ESC
+
+    all_pids = set()
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111)
+    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
+        # ax = axs.flat[i]
+        this = clas.loc[clas.classification == typ]
+        # convert clusters -> probes
+        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
+        all_pids.update(pids)
+        esc_vals = dat_esc.loc[pids]
+        ipsc_vals = dat_ipsc.loc[pids]
+        insc_vals = dat_insc.loc[pids]
+        fb_vals = dat_fb.loc[pids]
+        gibco_vals = dat_gibco[pids]
+
+        ax.scatter(
+            insc_vals - esc_vals,
+            # insc_vals - gibco_vals,
+            gibco_vals - esc_vals,
+            facecolors=colours[i],
+            edgecolors='k',
+            label=typ.replace('_', ' ').capitalize(),
+            zorder=2.
+        )
+
+    # add random other pids
+    others = dat_m.index.difference(all_pids).tolist()
+    np.random.shuffle(others)
+    others = others[:n_other]
+    ax.scatter(
+        dat_fb.loc[others] - dat_esc.loc[others],
+        dat_ipsc.loc[others] - dat_esc.loc[others],
+        facecolors='w',
+        edgecolors='k',
+        label='Other probes',
+        zorder=1.
+    )
+
+    ax.legend(loc='upper left')
+    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.set_aspect('equal')
+    ax.set_xlabel('M value of iNSC relative to ESC')
+    ax.set_ylabel('M value of reference NSC relative to ESC')
+
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+
+    # now plot both limits against eachother
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "insc_vs_nsc_vs_esc_classified.png"), dpi=200)
+
+
 
     ## iNSC vs iPSC
     ## TODO!
