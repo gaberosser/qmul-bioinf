@@ -7,14 +7,14 @@ import requests
 
 
 if __name__ == "__main__":
-    indir = os.path.join(OUTPUT_DIR, 'assess_reprogramming_dmr')
+    indir = os.path.join(OUTPUT_DIR, 'assess_reprog_alt1_apocrita.0')
     pids = ['019', '030', '031', '050', '054']
     api_url = "http://david.abcc.ncifcrf.gov/api.jsp?type={type}&ids={ids}&tool={tool}&annot={annot}"
 
     for pid in pids:
     # pid = '019'
 
-        fn = os.path.join(indir, '%s_residual_hypo_dmrs.csv' % pid)
+        fn = os.path.join(indir, 'iPSC%s_residual_hypo_dmrs.csv' % pid)
 
         df = pd.read_csv(fn, header=0, index_col=0)
 
