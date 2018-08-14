@@ -67,6 +67,7 @@ def read_table(tbl):
 
 
 class Heidelberg(object):
+    ROOT_URL = 'https://www.molecularneuropathology.org'
     LOGIN_URL = 'https://www.molecularneuropathology.org/mnp/authenticate'
     SUBMISSION_URL = 'https://www.molecularneuropathology.org/mnp/sample/add'
     SAMPLE_URL = 'https://www.molecularneuropathology.org/mnp/sample/{sid}'
@@ -229,17 +230,22 @@ class Heidelberg(object):
 
 
         # try getting the pdf report
+        aa = soup.findAll('a')
+        aa = [t for t in aa if re.search(r'Download *idat_', t.get_text())]
+        if len(aa) == 0:
+            logger.error("No download link found")
+        else:
+            the_url = '/'.join([self.ROOT_URL, aa[0]['href']])
 
-        the_url = self.REPORT_URL.format(sid=sample_id, rid=run_id)
-        resp = self.session.get(the_url)
-        if resp.status_code == 200:
-            # if this works, we know we're in situation (3)
-            outfile = os.path.join(self.outdir, batch, "%s.pdf" % sample_name)
-            if os.path.isfile(outfile):
-                logger.error("File already exists: %s", outfile)
-            logger.info("Saving PDF file to %s", outfile)
-            with open(outfile, 'wb') as f:
-                f.write(resp.content)
+            resp = self.session.get(the_url)
+            if resp.status_code == 200:
+                # if this works, we know we're in situation (3)
+                outfile = os.path.join(self.outdir, batch, "%s.pdf" % sample_name)
+                if os.path.isfile(outfile):
+                    logger.error("File already exists: %s", outfile)
+                logger.info("Saving PDF file to %s", outfile)
+                with open(outfile, 'wb') as f:
+                    f.write(resp.content)
 
             # download the full analysis results
             the_url = self.ANALYSIS_RESULTS_URL.format(sid=sample_id, rid=run_id)
@@ -255,13 +261,19 @@ class Heidelberg(object):
 
         # situation (2) OR (3)
         # Either way, get the classifier results
-        raw_scores = read_table(soup.find(attrs={'id': 'rawScores'}))
-        cal_scores = read_table(soup.find(attrs={'id': 'calibratedScores'}))
+        try:
+            raw_scores = read_table(soup.find(attrs={'id': 'rawScores'}))
+            raw_scores = self.save_scores(raw_scores, sample_name, batch, 'raw_scores')
+        except Exception:
+            logger.exception("Failed to retrieve raw scores.")
 
-        raw_scores = self.save_scores(raw_scores, sample_name, batch, 'raw_scores')
-        cal_scores = self.save_scores(cal_scores, sample_name, batch, 'calibrated_scores')
+        try:
+            cal_scores = read_table(soup.find(attrs={'id': 'calibratedScores'}))
+            cal_scores = self.save_scores(cal_scores, sample_name, batch, 'calibrated_scores')
+        except Exception:
+            logger.exception("Failed to retrieve calibrated scores.")
 
-        return raw_scores, cal_scores
+        ## TODO: return filename(s) where result(s) are stored
 
     def save_scores(self, table, sample_name, batch, typ):
         scores = pd.DataFrame(table)

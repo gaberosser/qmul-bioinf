@@ -121,29 +121,37 @@ if __name__ == '__main__':
         #{'base_dir': '2016-09-21_dutt',
         # 'chipType': 'EPIC',
         # 'sampleType': 'FFPE DNA'},
-        #{'base_dir': '2016-12-19_ucl_genomics',
-        # 'chipType': 'EPIC',
-        # 'sampleType': 'KRYO DNA'},
-        {'base_dir': '2017-01-17_brandner',
-         'chipType': 'EPIC',
-         'sampleType': 'FFPE DNA'},
-        {'base_dir': '2017-02-09_brandner',
-         'chipType': 'EPIC',
-         'sampleType': 'FFPE DNA'},
-        {'base_dir': '2017-05-12',
-         'chipType': 'EPIC',
-         'sampleType': 'KRYO DNA'},
-        {'base_dir': '2017-08-23',
-         'chipType': 'EPIC',
-         'sampleType': 'KRYO DNA'},
-        {'base_dir': '2017-09-19',
-         'chipType': 'EPIC',
-         'sampleType': 'KRYO DNA'},
+        {'base_dir': '2016-12-19_ucl_genomics',
+        'chipType': 'EPIC',
+        'sampleType': 'KRYO DNA'},
+        # {'base_dir': '2017-01-17_brandner',
+        #  'chipType': 'EPIC',
+        #  'sampleType': 'FFPE DNA'},
+        # {'base_dir': '2017-02-09_brandner',
+        #  'chipType': 'EPIC',
+        #  'sampleType': 'FFPE DNA'},
+        # {'base_dir': '2017-05-12',
+        #  'chipType': 'EPIC',
+        #  'sampleType': 'KRYO DNA'},
+        # {'base_dir': '2017-08-23',
+        #  'chipType': 'EPIC',
+        #  'sampleType': 'KRYO DNA'},
+        # {'base_dir': '2017-09-19',
+        #  'chipType': 'EPIC',
+        #  'sampleType': 'KRYO DNA'},
     ]
     n_retry = 3
     wait_between_retries = 5  # seconds
     outdir = unique_output_dir('heidelberg_bulk_upload', reuse_empty=True)
     flog = get_file_logger('heidelberg_bulk_upload', os.path.join(outdir, 'automated_upload.log'))
+    include = [
+        'GBM018 P10 DNA 8/11/2016 CLEANED',
+        'GBM019 P4 DNA 8/11/2016 CLEANED',
+        'GBM024 P9 DNA     13/10/2016',
+        'GBM026 P8 DNA 24/10/2016',
+        'GBM031 P4 DNA     13/10/2016'
+    ]
+    exclude = None
 
     api_objs = {}
     obj = api.Heidelberg()
@@ -155,6 +163,11 @@ if __name__ == '__main__':
         indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', base_dir, 'idat')
 
         samples = api.read_samplesheet(sample_fn)
+        if include is not None:
+            samples = samples.loc[samples.Sample_Name.isin(include)]
+        if exclude is not None:
+            samples = samples.loc[~samples.Sample_Name.isin(exclude)]
+
         print "Uploading %d samples" % len(samples)
         flog.info("Project %s. %d samples.", base_dir, len(samples))
         for i, row in samples.iterrows():

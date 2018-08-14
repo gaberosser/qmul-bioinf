@@ -1,6 +1,7 @@
-import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
+import ternary
+import numpy as np
 from load_data import rnaseq_data
 import pandas as pd
 import os
@@ -23,12 +24,19 @@ def get_top_n(data, n):
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir("cruk_classification")
+    in_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'classification.xlsx')
     ffpe_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner', 'heidelberg_classifier', '2017_10', 'NH15-2101.calibrated_scores.csv')
     cc1_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'heidelberg_classifier', '2017_10', 'GBM019_P4_DNA_8-11-2016_CLEANED.calibrated_scores.csv')
     cc2_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19', 'heidelberg_classifier', '2017_10', 'GBM019_NH16-2101_P6_FROM_8-11-2015_+_GBM019_NH16-2101_P3_FROM_26-10-2015.calibrated_scores.csv')
 
     # number of classes to include
     n = 3
+
+    # load summary sheet
+    df = pd.read_excel(in_fn, header=0, index_col=0, skiprows=1)
+    # fix format of PIDs
+    df.insert(0, 'pid', df.loc[:, 'Patient ID'].apply(lambda x: "%03.0f" % x))
+
 
     ffpe = pd.read_csv(ffpe_fn, header=0, index_col=0).Score
     ffpe.name = 'FFPE'
@@ -48,6 +56,36 @@ if __name__ == "__main__":
         'PLEX, PED B': '#4C72B0',
         'Other': 'gray'
     }
+
+    pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
+
+    # pick out relevant results
+    cc_ix = df.pid.isin(pids) & (df.Tissue == 'Primary culture')
+    ff_ix = df.pid.isin(pids) & (df.Tissue == 'FFPE tumour')
+
+    cc = df.loc[cc_ix].set_index('pid').sort_index()
+    ff = df.loc[ff_ix].set_index('pid').sort_index()
+    cc.insert(1, 'mean_passage', cc.Passage.astype(str).apply(lambda x: np.mean([float(t) for t in x.split(';')])))
+
+    # let's make a TERNARY plot with the three components: RTK I, RTK II, MES
+    fig, tax = ternary.figure(scale=1.)
+    tax.boundary(linewidth=2.0)
+    tax.gridlines(multiple=0.1, color="k", linewidth=1.0)
+    tax.ticks(axis='lbr', multiple=0.1, linewidth=1.0)
+
+    # convert the dfs into a list of three scores
+    lookup_cols = ['Reference %d' % i for i in range(1, 5)]
+    score_cols = ['%% Match %d' % i for i in range(1, 5)]
+    bases = ['GBM_RTK_I', 'GBM_RTK_II', 'GBM_MES']
+    ff_scores = dict([(p, np.zeros(3)) for p in pids])
+    cc_scores = np.zeros((len(cc), 3))
+    for p in pids:
+        this_ff = ff.loc[p]
+        for a, b in zip(lookup_cols, score_cols):
+            if not pd.isnull(this_ff[a]) and this_ff[a].strip() in bases:
+                ix = bases.index(this_ff[a].strip())
+                ff_scores[p][ix] = this_ff[b]
+
 
     # three pie charts
     top_n = get_top_n(data, n)

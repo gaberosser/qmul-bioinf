@@ -26,7 +26,6 @@ logger = get_console_logger(__name__)
 #     return res
 
 # sample_ids = range(2248, 2298)
-sample_ids = range(2285, 2298)
 outdir = os.path.join(
     DATA_DIR_NON_GIT,
     'methylation',
@@ -37,8 +36,7 @@ outdir = os.path.join(
 
 if __name__ == "__main__":
     outdir = unique_output_dir("heidelberg_results")
-    sample_ids = range(7123, 7222)
-    # sample_ids = range(6858, 6977)
+    sample_ids = range(21311, 21316)
     obj = api.Heidelberg()
     res = []
     success = []
@@ -55,6 +53,7 @@ if __name__ == "__main__":
             print "Failed to retrieve sample %d: %s" % (sid, repr(exc))
             error.append(sid)
 
+    # this helps for now - may change in future
 
 
 
