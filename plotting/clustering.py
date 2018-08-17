@@ -23,6 +23,9 @@ def add_legend(legend_labels, ax, loc='right'):
     elif loc == 'top':
         leg_loc = 'upper right'
         bbox_to_anchor = (-0.02, 0.9)
+    elif loc == 'left':
+        leg_loc = 'upper right'
+        bbox_to_anchor = (0., 0.9)
     else:
         raise NotImplementedError("Unrecogised legend location %s" % loc)
 
@@ -341,6 +344,7 @@ def plot_clustermap(
         dat,
         method='average', metric='correlation',
         show_gene_labels=False,
+        show_gene_clustering=False,
         rotate_xticklabels=True,
         **kwargs
 ):
@@ -372,13 +376,15 @@ def plot_clustermap(
 
     else:
         bottom = 0.02
-    # remove useless row dendrogram
-    cg.ax_row_dendrogram.set_visible(False)
-    # and remove the space created for it
-    wr = cg.gs.get_width_ratios()
-    wr[0] = 0.035
-    wr[1] = 0.02
-    cg.gs.set_width_ratios(wr)
+    if not show_gene_clustering:
+        # remove row dendrogram
+        cg.ax_row_dendrogram.set_visible(False)
+        # and remove the space created for it
+        wr = cg.gs.get_width_ratios()
+        wr[0] = 0.035
+        wr[1] = 0.02
+        cg.gs.set_width_ratios(wr)
+
     # reduce whitespace
     cg.gs.update(bottom=bottom, top=0.98, left=0.02)
 
