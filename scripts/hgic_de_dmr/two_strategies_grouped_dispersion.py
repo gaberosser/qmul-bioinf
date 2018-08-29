@@ -9,7 +9,7 @@ from integrator import rnaseq_methylationarray
 from analysis import cross_comparison
 from load_data import loader
 from plotting import venn
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
 
 
@@ -405,9 +405,7 @@ if __name__ == "__main__":
 
     # remove unneeded samples
     idx = (~rnaseq_obj.meta.index.isin(['DURA061_NSC_N1_P5', 'DURA061_NSC_N6_P4']))
-    rnaseq_obj.meta = rnaseq_obj.meta.loc[idx]
-    rnaseq_obj.data = rnaseq_obj.data.loc[:, idx]
-    rnaseq_obj.batch_id = rnaseq_obj.batch_id.loc[idx]
+    rnaseq_obj.filter_samples(idx)
 
     #########################################################################
     ### STRATEGY 1: No references, just compare GBM-iNSC for each patient ###
@@ -755,7 +753,7 @@ if __name__ == "__main__":
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
 
     ##################
-    ### Strategy 2 ###
+    ### STRATEGY 2 ###
     ##################
 
     norm_method_s2 = 'pbc'
@@ -912,6 +910,49 @@ if __name__ == "__main__":
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
 
+    # array of Venn plots: GBM vs X (# DE genes)
+    # only possible if number of references <= 3 (otherwise too many sets)
+    if len(external_refs_de_labels) < 4:
+        nrows = len(subgroups)
+        ncols = max([len(t) for t in subgroups.values()])
+        set_labels = ['Syngeneic iNSC'] + external_refs_de_labels
+        set_colours = ['r', 'g', 'b']
+        fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+        # assume we'll have one axis leftover!
+        # TODO: if not, we'll need to add one or move the legend outside the main figure?
+        cax = axs[-1, -1]
+        ax_set = set(axs.flat)
+        for pid in pids:
+            sg = subgroups_lookup[pid]
+            sg_members = subgroups[sg]
+            i = subgroups.keys().index(sg)
+            j = sg_members.index(pid)
+            the_lists = [
+                de_res_s2[(pid, r)].index for r in [pid] + external_refs_de_labels
+            ]
+            venn_sets, cts = setops.venn_from_arrays(*the_lists)
+            venn.venn_diagram(*the_lists, set_labels=None, ax=axs[i, j])
+            axs[i, j].set_title("GBM%s" % pid, y=0.95)
+            ax_set.remove(axs[i, j])
+            # resize text
+            h_txt = [t for t in axs[i, j].get_children() if isinstance(t, text.Text)]
+            plt.setp(h_txt, fontsize=12)
+        for ax in ax_set:
+            ax.axis('off')
+
+        # legend
+        leg_objs = [
+            patches.Rectangle([0, 0], 1, 1, color=c, alpha=0.4, label=l) for c, l in zip(set_colours, set_labels)
+        ]
+        cax.legend(handles=leg_objs, loc='center')
+
+        fig.subplots_adjust(left=0., right=1., bottom=0., top=.93, wspace=0., hspace=0.05)
+
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_de_all_nsc.png'), dpi=200)
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_de_all_nsc.tiff'), dpi=200)
+
+    # array of Venn plots: GBM vs Ref X (# DE genes)
+
     nrows = len(subgroups)
     ncols = max([len(t) for t in subgroups.values()])
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
@@ -934,7 +975,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.png'), dpi=200)
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.tiff'), dpi=200)
 
-    # plot: how many DE genes are in the pair only comparison when each reference is used?
+    # array of Venn plots: GBM vs Ref X (# pair only DE genes)
 
     # at the same time, get numbers for a bar chart about % overlap
     n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)

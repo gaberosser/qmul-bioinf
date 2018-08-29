@@ -99,8 +99,6 @@ def get_best_marker_map(N, repeat=True):
         return res
 
 
-
-
 def axis_border(ax, c=None, lw=1):
     """
     Add a border around the supplied axis.

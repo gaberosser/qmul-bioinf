@@ -36,7 +36,7 @@ outdir = os.path.join(
 
 if __name__ == "__main__":
     outdir = unique_output_dir("heidelberg_results")
-    sample_ids = range(21311, 21316)
+    sample_ids = range(21258, 21266)
     obj = api.Heidelberg()
     res = []
     success = []

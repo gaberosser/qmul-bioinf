@@ -392,6 +392,37 @@ if __name__ == '__main__':
     )
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc.png"), dpi=200)
 
+    # 7a. Heatmap from clustering result of (7).
+    n_for_heatmap = 500
+    the_obj = loader.MultipleBatchLoader([obj1, ref_obj, nsc_ref_obj])
+    the_dat = np.log2(the_obj.data + eps)
+    if quantile_norm is not None:
+        the_dat = transformations.quantile_normalisation(the_dat, method=quantile_norm)
+    the_mad = transformations.median_absolute_deviation(the_dat).sort_values(ascending=False)
+    cc, st, leg_dict = construct_colour_array_legend_studies(the_obj.meta)
+
+    # get appropriate clims
+    the_dat = the_dat.loc[the_mad.index[:n_for_heatmap]]
+    the_dat_flat = np.sort(the_dat.values.flatten())
+    fmin = 0.05
+    fmax = 0.95
+    vmin = the_dat_flat[int(len(the_dat_flat) * fmin)] - 0.5
+    vmax = the_dat_flat[int(len(the_dat_flat) * fmax)] + 0.5
+
+    gc = clustering.plot_clustermap(
+        the_dat.loc[the_mad.index[:n_for_heatmap]],
+        cmap='RdBu_r',
+        col_linkage=dend['linkage'],
+        col_colors=cc,
+        vmin=vmin,
+        vmax=vmax
+    )
+    clustering.add_legend(leg_dict, gc.ax_heatmap, loc='right')
+    gc.gs.update(bottom=0.25, right=0.82)
+    gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.png"), dpi=200)
+    gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.tiff"), dpi=200)
+
+
     # 8. HipSci, iPSC, ESC, FB, iNSC
     dend = plot_dendrogram(
         [obj1, ref_obj, nsc_ref_obj, hip_obj],

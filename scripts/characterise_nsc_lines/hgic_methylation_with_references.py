@@ -7,6 +7,8 @@ import seaborn as sns
 from utils.output import unique_output_dir
 from stats import transformations, basic
 import os
+from copy import copy
+import collections
 from settings import LOCAL_DATA_DIR
 
 
@@ -272,6 +274,7 @@ if __name__ == "__main__":
     )
     ax.figure.subplots_adjust(left=0.1, right=0.8)
     ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_nogbm.png"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir, "pca_plot_batch_cell_type_nogbm.tiff"), dpi=200)
 
     mdat_qn_nogbm = mdat_qn.loc[:, ix]
     p_qn_nogbm, ax = plot_pca(
@@ -288,33 +291,43 @@ if __name__ == "__main__":
 
     # bmad = transformations.median_absolute_deviation(bdat).sort_values(ascending=False)
     # mmad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
+    cell_line_colours = {
+        'FB': '#fff89e',  # yellow
+        'GBM (this study)': '#e6e6e6',  # light gray
+        'GBM': '#4d4d4d',  # dark grey
+        'ESC': '#ff7777',  # light red
+        'iPSC': '#990000',  # dark red
+        'iPSC (this study)': '#fdc086',  # orange
+        'NSC': '#006600',  # dark green
+        'iNSC (this study)': '#7fc97f',  # green
+    }
 
     row_colours_all = pd.DataFrame('white', index=mdat.columns, columns=[''])
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'_FB_')] = '#fff89e'  # yellow
+    row_colours_all.loc[row_colours_all.index.str.contains(r'_FB_')] = cell_line_colours['FB']
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = '#e6e6e6'  # light gray
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = '#4d4d4d'  # dark grey
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = cell_line_colours['GBM (this study)']
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = cell_line_colours['GBM']
 
-    row_colours_all.loc[row_colours_all.index.str.contains('H9')] = '#ff7777'  # light red
-    row_colours_all.loc[row_colours_all.index.str.contains('H7')] = '#ff7777'
-    row_colours_all.loc[row_colours_all.index.str.contains('H1')] = '#ff7777'
-    row_colours_all.loc[row_colours_all.index.str.contains('ESO3')] = '#ff7777'
-    row_colours_all.loc[row_colours_all.index.str.contains('GM23338')] = '#ff7777'
+    row_colours_all.loc[row_colours_all.index.str.contains('H9')] = cell_line_colours['ESC']
+    row_colours_all.loc[row_colours_all.index.str.contains('H7')] = cell_line_colours['ESC']
+    row_colours_all.loc[row_colours_all.index.str.contains('H1')] = cell_line_colours['ESC']
+    row_colours_all.loc[row_colours_all.index.str.contains('ESO3')] = cell_line_colours['ESC']
+    row_colours_all.loc[row_colours_all.index.str.contains('GM23338')] = cell_line_colours['ESC']
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = '#ccffcc'  # pale green
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = '#ccffcc'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = '#006600'  # dark green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = cell_line_colours['NSC']
+    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = cell_line_colours['NSC']
+    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = cell_line_colours['NSC']
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_')] = '#990000'  # dark red
-    row_colours_all.loc[row_colours_all.index.str.contains('HPSI')] = '#990000'
-    row_colours_all.loc[row_colours_all.index.str.contains('HEL1')] = '#990000'
+    row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_')] = cell_line_colours['iPSC']
+    row_colours_all.loc[row_colours_all.index.str.contains('HPSI')] = cell_line_colours['iPSC']
+    row_colours_all.loc[row_colours_all.index.str.contains('HEL1')] = cell_line_colours['iPSC']
 
     row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
     row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'  # pink
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = '#7fc97f'  # green
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = '#fdc086'  # orange
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = cell_line_colours['iNSC (this study)']  # green
+    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = cell_line_colours['iPSC (this study)']  # orange
 
 
     # by M value, keeping only variable probes
@@ -421,6 +434,13 @@ if __name__ == "__main__":
     # this_dat = mdat_nogbm.loc[this_range.index[:n_probe_to_show]]
 
     lkg = plt_dict[clust_n_ftr]['linkage']
+    leg_dict = {
+        'Cell type': collections.OrderedDict([
+            (k, cell_line_colours[k]) for k in sorted(cell_line_colours)
+        ])
+    }
+    leg_dict['Cell type'].pop('GBM')
+    leg_dict['Cell type'].pop('GBM (this study)')
 
     cm = clustering.plot_clustermap(
         this_dat,
@@ -431,7 +451,8 @@ if __name__ == "__main__":
         vmin=-10,
         vmax=10
     )
-    cm.gs.update(bottom=0.25, right=0.99)
+    clustering.add_legend(leg_dict, cm.ax_heatmap, loc='right')
+    cm.gs.update(bottom=0.25, right=0.85, left=0.03)
 
     cm.savefig(os.path.join(outdir, "nogbm_clustermap_M_corr_linkage%d_heatmap%d.png" % (clust_n_ftr, n_probe_to_show)), dpi=200)
     cm.savefig(os.path.join(outdir, "nogbm_clustermap_M_corr_linkage%d_heatmap%d.tiff" % (clust_n_ftr, n_probe_to_show)), dpi=200)

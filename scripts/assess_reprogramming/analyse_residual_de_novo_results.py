@@ -107,10 +107,7 @@ def classify_dmrs_residual_denovo(core_tbl, parental, exclude=None):
         if k1 not in parental:
             logger.warning("Sample %s has no matching parental sample. Skipping", k1)
             continue
-        # res[k1] = {}
-        # 1. get mmd from each comparison
-        # mmd = {}
-        # for k2, this_tbl in v1.items():
+
         if exclude is not None:
             this_tbl = this_tbl.loc[this_tbl.index.difference(exclude)]
         mean_median_delta = this_tbl.loc[:, this_tbl.columns.str.contains('median_delta_')].mean(axis=1)
@@ -154,6 +151,193 @@ def jitter_points(x, spacing_buffer=1, jitter_step=0.02):
         out[i] = curr
         prev = x[i]
     return out
+
+
+def scatter_cluster_mvals_classified(
+    core_dmrs_classified,
+    mdat,
+    clusters,
+    samples_x,
+    samples_y,
+    samples_base,
+    figsize=(5, 5),
+    types=('hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo'),
+    n_other=50
+):
+    """
+    Generate a scatterplot showing (X - base) against (Y - base), where all three are median values across the probes
+    in a DMR cluster.
+    For example, X = fibroblast, Y = iPSC, base = ESC.
+    :param core_dmrs_classified: ONE element from the output of classify_dmrs_residual_denovo(). This is a
+    pd.DataFrame with one row per DMR. It must have the column `classification`, which is used to identify different
+    cluster types.
+    :param mdat: The full matrix of methylation (M) values. Must have the columns listed in samples_x, samples_y,
+    samples_base
+    :param clusters: DmrResults object containing clusters. These don't need to have been tested, we just need the
+    probe IDs corresponding to each cluster.
+    :param samples_x: Either a string or an iterable of sample names.
+    :param samples_y: Either a string or an iterable of sample names.
+    :param samples_base: Either a string or an iterable of sample names.
+    :param figsize:
+    :param types:
+    :param n_other:
+    :return:
+    """
+    if not hasattr(samples_x, '__iter__'):
+        samples_x = [samples_x]
+    if not hasattr(samples_y, '__iter__'):
+        samples_y = [samples_y]
+    if not hasattr(samples_base, '__iter__'):
+        samples_base = [samples_base]
+
+    dat_x = mdat.loc[:, samples_x].median(axis=1)
+    dat_y = mdat.loc[:, samples_y].median(axis=1)
+    dat_base = mdat.loc[:, samples_base].median(axis=1)
+
+    colours = common.get_best_cmap(len(types))
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+    all_cids = set()
+
+    for i, typ in enumerate(types):
+        this = core_dmrs_classified.loc[core_dmrs_classified.classification == typ]
+        # for each cluster, we need to regenerate the required median values
+        all_cids.update(this.index)
+        pids = [clusters.clusters[t].pids for t in this.index]
+
+        x_vals = np.array([dat_x.loc[p].median() for p in pids])
+        y_vals = np.array([dat_y.loc[p].median() for p in pids])
+        base_vals = np.array([dat_base.loc[p].median() for p in pids])
+
+        ax.scatter(
+            x_vals - base_vals,
+            y_vals - base_vals,
+            facecolors=colours[i],
+            edgecolors='k',
+            label=typ.replace('_', ' ').capitalize(),
+            zorder=2.
+        )
+
+    # add random other clusters
+    other_cids = sorted(set(clusters.clusters.keys()).difference(all_cids))
+    np.random.shuffle(other_cids)
+    other_cids = other_cids[:n_other]
+    pids = [clusters.clusters[t].pids for t in other_cids]
+
+    x_vals = np.array([dat_x.loc[p].median() for p in pids])
+    y_vals = np.array([dat_y.loc[p].median() for p in pids])
+    base_vals = np.array([dat_base.loc[p].median() for p in pids])
+
+    ax.scatter(
+        x_vals - base_vals,
+        y_vals - base_vals,
+        facecolors='w',
+        edgecolors='k',
+        label='Other probes',
+        zorder=1.
+    )
+
+    ax.legend(loc='upper left', frameon=True, framealpha=0.7, facecolor='w')
+    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.set_aspect('equal')
+
+    # diagonal line
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
+
+    # ax.set_xlabel('M value of FB relative to ESC')
+    # ax.set_ylabel('M value of iPSC relative to ESC')
+    # fig.tight_layout()
+    return fig, ax
+
+
+def scatter_probe_mvals_classified(
+    core_dmrs_classified,
+    mdat,
+    clusters,
+    samples_x,
+    samples_y,
+    samples_base,
+    figsize=(5, 5),
+    types=('hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo'),
+    n_other=50
+):
+    if not hasattr(samples_x, '__iter__'):
+        samples_x = [samples_x]
+    if not hasattr(samples_y, '__iter__'):
+        samples_y = [samples_y]
+    if not hasattr(samples_base, '__iter__'):
+        samples_base = [samples_base]
+
+    dat_x = mdat.loc[:, samples_x].median(axis=1)
+    dat_y = mdat.loc[:, samples_y].median(axis=1)
+    dat_base = mdat.loc[:, samples_base].median(axis=1)
+
+    colours = common.get_best_cmap(len(types))
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+    all_pids = set()
+
+    for i, typ in enumerate(types):
+        this = core_dmrs_classified.loc[core_dmrs_classified.classification == typ]
+        if len(this) == 0:
+            pids = []
+        else:
+            # for each cluster, we need to regenerate the required median values
+            pids = setops.reduce_union(*[clusters.clusters[t].pids for t in this.index])
+        all_pids.update(pids)
+
+        x_vals = dat_x.loc[pids]
+        y_vals = dat_y.loc[pids]
+        base_vals = dat_base.loc[pids]
+
+        ax.scatter(
+            x_vals - base_vals,
+            y_vals - base_vals,
+            facecolors=colours[i],
+            edgecolors='k',
+            label=typ.replace('_', ' ').capitalize(),
+            zorder=2.
+        )
+
+    # add random other clusters
+    other_pids = mdat.index.difference(all_pids).tolist()
+    np.random.shuffle(other_pids)
+    pids = other_pids[:n_other]
+
+    x_vals = dat_x.loc[pids]
+    y_vals = dat_y.loc[pids]
+    base_vals = dat_base.loc[pids]
+
+    ax.scatter(
+        x_vals - base_vals,
+        y_vals - base_vals,
+        facecolors='w',
+        edgecolors='k',
+        label='Other probes',
+        zorder=1.
+    )
+
+    ax.legend(loc='upper left', frameon=True, framealpha=0.7, facecolor='w')
+    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
+    ax.set_aspect('equal')
+
+    # diagonal line
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+    ]
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
+
+    # ax.set_xlabel('M value of FB relative to ESC')
+    # ax.set_ylabel('M value of iPSC relative to ESC')
+    # fig.tight_layout()
+    return fig, ax
 
 
 if __name__ == "__main__":
@@ -642,6 +826,7 @@ if __name__ == "__main__":
 
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.tiff"), dpi=200)
 
 
     # resample the larger datasets to equalise the number of lines being considered
@@ -850,75 +1035,8 @@ if __name__ == "__main__":
         ax.set_ylabel('Number DMRs')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)
 
-
-    # plot an example of each in one of our samples?
-    # pid = '019'
-    # this_tbl = core_dmr_our_ipsc_ref_esc[pid]
-    # this_tbl = this_tbl.loc[this_tbl.index.difference(esc_dmr_cids)]
-    # this_tbl.insert(0, 'mean_median_delta', this_tbl[['median_delta_%s' % r for r in esc_ref_names]].mean(axis=1))
-    #
-    # fb_res = dmr_res_our_ipsc_vs_our_fb[pid]
-    # fb_res._classes = []
-    # fb_tbl = fb_res.to_table(include='significant', skip_geneless=False)
-    # # is this the new suggested way to inner join?!
-    # fb_tbl = fb_tbl.reindex(this_tbl.index).dropna(how='all')
-    #
-    # ix_denovo_hyper = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] > 0)
-    # ix_residual_hyper = this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] > 0
-    # ix_denovo_hypo = (this_tbl.loc[fb_tbl.index, 'mean_median_delta'] < 0)
-    # ix_residual_hypo = this_tbl.drop(fb_tbl.index).loc[:, 'mean_median_delta'] < 0
-    #
-    # to_plot = [
-    #     ('De novo hypermethylation', ix_denovo_hyper),
-    #     ('De novo hypomethylation', ix_denovo_hypo),
-    #     ('Residual hypermethylation', ix_residual_hyper),
-    #     ('Residual hypomethylation', ix_residual_hypo),
-    # ]
-    # colour_by_line = {
-    #     'iPSC': '#beaed4',
-    #     'H7': '#7fc97f',
-    #     'H9': '#33a02c',
-    #     'FB': '#ffff99',
-    # }
-    # mrk_size = 30
-    # med_size = 50
-    #
-    # fig, axs = plt.subplots(2, 2, sharey=True, sharex=True)
-    # i = 0
-    # for ttl, ix in to_plot:
-    #     cid = ix.index[ix][0]
-    #     probes = dmr_clusters.clusters[cid].pids
-    #     ipsc_m = dat_m.loc[probes, meta.index.str.contains(pid) & (meta.type == 'iPSC')]
-    #     fb_m = dat_m.loc[probes, meta.index.str.contains(pid) & (meta.type == 'FB')]
-    #     esc_m_arr = [
-    #         dat_m.loc[probes, meta.index.str.contains(r)] for r in esc_ref_names
-    #     ]
-    #     # esc_m = dat_m.loc[probes, meta.index.str.contains(re.compile('|'.join(esc_ref_names)))]
-    #
-    #     ax = axs.flat[i]
-    #     ax.scatter([0] * fb_m.shape[0], fb_m.squeeze(), c=colour_by_line['FB'], s=mrk_size, edgecolor='k', label='Fibroblast')
-    #     ax.scatter(0, fb_m.squeeze().median(), marker='X', s=med_size, edgecolor='k', c=colour_by_line['FB'], lw=1.5)
-    #     ax.scatter([1] * ipsc_m.shape[0], ipsc_m.squeeze(), c=colour_by_line['iPSC'], s=mrk_size, edgecolor='k', label='iPSC')
-    #     ax.scatter(1, ipsc_m.squeeze().median(), marker='X', s=med_size, edgecolor='k', c=colour_by_line['iPSC'], lw=1.5)
-    #     x = 1.9
-    #     for r, y in zip(esc_ref_names, esc_m_arr):
-    #         y = y.values.flatten()
-    #         ax.scatter([x] * y.size, y, c=colour_by_line[r], s=mrk_size, edgecolor='k', label='%s ESC' % r)
-    #         ax.scatter(x, np.median(y), marker='X', s=med_size, edgecolor='k', c=colour_by_line[r], lw=1.5)
-    #         x += 0.2
-    #     ax.set_title(ttl)
-    #
-    #     i += 1
-    #
-    # axs[0, 1].legend(loc='center left', frameon=True, facecolor='w', edgecolor='k', bbox_to_anchor=(1.0, 0.5))
-    # axs[0, 0].set_ylabel('Methylation value')
-    # axs[1, 0].set_ylabel('Methylation value')
-    # axs[1, 0].set_xticks([])
-    #
-    # fig.tight_layout()
-    # fig.subplots_adjust(right=0.83)
-    # fig.savefig(os.path.join(outdir, "%s_examples_of_dmr.png" % pid), dpi=200)
 
     # load iPSC, FB, iNSC data (only ours) + ESC
     with open(os.path.join(basedir, "comparisons.txt"), 'rb') as f:
@@ -957,191 +1075,79 @@ if __name__ == "__main__":
 
     # pick one of our samples and show how the residual / de novo meth shows up
     chosen_one = '030'
-    chosen_ones_ipsc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('IPSC')]
-    chosen_ones_insc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('NSC')]
-    chosen_ones_fb = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('FB')]
-    escs_1 = dat_m.columns[dat_m.columns.str.contains('_H9_')]
-    escs_2 = dat_m.columns[dat_m.columns.str.contains('H7')]
-    gibco = dat_m.columns[dat_m.columns.str.contains('GIBCO')]
+    for chosen_one in colour_by_pid:
+        chosen_ones_ipsc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('IPSC')]
+        chosen_ones_insc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('NSC')]
+        chosen_ones_fb = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('FB')]
+        escs_1 = dat_m.columns[dat_m.columns.str.contains('_H9_')]
+        escs_2 = dat_m.columns[dat_m.columns.str.contains('H7')]
 
-    clas = core_dmr_classified_ours['iPSC%s' % chosen_one]
-    dat_ipsc = dat_m.loc[:, chosen_ones_ipsc].mean(axis=1)
-    dat_insc = dat_m.loc[:, chosen_ones_insc].mean(axis=1)
-    dat_fb = dat_m.loc[:, chosen_ones_fb].mean(axis=1)
-    dat_esc = dat_m.loc[:, escs_1].mean(axis=1)
-    dat_gibco = dat_m.loc[:, gibco].mean(axis=1)
+        clas = core_dmr_classified_ours['iPSC%s' % chosen_one]
 
-    # 1. scatter: iPSC-ESC vs FB-ESC
-    colours = common.get_best_cmap(4)
-    n_other = 500
-    fig = plt.figure(figsize=(5, 5))
-    ax = fig.add_subplot(111)
-    all_pids = set()
-    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
-        # ax = axs.flat[i]
-        this = clas.loc[clas.classification == typ]
-        # convert clusters -> probes
-        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
-        all_pids.update(pids)
-        esc_vals = dat_esc.loc[pids]
-        ipsc_vals = dat_ipsc.loc[pids]
-        insc_vals = dat_insc.loc[pids]
-        fb_vals = dat_fb.loc[pids]
-        gibco_vals = dat_gibco[pids]
-
-        ax.scatter(
-            fb_vals - esc_vals,
-            ipsc_vals - esc_vals,
-            facecolors=colours[i],
-            edgecolors='k',
-            label=typ.replace('_', ' ').capitalize(),
-            zorder=2.
+        # 1a. scatter, all probes: iPSC-ESC vs FB-ESC
+        fig, ax = scatter_probe_mvals_classified(
+            clas,
+            dat_m,
+            clusters,
+            chosen_ones_fb,
+            chosen_ones_ipsc,
+            escs_1,
+            n_other=500
         )
+        ax.set_xlabel('M value of FB relative to ESC')
+        ax.set_ylabel('M value of iPSC relative to ESC')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified_probes_%s.png" % chosen_one), dpi=200)
+        fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified_probes_%s.tiff" % chosen_one), dpi=200)
 
-    # add random other pids
-    others = dat_m.index.difference(all_pids).tolist()
-    np.random.shuffle(others)
-    others = others[:n_other]
-    ax.scatter(
-        dat_fb.loc[others] - dat_esc.loc[others],
-        dat_ipsc.loc[others] - dat_esc.loc[others],
-        facecolors='w',
-        edgecolors='k',
-        label='Other probes',
-        zorder=1.
-    )
-
-    ax.legend(loc='upper left')
-    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.set_aspect('equal')
-    ax.set_xlabel('M value of FB relative to ESC')
-    ax.set_ylabel('M value of iPSC relative to ESC')
-
-    lims = [
-        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
-        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
-    ]
-
-    # now plot both limits against eachother
-    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified.png"), dpi=200)
-
-    # 2. scatter: iNSC - ESC vs iPSC - ESC
-
-    all_pids = set()
-    fig = plt.figure(figsize=(5, 5))
-    ax = fig.add_subplot(111)
-    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
-        # ax = axs.flat[i]
-        this = clas.loc[clas.classification == typ]
-        # convert clusters -> probes
-        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
-        all_pids.update(pids)
-        esc_vals = dat_esc.loc[pids]
-        ipsc_vals = dat_ipsc.loc[pids]
-        insc_vals = dat_insc.loc[pids]
-        fb_vals = dat_fb.loc[pids]
-        gibco_vals = dat_gibco[pids]
-
-        ax.scatter(
-            insc_vals - esc_vals,
-            ipsc_vals - esc_vals,
-            facecolors=colours[i],
-            edgecolors='k',
-            label=typ.replace('_', ' ').capitalize(),
-            zorder=2.
+        # 1b. scatter, all clusters: iPSC-ESC vs FB-ESC
+        fig, ax = scatter_cluster_mvals_classified(
+            clas,
+            dat_m,
+            clusters,
+            chosen_ones_fb,
+            chosen_ones_ipsc,
+            escs_1,
+            n_other=200
         )
+        ax.set_xlabel('M value of FB relative to ESC')
+        ax.set_ylabel('M value of iPSC relative to ESC')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified_clusters_%s.png" % chosen_one), dpi=200)
+        fig.savefig(os.path.join(outdir, "ipsc_vs_fb_vs_esc_classified_clusters_%s.tiff" % chosen_one), dpi=200)
 
-    # add random other pids
-    others = dat_m.index.difference(all_pids).tolist()
-    np.random.shuffle(others)
-    others = others[:n_other]
-    ax.scatter(
-        dat_fb.loc[others] - dat_esc.loc[others],
-        dat_ipsc.loc[others] - dat_esc.loc[others],
-        facecolors='w',
-        edgecolors='k',
-        label='Other probes',
-        zorder=1.
-    )
-
-    ax.legend(loc='upper left')
-    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.set_aspect('equal')
-    ax.set_xlabel('M value of iNSC relative to ESC')
-    ax.set_ylabel('M value of iPSC relative to ESC')
-
-    lims = [
-        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
-        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
-    ]
-
-    # now plot both limits against eachother
-    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "insc_vs_ipsc_vs_esc_classified.png"), dpi=200)
-
-    # 3. scatter: iNSC - ESC vs NSC - ESC
-
-    all_pids = set()
-    fig = plt.figure(figsize=(5, 5))
-    ax = fig.add_subplot(111)
-    for i, typ in enumerate(['hyper_residual', 'hypo_residual', 'hyper_de_novo', 'hypo_de_novo']):
-        # ax = axs.flat[i]
-        this = clas.loc[clas.classification == typ]
-        # convert clusters -> probes
-        pids = sorted(setops.reduce_union(*[clusters.clusters[t].pids for t in this.index]))
-        all_pids.update(pids)
-        esc_vals = dat_esc.loc[pids]
-        ipsc_vals = dat_ipsc.loc[pids]
-        insc_vals = dat_insc.loc[pids]
-        fb_vals = dat_fb.loc[pids]
-        gibco_vals = dat_gibco[pids]
-
-        ax.scatter(
-            insc_vals - esc_vals,
-            # insc_vals - gibco_vals,
-            gibco_vals - esc_vals,
-            facecolors=colours[i],
-            edgecolors='k',
-            label=typ.replace('_', ' ').capitalize(),
-            zorder=2.
+        # 2a. scatter: iNSC - ESC vs iPSC - ESC
+        fig, ax = scatter_probe_mvals_classified(
+            clas,
+            dat_m,
+            clusters,
+            chosen_ones_insc,
+            chosen_ones_ipsc,
+            escs_1,
+            n_other=500
         )
+        ax.set_xlabel('M value of FB relative to ESC')
+        ax.set_ylabel('M value of iPSC relative to ESC')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "insc_vs_ipsc_vs_esc_classified_probes_%s.png" % chosen_one), dpi=200)
+        fig.savefig(os.path.join(outdir, "insc_vs_ipsc_vs_esc_classified_probes_%s.tiff" % chosen_one), dpi=200)
 
-    # add random other pids
-    others = dat_m.index.difference(all_pids).tolist()
-    np.random.shuffle(others)
-    others = others[:n_other]
-    ax.scatter(
-        dat_fb.loc[others] - dat_esc.loc[others],
-        dat_ipsc.loc[others] - dat_esc.loc[others],
-        facecolors='w',
-        edgecolors='k',
-        label='Other probes',
-        zorder=1.
-    )
+        # 2b. scatter, all clusters: iNSC - ESC vs iPSC - ESC
+        fig, ax = scatter_cluster_mvals_classified(
+            clas,
+            dat_m,
+            clusters,
+            chosen_ones_insc,
+            chosen_ones_ipsc,
+            escs_1,
+            n_other=200
+        )
+        ax.set_xlabel('M value of iNSC relative to ESC')
+        ax.set_ylabel('M value of iPSC relative to ESC')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.png" % chosen_one), dpi=200)
+        fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.tiff" % chosen_one), dpi=200)
 
-    ax.legend(loc='upper left')
-    ax.axvline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.axhline(0., c='k', lw=1., zorder=1, alpha=0.75)
-    ax.set_aspect('equal')
-    ax.set_xlabel('M value of iNSC relative to ESC')
-    ax.set_ylabel('M value of reference NSC relative to ESC')
-
-    lims = [
-        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
-        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
-    ]
-
-    # now plot both limits against eachother
-    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0, lw=1.)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "insc_vs_nsc_vs_esc_classified.png"), dpi=200)
-
-
-
-    ## iNSC vs iPSC
-    ## TODO!
+        # 3. scatter: iNSC - ESC vs NSC - ESC
+        # disabling this for now, because the reference NSC we are using is actually just a commercially available
+        # reprogrammed line.

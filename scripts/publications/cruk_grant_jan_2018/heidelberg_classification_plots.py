@@ -5,7 +5,11 @@ import numpy as np
 from load_data import rnaseq_data
 import pandas as pd
 import os
+import re
+import shutil
+import zipfile
 from utils import output
+from plotting import common
 from settings import DATA_DIR_NON_GIT
 
 
@@ -21,8 +25,57 @@ def get_top_n(data, n):
     return top_n
 
 
+def read_calibrated_scores_script():
+    """
+    Hold space for a copy-paste script used to read calibrated scores from their raw CSV files
+    :return:
+    """
+    batches = [
+        '2016-06-10_brandner',
+        '2016-12-19_ucl_genomics',
+        '2016-09-21_dutt',
+        '2017-01-17_brandner',
+        '2017-02-09_brandner',
+        '2017-05-12',
+        '2017-08-23',
+        '2017-09-19',
+        '2018-03-19'
+    ]
+    basedir = os.path.join(DATA_DIR_NON_GIT, 'methylation')
+    for b in batches:
+        print "*** %s ***" % b
+        if os.path.isdir(os.path.join(basedir, b, 'heidelberg_classifier')):
+            the_dir = os.path.join(basedir, b, 'heidelberg_classifier')
+        else:
+            the_dir = os.path.join(basedir, b, 'heidelberg')
+        c_dir = sorted([os.path.join(the_dir, t) for t in os.listdir(the_dir) if os.path.isdir(os.path.join(the_dir, t))])[-1]
+        flist = sorted([t for t in os.listdir(c_dir) if re.search(r'calibrated_', t)])
+        if len(flist) == 0:
+            print "WARNING: Batch %s has no matching files" % b
+        for fn in flist:
+            ff = os.path.join(c_dir, fn)
+            df = pd.read_csv(ff, header=0, index_col=0)
+            the_rows = sorted(df.index[df.index.str.contains(r'GBM') & df.index.str.contains(r'(RTK[ _]I$|RTK[ _]II$|MES)')])
+            the_arr = df.iloc[:, -1].loc[the_rows].values
+            print "%s, %s, %.3f, %.3f, %.3f" % ((fn, b) + tuple(the_arr))
+
+
+def unzip_scores(the_dir):
+    """
+    Holding space for a copy-paste script used to extract scores from their zip file
+    :return:
+    """
+    c_dir = sorted([os.path.join(the_dir, t) for t in os.listdir(the_dir) if os.path.isdir(os.path.join(the_dir, t))])[-1]
+    flist = [t for t in os.listdir(c_dir) if re.search(r'\.zip', t)]
+    for t in flist:
+        z = zipfile.ZipFile(os.path.join(c_dir, t))
+        fname = [u.filename for u in z.filelist if re.search(r'scores_cal.csv', u.filename)][0]
+        z.extract(fname, path=c_dir)
+        shutil.move(os.path.join(c_dir, fname), os.path.join(c_dir, t.replace('.zip', '.calibrated_scores.csv')))
+
 
 if __name__ == "__main__":
+
     outdir = output.unique_output_dir("cruk_classification")
     in_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'classification.xlsx')
     ffpe_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner', 'heidelberg_classifier', '2017_10', 'NH15-2101.calibrated_scores.csv')
@@ -33,7 +86,7 @@ if __name__ == "__main__":
     n = 3
 
     # load summary sheet
-    df = pd.read_excel(in_fn, header=0, index_col=0, skiprows=1)
+    df = pd.read_excel(in_fn, sheet_name='GBM specific', header=0, index_col=None)
     # fix format of PIDs
     df.insert(0, 'pid', df.loc[:, 'Patient ID'].apply(lambda x: "%03.0f" % x))
 
@@ -68,25 +121,65 @@ if __name__ == "__main__":
     cc.insert(1, 'mean_passage', cc.Passage.astype(str).apply(lambda x: np.mean([float(t) for t in x.split(';')])))
 
     # let's make a TERNARY plot with the three components: RTK I, RTK II, MES
-    fig, tax = ternary.figure(scale=1.)
-    tax.boundary(linewidth=2.0)
-    tax.gridlines(multiple=0.1, color="k", linewidth=1.0)
-    tax.ticks(axis='lbr', multiple=0.1, linewidth=1.0)
+    fig, axs = plt.subplots(ncols=3, figsize=(10.6, 3.8))
+    taxs = []
 
-    # convert the dfs into a list of three scores
-    lookup_cols = ['Reference %d' % i for i in range(1, 5)]
-    score_cols = ['%% Match %d' % i for i in range(1, 5)]
+    for ax in axs:
+        fig, tax = ternary.figure(scale=1., ax=ax)
+        taxs.append(tax)
+        tax.boundary(linewidth=1.0)
+        tax.gridlines(multiple=0.2, color="gray", linewidth=1.0, alpha=0.2)
+        tax.clear_matplotlib_ticks()
+
+        ax = tax.get_axes()
+
+        ax.text(-.02, -.02, 'Mesenchymal', horizontalalignment='left', verticalalignment='top')
+        ax.text(1.02, -.02, 'RTK I', horizontalalignment='right', verticalalignment='top')
+        ax.text(0.5, 0.5 * np.sqrt(3) + 0.02, 'RTK II', horizontalalignment='center', verticalalignment='bottom')
+
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+    # bundle them up
+    tax_dict = {
+        'RTK I': taxs[0],
+        'RTK II': taxs[1],
+        'MES': taxs[2]
+    }
+
+    # each patient is a 'trajectory': FFPE -> early pass -> later passage
     bases = ['GBM_RTK_I', 'GBM_RTK_II', 'GBM_MES']
-    ff_scores = dict([(p, np.zeros(3)) for p in pids])
-    cc_scores = np.zeros((len(cc), 3))
+    # cmap_func = common.continuous_cmap(cc.mean_passage.max(), cmap='Blues')
+    cmap = common.get_best_cmap(len(pids))
+    ff_colour = '#ffffff'
+
     for p in pids:
-        this_ff = ff.loc[p]
-        for a, b in zip(lookup_cols, score_cols):
-            if not pd.isnull(this_ff[a]) and this_ff[a].strip() in bases:
-                ix = bases.index(this_ff[a].strip())
-                ff_scores[p][ix] = this_ff[b]
+        this_ff_score = ff.loc[p, bases]
+        this_cc = cc.loc[p].sort_values(by='mean_passage')
+        this_cc_score = this_cc.loc[:, bases]
+        this_cc_pass = this_cc.loc[:, 'mean_passage']
+        # this_colours = [ff_colour] + [cmap_func(x - 1) for x in this_cc_pass]
+        this_colours = cmap[pids.index(p)]
+        this_sizes = 20 + this_cc_pass.values ** 2.
 
+        points = np.concatenate([[this_ff_score.values], this_cc_score.values], axis=0)
 
+        tax = tax_dict[ff.loc[p, 'Result']]
+        # here's how to annotate:
+        # tax.annotate('GBM%s' % p, points[0], horizontalalignment='left')
+        tax.scatter(points[:1], marker='^', c=this_colours, s=30, edgecolor='k', zorder=10, alpha=0.8, label=None)
+        tax.scatter(points[1:], marker='o', c=this_colours, s=this_sizes, edgecolor='k', zorder=10, alpha=0.8, label=p)
+        for i in range(2):
+            tax.line(points[i], points[i+1], c='gray', lw=1., zorder=9)
+
+    for tax in tax_dict.values():
+        tax.legend()
+
+    fig.subplots_adjust(left=0.0, right=1., wspace=0.)
+    fig.savefig(os.path.join(outdir, 'ternary_plot_classification.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'ternary_plot_classification.tiff'), dpi=200)
+
+    # TODO: do we need seaborn for the next few plots to improve their appearance?
     # three pie charts
     top_n = get_top_n(data, n)
 
