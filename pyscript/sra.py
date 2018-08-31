@@ -10,13 +10,17 @@ Requirements: we need to have parallel_fastq_dump (also in this dir) on the path
 
 
 class SRASgeRequirements(sge.ApocritaArrayJobMixin):
+    estimated_runtime_per_core = 360.
+
     @property
     def ram_per_core(self):
         return "512M"
 
     @property
     def runtime_mins(self):
-        return 360
+        nthread = int(self.args['threads'])
+        # roughly 6 hours with 1 cores (?)
+        return self.estimated_runtime_per_core / float(nthread)
 
 
 class SRAGetterBase(jobs.ArrayJob):
