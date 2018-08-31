@@ -278,6 +278,10 @@ if __name__ == '__main__':
     for td in to_discard:
         the_idx = ~ref_obj.data.columns.str.contains(td)
         ref_obj.filter_samples(the_idx)
+
+    # make a copy so we can run DE
+    ref_obj_sep = ref_obj.copy()
+
     # fill in missing cell types
     ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'type'] = ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'cell type']
 

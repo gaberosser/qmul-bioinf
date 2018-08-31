@@ -16,6 +16,7 @@ import re
 import csv
 from ast import literal_eval as make_tuple
 from scipy import stats
+import itertools
 from settings import OUTPUT_DIR
 
 
@@ -764,23 +765,81 @@ if __name__ == "__main__":
 
     # plot showing the number of DMRs (split by direction)
     # we can try doing this by violin plot or similar
+    n_core = {}
     n_core_hypo = {}
     n_core_hyper = {}
+    core = {}
+    core_discordant = {}
+    core_hypo = {}
+    core_hyper = {}
     for i, (k1, obj) in enumerate(to_plot.items()):
         u_hypo = {}
         u_hyper = {}
+        u_all = {}
         for j, (r, s) in enumerate(esc_samples.items()):
             t = get_dmr_number_direction(obj[r])
             u = get_dmr_cid_direction(obj[r])
             u_hypo[r] = dict([(k.split('-')[0], x['Hypomethylated']) for k, x in u.items()])
             u_hyper[r] = dict([(k.split('-')[0], x['Hypermethylated']) for k, x in u.items()])
+            u_all[r] = {}
+            for k2 in u_hyper[r].keys():
+                u_all[r][k2] = u_hypo[r][k2].union(u_hyper[r][k2])
+                if len(u_hypo[r][k2].intersection(u_hyper[r][k2])) > 0:
+                    print "Warning! Ref %s, comparison %s. %d DMRs are marked as BOTH hypo and hyper." % (
+                        r,
+                        k2,
+                        len(u_hypo[r][k2].intersection(u_hyper[r][k2]))
+                    )
+
+        core_hypo[k1] = dict([
+            (k, setops.reduce_intersection(*[u_hypo[r][k] for r in esc_samples])) for k in u_hypo.values()[0]
+        ])
+        core_hyper[k1] = dict([
+            (k, setops.reduce_intersection(*[u_hyper[r][k] for r in esc_samples])) for k in u_hyper.values()[0]
+        ])
+        # for ALL core DMRs, use hypo and hyper rather than u_all
+        core[k1] = dict([
+            (k, core_hypo[k1][k].union(core_hyper[k1][k])) for k in core_hypo[k1].keys()
+        ])
+        # the latter will result in some DMRs being included even though they have different directions
+        # in practice, all of these are in esc_esc_dmrs, i.e. they vary between the two references
+        core_discordant[k1] = {}
+        for k in u_all.values()[0]:
+            core_discordant[k1][k] = setops.reduce_intersection(*[u_all[r][k] for r in esc_samples]).difference(
+                core[k1][k]
+            )
+
+        n_core[k1] = dict([
+            (k, len(v)) for k, v in core[k1].items()
+        ])
         n_core_hypo[k1] = dict([
-            (k, len(setops.reduce_intersection(*[u_hypo[r][k] for r in esc_samples]))) for k in u_hypo.values()[0]
+            (k, len(v)) for k, v in core_hypo[k1].items()
         ])
         n_core_hyper[k1] = dict([
-            (k, len(setops.reduce_intersection(*[u_hyper[r][k] for r in esc_samples]))) for k in u_hyper.values()[0]
+            (k, len(v)) for k, v in core_hyper[k1].items()
         ])
 
+
+    # look across our samples and Weltner samples, keeping only 'double core' DMRs
+    # (in BOTH ESC comparisons and in all lines)
+    # either look at only 2 / 5 of our samples:
+    core_dmrs_ours_hypo_permute_2 = dict([
+        (y, setops.reduce_intersection(*[core_hypo[k_our_ipsc][x] for x in y]))
+        for y in itertools.combinations(core_hypo[k_our_ipsc].keys(), 2)
+    ])
+    core_dmrs_ours_hyper_permute_2 = dict([
+        (y, setops.reduce_intersection(*[core_hyper[k_our_ipsc][x] for x in y]))
+        for y in itertools.combinations(core_hyper[k_our_ipsc].keys(), 2)
+    ])
+    # or all 5
+    core_dmrs_ours_hypo_all = setops.reduce_intersection(*core_hypo[k_our_ipsc].values())
+    core_dmrs_ours_hyper_all = setops.reduce_intersection(*core_hyper[k_our_ipsc].values())
+    core_dmrs_ours_all = setops.reduce_intersection(*core[k_our_ipsc].values())
+
+    core_dmrs_e6194_hypo = setops.reduce_intersection(*core_hypo[k_e6194_ipsc].values())
+    core_dmrs_e6194_hyper = setops.reduce_intersection(*core_hyper[k_e6194_ipsc].values())
+
+    # plot the numbers of DMRs between iPSC and ESC in each study
     df_hyper = pd.concat([pd.DataFrame(dict(val=n_core_hyper[k1], typ=k1)) for k1 in n_core_hyper])
     df_hypo = pd.concat([pd.DataFrame(dict(val=n_core_hypo[k1], typ=k1)) for k1 in n_core_hypo])
 
@@ -827,7 +886,6 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.tiff"), dpi=200)
-
 
     # resample the larger datasets to equalise the number of lines being considered
     # n_sample = len(ipsc_samples['ours'])
@@ -926,11 +984,6 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "num_core_dmrs_ipsc_vs_esc_resample.png"), dpi=200)
 
-    # IDEA
-    # KS test: for each PAIR of iPSC lines, and each ESC line, is there evidence that the NUMBERS of DMRs are not
-    # similarly distributed?
-    # I don't think this is valid: the result depends on the number of iterations.
-
     # Is there any overlap between the resultant core sets?
     core_dmrs_hypo = {}
     core_dmrs_hyper = {}
@@ -992,7 +1045,10 @@ if __name__ == "__main__":
         if ii.replace('iPSC', '') == jj.replace('FB', ''):
             ipsc_fb_ours[ii] = df.loc[df.padj < fdr]
 
-    core_dmr_classified_ours = classify_dmrs_residual_denovo(ipsc_esc_core['ours'], ipsc_fb_ours, exclude=esc_esc_dmrs)
+    # UPDATE: no longer excluding DMRs that are also DMRs in the ESC-ESC comparison
+    # In practice, this makes little difference
+    # core_dmr_classified_ours = classify_dmrs_residual_denovo(ipsc_esc_core['ours'], ipsc_fb_ours, exclude=esc_esc_dmrs)
+    core_dmr_classified_ours = classify_dmrs_residual_denovo(ipsc_esc_core['ours'], ipsc_fb_ours, exclude=None)
     core_dmr_classified_count_ours = dict(
         [(k, v.classification.value_counts()) for k, v in core_dmr_classified_ours.items()]
     )
@@ -1014,9 +1070,18 @@ if __name__ == "__main__":
         if re.search(r'HEL(140|141)', ii):
             ipsc_fb_e6194[ii] = df.loc[df.padj < fdr]
 
-    core_dmr_classified_e6194 = classify_dmrs_residual_denovo(ipsc_esc_core['e6194'], ipsc_fb_e6194, exclude=esc_esc_dmrs)
+    # core_dmr_classified_e6194 = classify_dmrs_residual_denovo(ipsc_esc_core['e6194'], ipsc_fb_e6194, exclude=esc_esc_dmrs)
+    core_dmr_classified_e6194 = classify_dmrs_residual_denovo(ipsc_esc_core['e6194'], ipsc_fb_e6194, exclude=None)
     core_dmr_classified_count_e6194 = dict(
         [(k, v.classification.value_counts()) for k, v in core_dmr_classified_e6194.items()]
+    )
+
+    # look up within these results to determine whether the core DMRs are predominantly de novo...
+    classified_double_core_ours = dict(
+        [(k, v.loc[core_dmrs_ours_hypo_all].classification) for k, v in core_dmr_classified_ours.items()]
+    )
+    classified_double_core_e6194 = dict(
+        [(k, v.loc[core_dmrs_e6194_hypo].classification) for k, v in core_dmr_classified_e6194.items()]
     )
 
     # combine these results to generate bar charts
@@ -1036,7 +1101,6 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)
-
 
     # load iPSC, FB, iNSC data (only ours) + ESC
     with open(os.path.join(basedir, "comparisons.txt"), 'rb') as f:
@@ -1074,7 +1138,6 @@ if __name__ == "__main__":
         clusters = pickle.load(f)
 
     # pick one of our samples and show how the residual / de novo meth shows up
-    chosen_one = '030'
     for chosen_one in colour_by_pid:
         chosen_ones_ipsc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('IPSC')]
         chosen_ones_insc = dat_m.columns[dat_m.columns.str.contains('DURA%s' % chosen_one) & dat_m.columns.str.contains('NSC')]
