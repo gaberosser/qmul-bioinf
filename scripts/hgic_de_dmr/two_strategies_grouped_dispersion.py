@@ -35,7 +35,7 @@ def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=N
     common_probes = anno.index.intersection(me_data.index)
 
     anno = anno.loc[common_probes]
-    dmr.add_merged_probe_classes(anno)
+    # dmr.add_merged_probe_classes(anno)
     me_data = me_data.loc[common_probes]
     obj.data = me_data
 
@@ -155,32 +155,47 @@ def annotate_de_dmr_wide_form(data):
 
 def expand_dmr_results_table_by_gene(tbl, drop_geneless=False):
 
-    this_keep = tbl.loc[tbl.genes.apply(len) == 1]
-    this_keep.insert(0, 'gene_symbol', this_keep.genes.apply(lambda t: t[0]))
-    this_keep = this_keep.drop('genes', axis=1)
-    this_keep.index = zip(this_keep.index, this_keep.gene_symbol)
+    g_count = tbl.genes.apply(len)
+    tbl.insert(0, 'cluster_id', tbl.index)
 
-    to_expand = tbl.loc[tbl.genes.apply(len) > 1]
+    this_keep = tbl.loc[g_count == 1]
+
+    if this_keep.index.size == 0:
+        this_keep = pd.DataFrame([], columns=[])
+
+    this_keep.insert(0, 'gene_relation', this_keep.genes.apply(lambda t: t[0][1]))
+    this_keep.insert(0, 'gene', this_keep.genes.apply(lambda t: t[0][0]))
+    this_keep = this_keep.drop('genes', axis=1)
+    this_keep.index = zip(this_keep.index, this_keep.gene, this_keep.gene_relation)
+
+    to_expand = tbl.loc[g_count > 1]
     expanded = []
     for cl_id, row in to_expand.iterrows():
         the_genes = row.genes
         row = row.drop('genes')
         for g in the_genes:
             new_row = row.copy()
-            new_row.loc['gene_symbol'] = g
+            new_row['gene'] = g[0]
+            new_row['gene_relation'] = g[1]
             expanded.append(new_row)
 
-    expanded = pd.DataFrame(expanded)
-    expanded.index = zip(expanded.index, expanded.gene_symbol)
+    expanded = pd.DataFrame(expanded).loc[:, this_keep.columns]
+    expanded.index = zip(expanded.index, expanded.gene, expanded.gene_relation)
 
     if drop_geneless:
-        return pd.concat((this_keep, expanded), axis=0)
+        res = pd.concat((this_keep, expanded), axis=0, sort=False)
     else:
-        this_geneless = tbl.loc[tbl.genes.apply(len) == 0]
-        this_geneless.insert(0, 'gene_symbol', None)
-        this_geneless = this_geneless.drop('genes', axis=1)
-        this_geneless.index = zip(this_geneless.index, this_geneless.gene_symbol)
-        return pd.concat((this_keep, expanded, this_geneless), axis=0)
+        this_geneless = tbl.loc[g_count == 0]
+        this_geneless.insert(0, 'gene', None)
+        this_geneless.insert(0, 'gene_relation', None)
+        this_geneless = this_geneless.drop('genes', axis=1).loc[:, this_keep.columns]
+        this_geneless.index = zip(this_geneless.index, this_geneless.gene, this_geneless.gene_relation)
+        res = pd.concat((this_keep, expanded, this_geneless), axis=0, sort=False)
+
+    # original sorting
+    res.sort_values(by='cluster_id', inplace=True)
+
+    return res
 
 
 def patient_and_subgroup_specific_set(pids, subgroups):
@@ -383,23 +398,9 @@ if __name__ == "__main__":
         dmr_res_s1.to_pickle(fn, include_annotation=False)
         print "Saved DMR results to %s" % fn
 
-    dmr_classes = ['tss', 'island']
-
-    # extract combined significant results for tss and island
-    dmr_res_all_cls = dmr_res_s1.results_by_class()
-    dmr_res_sign_all_cls = dmr_res_s1.results_significant_by_class()
-
-    dmr_res_full_s1 = {}
-    dmr_res_sign_s1 = {}
-    for k1 in dmr_res_sign_all_cls:
-        # for k2 in dmr_res_sign_all_cls[k1]:
-        dmr_res_sign_s1[k1] = {}
-        dmr_res_full_s1[k1] = {}
-        for dc in dmr_classes:
-            dmr_res_sign_s1[k1].update(dmr_res_sign_all_cls[k1][dc])
-            dmr_res_full_s1[k1].update(dmr_res_all_cls[k1][dc])
-        # only need the keys for the significant DMR list
-        dmr_res_sign_s1[k1] = dmr_res_sign_s1[k1].keys()
+    # extract results
+    dmr_res_full_s1 = dmr_res_s1.results()
+    dmr_res_sign_s1 = dmr_res_s1.results_significant
 
     rnaseq_obj = load_rnaseq(pids, external_ref_names_de, strandedness=external_ref_strandedness_de)
 
@@ -491,7 +492,7 @@ if __name__ == "__main__":
     ### b) DMR only ###
     ###################
 
-    dmr_by_member = [dmr_res_sign_s1[pid] for pid in pids]
+    dmr_by_member = [dmr_res_sign_s1[pid].keys() for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
 
     # add null set manually from full DMR results
@@ -516,6 +517,7 @@ if __name__ == "__main__":
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_dmr.tiff"), dpi=200)
 
     # generate wide-form lists and save to Excel file
+    # this expand_dmr_results_table_by_gene calls are quite slow here
     data_for_dmr_table = {}
     data_for_dmr_table_full = {}
     for pid in pids:
@@ -544,7 +546,8 @@ if __name__ == "__main__":
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data.insert(0, 'gene_symbol', [t[1] for t in data.index])
+    data.insert(0, 'gene_relation', [t[2] for t in data.index])
+    data.insert(0, 'gene', [t[1] for t in data.index])
     data.insert(0, 'cluster_id', [t[0] for t in data.index])
 
     # quick (bespoke) sanity check
@@ -570,8 +573,10 @@ if __name__ == "__main__":
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_ec.insert(0, 'gene_symbol', [t[1] for t in data_ec.index])
+    data_ec.insert(0, 'gene_relation', [t[2] for t in data_ec.index])
+    data_ec.insert(0, 'gene', [t[1] for t in data_ec.index])
     data_ec.insert(0, 'cluster_id', [t[0] for t in data_ec.index])
+
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_dmr.xlsx'))
 
     # subgroup-specific
@@ -585,8 +590,10 @@ if __name__ == "__main__":
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_ss.insert(0, 'gene_symbol', [t[1] for t in data_ss.index])
+    data_ss.insert(0, 'gene_relation', [t[2] for t in data_ss.index])
+    data_ss.insert(0, 'gene', [t[1] for t in data_ss.index])
     data_ss.insert(0, 'cluster_id', [t[0] for t in data_ss.index])
+
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_dmr.xlsx'))
 
     # patient unique
@@ -600,9 +607,11 @@ if __name__ == "__main__":
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_pu.insert(0, 'gene_symbol', [t[1] for t in data_pu.index])
+    data_pu.insert(0, 'gene_relation', [t[2] for t in data_pu.index])
+    data_pu.insert(0, 'gene', [t[1] for t in data_pu.index])
     data_pu.insert(0, 'cluster_id', [t[0] for t in data_pu.index])
-    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_dmr.xlsx'))
+
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_dmr.xlsx'))
 
     # patient and subgroup-specific
     data_pss = {}
@@ -617,8 +626,10 @@ if __name__ == "__main__":
                 consistency_check_col='median_delta',
                 consistency_check_method='sign'
             )
-        this_tbl.insert(0, 'gene_symbol', [t[1] for t in this_tbl.index])
+        this_tbl.insert(0, 'gene_relation', [t[2] for t in this_tbl.index])
+        this_tbl.insert(0, 'gene', [t[1] for t in this_tbl.index])
         this_tbl.insert(0, 'cluster_id', [t[0] for t in this_tbl.index])
+
         data_pss[pid] = this_tbl
     excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_dmr.xlsx'))
 

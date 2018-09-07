@@ -399,6 +399,11 @@ def load_illumina_methylationepic_annotation(split_genes=True):
             dat.UCSC_RefGene_Name.str.split(';').apply(lambda x: x if isinstance(x, list) else [])
         dat.loc[:, 'UCSC_RefGene_Group'] = \
             dat.UCSC_RefGene_Group.str.split(';').apply(lambda x: x if isinstance(x, list) else [])
+        # collapse these down to unique pairs
+        gene_type = [list(set(zip(*t))) for t in zip(dat.loc[:, 'UCSC_RefGene_Name'], dat.loc[:, 'UCSC_RefGene_Group'])]
+        gene, rel = zip(*[zip(*t) if len(t) else [(), ()] for t in gene_type])
+        dat.loc[:, 'UCSC_RefGene_Name'] = gene
+        dat.loc[:, 'UCSC_RefGene_Group'] = rel
     return dat
 
 

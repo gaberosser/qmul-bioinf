@@ -8,7 +8,6 @@ import operator
 import itertools
 from functools import partial
 from collections import defaultdict
-import os
 import json
 import copy
 from utils.output import unique_output_dir
@@ -18,6 +17,7 @@ import multiprocessing as mp
 import types
 from statsmodels.sandbox.stats import multicomp
 from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary, nested_dict_to_flat, flat_dict_to_nested
+from utils import setops
 
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
@@ -73,17 +73,15 @@ def add_merged_probe_classes(anno):
 
 
 def identify_cluster(coords, n_min, d_max):
-    probes = {}
+    clusters = []
     di = np.diff(coords.values.flat) <= d_max
     ll, nn = ndimage.measurements.label(di)
-    j = 0
     for i in range(1, nn + 1):
         this_idx = np.where(ll == i)[0]
         if this_idx.size + 1 >= n_min:
             p = coords.iloc[np.arange(this_idx[0], this_idx[-1] + 2)].index
-            probes[j] = p.tolist()
-            j += 1
-    return probes
+            clusters.append(p.tolist())
+    return clusters
 
 
 def get_clusters_by_location(reg_coll, anno, chr, loc_from, loc_to):
@@ -101,63 +99,41 @@ def get_clusters_by_location(reg_coll, anno, chr, loc_from, loc_to):
 
 
 def identify_clusters(anno, n_min=4, d_max=200, n_jobs=1, **kwargs):
-    clusters = {}
+    res = []
 
     if n_jobs > 1:
         jobs = {}
         pool = mp.Pool(processes=n_jobs)
 
+    cl_id = 1
+
     for chr in pd.factorize(anno.CHR)[1]:
-        p1 = {}
         dat = get_chr(anno, chr)
-        for cl in CLASSES:
-            coords = get_coords(dat, cl)
-            if n_jobs > 1:
-                jobs[(chr, cl)] = pool.apply_async(identify_cluster, args=(coords, n_min, d_max))
-            else:
-                p2 = identify_cluster(coords, n_min, d_max)
-                p1[cl] = p2
-        clusters[chr] = p1
+        coords = dat['MAPINFO']
+        if n_jobs > 1:
+            jobs[chr] = pool.apply_async(identify_cluster, args=(coords, n_min, d_max))
+        else:
+            cl_arr = identify_cluster(coords, n_min, d_max)
+            for cl in cl_arr:
+                pc = ProbeCluster(
+                    cl, anno, chr=chr, cluster_id=cl_id
+                )
+                cl_id += 1
+                res.append(pc)
 
     if n_jobs > 1:
         # fill in the dict from the deferred results
-        for (chr, cl), j in jobs.items():
+        for chr, j in jobs.items():
             try:
-                p2 = j.get(1e3)
-                clusters[chr][cl] = p2
+                cl_arr = j.get(1e3)
+                for cl in cl_arr:
+                    pc = ProbeCluster(
+                        cl, anno, chr=chr, cluster_id=cl_id
+                    )
+                    cl_id += 1
+                    res.append(pc)
             except Exception:
-                logger.exception("Failed to compute DMR for chr %s class %s", chr, cl)
-
-    # run back over each chromosome
-    # for each cluster, add a list of classes it belongs to
-    # we use a tuple list of probe IDs as the hash
-    classes = {}
-    for chr, dat in clusters.items():
-        t = {}
-        for cl in CLASSES:
-            for x in dat[cl].values():
-                t.setdefault(tuple(x), set()).add(cl)
-        classes[chr] = t
-
-    # reform the dictionary, but with meaningful cluster IDs and cluster classes added
-    # since each cluster may appear multiple times (once per class), keep track of what we've seen so we can
-    # skip multiples
-    res = []
-    clusters_seen = set()
-    # keep a running count of cluster ID
-    cl_id = 1
-    for chr, dat in clusters.items():
-        for cl in CLASSES:
-            for x in dat[cl].values():
-                probe_tup = tuple(x)
-                if probe_tup in clusters_seen:
-                    # nothing to do
-                    continue
-                res.append(ProbeCluster(
-                    probe_tup, anno, cls=classes[chr][probe_tup], chr=chr, cluster_id=cl_id
-                ))
-                cl_id += 1
-                clusters_seen.add(probe_tup)
+                logger.exception("Failed to compute DMR for chr %s", str(chr))
 
     return res
 
@@ -534,11 +510,8 @@ class ProbeCluster(object):
     def genes(self):
         if self._genes is not None:
             return self._genes
-        genes = self.anno.UCSC_RefGene_Name.dropna()
-        if len(genes) == 0:
-            self._genes = set()
-        else:
-            self._genes = reduce(set.union, genes.tolist())
+        gene_type = [list(set(zip(*t))) for t in zip(self.anno['UCSC_RefGene_Name'], self.anno['UCSC_RefGene_Group'])]
+        self._genes = setops.reduce_union(*gene_type)
         return self._genes
 
     @property
@@ -617,14 +590,8 @@ class DmrResults(object):
         self.anno = anno
         self.min_median_change = None
 
-        self._clusters_by_class = None
-        self._results_by_class = None
         self._results_relevant = None
-        self._results_relevant_by_class = None
         self._results_significant = None
-        self._results_significant_by_class = None
-
-        self._classes = None
 
     def copy(self):
         # copy attributes across; only results need to be deep copied, others can be shared
@@ -675,11 +642,8 @@ class DmrResults(object):
             **kwargs
         )
 
-        self._results_by_class = None
         self._results_relevant = None
-        self._results_relevant_by_class = None
         self._results_significant = None
-        self._results_significant_by_class = None
 
     def to_table(self, include='all', skip_geneless=True):
         """
@@ -689,14 +653,9 @@ class DmrResults(object):
         :return:
         """
         # convert classes to a list to ensure reproducible iteration order
-        classes = []
-        if self._classes is not None:
-            classes = list(self.classes)
         cols = ['cluster_id', 'chr', 'genes'] + \
-               ['class_%s' % t for t in classes] + \
                ['median_1', 'median_2', 'median_delta', 'padj']
         dtypes = ['uint16', 'object', 'object'] + \
-                 ['bool'] * len(classes) + \
                  ['float', 'float', 'float', 'float']
         rows = []
 
@@ -716,7 +675,6 @@ class DmrResults(object):
                 continue
             the_res = self.results[cluster_id]
             this_row = [cluster_id, cl.chr, tuple(cl.genes)] + \
-                       [t in cl.cls for t in classes] + \
                        [the_res['median1'], the_res['median2'], the_res['median_change'], the_res.get('padj', None)]
             rows.append(this_row)
 
@@ -727,40 +685,6 @@ class DmrResults(object):
             raise BasicLogicException("Duplicate rows found.")
 
         return tbl
-
-    @property
-    def classes(self):
-        """
-        Compute a set of all classes in the clusters
-        """
-        if self._classes is None:
-            classes = set()
-            for x in self.clusters.values():
-                classes.update(x.cls)
-            self._classes = classes
-        return self._classes
-
-    def separate_by_class(self, lookup, convert=None):
-        if convert is None:
-            convert = lookup
-        dest = {}
-        for cls in self.classes:
-            dest[cls] = dict([t for t in lookup.items() if cls in convert[t[0]].cls])
-        return dest
-
-    def clusters_by_class(self, cls=None):
-        if self._clusters_by_class is None:
-            self._clusters_by_class = self.separate_by_class(self.clusters)
-        if cls is None:
-            return self._clusters_by_class
-        return self._clusters_by_class[cls]
-
-    def results_by_class(self, cls=None):
-        if self._results_by_class is None:
-            self._results_by_class = self.separate_by_class(self.results, convert=self.clusters)
-        if cls is None:
-            return self._results_by_class
-        return self._results_by_class[cls]
 
     @property
     def clusters_relevant(self):
@@ -785,20 +709,6 @@ class DmrResults(object):
         if self._results_significant is None:
             self._results_significant = filter_dictionary(self.results, lambda x: x.get('rej_h0', False), n_level=1)
         return self._results_significant
-
-    def results_relevant_by_class(self, cls=None):
-        if self._results_relevant_by_class is None:
-            self._results_relevant_by_class = self.separate_by_class(self.results_relevant, convert=self.clusters)
-        if cls is None:
-            return self._results_relevant_by_class
-        return self._results_relevant_by_class[cls]
-
-    def results_significant_by_class(self, cls=None):
-        if self._results_significant_by_class is None:
-            self._results_significant_by_class = self.separate_by_class(self.results_significant, convert=self.clusters)
-        if cls is None:
-            return self._results_significant_by_class
-        return self._results_significant_by_class[cls]
 
 
 class DmrResultCollection(object):
@@ -880,11 +790,13 @@ class DmrResultCollection(object):
         ])
         return flat_dict_to_nested(flat_apply)
 
-    def clusters_by_class(self, cls=None):
-        return self.apply(lambda x: x.clusters_by_class(cls=cls))
+    @property
+    def clusters(self):
+        return self.apply('clusters')
 
-    def results_by_class(self, cls=None):
-        return self.apply(lambda x: x.results_by_class(cls=cls))
+    @property
+    def results(self):
+        return self.apply('results')
 
     @property
     def clusters_relevant(self):
@@ -902,11 +814,6 @@ class DmrResultCollection(object):
     def results_significant(self):
         return self.apply('results_significant')
 
-    def results_relevant_by_class(self, cls=None):
-        return self.apply(lambda x: x.results_relevant_by_class(cls=cls))
-
-    def results_significant_by_class(self, cls=None):
-        return self.apply(lambda x: x.results_significant_by_class(cls=cls))
 
     # FIXME: JSON components disabled for now, because using tuples as a dict key breaks JSON support
 
