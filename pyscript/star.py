@@ -102,6 +102,16 @@ class StarSEBash(jobs.BashArrayJobMixin, StarBaseSE, jobs.SEFastqFileIteratorMix
     pass
 
 
+class StarEncodePEBash(jobs.BashArrayJobMixin, StarBasePE, jobs.PEFastqEncodeMultiLaneMixin):
+    title = "star_multilane_encode_pe"
+    pass
+
+
+class StarEncodePEApocrita(StarSgeRequirements, StarBasePE, jobs.PEFastqEncodeMultiLaneMixin):
+    title = "star_multilane_encode_pe"
+    pass
+
+
 def star_alignment_run(run_type):
     import argparse
     import sys
@@ -110,9 +120,11 @@ def star_alignment_run(run_type):
         'se_bash': StarSEBash,
         'pe_bash': StarPEBash,
         'pe_multilane_bash': StarMultilanePEBash,
+        'pe_encode_bash': StarEncodePEBash,
         'se_apocrita': StarSEApocrita,
         'pe_apocrita': StarPEApocrita,
         'pe_multilane_apocrita': StarMultilanePEApocrita,
+        'pe_encode_apocrita': StarEncodePEApocrita,
     }
 
     if run_type not in run_type_dict:

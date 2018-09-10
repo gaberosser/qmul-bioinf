@@ -1,13 +1,11 @@
-from rnaseq import loader
-from plotting import clustering, common, scatter
-from stats import transformations
+from rnaseq import loader, differential_expression, filter
+from plotting import common, venn
 import pandas as pd
 import numpy as np
-from copy import copy
 import os
 from utils import output
-import references
-from scipy.stats import zscore
+from matplotlib import pyplot as plt
+import seaborn as sns
 from copy import copy
 
 
@@ -15,6 +13,35 @@ class SetMe(object):
     """
     This is useful to determine which fields need to be set
     """
+
+
+def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
+    cpm = dat.divide(dat.sum(), axis=1) * 1e6
+    keep = (cpm > min_cpm).sum(axis=1) > 0
+    dat = dat.loc[keep]
+
+    res = differential_expression.run_multiple_de(
+        the_data=dat,
+        the_groups=groups,
+        comparisons=comparisons,
+        **de_params
+    )
+
+    for the_comparison, this_res in res.items():
+        try:
+            the_genes = this_res.index
+            the_groups = groups[groups.isin(the_comparison)]
+            the_cpm = cpm.loc[the_genes, the_groups.index]
+            keep = filter.filter_cpm_by_group(
+                the_cpm,
+                groups,
+                min_cpm=min_cpm
+            )
+            res[the_comparison] = this_res.loc[keep]
+        except Exception as exc:
+            print repr(exc)
+
+    return res
 
 
 def load_refs(ref_dict, **load_kwds):
@@ -37,30 +64,48 @@ def load_refs(ref_dict, **load_kwds):
 
 if __name__ == '__main__':
     pids = ['017', '018', '019', '030', '031', '049', '050', '054', '061', '026', '052']
-    min_val = 1
+    min_cpm = 1.
     n_above_min = 3
     eps = 0.01  # offset to use when applying log transform
+    n_hipsci = 12
+
+    de_params = {
+        'lfc': 1,
+        'fdr': 0.01,
+        'method': 'QLGLM'
+    }
 
     ref_dict = {
-        'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
-        # 'GSE63577': {'batch': 'Marthandan et al.', 'strandedness': 'TODO: run STAR'},
-        'GSE107965': {'batch': 'Yilmaz et al.', 'strandedness': 'TODO: run STAR'},
         'encode_roadmap/ENCSR000EYP': {'batch': 'ENCODE Wold', 'strandedness': 'u'},
-        'encode_roadmap/ENCSR000COU': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
-        'encode_roadmap/ENCSR490SQH': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},
-        # 'encode_roadmap/ENCSR000CRJ': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},  # low qual; outlier
-        'encode_roadmap/ENCSR670WQY': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
-        'encode_roadmap/ENCSR043RSE': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        # 'encode_roadmap/ENCSR670WQY': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        'GSE62772': {'batch': 'Cacchiarelli et al.', 'strandedness': 'u'},
+        'GSE97265': {'batch': 'Kogut et al.', 'strandedness': 'r'},
     }
-    # to_aggr = [
-    #     (r'Fibroblasts_control_rep[123]', 'FB control'),
-    #     (r'H1-hESC rep (1_1|2_1|3|4)', 'H1 hESC'),
-    #     (r'H1-hESC rep [12]', 'H1 hESC'),
-    #     (r'H1-[12]', 'H1 hESC'),
-    #     (r'H1-hESC(|_2)$', 'H1 hESC'),
-    #     (r'H7-hESC rep [12]', 'H7 hESC'),
-    #     (r'hESCs_control_rep[123]', 'CSES9 hESC'),
-    # ]
+
+    # discard irrelevant samples
+    to_discard = [
+        '_rapamycin_',
+        'HFF_PD16', 'HFF_PD46', 'HFF_PD64', 'HFF_PD74',
+        'BJ_OLD',
+        'IMR90_O',
+        'MRC_5_PD52', 'MRC_5_PD62', 'MRC_5_PD72',
+        'WI_38_O',
+        '-EPS-',
+        'F50S', 'I50S', 'FN1',
+        'DOX', 'hiF_', 'hiF-T_', 'BJ_P12', '_MTG_', '_VTN_', 'hIPSC_P15_Rep1'
+    ]
+
+    # TODO: update this appropriately
+    to_aggr = [
+        (r'H1-hESC rep (1_1|2_1|3|4)', 'H1 hESC'),
+        (r'H1-hESC rep [12]', 'H1 hESC'),
+        (r'H1-[12]', 'H1 hESC'),
+        (r'H1-hESC(|_2)$', 'H1 hESC'),
+        (r'H7-hESC rep [12]', 'H7 hESC'),
+        (r'hESCs_control_rep[123]', 'CSES9 hESC'),
+        ('IN2-', 'IN2'),
+        ('I50-', 'I50'),
+    ]
 
     nsc_ref_dict = {
         # 'E-MTAB-3867': {'batch': 'Caren et al.', 'strandedness': '?'},
@@ -87,6 +132,8 @@ if __name__ == '__main__':
 
     # our data (everything)
     obj = loader.load_by_patient(pids, source='star')
+    # ix = obj.meta.type.isin(['iPSC', 'FB'])
+    # obj.filter_samples(ix)
 
     # HipSci data
     hip_obj = loader.hipsci_ipsc(aggregate_to_gene=True)
@@ -106,23 +153,95 @@ if __name__ == '__main__':
     ref_obj = load_refs(ref_dict, **load_kwds)
 
     # discard irrelevant samples
-    to_discard = [
-        '_rapamycin_',
-        'HFF_PD16', 'HFF_PD46', 'HFF_PD64', 'HFF_PD74',
-        'BJ_OLD',
-        'IMR90_O',
-        'MRC_5_PD52', 'MRC_5_PD62', 'MRC_5_PD72',
-        'WI_38_O',
-        '-EPS-',
-    ]
     for td in to_discard:
         the_idx = ~ref_obj.data.columns.str.contains(td)
         ref_obj.filter_samples(the_idx)
 
     # fill in missing cell types
     ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'type'] = ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'cell type']
+    ref_obj.rename_with_attributes(existing_attr='batch')
 
     for srch, repl in to_aggr:
         ref_obj.aggregate_by_pattern(srch, repl)
 
-    ref_obj.rename_with_attributes(existing_attr='batch')
+    # assemble the data we need for comparison:
+    # - ESC (2 studies)
+    # - iPSC (ours, GSE97265)
+    # - FB (ours, GSE97265)
+    ref_labels = ['cacchiarelli', 'encode']
+
+    ix = obj.meta.type.isin(['iPSC', 'FB'])
+    dat1 = obj.data.loc[:, ix]
+
+    ix = ref_obj.meta.batch.str.contains('Kogut') & ref_obj.meta.type.isin(['iPSC', 'FB'])
+    dat2 = ref_obj.data.loc[:, ix]
+
+    ix = ref_obj.meta.index.str.contains('Cacchiarelli') & (ref_obj.meta.type == 'ESC')
+    dat_esc_1 = ref_obj.data.loc[:, ix]
+
+    ix = ref_obj.meta.index.str.contains('ENCODE') & (ref_obj.meta.type == 'ESC')
+    dat_esc_2 = ref_obj.data.loc[:, ix]
+
+    the_dat = pd.concat((dat1, dat2, dat_esc_1, dat_esc_2), axis=1)
+    the_groups = pd.Series(index=the_dat.columns)
+    the_comparisons = {}
+
+    for pid in pids:
+        k_fb = 'FB_%s_ours' % pid
+        k_ipsc = 'iPSC_%s_ours' % pid
+        ix_fb = the_groups.index.str.contains('DURA%s_FB' % pid)
+        ix_ipsc = the_groups.index.str.contains('DURA%s_IPSC' % pid)
+        the_groups.loc[ix_fb] = k_fb
+        the_groups.loc[ix_ipsc] = k_ipsc
+        if (ix_fb.sum() > 0) & (ix_ipsc.sum() > 0):
+            the_comparisons[(k_ipsc, k_fb)] = "%s - %s" % (k_ipsc, k_fb)
+            for r in ref_labels:
+                the_comparisons[(k_ipsc, 'ESC_%s' % r)] = "%s - ESC_%s" % (k_ipsc, r)
+
+    for s in ['N2', '50']:
+        k_fb = 'FB_%s_kogut' % s
+        k_ipsc = 'iPSC_%s_kogut' % s
+        ix_fb = the_groups.index.str.contains('F%s' % s) & the_groups.index.str.contains('Kogut')
+        ix_ipsc = the_groups.index.str.contains('I%s' % s) & the_groups.index.str.contains('Kogut')
+        the_groups.loc[ix_fb] = k_fb
+        the_groups.loc[ix_ipsc] = k_ipsc
+        if (ix_fb.sum() > 0) & (ix_ipsc.sum() > 0):
+            the_comparisons[(k_ipsc, k_fb)] = "%s - %s" % (k_ipsc, k_fb)
+            for r in ref_labels:
+                the_comparisons[(k_ipsc, 'ESC_%s' % r)] = "%s - ESC_%s" % (k_ipsc, r)
+
+    the_groups.loc[the_groups.index.str.contains('Cacchiarelli')] = 'ESC_cacchiarelli'
+    the_groups.loc[the_groups.index.str.contains('ENCODE')] = 'ESC_encode'
+
+    de_res_full = de_grouped_dispersion(
+        the_dat,
+        the_groups,
+        the_comparisons,
+        min_cpm=min_cpm,
+        return_full=True,
+        **de_params
+    )
+    # rename the keys to simplify
+    # de_res_full_s1 = dict([(pid, de_res_full[("GBM%s" % pid, "iNSC%s" % pid)]) for pid in pids])
+
+    # extract only significant DE genes
+    de_res_sign = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full.items()])
+
+    # Venn diagrams (two ESC studies)
+    s1 = ['_'.join(t) for t in zip(pids, ['ours'] * len(pids))]
+    s2 = ['_'.join(t) for t in zip(['N2', '50'], ['kogut'] * 2)]
+    fig, axs = plt.subplots(ncols=3, nrows=3)
+    i = 0
+    for s in s1 + s2:
+        this_arr = []
+        for r in ref_labels:
+            k = ('iPSC_%s' % s, 'ESC_%s' % r)
+            if k in de_res_sign:
+                this_arr.append(de_res_sign[k])
+        if len(this_arr):
+            print "Found comparison %s" % s
+            venn.venn_diagram(*[t.index for t in this_arr], ax=axs.flat[i])
+            axs.flat[i].set_title(s)
+            i += 1
+        else:
+            print "No comparison %s" % s

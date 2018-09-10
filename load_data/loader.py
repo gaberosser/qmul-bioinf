@@ -37,13 +37,18 @@ def _filter_by_sample_name_index(sample_names, filt, exact=True):
     return idx
 
 
-def _aggregate_by_regex(obj, search_patt, new_name):
+def _aggregate_by_regex(obj, search_patt, new_name, how='mean'):
     idx = obj.meta.index.str.contains(search_patt)
     if idx.sum() == 0:
         print "Warning: search string %s matches no samples." % search_patt
     else:
         # define new data and meta entries
-        new_col = obj.data.loc[:, idx].mean(axis=1)
+        if how == 'mean':
+            new_col = obj.data.loc[:, idx].mean(axis=1)
+        elif how == 'sum':
+            new_col = obj.data.loc[:, idx].sum(axis=1)
+        else:
+            raise NotImplementedError("Unsupported aggregation method %s." % how)
         new_meta_row = obj.meta.loc[idx].iloc[0]
         new_meta_row.name = new_name
 
@@ -204,8 +209,8 @@ class DatasetLoader(object):
         self.meta = self.meta.loc[keep_idx]
         self.data = self.data.loc[:, self.meta.index]
 
-    def aggregate_by_pattern(self, search_patt, new_name):
-        _aggregate_by_regex(self, search_patt, new_name)
+    def aggregate_by_pattern(self, search_patt, new_name, how='mean'):
+        _aggregate_by_regex(self, search_patt, new_name, how=how)
 
     def rename_with_attributes(self, new_attr=None, existing_attr='batch'):
         _rename_with_attributes(self, new_attr=new_attr, existing_attr=existing_attr)

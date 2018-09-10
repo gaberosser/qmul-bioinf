@@ -205,6 +205,8 @@ if __name__ == '__main__':
         # 'encode_roadmap/ENCSR000CRJ': {'batch': 'ENCODE Gingeras', 'strandedness': 'r'},  # low qual; outlier
         'encode_roadmap/ENCSR670WQY': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
         'encode_roadmap/ENCSR043RSE': {'batch': 'ENCODE Ecker', 'strandedness': 'r'},
+        'GSE62772': {'batch': 'Cacchiarelli et al.', 'strandedness': 'u'},
+        'GSE97265': {'batch': 'Kogut et al.', 'strandedness': 'r'},
     }
     to_aggr = [
         (r'Fibroblasts_control_rep[123]', 'FB control'),
@@ -214,6 +216,8 @@ if __name__ == '__main__':
         (r'H1-hESC(|_2)$', 'H1 hESC'),
         (r'H7-hESC rep [12]', 'H7 hESC'),
         (r'hESCs_control_rep[123]', 'CSES9 hESC'),
+        ('IN2-', 'IN2'),
+        ('I50-', 'I50'),
     ]
 
     nsc_ref_dict = {
@@ -274,6 +278,8 @@ if __name__ == '__main__':
         'MRC_5_PD52', 'MRC_5_PD62', 'MRC_5_PD72',
         'WI_38_O',
         '-EPS-',
+        'F50S', 'I50S',
+        'DOX', 'hiF_', 'hiF-T_', 'BJ_P12', '_MTG_', '_VTN_', 'hIPSC_P15_Rep1'
     ]
     for td in to_discard:
         the_idx = ~ref_obj.data.columns.str.contains(td)
@@ -380,6 +386,7 @@ if __name__ == '__main__':
     cg.savefig(os.path.join(outdir, "clustermap_ruiz_ipsc_esc_with_hipsci%d.png" % n_hipsci), dpi=200)
 
     # 7. iPSC, ESC, FB, iNSC
+    # a) Dendrogram
     obj1 = copy(obj)
     ix = obj1.meta.type.isin(['iPSC', 'FB', 'iNSC', 'NSC'])
     obj1.filter_samples(ix)
@@ -393,7 +400,7 @@ if __name__ == '__main__':
     )
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc.png"), dpi=200)
 
-    # 7a. Heatmap from clustering result of (7).
+    # b) Heatmap from clustering result of (7a).
     n_for_heatmap = 500
     the_obj = loader.MultipleBatchLoader([obj1, ref_obj, nsc_ref_obj])
     the_dat = np.log2(the_obj.data + eps)
@@ -423,8 +430,17 @@ if __name__ == '__main__':
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.png"), dpi=200)
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.tiff"), dpi=200)
 
+    # c) PCA
+    studies = the_obj.meta.batch.copy()
+    # to keep individual batches, comment out this next line
+    studies[studies.str.contains('wtchg')] = 'This study'
+
+    p, ax = plot_pca(the_dat, the_obj.meta.type, marker_subgroups=studies)
+    ax.figure.subplots_adjust(right=0.78)
+    ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.png"), dpi=200)
 
     # 8. HipSci, iPSC, ESC, FB, iNSC
+    # a) Dendogram
     dend = plot_dendrogram(
         [obj1, ref_obj, nsc_ref_obj, hip_obj],
         vertical=False,
@@ -434,7 +450,7 @@ if __name__ == '__main__':
     )
     dend['fig'].savefig(os.path.join(outdir, "cluster_ipsc_esc_fb_nsc_hipsci%d.png" % n_hipsci), dpi=200)
 
-    # 9. PCA with all samples
+    # b) PCA with all samples
     the_obj = loader.MultipleBatchLoader([obj1, ref_obj, nsc_ref_obj, hip_obj])
     the_dat = np.log2(the_obj.data + eps)
     if quantile_norm is not None:
