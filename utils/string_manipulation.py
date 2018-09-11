@@ -1,4 +1,5 @@
 import re
+from ast import literal_eval as make_tuple
 
 def multiple_replace(dict, text, flags=0):
   # Create a regular expression  from the dictionary keys

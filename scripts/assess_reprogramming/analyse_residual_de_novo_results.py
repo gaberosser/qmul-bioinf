@@ -1057,7 +1057,7 @@ if __name__ == "__main__":
     # also generate a list of genes linked to DMRs in residual hypomethylated regions
     residual_hypo_genes = {}
     for k, v in core_dmr_classified_ours.items():
-        v.to_csv(os.path.join(outdir, "%s_residual_hypo_dmrs.csv" % k))
+        v.to_csv(os.path.join(outdir, "%s_classified_dmrs.csv" % k))
         genes = sorted(set(
             v.loc[v.classification == 'hypo_residual', 'genes'].apply(make_tuple).sum()
         ))

@@ -1,12 +1,16 @@
-from rnaseq import loader, differential_expression, filter
+from rnaseq import loader, differential_expression, filter, general
 from plotting import common, venn
 import pandas as pd
 import numpy as np
 import os
-from utils import output
+import re
+from utils import output, log, setops
+from utils.string_manipulation import make_tuple
 from matplotlib import pyplot as plt
 import seaborn as sns
 from copy import copy
+
+logger = log.get_console_logger()
 
 
 class SetMe(object):
@@ -62,12 +66,92 @@ def load_refs(ref_dict, **load_kwds):
         return loader.loader.MultipleBatchLoader(ref_objs_arr)
 
 
+def core_de(ipsc_vs_esc):
+    """
+    For each result, get the set of core DE genes that are present in all ref comparisons
+    :return:
+    """
+    keep_cols = ['logFC', 'FDR', 'Direction']
+    refs = set()
+    core_tbl = {}
+    core_ix = {}
+    for k, v in ipsc_vs_esc.items():
+        if k[0] not in core_ix:
+            core_ix[k[0]] = v.index
+        else:
+            core_ix[k[0]] = v.index.intersection(core_ix[k[0]])
+        refs.add(k[1])
+
+    refs = sorted(refs)
+
+    for k, v in ipsc_vs_esc.items():
+        if k[0] not in core_tbl:
+            core_tbl[k[0]] = pd.DataFrame(index=core_ix[k[0]])
+        for t in keep_cols:
+            core_tbl[k[0]].insert(0, "%s_%s" % (t, k[1]), v[t])
+
+    # run back through and check that direction is consistent
+    for k in core_tbl:
+        the_cols = ["logFC_%s" % r for r in refs]
+        eq = np.sign(core_tbl[k].loc[:, the_cols]).apply(lambda x: all(x == x[0]), axis=1)
+        core_tbl[k] = core_tbl[k].loc[eq]
+
+    return core_tbl
+
+
+def classify_de_residual_denovo(core_tbl, parental, exclude=None):
+    """
+    :param core_tbl: From core_de() function (e.g. iPSC vs ESC).
+    :param parental: Raw results from parental comparison (e.g. iPSC vs FB).
+    :param exclude: If present, this contains features (genes) to exclude from the analysis.
+    :return:
+    """
+    res = {}
+
+    for k1, this_tbl in core_tbl.items():
+        if k1 not in parental:
+            logger.warning("Sample %s has no matching parental sample. Skipping", k1)
+            continue
+
+        if exclude is not None:
+            this_tbl = this_tbl.loc[this_tbl.index.difference(exclude)]
+        mean_median_delta = this_tbl.loc[:, this_tbl.columns.str.contains('logFC_')].mean(axis=1)
+
+        # look for the same DMRs in the parental comparison
+        this_par = parental[k1]
+        p_ix = this_par.index.intersection(this_tbl.index)
+        mmd_lookup = mean_median_delta.loc[p_ix]
+
+        res[k1] = this_tbl.copy()
+        clas = pd.Series('partial', index=this_tbl.index)
+
+        # de novo: DM in (A vs B) AND (A vs C) with same direction
+        ix = (mmd_lookup > 0.) & (this_par.loc[p_ix, 'logFC'] > 0.)
+        clas.loc[ix.index[ix]] = 'hyper_de_novo'
+        ix = (mmd_lookup < 0.) & (this_par.loc[p_ix, 'logFC'] < 0.)
+        clas.loc[ix.index[ix]] = 'hypo_de_novo'
+
+        # residual: DM in (A vs B) AND NOT in (A vs C)
+        not_p_ix = ~this_tbl.index.isin(this_par.index)
+        mmd_lookup = mean_median_delta.loc[not_p_ix]
+        ix = (mmd_lookup > 0)
+        clas.loc[ix.index[ix]] = 'hyper_residual'
+        ix = (mmd_lookup < 0)
+        clas.loc[ix.index[ix]] = 'hypo_residual'
+
+        res[k1].insert(2, 'classification', clas)
+
+    return res
+
+
 if __name__ == '__main__':
     pids = ['017', '018', '019', '030', '031', '049', '050', '054', '061', '026', '052']
     min_cpm = 1.
     n_above_min = 3
     eps = 0.01  # offset to use when applying log transform
     n_hipsci = 12
+
+    dmr_indir = os.path.join(output.OUTPUT_DIR, "assess_reprogramming_dmr")
 
     de_params = {
         'lfc': 1,
@@ -95,14 +179,7 @@ if __name__ == '__main__':
         'DOX', 'hiF_', 'hiF-T_', 'BJ_P12', '_MTG_', '_VTN_', 'hIPSC_P15_Rep1'
     ]
 
-    # TODO: update this appropriately
     to_aggr = [
-        (r'H1-hESC rep (1_1|2_1|3|4)', 'H1 hESC'),
-        (r'H1-hESC rep [12]', 'H1 hESC'),
-        (r'H1-[12]', 'H1 hESC'),
-        (r'H1-hESC(|_2)$', 'H1 hESC'),
-        (r'H7-hESC rep [12]', 'H7 hESC'),
-        (r'hESCs_control_rep[123]', 'CSES9 hESC'),
         ('IN2-', 'IN2'),
         ('I50-', 'I50'),
     ]
@@ -157,12 +234,12 @@ if __name__ == '__main__':
         the_idx = ~ref_obj.data.columns.str.contains(td)
         ref_obj.filter_samples(the_idx)
 
+    for srch, repl in to_aggr:
+        ref_obj.aggregate_by_pattern(srch, repl)
+
     # fill in missing cell types
     ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'type'] = ref_obj.meta.loc[ref_obj.meta.type.isnull(), 'cell type']
     ref_obj.rename_with_attributes(existing_attr='batch')
-
-    for srch, repl in to_aggr:
-        ref_obj.aggregate_by_pattern(srch, repl)
 
     # assemble the data we need for comparison:
     # - ESC (2 studies)
@@ -184,7 +261,10 @@ if __name__ == '__main__':
 
     the_dat = pd.concat((dat1, dat2, dat_esc_1, dat_esc_2), axis=1)
     the_groups = pd.Series(index=the_dat.columns)
-    the_comparisons = {}
+    t = ("ESC_%s" % ref_labels[0], "ESC_%s" % ref_labels[1])
+    the_comparisons = {
+        t: "%s - %s" % t
+    }
 
     for pid in pids:
         k_fb = 'FB_%s_ours' % pid
@@ -227,10 +307,18 @@ if __name__ == '__main__':
     # extract only significant DE genes
     de_res_sign = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full.items()])
 
+    # report baseline variation between ESC references
+    t = ("ESC_%s" % ref_labels[0], "ESC_%s" % ref_labels[1])
+    print "Between the two ESC references, there are %d DE genes. %d up, %d down." % (
+        len(de_res_sign[t]),
+        (de_res_sign[t].Direction == 'down').sum(),
+        (de_res_sign[t].Direction == 'up').sum(),
+    )
+
     # Venn diagrams (two ESC studies)
     s1 = ['_'.join(t) for t in zip(pids, ['ours'] * len(pids))]
     s2 = ['_'.join(t) for t in zip(['N2', '50'], ['kogut'] * 2)]
-    fig, axs = plt.subplots(ncols=3, nrows=3)
+    fig, axs = plt.subplots(ncols=3, nrows=2)
     i = 0
     for s in s1 + s2:
         this_arr = []
@@ -240,8 +328,82 @@ if __name__ == '__main__':
                 this_arr.append(de_res_sign[k])
         if len(this_arr):
             print "Found comparison %s" % s
-            venn.venn_diagram(*[t.index for t in this_arr], ax=axs.flat[i])
+            venn.venn_diagram(*[t.index for t in this_arr], ax=axs.flat[i], set_labels=ref_labels)
             axs.flat[i].set_title(s)
             i += 1
         else:
             print "No comparison %s" % s
+
+    for j in range(i, axs.size):
+        axs.flat[i].axis('off')
+
+    fig.subplots_adjust(left=0.05, right=0.98, bottom=0.05, top=0.98)
+    fig.savefig(os.path.join(outdir, "ipsc_esc_venn.png"), dpi=200)
+
+    # core DE genes
+    ipsc_vs_esc = dict([
+        (k, v) for k, v in de_res_sign.items() if re.search('|'.join(ref_labels), k[1])
+                                                  and not re.search('|'.join(ref_labels), k[0])
+    ])
+    ipsc_vs_esc_core = core_de(ipsc_vs_esc)
+
+    # matched FB results
+    ipsc_vs_fb_matched = dict([
+        (k[0], v) for k, v in de_res_sign.items() if k[1][:2] == 'FB'
+    ])
+
+    # classify (and add gene symbols back in)
+    ipsc_esc_fb = classify_de_residual_denovo(ipsc_vs_esc_core, ipsc_vs_fb_matched)
+    for v in ipsc_esc_fb.values():
+        general.add_gene_symbols_to_ensembl_data(v)
+    core_de_classified_count = pd.DataFrame(dict(
+        [(k, v.classification.value_counts()) for k, v in ipsc_esc_fb.items()]
+    ))
+
+    # residual / de novo bar chart
+    # combine these results to generate bar charts
+    set_colours_hypo = ['#b2df8a', '#33a02c']
+    set_colours_hyper = ['#fb9a99', '#e31a1c']
+    plot_colours = {'hypo': set_colours_hypo[::-1], 'hyper': set_colours_hyper[::-1]}
+
+    df = core_de_classified_count.transpose()
+
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6.5, 5.5))
+    for i, typ in enumerate(['hyper', 'hypo']):
+        ax = axs[i]
+        df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
+        ax.set_ylabel('Number DE genes')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)
+
+    # check in DMRs
+    dmrs_classified = {}
+    de_dmr_classified = {}
+    both_genes = {}
+    for pid in pids:
+        fn = os.path.join(dmr_indir, "iPSC%s_classified_dmrs.csv" % pid)
+        if os.path.exists(fn):
+            this_dmr = pd.read_csv(fn, header=0, index_col=0)
+            this_dmr.loc[:, 'genes'] = this_dmr.genes.apply(make_tuple)
+            dmrs_classified[pid] = this_dmr
+            if "iPSC_%s_ours" % pid in ipsc_esc_fb:
+                this_de_res = ipsc_esc_fb["iPSC_%s_ours" % pid]
+
+                de_genes = this_de_res.loc[:, 'Gene Symbol'].dropna()
+                dmr_genes = this_dmr.loc[:, 'genes'].values
+                dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
+                both_genes[pid] = set(de_genes).intersection(dmr_genes)
+
+                if len(both_genes[pid]) > 0:
+                    print "Patient %s: %d in DE and DMR." % (pid, len(both_genes[pid]))
+
+                # for typ in this_de_res.classification.unique():
+                #     de_genes = this_de_res.loc[this_de_res.classification == typ, 'Gene Symbol'].dropna()
+                #     dmr_genes = this_dmr.loc[this_dmr.classification == typ, 'genes'].values
+                #     dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
+                #     both_genes.setdefault(pid, {})[typ] = set(de_genes).intersection(dmr_genes)
+                #     if len(both_genes[pid][typ]) > 0:
+                #         print "Patient %s, %s genes: %d in DE and DMR." % (pid, typ, len(both_genes[pid][typ]))
+
+    # Not many results. We may need a more nuanced approach?
