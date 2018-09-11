@@ -399,7 +399,7 @@ if __name__ == "__main__":
         print "Saved DMR results to %s" % fn
 
     # extract results
-    dmr_res_full_s1 = dmr_res_s1.results()
+    dmr_res_full_s1 = dmr_res_s1.results
     dmr_res_sign_s1 = dmr_res_s1.results_significant
 
     rnaseq_obj = load_rnaseq(pids, external_ref_names_de, strandedness=external_ref_strandedness_de)

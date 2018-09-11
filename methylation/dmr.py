@@ -791,10 +791,6 @@ class DmrResultCollection(object):
         return flat_dict_to_nested(flat_apply)
 
     @property
-    def clusters(self):
-        return self.apply('clusters')
-
-    @property
     def results(self):
         return self.apply('results')
 

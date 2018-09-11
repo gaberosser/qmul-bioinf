@@ -127,6 +127,11 @@ wtchg_p180199 = RnaSeqFileLocations(
     alignment_subdir='human',
 )
 
+wtchg_p180349= RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p180349'),
+    alignment_subdir='human',
+)
+
 PATIENT_LOOKUP_CC = {
     '017': [
         ('GBM017_P3', wtchg_p170390),
@@ -146,7 +151,11 @@ PATIENT_LOOKUP_CC = {
         ('GBM019_P3n6', wtchg_p170390),
         ('DURA019_NSC_N8C_P2', wtchg_p160704),
         ('DURA019_NSC_N5C1_P2', wtchg_p170582),
+        ('DURA019_NSC_N8C_P7', wtchg_p180349),
         ('DURA019_IPSC_N8_P13', wtchg_p180199),
+        ('DURA019_FB_P7', wtchg_p180349),
+        ('DURA019_ASTRO_N8C_D20_B2', wtchg_p180349),
+        ('DURA019_ASTRO_N8C_D20_B3', wtchg_p180349),
     ],
     '024': [
         ('GBM024_P9', wtchg_p160704),
@@ -164,19 +173,27 @@ PATIENT_LOOKUP_CC = {
         ('DURA030_NSC_N16B6_P1', wtchg_p170218),
         ('DURA030_NSC_N9_P2', wtchg_p170582),
         ('DURA030_IPSC_N16B6_P13', wtchg_p180199),
+        ('DURA030_FB_P8', wtchg_p180349),
     ],
     '031': [
         ('GBM031_P7', wtchg_p170390),
         ('GBM031_P4', wtchg_p160704),
         ('DURA031_NSC_N44B_P2', wtchg_p160704),
         ('DURA031_NSC_N44_P3', wtchg_p170582),
+        ('DURA031_NSC_N44B_P3', wtchg_p180349),
         ('DURA031_IPSC_N44B_P10', wtchg_p180199),
+        ('DURA031_FB_P7', wtchg_p180349),
+        ('DURA031_ASTRO_N44B_D20_B1', wtchg_p180349),
+        ('DURA031_ASTRO_N44B_D20_B2', wtchg_p180349),
     ],
     '044': [
         ('GBM044_P4', wtchg_p170218),
         ('GBM044_P8', wtchg_p170218),
         ('DURA044_NSC_N17_P3', wtchg_p170218),
         ('DURA044_NSC_N8_P2', wtchg_p170218),
+        ('DURA044_NSC_N8_P4', wtchg_p180349),
+        ('DURA044_ASTRO_N8_D20_B1', wtchg_p180349),
+        ('DURA044_ASTRO_N8_D20_B2', wtchg_p180349),
     ],
     '047': [
         ('GBM047_P8', wtchg_p180199),
@@ -188,22 +205,31 @@ PATIENT_LOOKUP_CC = {
         ('GBM049_P9', wtchg_p180199),
         ('DURA049_NSC_N19_P4', wtchg_p170503),
         ('DURA049_NSC_N5_P2', wtchg_p170503),
-        ('DURA049_IPSC_N5_P10', wtchg_p170582)
+        ('DURA049_NSC_N19_P2', wtchg_p180349),
+        ('DURA049_IPSC_N5_P10', wtchg_p170582),
+        ('DURA049_ASTRO_N19_D20_B2', wtchg_p180349),
+        ('DURA049_ASTRO_N19_D20_B3', wtchg_p180349),
     ],
     '050': [
         ('GBM050_P7n8', wtchg_p170503),
         ('GBM050_P9', wtchg_p170503),
         ('DURA050_NSC_N12_P3', wtchg_p170503),
         ('DURA050_NSC_N16_P4', wtchg_p170503),
+        ('DURA050_NSC_N12_P4', wtchg_p180349),
         ('DURA050_IPSC_N12_P5', wtchg_p170582),
         ('DURA050_FB_P7', wtchg_p180199),
+        ('DURA050_ASTRO_N12_D20_B1', wtchg_p180349),
+        ('DURA050_ASTRO_N12_D20_B2', wtchg_p180349),
     ],
     '052': [
         ('GBM052_P6n7', wtchg_p170503),
         ('GBM052_P4n5', wtchg_p170503),
         ('DURA052_NSC_N4_P3', wtchg_p170503),
         ('DURA052_NSC_N5_P2', wtchg_p170503),
-        ('DURA052_FB_P6', wtchg_p180199)
+        ('DURA052_NSC_N4_P2', wtchg_p180349),
+        ('DURA052_FB_P6', wtchg_p180199),
+        ('DURA052_ASTRO_N8_D20_B2', wtchg_p180349),
+        ('DURA052_ASTRO_N8_D20_B3', wtchg_p180349),
     ],
     '054': [
         ('GBM054_P4', wtchg_p170503),

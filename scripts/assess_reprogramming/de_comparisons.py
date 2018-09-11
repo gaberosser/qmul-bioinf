@@ -318,7 +318,7 @@ if __name__ == '__main__':
     # Venn diagrams (two ESC studies)
     s1 = ['_'.join(t) for t in zip(pids, ['ours'] * len(pids))]
     s2 = ['_'.join(t) for t in zip(['N2', '50'], ['kogut'] * 2)]
-    fig, axs = plt.subplots(ncols=3, nrows=2)
+    fig, axs = plt.subplots(ncols=3, nrows=3)
     i = 0
     for s in s1 + s2:
         this_arr = []
@@ -337,7 +337,7 @@ if __name__ == '__main__':
     for j in range(i, axs.size):
         axs.flat[i].axis('off')
 
-    fig.subplots_adjust(left=0.05, right=0.98, bottom=0.05, top=0.98)
+    fig.subplots_adjust(left=0.05, right=0.98, bottom=0.05, top=0.95)
     fig.savefig(os.path.join(outdir, "ipsc_esc_venn.png"), dpi=200)
 
     # core DE genes
@@ -346,6 +346,9 @@ if __name__ == '__main__':
                                                   and not re.search('|'.join(ref_labels), k[0])
     ])
     ipsc_vs_esc_core = core_de(ipsc_vs_esc)
+
+    # can check the number of results with opposing signs using this (and the Venn figure):
+    # [(k, len(v)) for k, v in ipsc_vs_esc_core.items()]
 
     # matched FB results
     ipsc_vs_fb_matched = dict([
@@ -395,15 +398,29 @@ if __name__ == '__main__':
                 dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
                 both_genes[pid] = set(de_genes).intersection(dmr_genes)
 
-                if len(both_genes[pid]) > 0:
-                    print "Patient %s: %d in DE and DMR." % (pid, len(both_genes[pid]))
-
-                # for typ in this_de_res.classification.unique():
-                #     de_genes = this_de_res.loc[this_de_res.classification == typ, 'Gene Symbol'].dropna()
-                #     dmr_genes = this_dmr.loc[this_dmr.classification == typ, 'genes'].values
-                #     dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
-                #     both_genes.setdefault(pid, {})[typ] = set(de_genes).intersection(dmr_genes)
-                #     if len(both_genes[pid][typ]) > 0:
-                #         print "Patient %s, %s genes: %d in DE and DMR." % (pid, typ, len(both_genes[pid][typ]))
+                print "Patient %s: %d in DE and DMR." % (pid, len(both_genes[pid]))
 
     # Not many results. We may need a more nuanced approach?
+    # Try starting with the methylation targets and performing a lookup
+    # could do this with Salmon TPM too
+
+    cpm = the_dat.divide(the_dat.sum(axis=0), axis=1) * 1e6
+
+    de_lookup = {}
+
+    esc_1_cpm = cpm.loc[:, the_groups == 'ESC_encode'].mean(axis=1)
+    esc_2_cpm = cpm.loc[:, the_groups == 'ESC_cacchiarelli'].mean(axis=1)
+
+    for pid in dmrs_classified:
+        if "iPSC_%s_ours" % pid in ipsc_esc_fb:
+            fb_cpm = cpm.loc[:, the_groups.str.contains('FB') & the_groups.str.contains(pid)].mean(axis=1)
+            ipsc_cpm = cpm.loc[:, the_groups.str.contains('iPSC') & the_groups.str.contains(pid)].mean(axis=1)
+            de_lookup[pid] = {}
+            for r in ref_labels:
+                esc_cpm = cpm.loc[:, the_groups == 'ESC_%s' % r].mean(axis=1)
+                de_lookup[pid][r] = {
+                    'x': np.log2(fb_cpm + 1.) - np.log2(esc_cpm + 1.),
+                    'y': np.log2(ipsc_cpm + 1.) - np.log2(esc_cpm + 1.)
+                }
+
+
