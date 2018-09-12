@@ -3,6 +3,9 @@ import numpy as np
 from methylation import dmr
 
 
+## TODO: update this function using methylation.annotation_gene_to_ensembl to pick up more genes
+## TODO: update this function to support new classless DMR results
+
 def compute_joint_de_dmr(
         dmr_results,
         de_results,
@@ -27,14 +30,12 @@ def compute_joint_de_dmr(
     ]
     de_cols = [t[0] for t in de_map]
     de_lookup_cols = [t[1] for t in de_map]
-    de_col_dtypes = pd.Series([t[2] for t in de_map], index=de_cols)
 
     res = {}
 
     for sid in dmr_results:
         res[sid] = {}
 
-        this_classes = sorted(dmr_results[sid].classes)
         this_dmr = dmr_results[sid].to_table(include=dmr_include)
         this_de = de_results[sid]
 
@@ -56,13 +57,9 @@ def compute_joint_de_dmr(
             ('dmr_median2', 'median_2', 'float'),
             ('dmr_median_delta', 'median_delta', 'float'),
             ('dmr_padj', 'padj', 'float'),
-        ] + [('dmr_class_%s' % t, 'class_%s' % t, 'bool') for t in this_classes]
+        ]
         dmr_cols = ['dmr_cid'] + [t[0] for t in dmr_map]
         dmr_lookup_cols = [t[1] for t in dmr_map]
-        dmr_col_dtypes = pd.Series(
-            ['int'] + [t[2] for t in dmr_map],
-            index=dmr_cols
-        )
 
         this_dict = {}
 

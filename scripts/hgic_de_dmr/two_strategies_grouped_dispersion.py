@@ -79,7 +79,15 @@ def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC', s
 
 
 def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
-    # Compute DMR for paired comparisons (only - no other comparisons needed at present)
+    """
+    Compute DMRs for paired GBM-iNSC comparisons (defined in that order) for all patients
+    :param me_data:
+    :param me_meta:
+    :param anno:
+    :param pids:
+    :param dmr_params:
+    :return:
+    """
     dmr_res_obj = dmr.DmrResults(anno=anno)
     dmr_res_obj.identify_clusters(**dmr_params)
     dmr_res = {}
@@ -87,9 +95,16 @@ def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
     for pid in pids:
         the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'GBM')
         the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'iNSC')
-        the_idx = the_idx1 | the_idx2
-        the_groups = me_meta.loc[the_idx, 'type'].values
-        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+        # control comparison order
+        the_samples = [
+            me_meta.index[the_idx1],
+            me_meta.index[the_idx2],
+        ]
+
+        # the_idx = the_idx1 | the_idx2
+        # the_groups = me_meta.loc[the_idx, 'type'].values
+        # the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+
         the_obj = dmr_res_obj.copy()
         the_obj.test_clusters(me_data,
                               samples=the_samples,
@@ -155,6 +170,7 @@ def annotate_de_dmr_wide_form(data):
 
 def expand_dmr_results_table_by_gene(tbl, drop_geneless=False):
 
+    tbl = tbl.copy()
     g_count = tbl.genes.apply(len)
     tbl.insert(0, 'cluster_id', tbl.index)
 
@@ -479,7 +495,7 @@ if __name__ == "__main__":
 
     # patient unique
     data_pu = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pu_sets)
-    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de.xlsx'))
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_de.xlsx'))
 
     # patient and subgroup-specific
     data_pss = dict([
