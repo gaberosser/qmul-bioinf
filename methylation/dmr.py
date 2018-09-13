@@ -1208,16 +1208,30 @@ def compute_cross_dmr(
     obj.identify_clusters(**dmr_params)
     res = {}
 
+    # define groups for cross comparison
+    # each entry has two elements: a string lookup for the name and a type
+    names_gbm = pids
+    types_gbm = ['GBM'] * len(pids)
+    groups_gbm = zip(names_gbm, types_gbm)
+
+    names_nsc = pids + [t[0] for t in external_references]
+    types_nsc = ['iNSC'] * len(pids) + [t[1] for t in external_references]
+    groups_nsc = zip(names_nsc, types_nsc)
+
     # loop over GBM groups
-    for pid1 in pids:
-        res.setdefault(pid1, {})
-        the_idx1 = me_meta.index.str.contains(pid1) & (me_meta.loc[:, 'type'] == 'GBM')
+    for name1, typ1 in groups_gbm:
+        res.setdefault(name1, {})
+        the_idx1 = me_meta.index.str.contains(name1) & (me_meta.loc[:, 'type'] == typ1)
         # loop over iNSC groups
-        for pid2 in pids:
-            the_idx2 = me_meta.index.str.contains(pid2) & (me_meta.loc[:, 'type'] == 'iNSC')
-            the_idx = the_idx1 | the_idx2
-            the_groups = me_meta.loc[the_idx, 'type'].values
-            the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+        for name2, typ2 in groups_nsc:
+            the_idx2 = me_meta.index.str.contains(name2) & (me_meta.loc[:, 'type'] == typ2)
+
+            # control comparison order
+            the_samples = [
+                me_meta.index[the_idx1],
+                me_meta.index[the_idx2],
+            ]
+
             the_obj = obj.copy()
             the_obj.test_clusters(me_data,
                                   samples=the_samples,
@@ -1227,24 +1241,7 @@ def compute_cross_dmr(
                                   alpha=dmr_params['alpha'],
                                   **dmr_params['test_kwargs']
                                   )
-            res[pid1][pid2] = the_obj
-
-        # loop over external reference NSC groups
-        for er, er_type in external_references:
-            the_idx2 = me_meta.index.str.contains(er) & (me_meta.loc[:, 'type'] == er_type)
-            the_idx = the_idx1 | the_idx2
-            the_groups = me_meta.loc[the_idx, 'type'].values
-            the_samples = me_meta.index[the_idx].groupby(the_groups).values()
-
-            the_obj = obj.copy()
-            the_obj.test_clusters(me_data,
-                                  samples=the_samples,
-                                  n_jobs=dmr_params['n_jobs'],
-                                  min_median_change=dmr_params['delta_m_min'],
-                                  method=dmr_params['dmr_test_method'],
-                                  **dmr_params['test_kwargs']
-                                  )
-            res[pid1][er] = the_obj
+            res[name1][name2] = the_obj
 
     return DmrResultCollection(**res)
 

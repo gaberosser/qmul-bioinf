@@ -653,6 +653,8 @@ if __name__ == "__main__":
     ### c) Layered DE and DMR ###
     #############################
 
+    """
+
     # get the joint table
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
     # filter - only DMRs with TSS or island class
@@ -778,6 +780,8 @@ if __name__ == "__main__":
 
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
+
+    """
 
     ##################
     ### STRATEGY 2 ###
