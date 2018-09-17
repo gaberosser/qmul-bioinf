@@ -2,7 +2,8 @@ import multiprocessing as mp
 import os
 import pandas as pd
 import numpy as np
-from utils import output, setops, excel
+import pickle
+from utils import output, setops, excel, log
 from methylation import dmr, process, loader as methylation_loader
 from rnaseq import loader as rnaseq_loader, differential_expression, general, filter
 from integrator import rnaseq_methylationarray
@@ -11,6 +12,9 @@ from load_data import loader
 from plotting import venn
 from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
+
+
+logger = log.get_console_logger()
 
 
 def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None):
@@ -128,6 +132,11 @@ def dmr_results_hash(pids, dmr_params):
         dmr_params['alpha'],
         dmr_params['norm_method']
     ) + tuple(dmr_params['test_kwargs'].items())
+    return hash(hash_elements)
+
+
+def de_results_hash(pids, de_params):
+    hash_elements = tuple(sorted(pids)) + tuple([de_params[k] for k in sorted(de_params.keys())])
     return hash(hash_elements)
 
 
@@ -351,6 +360,7 @@ if __name__ == "__main__":
 
     # file location parameters
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
 
     # upset plotting colours
     subgroup_set_colours = {
@@ -418,10 +428,61 @@ if __name__ == "__main__":
     dmr_res_full_s1 = dmr_res_s1.results
     dmr_res_sign_s1 = dmr_res_s1.results_significant
 
-    rnaseq_obj = load_rnaseq(pids, external_ref_names_de, strandedness=external_ref_strandedness_de)
+    # as we have been sequencing various additional samples, we should explicitly list those that go into this
+    # analysis, to avoid changing results in the future
+    rnaseq_sample_names = [
+        'GBM018_P12',
+        'GBM018_P10',
+        'DURA018_NSC_N4_P4',
+        'DURA018_NSC_N2_P6',
+        'GBM019_P4',
+        'GBM019_P3n6',
+        'DURA019_NSC_N8C_P2',
+        'DURA019_NSC_N5C1_P2',
+        'GBM030_P9n10',
+        'GBM030_P5',
+        'DURA030_NSC_N16B6_P1',
+        'DURA030_NSC_N9_P2',
+        'GBM031_P7',
+        'GBM031_P4',
+        'DURA031_NSC_N44B_P2',
+        'DURA031_NSC_N44_P3',
+        'GBM017_P3',
+        'GBM017_P4',
+        'DURA017_NSC_N3C5_P4',
+        'GBM050_P7n8',
+        'GBM050_P9',
+        'DURA050_NSC_N12_P3',
+        'DURA050_NSC_N16_P4',
+        'GBM054_P4',
+        'GBM054_P6',
+        'DURA054_NSC_N3C_P2',
+        'DURA054_NSC_N2E_P1',
+        'GBM061_P3',
+        'GBM061_P5',
+        'DURA061_NSC_N4_P2',
+        'DURA061_NSC_N1_P3',
+        'GBM026_P8',
+        'GBM026_P3n4',
+        'DURA026_NSC_N31D_P5',
+        'GBM052_P6n7',
+        'GBM052_P4n5',
+        'DURA052_NSC_N4_P3',
+        'DURA052_NSC_N5_P2',
+        'GIBCO_NSC_P4',
+        'H9_NSC_1',
+        'H9_NSC_2',
+    ]
+
+    rnaseq_obj = load_rnaseq(
+        pids,
+        external_ref_names_de,
+        strandedness=external_ref_strandedness_de,
+        discard_filter=['IPSC', 'ASTRO', '_FB']
+    )
 
     # remove unneeded samples
-    idx = (~rnaseq_obj.meta.index.isin(['DURA061_NSC_N1_P5', 'DURA061_NSC_N6_P4']))
+    idx = rnaseq_obj.meta.index.isin(rnaseq_sample_names)
     rnaseq_obj.filter_samples(idx)
 
     #########################################################################
@@ -432,7 +493,7 @@ if __name__ == "__main__":
     dat_s1 = rnaseq_obj.data.loc[
              :,
              rnaseq_obj.batch_id.str.contains('wtchg') & (~rnaseq_obj.data.columns.str.contains('GIBCO'))
-    ]
+             ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
     groups_s1 = pd.Series(index=meta_s1.index)
     comparisons_s1 = {}
@@ -633,15 +694,15 @@ if __name__ == "__main__":
     data_pss = {}
     for pid in pids:
         this_tbl = setops.venn_set_to_wide_dataframe(
-                data_for_dmr_table,
-                venn_set,
-                pids,
-                full_data=data_for_dmr_table_full,
-                include_sets=pss_sets[pid],
-                cols_to_include=('median_delta', 'padj'),
-                consistency_check_col='median_delta',
-                consistency_check_method='sign'
-            )
+            data_for_dmr_table,
+            venn_set,
+            pids,
+            full_data=data_for_dmr_table_full,
+            include_sets=pss_sets[pid],
+            cols_to_include=('median_delta', 'padj'),
+            consistency_check_col='median_delta',
+            consistency_check_method='sign'
+        )
         this_tbl.insert(0, 'gene_relation', [t[2] for t in this_tbl.index])
         this_tbl.insert(0, 'gene', [t[1] for t in this_tbl.index])
         this_tbl.insert(0, 'cluster_id', [t[0] for t in this_tbl.index])
@@ -798,36 +859,51 @@ if __name__ == "__main__":
     )
     me_data_with_ref = me_obj_with_ref.data
 
-    # Compute DE cross-comparison
+    # Compute DE cross-comparison or load if results already exist
 
     dat_s2 = rnaseq_obj.data
     meta_s2 = rnaseq_obj.meta
-    groups_s2 = pd.Series(index=meta_s2.index)
-    comparisons_s2 = {}
-    for er, er_type in external_refs_de:
-        groups_s2[groups_s2.index.str.contains(er) & (meta_s2.loc[:, 'type'] == er_type)] = er
 
-    for pid in pids:
-        groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
-        groups_s2[groups_s2.index.str.contains('NSC') & groups_s2.index.str.contains(pid)] = "iNSC%s" % pid
+    the_hash = de_results_hash(meta_s2.index.tolist(), de_params)
+    filename = 'de_results_cross_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DE_LOAD_DIR, filename)
 
-        for pid2 in pids:
-            comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
+    if os.path.isfile(fn):
+        logger.info("Reading S2 DE results from %s", fn)
+        with open(fn, 'rb') as f:
+            de_res_full_s2 = pickle.load(f)
+    else:
+        groups_s2 = pd.Series(index=meta_s2.index)
+        comparisons_s2 = {}
         for er, er_type in external_refs_de:
-            comparisons_s2[("GBM%s" % pid, er)] = "GBM%s - %s" % (pid, er)
+            groups_s2[groups_s2.index.str.contains(er) & (meta_s2.loc[:, 'type'] == er_type)] = er
 
-    de_res_full_s2 = de_grouped_dispersion(
-        dat_s2,
-        groups_s2,
-        comparisons_s2,
-        min_cpm=min_cpm,
-        return_full=True,
-        **de_params
-    )
-    # rename for convenience
-    de_res_full_s2 = dict([
-        ((k[0].replace('GBM', ''), k[1].replace('iNSC', '')), v) for k, v in de_res_full_s2.items()
-    ])
+        for pid in pids:
+            groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
+            groups_s2[groups_s2.index.str.contains('NSC') & groups_s2.index.str.contains(pid)] = "iNSC%s" % pid
+
+            for pid2 in pids:
+                comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
+            for er, er_type in external_refs_de:
+                comparisons_s2[("GBM%s" % pid, er)] = "GBM%s - %s" % (pid, er)
+
+        de_res_full_s2 = de_grouped_dispersion(
+            dat_s2,
+            groups_s2,
+            comparisons_s2,
+            min_cpm=min_cpm,
+            return_full=True,
+            **de_params
+        )
+        # rename for convenience
+        de_res_full_s2 = dict([
+            ((k[0].replace('GBM', ''), k[1].replace('iNSC', '')), v) for k, v in de_res_full_s2.items()
+        ])
+
+        with open(fn, 'wb') as f:
+            pickle.dump(de_res_full_s2, f)
+
+        logger.info("Saved S2 DE results to %s", fn)
 
     de_res_s2 = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full_s2.items()])
 
@@ -862,24 +938,51 @@ if __name__ == "__main__":
     dmr_classes = ['tss', 'island']
 
     # extract combined significant results for tss and island
+    dmr_res_full_s2 = dmr_res_s2.results
+    dmr_res_sign_s2 = dmr_res_s2.results_significant
 
-    dmr_res_all_cls = dmr_res_s2.results_by_class()
-    dmr_res_sign_all_cls = dmr_res_s2.results_significant_by_class()
-
-    dmr_res_full_s2 = {}
-    dmr_res_sign_s2 = {}
-    for k1 in dmr_res_sign_all_cls:
-        for k2 in dmr_res_sign_all_cls[k1]:
-            dmr_res_sign_s2[(k1, k2)] = {}
-            dmr_res_full_s2[(k1, k2)] = {}
-            for dc in dmr_classes:
-                dmr_res_sign_s2[(k1, k2)].update(dmr_res_sign_all_cls[k1][k2][dc])
-                dmr_res_full_s2[(k1, k2)].update(dmr_res_all_cls[k1][k2][dc])
-            dmr_res_sign_s2[(k1, k2)] = dmr_res_sign_s2[(k1, k2)].keys()
+    # dmr_res_full_s2 = {}
+    # dmr_res_sign_s2 = {}
+    # for k1 in dmr_res_sign:
+    #     for k2 in dmr_res_sign[k1]:
+    #         dmr_res_sign_s2[(k1, k2)] = {}
+    #         dmr_res_full_s2[(k1, k2)] = {}
+    #         for dc in dmr_classes:
+    #             dmr_res_sign_s2[(k1, k2)].update(dmr_res_sign[k1][k2][dc])
+    #             dmr_res_full_s2[(k1, k2)].update(dmr_res_full[k1][k2][dc])
+    #         dmr_res_sign_s2[(k1, k2)] = dmr_res_sign_s2[(k1, k2)].keys()
 
     #######################
     ### a) Pair-only DE ###
     #######################
+
+    # export full syngeneic and reference comparisons (not cross comparisons) to Excel
+    for_export = {}
+    for pid in pids:
+        this_full = {}
+        this_export = {}
+        export_order = []
+        this_export["%s_syngeneic" % pid] = de_res_s2[(pid, pid)]
+        this_full["%s_syngeneic" % pid] = de_res_full_s2[(pid, pid)]
+        export_order.append("%s_syngeneic" % pid)
+        for r in external_refs_de_labels:
+            this_export["%s_%s" % (pid, r)] = de_res_s2[(pid, r)]
+            this_full["%s_%s" % (pid, r)] = de_res_full_s2[(pid, r)]
+            export_order.append("%s_%s" % (pid, r))
+
+        venn_set, _ = setops.venn_from_arrays(*[this_export[k].index for k in export_order])
+
+        for_export[pid] = differential_expression.venn_set_to_dataframe(
+            this_export,
+            venn_set,
+            export_order,
+            full_data=this_full,
+            add_null_set=True
+        )
+    excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_de.xlsx"))
+
+    # Find DE genes that are "pair only" in ALL cross comparisons
+    # These are not syngeneic-specific, but are "our iNSC specific", suggesting they may be an artefact?
 
     de_res_s2_idx = dict([
         (k, v.index) for k, v in de_res_s2.items()
@@ -901,11 +1004,11 @@ if __name__ == "__main__":
 
     # take the intersection of the PO lists, then export to a file
     po_de_export = {}
-    po_de_export_full = {}
+    # po_de_export_full = {}
     for pid in pids:
-        po_de_export_full[pid] = de_res_full_s2[(pid, pid)].copy()
+        # po_de_export_full[pid] = de_res_full_s2[(pid, pid)].copy()
 
-        this_row = pair_only_de.loc[pid, [t[0] for t in external_refs_de]]
+        this_row = pair_only_de.loc[pid, external_refs_de_labels]
         this_genes_pre = setops.reduce_intersection(*this_row)
 
         # can correct as follows
@@ -917,16 +1020,15 @@ if __name__ == "__main__":
         # we won't, to avoid cross-comparison issues
         this_genes = this_genes_pre
 
-        po_col = pd.Series('N', index=po_de_export_full[pid].index)
+        po_col = pd.Series('N', index=de_res_full_s2[(pid, pid)].index)
         po_col.loc[this_genes] = 'Y'
-        po_de_export_full[pid].insert(po_de_export_full[pid].shape[1], 'pair_only', po_col)
-
         po_de_export[pid] = de_res_s2[(pid, pid)].loc[this_genes]
 
-    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, 'pair_only_de.xlsx'))
-    excel.pandas_to_excel(po_de_export_full, os.path.join(outdir_s2, 'pair_only_de_full.xlsx'))
+    # export
+    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, "pair_only_de.xlsx"))
 
     # export with a different layout, analogous to strategy 1
+    # this is helpful for comparing BETWEEN patients
     venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
     po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
 
@@ -939,7 +1041,7 @@ if __name__ == "__main__":
         consistency_check_method="sign"
     )
 
-    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
+    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_inter_patient.xlsx'))
 
     # array of Venn plots: GBM vs X (# DE genes)
     # only possible if number of references <= 3 (otherwise too many sets)
@@ -1000,7 +1102,7 @@ if __name__ == "__main__":
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
         ax_set.remove(axs[i, j])
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.02, right=1., bottom=0.05, top=.95, wspace=0.1, hspace=0.3)
     for ax in ax_set:
         ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.png'), dpi=200)
@@ -1055,8 +1157,13 @@ if __name__ == "__main__":
     ########################
 
     # Compute cross-comparison
+
+    dmr_res_s2_idx = dict([
+        (k, v.index) for k, v in dmr_res_sign_s2.items()
+    ])
+
     cc_dict_dmr = cross_comparison.compute_cross_comparison_correction(
-        dmr_res_sign_s2,
+        dmr_res_s2_idx,
         pids,
         external_refs=external_refs_dm_labels,
         set_type='pair_only'
@@ -1324,7 +1431,7 @@ if __name__ == "__main__":
         j = sg_members.index(pid)
         the_lists = [
             set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
-            ]
+        ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)

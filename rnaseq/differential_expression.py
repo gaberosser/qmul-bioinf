@@ -1,6 +1,7 @@
 import pandas as pd
 import general
 import multiprocessing as mp
+from utils import setops
 from utils import rinterface
 from rpy2 import robjects
 from rpy2.robjects import pandas2ri, r
@@ -374,6 +375,7 @@ def venn_set_to_dataframe(
         logfc_col='logFC',
         fdr_col='FDR',
         run_sanity_check=False,
+        add_null_set=False,
 ):
     """
     Given the input DE data and Venn sets, generate a wide format dataframe containing all the data, one column
@@ -392,6 +394,8 @@ def venn_set_to_dataframe(
     unnecessary. It's slow for larger numbers of members.
     :return:
     """
+    if add_null_set and full_data is None:
+        raise ValueError("Can only add_null_set if full_data is supplied.")
     if include_sets is not None:
         venn_set = dict([
             (k, v) for k, v in venn_set.items() if k in include_sets
@@ -405,8 +409,10 @@ def venn_set_to_dataframe(
     ) + ['consistency']
 
     res = []
+    genes_seen = set()
     for k in venn_set:
         the_genes = venn_set[k]
+        genes_seen.update(the_genes)
 
         # populate with individual patient results
         this_block = pd.DataFrame(index=the_genes, columns=cols)
@@ -434,14 +440,6 @@ def venn_set_to_dataframe(
                     this_block.loc[the_genes_present, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes_present, logfc_col]
                     this_block.loc[the_genes_present, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes_present, fdr_col]
 
-                    # # this may be faster, but I don't think it makes any difference (bottleneck is elsewhere):
-                    # try:
-                    #     this_datum.loc[the_genes, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes, logfc_col]
-                    #     this_datum.loc[the_genes, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes, fdr_col]
-                    # except KeyError:
-                    #     # we only arrive here if none of the_genes were in the full data
-                    #     pass
-
         # assess consistency of DE direction
         consist = pd.Series(index=the_genes)
 
@@ -463,6 +461,18 @@ def venn_set_to_dataframe(
                 bb = len(res[i].index.intersection(res[j].index))
                 if bb > 0:
                     raise AttributeError("Identified %d genes that are in BOTH %s and %s" % (bb, k, k2))
+
+    if add_null_set:
+        all_genes = setops.reduce_union(*[t.index for t in full_data.values()])
+        add_genes = all_genes.difference(genes_seen)
+        this_block = pd.DataFrame(index=add_genes, columns=cols)
+        for pid in set_labels:
+            # by definition, no samples are DE positive in the null set
+            this_block.loc[:, pid] = 'N'
+            the_genes_present = add_genes.intersection(full_data[pid].index)
+            this_block.loc[the_genes_present, "%s_%s" % (pid, logfc_col)] = full_data[pid].loc[the_genes_present, logfc_col]
+            this_block.loc[the_genes_present, "%s_%s" % (pid, fdr_col)] = full_data[pid].loc[the_genes_present, fdr_col]
+        res.append(this_block)
 
     res = pd.concat(res, axis=0)
 
