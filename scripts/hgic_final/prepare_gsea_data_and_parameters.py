@@ -1,10 +1,9 @@
 from rnaseq import loader, general
-from utils.output import unique_output_dir
 from rnaseq import gsea
 import os
-import references
 import pandas as pd
-from settings import OUTPUT_DIR
+from utils import output
+import consts
 
 
 def ens_index_to_gene_symbol(df):
@@ -16,11 +15,12 @@ def ens_index_to_gene_symbol(df):
 
 
 if __name__ == '__main__':
-    outdir = os.path.join(OUTPUT_DIR, "gsea_data")
 
     # load all data
-    pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
+    pids = consts.PIDS
     units = 'tpm'
+
+    outdir = output.unique_output_dir()
 
     out_subdir = os.path.join(outdir, units)
     if not os.path.isdir(out_subdir):
@@ -96,75 +96,6 @@ if __name__ == '__main__':
             gsea.create_gsea_params_file(out_fn.format(ext='params'), rpt_label="%s_%s" % (pid, rnm))
 
     """
-    At this point, we need to run GSEA.
-
-    ##############################################
-    # 1. Running directly from the command line: #
-    ##############################################
-
-    java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea -res /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.gct -cls /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/tpm_salmon/rtkii.cls#GBM_versus_iNSC -gmx /home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt -collapse false -norm meandiv -nperm 1000 -permute gene_set -rnd_type no_balance -scoring_scheme weighted -rpt_label RTK_II -metric Signal2Noise -sort real -order descending -create_gcts false -create_svgs false -include_only_symbols true -make_sets true -median false -num 1000 -plot_top_x 20 -rnd_seed timestamp -save_rnd_lists false -set_max 500 -set_min 15 -zip_report false -out /home/gabriel/gsea_home/output/rtk_II -gui false
-
-    #############################
-    # 2. Use a parameters file: #
-    #############################
-
-    # See rnaseq.gsea.create_gsea_params_file.
-    # Specify with -params_file
-
-    for i in *.params;
-        do b=$(basename $i .params);
-        if [[ $b = *"nsc"* ]]; then
-            c="#GBM_versus_NSC";
-        else
-            c="#GBM_versus_iNSC";
-        fi;
-        java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
-        -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
-        -out ./${b} \
-        -param_file ${b}.params
-
-        STATUS=$?
-
-        if [ $STATUS == 0 ]; then
-            echo "SUCCESS: ${b}"
-            mv ${b}.gct ${b}.cls ${b}.params ${b}/
-        else
-            echo "FAILED: ${b}"
-        fi
-    done
-
-    #######################################
-    # 3. parallel method for many files:  #
-    #######################################
-
-    runGsea() {
-        gmx="/home/gabriel/Dropbox/research/qmul/results/gbm_insc_paired_sample_de/all/n_equals_2/gsea/msigdb.v6.1.symbols.gmt"
-        b=$(basename $1 .params)
-
-        if [[ $b = *"nsc"* ]]; then
-            c="#GBM_versus_NSC";
-        else
-            c="#GBM_versus_iNSC";
-        fi;
-
-        java -Xmx16192m -cp /opt/gsea/gsea-3.0.jar xtools.gsea.Gsea \
-        -res ${b}.gct -cls ${b}.cls${c} -gmx $gmx \
-        -out ./${b} \
-        -param_file ${b}.params
-
-        STATUS=$?
-
-        if [ $STATUS == 0 ]; then
-            echo "SUCCESS: ${b}"
-            mv ${b}.gct ${b}.cls ${b}.params ${b}/
-        else
-            echo "FAILED: ${b}"
-        fi
-    }
-    # export so that the parallel env has the function in scope
-    export -f runGsea
-
-    parallel -j 3 runGsea ::: *.params
-
+    At this point, we need to run GSEA. The script to do this is in gsea_run_all_comparisons.sh
     """
     
