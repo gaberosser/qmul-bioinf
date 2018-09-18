@@ -143,6 +143,7 @@ def venn_set_to_wide_dataframe(
     include_sets=None,
     full_data=None,
     cols_to_include=None,
+    static_cols_to_include=None,
     consistency_check_col=None,
     consistency_check_method=None,
     run_sanity_check=False
@@ -159,7 +160,11 @@ def venn_set_to_wide_dataframe(
     :param include_sets:
     :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
     significant results can be accessed.
-    :param cols_to_include: Iterable of columns to include in the output
+    :param cols_to_include: Iterable of columns to include in the output. These are the columns that differ between
+    the different members.
+    :param static_cols_to_include: Iterable of columns to incude in the output. These are the columns that are
+    identical across all members. NB we will not check this, so if variable columns are included here then the output
+    will probably be undesirable.
     :param consistency_check_col: The name of the column in the input data to use for determing consistency among
     members.
     :param consistency_check_method: Supported options ('sign', 'equal'). This is the method used to assess consistency.
@@ -170,14 +175,22 @@ def venn_set_to_wide_dataframe(
     if cols_to_include is None:
         cols_to_include = []
 
+    if static_cols_to_include is None:
+        static_cols_to_include = []
+
     if include_sets is not None:
         venn_set = dict([
             (k, v) for k, v in venn_set.items() if k in include_sets
         ])
 
     res = []
+
     for k in venn_set:
         ids = venn_set[k]
+
+        # we only need to add static columns once per block, so keep track with this indicator
+        add_static_from = None
+
         # populate with individual patient results
         blocks = []
         consistency_check = []
@@ -193,11 +206,15 @@ def venn_set_to_wide_dataframe(
                 this_datum.loc[ids, pid] = 'Y'
                 for c in cols_to_include:
                     this_datum.loc[ids, "%s_%s" % (pid, c)] = data[pid].loc[ids, c]
+
                 # consistency check
                 if consistency_check_col is not None:
                     cc = data[pid].loc[ids, consistency_check_col]
                     cc.name = pid
                     consistency_check.append(cc)
+
+                # add static columns (if required)
+                add_static_from = pid
             else:
                 this_datum.loc[ids, pid] = 'N'
                 if full_data is not None:
@@ -205,6 +222,15 @@ def venn_set_to_wide_dataframe(
                         this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].loc[ids, c]
 
             blocks.append(this_datum)
+
+        if add_static_from is not None and len(static_cols_to_include) > 0:
+            static_block = data[add_static_from].loc[ids, static_cols_to_include]
+            blocks = [static_block] + blocks
+        elif len(static_cols_to_include) > 0 and full_data is not None:
+            # this must have been the null set, no pid has been found to add the static variables
+            # in this case, we use the full data to fill in variables
+            static_block = full_data.values()[0].loc[ids, static_cols_to_include]
+            blocks = [static_block] + blocks
 
         core_block = pd.concat(blocks, axis=1)
 
