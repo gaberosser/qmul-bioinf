@@ -153,9 +153,8 @@ def venn_set_to_wide_dataframe(
     per patient and one row per gene.
     Optionally filter the sets to include only a subset.
     Optionally include non-significant results too.
-    :param data: Dict containing DMR results, keyed by the entries of set_labels.
-    These are produced using DmrResults.to_table(), i.e. they are pd.DataFrames
-    :param venn_set:
+    :param data: Dict containing results, keyed by the entries of set_labels. These are pd.DataFrames.
+    :param venn_set: Venn sets computed using venn_from_arrays on the indexes of the data.
     :param set_labels:
     :param include_sets:
     :param full_data: If supplied, this has the same format as `data`, but the lists are complete so that even non-
@@ -219,7 +218,9 @@ def venn_set_to_wide_dataframe(
                 this_datum.loc[ids, pid] = 'N'
                 if full_data is not None:
                     for c in cols_to_include:
-                        this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].loc[ids, c]
+                        # this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].loc[ids, c]
+                        # reindex() here returns NaN if data are not available
+                        this_datum.loc[ids, "%s_%s" % (pid, c)] = full_data[pid].reindex(ids)[c]
 
             blocks.append(this_datum)
 
