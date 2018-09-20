@@ -260,6 +260,22 @@ def patient_and_subgroup_specific_set(pids, subgroups):
     return res
 
 
+def partial_subgroup_specific(pids, subgroup_ind):
+    """
+    For each subgroup, get the list of sets that corresponds to >= 2 members of that subgroup and no members of any
+    other.
+    :param pids: List of PIDs
+    :param subgroup_ind: Dict, keyed by subgroup name. Values are np.array of booleans (i.e. boolean indexers). Order
+    of indexers must match pids.
+    :return: Dict, keyed by subgroup name. Each value is a list of sets.
+    """
+    ss_part_sets = {}
+    candidates = list(setops.binary_combinations_sum_gte(len(pids), 2))
+    for grp in subgroup_ind:
+        ss_part_sets[grp] = [t for t in candidates if np.array([x for x in t]).astype(int)[~subgroup_ind[grp]].sum() == 0]
+    return ss_part_sets
+
+
 def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
     cpm = dat.divide(dat.sum(), axis=1) * 1e6
     keep = (cpm > min_cpm).sum(axis=1) > 0
@@ -415,6 +431,8 @@ if __name__ == "__main__":
     for grp in subgroup_ind:
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         ss_sets.append(k)
+
+    ss_part_sets = partial_subgroup_specific(pids, subgroup_ind)
 
     ec_sets = expanded_core_sets(setops.binary_combinations(len(pids), include_zero=False), subgroup_ind)
 
@@ -597,19 +615,54 @@ if __name__ == "__main__":
     )
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
 
-    # subgroup-specific
-    data_ss = setops.venn_set_to_wide_dataframe(
-        de_res_s1,
-        venn_set,
-        pids,
-        include_sets=ss_sets,
-        full_data=de_res_full_s1,
-        cols_to_include=['logFC', 'FDR'],
-        static_cols_to_include=['Gene Symbol'],
-        consistency_check_col='logFC',
-        consistency_check_method='sign'
-    )
-    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de.xlsx'))
+    # subgroup-specific (full - must be in all)
+
+    # data_ss = setops.venn_set_to_wide_dataframe(
+    #     de_res_s1,
+    #     venn_set,
+    #     pids,
+    #     include_sets=ss_sets,
+    #     full_data=de_res_full_s1,
+    #     cols_to_include=['logFC', 'FDR'],
+    #     static_cols_to_include=['Gene Symbol'],
+    #     consistency_check_col='logFC',
+    #     consistency_check_method='sign'
+    # )
+    # data_ss.to_excel(os.path.join(outdir_s1, 'full_subgroup_specific_de.xlsx'))
+
+    # split: one subgroup per tab
+    data_ss = {}
+    for sg in subgroups:
+        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        data_ss[sg] = setops.venn_set_to_wide_dataframe(
+            de_res_s1,
+            venn_set,
+            pids,
+            include_sets=[k],
+            full_data=de_res_full_s1,
+            cols_to_include=['logFC', 'FDR'],
+            static_cols_to_include=['Gene Symbol'],
+            consistency_check_col='logFC',
+            consistency_check_method='sign'
+        )
+    excel.pandas_to_excel(data_ss, os.path.join(outdir_s1, 'full_subgroup_specific_de.xlsx'))
+
+    # subgroup-specific (partial: at least 2 members)
+    # split: one subgroup per tab
+    data_ss_part = {}
+    for sg in subgroups:
+        data_ss_part[sg] = setops.venn_set_to_wide_dataframe(
+            de_res_s1,
+            venn_set,
+            pids,
+            include_sets=ss_part_sets[sg],
+            full_data=de_res_full_s1,
+            cols_to_include=['logFC', 'FDR'],
+            static_cols_to_include=['Gene Symbol'],
+            consistency_check_col='logFC',
+            consistency_check_method='sign'
+        )
+    excel.pandas_to_excel(data_ss_part, os.path.join(outdir_s1, 'partial_subgroup_specific_de.xlsx'))
 
     # patient unique
     data_pu = setops.venn_set_to_wide_dataframe(
@@ -625,7 +678,7 @@ if __name__ == "__main__":
     )
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_de.xlsx'))
 
-    # patient and subgroup-specific
+    # patient and/or subgroup-specific
     data_pss = {}
     for pid in pids:
         data_pss[pid] = setops.venn_set_to_wide_dataframe(
@@ -639,7 +692,7 @@ if __name__ == "__main__":
             consistency_check_col='logFC',
             consistency_check_method='sign'
     )
-    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de.xlsx'))
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_or_subgroup_specific_de.xlsx'))
 
     ###################
     ### b) DMR only ###
