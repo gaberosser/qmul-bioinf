@@ -6,7 +6,7 @@ import sys
 import numpy as np
 from plotting import common
 import collections
-from utils import output
+from utils import output, setops, excel
 import consts
 from settings import HGIC_LOCAL_DIR
 
@@ -137,6 +137,24 @@ if __name__ == '__main__':
     ax.figure.tight_layout()
     ax.figure.savefig(os.path.join(outdir, "hgic_de_ipa_top%d.png" % top_n), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "hgic_de_ipa_top%d.tiff" % top_n), dpi=200)
+
+    # export a wideform dataframe containing all these pathways with log_p, etc.
+    for_export = {}
+    for pid in pids:
+        for_export[pid] = res[pid].loc[p_top[pid]]
+
+    vs, vc = setops.venn_from_arrays(*[p_top[pid] for pid in pids])
+    out = setops.venn_set_to_wide_dataframe(
+        for_export,
+        vs,
+        pids,
+        full_data=res,
+        cols_to_include=['-log_p', 'ratio', 'z'],
+        static_cols_to_include=['genes']
+    )
+    # excel.pandas_to_excel(out, os.path.join(outdir, "ipa_de_top_%d_pathways.xlsx" % top_n))
+    out.to_excel(os.path.join(outdir, "ipa_de_top_%d_pathways.xlsx" % top_n))
+
 
     """
     Note to myself:

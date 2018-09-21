@@ -615,25 +615,11 @@ if __name__ == "__main__":
     )
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
 
-    # subgroup-specific (full - must be in all)
-
-    # data_ss = setops.venn_set_to_wide_dataframe(
-    #     de_res_s1,
-    #     venn_set,
-    #     pids,
-    #     include_sets=ss_sets,
-    #     full_data=de_res_full_s1,
-    #     cols_to_include=['logFC', 'FDR'],
-    #     static_cols_to_include=['Gene Symbol'],
-    #     consistency_check_col='logFC',
-    #     consistency_check_method='sign'
-    # )
-    # data_ss.to_excel(os.path.join(outdir_s1, 'full_subgroup_specific_de.xlsx'))
-
+    # subgroup-specific (full - must be in all patients)
     # split: one subgroup per tab
     data_ss = {}
     for sg in subgroups:
-        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        k = ''.join(subgroup_ind[sg].astype(int).astype(str))
         data_ss[sg] = setops.venn_set_to_wide_dataframe(
             de_res_s1,
             venn_set,
@@ -664,7 +650,7 @@ if __name__ == "__main__":
         )
     excel.pandas_to_excel(data_ss_part, os.path.join(outdir_s1, 'partial_subgroup_specific_de.xlsx'))
 
-    # patient unique
+    # patient specific
     data_pu = setops.venn_set_to_wide_dataframe(
         de_res_s1,
         venn_set,
@@ -851,7 +837,7 @@ if __name__ == "__main__":
         )
 
         data_pss[pid] = this_tbl
-    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_dmr.xlsx'))
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_or_subgroup_specific_dmr.xlsx'))
 
     #############################
     ### c) Layered DE and DMR ###
@@ -1166,6 +1152,7 @@ if __name__ == "__main__":
     venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
     po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
 
+    ## FIXME
     po_combination_export = setops.venn_set_to_wide_dataframe(
         po_de_export,
         venn_set,
