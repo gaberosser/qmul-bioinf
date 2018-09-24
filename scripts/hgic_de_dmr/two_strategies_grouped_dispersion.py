@@ -541,24 +541,40 @@ if __name__ == "__main__":
              rnaseq_obj.batch_id.str.contains('wtchg') & (~rnaseq_obj.data.columns.str.contains('GIBCO'))
              ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
-    groups_s1 = pd.Series(index=meta_s1.index)
-    comparisons_s1 = {}
-    for pid in pids:
-        groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
-        groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
 
-        comparisons_s1[("GBM%s" % pid, "iNSC%s" % pid)] = "GBM%s - iNSC%s" % (pid, pid)
+    the_hash = de_results_hash(meta_s1.index.tolist(), de_params)
+    filename = 'de_results_paired_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DE_LOAD_DIR, filename)
 
-    de_res_full_s1 = de_grouped_dispersion(
-        dat_s1,
-        groups_s1,
-        comparisons_s1,
-        min_cpm=min_cpm,
-        return_full=True,
-        **de_params
-    )
-    # rename the keys to simplify
-    de_res_full_s1 = dict([(pid, de_res_full_s1[("GBM%s" % pid, "iNSC%s" % pid)]) for pid in pids])
+    if os.path.isfile(fn):
+        logger.info("Reading S1 DE results from %s", fn)
+        with open(fn, 'rb') as f:
+            de_res_full_s1 = pickle.load(f)
+    else:
+        groups_s1 = pd.Series(index=meta_s1.index)
+        comparisons_s1 = {}
+        for pid in pids:
+            groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
+            groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
+
+            comparisons_s1[("GBM%s" % pid, "iNSC%s" % pid)] = "GBM%s - iNSC%s" % (pid, pid)
+
+        de_res_full_s1 = de_grouped_dispersion(
+            dat_s1,
+            groups_s1,
+            comparisons_s1,
+            min_cpm=min_cpm,
+            return_full=True,
+            **de_params
+        )
+        # rename the keys to simplify
+        de_res_full_s1 = dict([(pid, de_res_full_s1[("GBM%s" % pid, "iNSC%s" % pid)]) for pid in pids])
+
+        with open(fn, 'wb') as f:
+            pickle.dump(de_res_full_s1, f)
+
+        logger.info("Saved S1 DE results to %s", fn)
+
     # extract only significant DE genes
     de_res_s1 = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full_s1.items()])
 
