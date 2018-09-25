@@ -316,9 +316,9 @@ def plot_correlation_clustermap(data,
     # do this even if distances have been provided directly
     if metric == 'correlation':
         sq = 1 - sq
-    else:
+    # else:
         # TODO: add specific versions for other metrics if required
-        sq = max(sq.flat) - sq
+        # sq = max(sq.flat) - sq
 
     # make a dataframe for clustering so that the plot has correct labels
     sq = pd.DataFrame(data=sq, index=data.columns, columns=data.columns)

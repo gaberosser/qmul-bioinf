@@ -305,6 +305,19 @@ def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
     return res
 
 
+def de_export_to_ipa(de_wideform, pids):
+    cols = []
+    for p in pids:
+        cols.append("%s logFC" % p)
+        cols.append("%s FDR" % p)
+    ipa_export = pd.DataFrame(index=de_wideform.index, columns=cols)
+    for pid in pids:
+        ix = de_wideform.loc[:, pid] == 'Y'
+        ipa_export.loc[ix, "%s logFC" % pid] = de_wideform.loc[ix, "%s_logFC" % pid]
+        ipa_export.loc[ix, "%s FDR" % pid] = de_wideform.loc[ix, "%s_FDR" % pid]
+    return ipa_export
+
+
 def export_dmr_data_for_ipa(results_tbl):
     # output data for IPA
     all_genes = set()
@@ -321,9 +334,12 @@ def export_dmr_data_for_ipa(results_tbl):
         this = this.loc[~this.padj.isnull()]
         this = this.groupby('gene').padj.min()
         ipa_export.loc[this.index, "Patient %s" % pid] = this
-    # missing / non-significant: set p value to 1.0
+    # easier to leave non-significant values as NaN (missing)
+    # alternative: set p value to 1.0
+    # ipa_export = ipa_export.fillna(1.)
+
     # replace the index with the Ensembl IDs
-    ipa_export = ipa_export.fillna(1.).set_index(genes_for_ipa)
+    ipa_export = ipa_export.set_index(genes_for_ipa)
     return ipa_export
 
 
@@ -335,6 +351,13 @@ if __name__ == "__main__":
         os.makedirs(outdir_s1)
     if not os.path.isdir(outdir_s2):
         os.makedirs(outdir_s2)
+
+    outdir_s1_ipa = os.path.join(outdir_s1, 'ipa')
+    outdir_s2_ipa = os.path.join(outdir_s2, 'ipa')
+    if not os.path.isdir(outdir_s1_ipa):
+        os.makedirs(outdir_s1_ipa)
+    if not os.path.isdir(outdir_s2_ipa):
+        os.makedirs(outdir_s2_ipa)
 
     min_cpm = 1.
 
@@ -616,6 +639,7 @@ if __name__ == "__main__":
         consistency_check_method='sign'
     )
     data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
+    de_export_to_ipa(data, pids).to_excel(os.path.join(outdir_s1_ipa, "full_de_for_ipa.xlsx"))
 
     # expanded core (genes DE in multiple subgroups)
     data_ec = setops.venn_set_to_wide_dataframe(
@@ -630,6 +654,7 @@ if __name__ == "__main__":
         consistency_check_method='sign'
     )
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
+    de_export_to_ipa(data_ec, pids).to_excel(os.path.join(outdir_s1_ipa, "expanded_core_de_for_ipa.xlsx"))
 
     # subgroup-specific (full - must be in all patients)
     # split: one subgroup per tab
@@ -679,9 +704,11 @@ if __name__ == "__main__":
         consistency_check_method='sign'
     )
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_de.xlsx'))
+    de_export_to_ipa(data_pu, pids).to_excel(os.path.join(outdir_s1_ipa, "patient_specific_de_for_ipa.xlsx"))
 
-    # patient and/or subgroup-specific
+    # patient or subgroup-specific
     data_pss = {}
+    export_pss = pd.DataFrame(index=de_res_full_s1.values()[0].index)
     for pid in pids:
         data_pss[pid] = setops.venn_set_to_wide_dataframe(
             de_res_s1,
@@ -693,8 +720,12 @@ if __name__ == "__main__":
             static_cols_to_include=['Gene Symbol'],
             consistency_check_col='logFC',
             consistency_check_method='sign'
-    )
+        )
+        this_export = de_export_to_ipa(data_pss[pid], pids)
+        export_pss.insert(0, "%s FDR" % pid, this_export.loc[:, "%s FDR" % pid])
+        export_pss.insert(0, "%s logFC" % pid, this_export.loc[:, "%s logFC" % pid])
     excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_or_subgroup_specific_de.xlsx'))
+    export_pss.to_excel(os.path.join(outdir_s1_ipa, "patient_or_subgroup_specific_de_for_ipa.xlsx"))
 
     ###################
     ### b) DMR only ###
@@ -735,24 +766,7 @@ if __name__ == "__main__":
         data_for_dmr_table_full[pid] = expand_dmr_results_table_by_gene_and_cluster(this_full, drop_geneless=True)
 
     # output data for IPA
-    ipa_export = export_dmr_data_for_ipa(data_for_dmr_table_full)
-    any_tbl = data_for_dmr_table_full.values()[0]
-    # convert to Ensembl and drop any that cannot be found
-    genes_for_ipa = annotation_gene_to_ensembl.gene_to_ens(any_tbl.gene.unique()).dropna().sort_values()
-    # data import is made easier if the columns contain letters as well as numbers
-    ipa_export = pd.DataFrame(index=genes_for_ipa.index, columns=["Patient %s" % p for p in pids])
-    for pid in pids:
-        this = data_for_dmr_table_full[pid]
-        ix = this.gene.isin(genes_for_ipa.index)
-        this = this.loc[ix]
-        this = this.loc[~this.padj.isnull()]
-        this = this.groupby('gene').padj.min()
-        ipa_export.loc[this.index, "Patient %s" % pid] = this
-    # missing / non-significant: set p value to 1.0
-    # replace the index with the Ensembl IDs
-    ipa_export = ipa_export.fillna(1.).set_index(genes_for_ipa)
-
-    ipa_export.to_excel(os.path.join(outdir_s1, "full_dmr_genes_for_ipa.xlsx"))
+    export_dmr_data_for_ipa(data_for_dmr_table_full).to_excel(os.path.join(outdir_s1_ipa, "full_dmr_genes_for_ipa.xlsx"))
 
     # recalculate venn set
     dmr_by_member = [data_for_dmr_table[pid].index for pid in pids]
@@ -1117,6 +1131,20 @@ if __name__ == "__main__":
         )
     excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_de.xlsx"))
 
+    # export for IPA
+    # NB: we still need the syngeneic version, because it isn't *quite* the same as S1 (due to lumped dispersion)
+    ipa_export = pd.concat(for_export.values(), axis=1, sort=True).drop(['Gene Symbol', 'consistency'], axis=1)
+    ipa_export.loc[:, ~ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')] = \
+        ipa_export.loc[:, ~ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')].fillna('N')
+
+    # since the maximum number of observations is 20, split this over 3 files
+    ix = ipa_export.columns.str.contains('_syngeneic') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_syngeneic.xlsx"))
+    ix = ipa_export.columns.str.contains('_H9') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_h9.xlsx"))
+    ix = ipa_export.columns.str.contains('_GIBCO') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_gibco.xlsx"))
+
     # Find DE genes that are "pair only" in ALL cross comparisons
     # These are not syngeneic-specific, but are "our iNSC specific", suggesting they may be an artefact?
 
@@ -1168,18 +1196,20 @@ if __name__ == "__main__":
     venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
     po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
 
-    ## FIXME
     po_combination_export = setops.venn_set_to_wide_dataframe(
         po_de_export,
         venn_set,
         pids,
         cols_to_include=('logFC', 'FDR'),
-        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
+        static_cols_to_include=['Gene Symbol'],
         consistency_check_col='logFC',
         consistency_check_method="sign"
     )
-
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_inter_patient.xlsx'))
+
+    # can also use this representation to export to IPA
+    de_export_to_ipa(po_combination_export, pids).to_excel(os.path.join(outdir_s2_ipa, "pair_only_de_for_ipa.xlsx"))
+
 
     # array of Venn plots: GBM vs X (# DE genes)
     # only possible if number of references <= 3 (otherwise too many sets)
