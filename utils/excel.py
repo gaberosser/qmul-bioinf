@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def pandas_to_excel(sheets, fn, write_index=True):
+def pandas_to_excel(sheets, fn, write_index=True, **kwargs):
     """
 
     :param blocks: Dictionary containing the different comparisons to save. Values are pandas dataframes.
@@ -15,5 +15,5 @@ def pandas_to_excel(sheets, fn, write_index=True):
     keys = sorted(sheets.keys())
     for k in keys:
         bl = sheets[k]
-        bl.to_excel(xl_writer, k, index=write_index)
+        bl.to_excel(xl_writer, k, index=write_index, **kwargs)
     xl_writer.save()

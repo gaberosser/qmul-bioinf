@@ -70,16 +70,16 @@ def get_best_cmap(N, cmap='jet'):
     if N in COLOUR_BREWERS:
         return COLOUR_BREWERS[N]
     else:
-        func = continuous_cmap(N, cmap=cmap)
+        func = continuous_cmap(0, N-1, cmap=cmap)
         return [func(i) for i in range(N)]
 
 
-def continuous_cmap(N, cmap='jet'):
+def continuous_cmap(vmin, vmax, cmap='jet'):
     '''
-    Returns a function that maps each index in 0, 1, ... N-1 to a distinct
+    Returns a function that maps the continuous range [vmin, vmax] to an
     RGB color, defined by cmap.
     '''
-    color_norm  = colors.Normalize(vmin=0, vmax=N-1)
+    color_norm  = colors.Normalize(vmin=vmin, vmax=vmax)
     scalar_map = cm.ScalarMappable(norm=color_norm, cmap=cmap)
     def map_index_to_rgb_color(index):
         return colors.to_hex(scalar_map.to_rgba(index))
