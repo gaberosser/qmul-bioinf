@@ -119,14 +119,14 @@ def pathway_involvement_heatmap_by_p(
     if orientation == 'vertical':
         eax.yaxis.set_ticks([])
         plt.setp(eax.xaxis.get_ticklabels(), rotation=90)
-        axs[0].set_yticks(0.5 + np.arange(len(p_order)))
-        axs[0].set_yticklabels(p_order[::-1], rotation=0, fontsize=7)
+        axs[0].set_yticks(0.5 + np.arange(len(pathway_order)))
+        axs[0].set_yticklabels(pathway_order[::-1], rotation=0, fontsize=7)
     else:
         eax.xaxis.set_ticks([])
         plt.setp(eax.yaxis.get_ticklabels(), rotation=0)
         # TODO: check this is correct
-        axs[-1].set_xticks(0.5 + np.arange(len(p_order)))
-        axs[-1].set_xticklabels(p_order, rotation=90, fontsize=7)
+        axs[-1].set_xticks(0.5 + np.arange(len(pathway_order)))
+        axs[-1].set_xticklabels(pathway_order, rotation=90, fontsize=7)
 
     # colorbar outline
     cbar = axs[0].collections[0].colorbar

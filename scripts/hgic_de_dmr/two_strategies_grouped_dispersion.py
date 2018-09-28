@@ -1129,7 +1129,54 @@ if __name__ == "__main__":
             full_data=this_full,
             add_null_set=True
         )
-    excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_de.xlsx"))
+    excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_de_by_patient.xlsx"))
+
+    # wideform version of this (i.e. 30 blocks)
+    # we can't use the Venn approach here, but we don't need to
+    all_genes = sorted(setops.reduce_union(*[t.index for t in de_res_full_s2.values()]))
+    for_export = pd.DataFrame(index=all_genes)
+    member_cols = []
+    general.add_gene_symbols_to_ensembl_data(for_export)
+    for pid in pids:
+        for r in [pid] + external_refs_de_labels:
+            this_sign = de_res_s2[(pid, r)]
+            this_full = de_res_full_s2[(pid, r)]
+            this_yn = pd.Series('N', index=all_genes)
+            this_yn.loc[this_sign.index] = 'Y'
+            k = "%s_%s" % (pid, r if r != pid else 'syngeneic')
+            member_cols.append(k)
+            for_export.insert(
+                for_export.shape[1],
+                k,
+                this_yn
+            )
+            for_export.insert(
+                for_export.shape[1],
+                "%s_logFC" % k,
+                this_full.reindex(all_genes)['logFC']
+            )
+            for_export.insert(
+                for_export.shape[1],
+                "%s_FDR" % k,
+                this_full.reindex(all_genes)['FDR']
+            )
+
+    # consistency column: is this useful with this many samples?
+    all_yn = for_export.loc[:, member_cols]
+    all_logFC = for_export.loc[:, ["%s_logFC" % t for t in member_cols]].values
+    all_logFC[(all_yn == 'N').values] = np.nan
+    row_sum_abs = np.abs(np.nansum(np.sign(all_logFC), axis=1))
+    row_nz = (~np.isnan(np.sign(all_logFC))).sum(axis=1)
+
+    consist = pd.Series('N', index=all_genes)
+    consist.loc[row_sum_abs == row_nz] = 'Y'
+
+    for_export.insert(
+        for_export.shape[1],
+        'consistent',
+        consist
+    )
+    for_export.to_excel(os.path.join(outdir_s2, "full_de.xlsx"))
 
     # export for IPA
     # NB: we still need the syngeneic version, because it isn't *quite* the same as S1 (due to lumped dispersion)

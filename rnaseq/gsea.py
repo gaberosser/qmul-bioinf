@@ -54,6 +54,20 @@ def phenotypes_to_cls(groups, outfile):
         c.writerow([cls_map[t] for t in groups])
 
 
+def read_gmt_file(fn):
+    """
+    Parse a GMT file (from MSIGDB)
+    :param fn:
+    :return:
+    """
+    res = {}
+    with open(fn, 'rb') as f:
+        c = csv.reader(f, delimiter='\t')
+        for row in c:
+            res[row[0]] = row[2:]
+    return res
+
+
 def create_gsea_params_file(outfn, rpt_label='foo', permute='gene_set', **kwargs):
     """
     Write a params file that can be used when running GSEA with the -param_file input arg.
