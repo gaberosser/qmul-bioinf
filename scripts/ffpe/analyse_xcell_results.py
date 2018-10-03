@@ -7,6 +7,8 @@ import seaborn as sns
 from plotting import clustering
 from utils import output
 from scipy import stats
+from scipy.cluster import hierarchy as hc
+import numpy as np
 
 
 if __name__ == '__main__':
@@ -70,18 +72,6 @@ if __name__ == '__main__':
     # do we need to renormalise??
     if renorm:
         df = df.divide(df.sum(axis=0), axis=1)
-
-    # heatmap: proportions for each patient
-    # standardise across columns, because each cell type has different mean proportion
-    cg = clustering.plot_clustermap(
-        df.astype(float).transpose(),
-        metric='euclidean',
-        show_gene_labels=True,
-        show_gene_clustering=True,
-        cmap='RdBu_r',
-        z_score=1
-    )
-    cg.gs.update(bottom=0.22, right=0.8)
 
     # box and whisker
     palette = sns.color_palette("deep", 16)
@@ -155,29 +145,119 @@ if __name__ == '__main__':
 
     co = pd.DataFrame(index=df.index, columns=pathways, dtype=float)
     co_p = pd.DataFrame(index=df.index, columns=pathways, dtype=float)
+    from stats import nht
+    import multiprocessing as mp
+    pool = mp.Pool()
+    jobs = {}
 
     for pw in pathways:
         this_p = p.loc[pw].sort_index()
         this_z = z.loc[pw].sort_index()
         this_df = df.loc[:, this_p.index].sort_index(axis=1)
 
-        for ct in df.index:
-            if corr_metric == 'spearman':
-                co.loc[ct, pw], co_p.loc[ct, pw] = stats.spearmanr(this_p, this_df.loc[ct])
-            elif corr_metric == 'pearson':
-                co.loc[ct, pw], co_p.loc[ct, pw] = stats.pearsonr(this_p, this_df.loc[ct])
+        # check for nan (missing P values)
+        ix = this_p.dropna().index
+        if len(ix) < 2:
+            print "%s: Only %d P values present; skipping" % (
+                pw,
+                len(ix)
+            )
+            co.loc[:, pw] = np.nan
+            co_p.loc[:, pw] = np.nan
 
-    cg = clustering.plot_clustermap(
-        co.transpose(),
-        metric='euclidean',
-        show_gene_labels=True,
+        else:
+            for ct in df.index:
+                if corr_metric == 'spearman':
+                    # co.loc[ct, pw], co_p.loc[ct, pw] = stats.spearmanr(this_p.loc[ix], this_df.loc[ct, ix])
+                    jobs[(ct, pw)] = pool.apply_async(nht.spearman_exact, args=(this_p.loc[ix], this_df.loc[ct, ix]))
+                    # co.loc[ct, pw], co_p.loc[ct, pw] = nht.spearman_exact(this_p.loc[ix], this_df.loc[ct, ix])
+                elif corr_metric == 'pearson':
+                    co.loc[ct, pw], co_p.loc[ct, pw] = stats.pearsonr(this_p.loc[ix], this_df.loc[ct, ix])
+
+    pool.close()
+    pool.join()
+    for (ct, pw) in jobs:
+        co.loc[ct, pw], co_p.loc[ct, pw] = jobs[(ct, pw)].get()
+
+    co.dropna(axis=1, how='all', inplace=True)
+    co_p.dropna(axis=1, how='all', inplace=True)
+
+    raise StopIteration
+
+    # we just need a heatmap here, but should run clustering first to order the rows/cols nicely
+    rl = hc.linkage(co.fillna(0.).transpose(), method='average', metric='euclidean')
+    row_ix = hc.leaves_list(rl)
+    cl = hc.linkage(co.fillna(0.), method='average', metric='euclidean')
+    col_ix = hc.leaves_list(cl)
+
+    fig = plt.figure(figsize=(7, 10.5))
+    ax = fig.add_subplot(111)
+    sns.heatmap(
+        co.iloc[col_ix, row_ix].transpose(),
+        ax=ax,
+        cmap='winter'
     )
-    cg.gs.update(bottom=0.21, right=0.68)
-    plt.setp(cg.ax_heatmap.yaxis.get_ticklabels(), fontsize=6)
-    sns.heatmap(data=co, cmap='RdBu_r', ax=ax)
+    plt.setp(ax.yaxis.get_ticklabels(), fontsize=6)
+    plt.setp(ax.xaxis.get_ticklabels(), fontsize=8)
     plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
     plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    fig.subplots_adjust(left=0.45, right=0.95, bottom=0.17, top=0.99)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.png" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.tiff" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.pdf" % corr_metric), dpi=200)
 
-    cg.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.png" % corr_metric), dpi=200)
-    cg.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.tiff" % corr_metric), dpi=200)
-    cg.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering.pdf" % corr_metric), dpi=200)
+    # overlay the significant results
+    # for this prupose, we generate a boolean masked array
+    co_p_reordered = co_p.copy().iloc[col_ix, row_ix[::-1]].transpose()  # y ax is inverted here
+    co_p_reordered[co_p_reordered < alpha] = 0.
+    co_p_masked = np.ma.masked_where(co_p_reordered != 0, co_p_reordered)
+    ax.pcolor(
+        co_p_masked,
+        edgecolors='k',
+        facecolor='none',
+        linewidths=1.,
+        cmap='Greys_r'
+    )
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot.png" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot.tiff" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot.pdf" % corr_metric), dpi=200)
+
+    # useful to show one scatterplot to exemplify this
+    pw = 'Ephrin Receptor Signaling'
+    ct = 'Th1 cells'
+    this_p = p.loc[pw].sort_index()
+    this_df = df.loc[ct, this_p.index].sort_index()
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.scatter(this_df, this_p)
+    ax.set_xlabel('Proportion %s' % ct)
+    ax.set_ylabel('P value for %s' % pw)
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(
+            outdir,
+            "example_scatter_%s_%s.png" % (ct.lower().replace(' ', '_'), pw.lower().replace(' ', '_'))
+        ),
+        dpi=200
+    )
+
+
+    # heatmap: proportions for each patient
+    # standardise across columns, because each cell type has different mean proportion
+    rl = hc.linkage(df.astype(float).transpose(), method='average', metric='euclidean')
+
+    cg = clustering.plot_clustermap(
+        df.astype(float).transpose(),
+        metric='euclidean',
+        show_gene_labels=True,
+        show_gene_clustering=True,
+        cmap='YlOrRd',
+        row_linkage=rl,
+        z_score=1
+    )
+    cg.gs.update(left=0.03, bottom=0.22, right=0.9)
+    cg.cax.set_yticklabels(['Low', '', '', '', 'High'])
+    cg.cax.set_ylabel('Normalised proportion', labelpad=-70)  # bit hacky, but this places the label correctly
+    cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.png"), dpi=200)
+    cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.tiff"), dpi=200)
+    cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.pdf"), dpi=200)

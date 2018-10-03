@@ -120,4 +120,47 @@ def wilcoxon_signed_rank_test(x, y):
     return wilcoxsign_test(x, y)
 
 
+def spearman_exact(a, b, nperm=1000):
+    """
+    Compute Spearman's r (nonparametric correlation coefficient) and the pvalue (testing the null: random ordering)
+    Notably, we use a permutation approach here to compute the pvalue, rather than the t statistic used in Scipy's
+    imlementation.
+    As a result, this test is *very* slow compared to the approximate method (and, indeed, uses it in the for loop).
+    :param a:
+    :param b:
+    :param nperm: The maximum number of permutations. If the sample size is sufficiently small, we use an exhaustive
+    set of permutations instead.
+    :return:
+    """
+    from scipy import special, stats
+    import itertools
+    this_r, _ = stats.spearmanr(a, b)
+
+    if np.isnan(this_r):
+        # failed, possibly due to completely tied observations
+        return np.nan, np.nan
+
+    if len(a) != len(b):
+        raise ValueError("Length of arrays must match")
+
+    r_perms = []
+    if special.factorial(len(a)) < nperm:
+        nperm = special.factorial(len(a))
+        # exhaustive testing
+        for t in itertools.permutations(a):
+            rp, _ = stats.spearmanr(t, b)
+            r_perms.append(rp)
+    else:
+        # permutation testing
+        a_p = np.array(a, copy=True)
+        for i in range(nperm):
+            np.random.shuffle(a_p)
+            rp, _ = stats.spearmanr(a_p, b)
+            r_perms.append(rp)
+
+    # get pvalue from permutations
+    r_perms = np.array(sorted(r_perms))
+    # P value calculation: how many perms have an absolute value this large or larger?
+    this_p = (np.abs(r_perms) >= np.abs(this_r)).sum() / float(nperm)
+    return this_r, this_p
 
