@@ -19,6 +19,7 @@ from apps.py2cytoscape.data import style
 import networkx as nx
 import names
 import os
+import numpy as np
 
 
 if __name__ == '__main__':
@@ -41,6 +42,14 @@ if __name__ == '__main__':
     dg = dict([(x, aa[x]) for x in aa._nodes.keys()])
     nx.set_node_attributes(nx_graph, dg, 'Degree')
 
+    # add double attribute to the edges
+    for n1, n2, i in nx_graph.edges:
+        nx_graph[n1][n2][i]['width'] = np.abs(np.random.randn())
+
+    # add list attribute to the edges (e.g. this could be genes)
+    for n1, n2, i in nx_graph.edges:
+        nx_graph[n1][n2][i]['the_list'] = ['a', 'bc', '123']
+
     # e.g. node betweenness centrality
     nx.set_node_attributes(nx_graph, nx.betweenness_centrality(nx_graph), 'Centrality')
 
@@ -61,7 +70,34 @@ if __name__ == '__main__':
         colors=('white', 'blue')
     )
     my_style.create_continuous_mapping(column='Degree', vp='NODE_FILL_COLOR', col_type='Double', points=color_gradient)
+
+    # style edge width based on interaction
+    i_to_size = style.StyleUtil.create_slope(min=0, max=10, values=(10, 40))
+    my_style.create_continuous_mapping(column='width', vp='EDGE_WIDTH', col_type='Double', points=i_to_size)
+
     cy.style.apply(my_style, network=net)
+
+    # add a second network, with some (but not all) nodes shared
+    g2 = nx.scale_free_graph(50)
+    node_names = dict([
+        (i, nx_graph.nodes.keys()[i]) for i in range(30)
+    ])
+    node_names.update(
+        dict([(i, names.get_last_name()) for i in range(30, 50)])
+    )
+    nx.relabel_nodes(g2, node_names, copy=False)
+    aa = nx.degree(g2)
+    dg = dict([(x, aa[x]) for x in aa._nodes.keys()])
+    nx.set_node_attributes(g2, dg, 'Degree')
+
+    # add double attribute to the edges
+    for n1, n2, i in g2.edges:
+        g2[n1][n2][i]['width'] = np.abs(np.random.randn())
+
+    net2 = cy.network.create_from_networkx(g2, collection='Second network')
+
+    cy.style.apply(my_style, network=net2)
+
 
 
     # TODO: for GSEA/IPA
