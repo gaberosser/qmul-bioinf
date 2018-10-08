@@ -120,7 +120,7 @@ def wilcoxon_signed_rank_test(x, y):
     return wilcoxsign_test(x, y)
 
 
-def spearman_exact(a, b, nperm=1000):
+def spearman_exact(a, b, nperm=1000, seed=None):
     """
     Compute Spearman's r (nonparametric correlation coefficient) and the pvalue (testing the null: random ordering)
     Notably, we use a permutation approach here to compute the pvalue, rather than the t statistic used in Scipy's
@@ -135,6 +135,11 @@ def spearman_exact(a, b, nperm=1000):
     from scipy import special, stats
     import itertools
     this_r, _ = stats.spearmanr(a, b)
+
+    if seed is None:
+        rst = np.random.RandomState()
+    else:
+        rst = np.random.RandomState(seed=seed)
 
     if np.isnan(this_r):
         # failed, possibly due to completely tied observations
@@ -154,7 +159,7 @@ def spearman_exact(a, b, nperm=1000):
         # permutation testing
         a_p = np.array(a, copy=True)
         for i in range(nperm):
-            np.random.shuffle(a_p)
+            rst.shuffle(a_p)
             rp, _ = stats.spearmanr(a_p, b)
             r_perms.append(rp)
 
