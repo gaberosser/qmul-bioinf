@@ -2,8 +2,9 @@ import multiprocessing as mp
 import os
 import pandas as pd
 import numpy as np
-from utils import output, setops, excel
-from methylation import dmr, process, loader as methylation_loader
+import pickle
+from utils import output, setops, excel, log
+from methylation import dmr, process, loader as methylation_loader, annotation_gene_to_ensembl
 from rnaseq import loader as rnaseq_loader, differential_expression, general, filter
 from integrator import rnaseq_methylationarray
 from analysis import cross_comparison
@@ -11,8 +12,10 @@ from load_data import loader
 from plotting import venn
 from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
-
 import consts
+
+
+logger = log.get_console_logger()
 
 
 def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None):
@@ -37,7 +40,7 @@ def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=N
     common_probes = anno.index.intersection(me_data.index)
 
     anno = anno.loc[common_probes]
-    dmr.add_merged_probe_classes(anno)
+    # dmr.add_merged_probe_classes(anno)
     me_data = me_data.loc[common_probes]
     obj.data = me_data
 
@@ -81,7 +84,15 @@ def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC', s
 
 
 def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
-    # Compute DMR for paired comparisons (only - no other comparisons needed at present)
+    """
+    Compute DMRs for paired GBM-iNSC comparisons (defined in that order) for all patients
+    :param me_data:
+    :param me_meta:
+    :param anno:
+    :param pids:
+    :param dmr_params:
+    :return:
+    """
     dmr_res_obj = dmr.DmrResults(anno=anno)
     dmr_res_obj.identify_clusters(**dmr_params)
     dmr_res = {}
@@ -89,9 +100,16 @@ def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
     for pid in pids:
         the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'GBM')
         the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'iNSC')
-        the_idx = the_idx1 | the_idx2
-        the_groups = me_meta.loc[the_idx, 'type'].values
-        the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+        # control comparison order
+        the_samples = [
+            me_meta.index[the_idx1],
+            me_meta.index[the_idx2],
+        ]
+
+        # the_idx = the_idx1 | the_idx2
+        # the_groups = me_meta.loc[the_idx, 'type'].values
+        # the_samples = me_meta.index[the_idx].groupby(the_groups).values()
+
         the_obj = dmr_res_obj.copy()
         the_obj.test_clusters(me_data,
                               samples=the_samples,
@@ -115,6 +133,11 @@ def dmr_results_hash(pids, dmr_params):
         dmr_params['alpha'],
         dmr_params['norm_method']
     ) + tuple(dmr_params['test_kwargs'].items())
+    return hash(hash_elements)
+
+
+def de_results_hash(pids, de_params):
+    hash_elements = tuple(sorted(pids)) + tuple([de_params[k] for k in sorted(de_params.keys())])
     return hash(hash_elements)
 
 
@@ -155,34 +178,48 @@ def annotate_de_dmr_wide_form(data):
     data.insert(0, 'gene', [t[0] for t in data.index])
 
 
-def expand_dmr_results_table_by_gene(tbl, drop_geneless=False):
+def expand_dmr_results_table_by_gene_and_cluster(df, drop_geneless=False):
+    df.insert(0, 'cluster_id', df.index)
 
-    this_keep = tbl.loc[tbl.genes.apply(len) == 1]
-    this_keep.insert(0, 'gene_symbol', this_keep.genes.apply(lambda t: t[0]))
-    this_keep = this_keep.drop('genes', axis=1)
-    this_keep.index = zip(this_keep.index, this_keep.gene_symbol)
+    if not drop_geneless:
+        # we need to protect the geneless results by adding dummy values
+        g_count = df.genes.apply(len)
+        df.loc[g_count == 0, 'genes'] = [(('!', '!'),)] * (g_count == 0).sum()
 
-    to_expand = tbl.loc[tbl.genes.apply(len) > 1]
-    expanded = []
-    for cl_id, row in to_expand.iterrows():
-        the_genes = row.genes
-        row = row.drop('genes')
-        for g in the_genes:
-            new_row = row.copy()
-            new_row.loc['gene_symbol'] = g
-            expanded.append(new_row)
+    # open out the the (gene, relation) lists contained in the `genes` column
+    g = pd.DataFrame(
+        df.genes.apply(pd.Series).stack().reset_index(level=-1, drop=True),
+        columns=['gene_relation']
+    )
+    g.insert(0, 'relation', g.gene_relation.apply(lambda x: x[1]))
+    g.insert(0, 'gene', g.gene_relation.apply(lambda x: x[0]))
+    g = g.drop('gene_relation', axis=1).reset_index()
 
-    expanded = pd.DataFrame(expanded)
-    expanded.index = zip(expanded.index, expanded.gene_symbol)
+    # pivot table around the relation
+    tbl = g.pivot_table(index=['cluster_id', 'gene'], columns='relation', fill_value=0, aggfunc='size').reset_index()
 
-    if drop_geneless:
-        return pd.concat((this_keep, expanded), axis=0)
-    else:
-        this_geneless = tbl.loc[tbl.genes.apply(len) == 0]
-        this_geneless.insert(0, 'gene_symbol', None)
-        this_geneless = this_geneless.drop('genes', axis=1)
-        this_geneless.index = zip(this_geneless.index, this_geneless.gene_symbol)
-        return pd.concat((this_keep, expanded, this_geneless), axis=0)
+    # extract other attributes from original dataframe
+    attrs = df.drop(['cluster_id', 'genes'], axis=1).loc[tbl.cluster_id]
+
+    # combine them
+    res = pd.concat((tbl.set_index('cluster_id'), attrs), axis=1).reset_index()
+
+    # if maintaining geneless results, deprotect these now
+    if not drop_geneless:
+        new_gene_col = res.loc[:, 'gene'].replace('!', np.nan)  # don't use None as the replacement variable!
+        res.loc[:, 'gene'] = new_gene_col
+        # drop the pivot column, but only if it actually exists
+        if '!' in res.columns:
+            res.drop('!', axis=1, inplace=True)
+        # quick sanity check
+        cols = sorted(set(g.relation.unique()).difference(['!']))
+        ix = res.gene.isnull()
+        if not (res.loc[ix, cols].sum(axis=1) == 0).all():
+            logger.error("Some 'geneless' clusters still have gene relations defined.")
+            raise ValueError("Some 'geneless' clusters still have gene relations defined.")
+
+    res.index = zip(res.cluster_id, res.gene)
+    return res
 
 
 def patient_and_subgroup_specific_set(pids, subgroups):
@@ -224,6 +261,22 @@ def patient_and_subgroup_specific_set(pids, subgroups):
     return res
 
 
+def partial_subgroup_specific(pids, subgroup_ind):
+    """
+    For each subgroup, get the list of sets that corresponds to >= 2 members of that subgroup and no members of any
+    other.
+    :param pids: List of PIDs
+    :param subgroup_ind: Dict, keyed by subgroup name. Values are np.array of booleans (i.e. boolean indexers). Order
+    of indexers must match pids.
+    :return: Dict, keyed by subgroup name. Each value is a list of sets.
+    """
+    ss_part_sets = {}
+    candidates = list(setops.binary_combinations_sum_gte(len(pids), 2))
+    for grp in subgroup_ind:
+        ss_part_sets[grp] = [t for t in candidates if np.array([x for x in t]).astype(int)[~subgroup_ind[grp]].sum() == 0]
+    return ss_part_sets
+
+
 def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
     cpm = dat.divide(dat.sum(), axis=1) * 1e6
     keep = (cpm > min_cpm).sum(axis=1) > 0
@@ -253,14 +306,59 @@ def de_grouped_dispersion(dat, groups, comparisons, min_cpm=1., **de_params):
     return res
 
 
+def de_export_to_ipa(de_wideform, pids):
+    cols = []
+    for p in pids:
+        cols.append("%s logFC" % p)
+        cols.append("%s FDR" % p)
+    ipa_export = pd.DataFrame(index=de_wideform.index, columns=cols)
+    for pid in pids:
+        ix = de_wideform.loc[:, pid] == 'Y'
+        ipa_export.loc[ix, "%s logFC" % pid] = de_wideform.loc[ix, "%s_logFC" % pid]
+        ipa_export.loc[ix, "%s FDR" % pid] = de_wideform.loc[ix, "%s_FDR" % pid]
+    return ipa_export
+
+
+def export_dmr_data_for_ipa(results_tbl):
+    # output data for IPA
+    all_genes = set()
+    for v in results_tbl.values():
+        all_genes.update(v.gene.dropna())
+    # convert to Ensembl and drop any that cannot be found
+    genes_for_ipa = annotation_gene_to_ensembl.gene_to_ens(all_genes).dropna().sort_values()
+    # data import is made easier if the columns contain letters as well as numbers
+    ipa_export = pd.DataFrame(index=genes_for_ipa.index, columns=["Patient %s" % p for p in results_tbl.keys()])
+
+    for pid, this in results_tbl.items():
+        ix = this.gene.isin(genes_for_ipa.index)
+        this = this.loc[ix]
+        this = this.loc[~this.padj.isnull()]
+        this = this.groupby('gene').padj.min()
+        ipa_export.loc[this.index, "Patient %s" % pid] = this
+    # easier to leave non-significant values as NaN (missing)
+    # alternative: set p value to 1.0
+    # ipa_export = ipa_export.fillna(1.)
+
+    # replace the index with the Ensembl IDs
+    ipa_export = ipa_export.set_index(genes_for_ipa)
+    return ipa_export
+
+
 if __name__ == "__main__":
-    outdir = output.unique_output_dir()
+    outdir = output.unique_output_dir("hgic_de_dmr_two_strategies", reuse_empty=True)
     outdir_s1 = os.path.join(outdir, 's1')
     outdir_s2 = os.path.join(outdir, 's2')
     if not os.path.isdir(outdir_s1):
         os.makedirs(outdir_s1)
     if not os.path.isdir(outdir_s2):
         os.makedirs(outdir_s2)
+
+    outdir_s1_ipa = os.path.join(outdir_s1, 'ipa')
+    outdir_s2_ipa = os.path.join(outdir_s2, 'ipa')
+    if not os.path.isdir(outdir_s1_ipa):
+        os.makedirs(outdir_s1_ipa)
+    if not os.path.isdir(outdir_s2_ipa):
+        os.makedirs(outdir_s2_ipa)
 
     min_cpm = 1.
 
@@ -318,6 +416,15 @@ if __name__ == "__main__":
 
     # file location parameters
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+
+    if not os.path.isdir(DE_LOAD_DIR):
+        logger.info("Created DE results save path %s.", DE_LOAD_DIR)
+        os.makedirs(DE_LOAD_DIR)
+
+    if not os.path.isdir(DMR_LOAD_DIR):
+        logger.info("Created DMR results save path %s.", DMR_LOAD_DIR)
+        os.makedirs(DMR_LOAD_DIR)
 
     # upset plotting colours
     subgroup_set_colours = {
@@ -344,6 +451,8 @@ if __name__ == "__main__":
     for grp in subgroup_ind:
         k = ''.join(subgroup_ind[grp].astype(int).astype(str))
         ss_sets.append(k)
+
+    ss_part_sets = partial_subgroup_specific(pids, subgroup_ind)
 
     ec_sets = expanded_core_sets(setops.binary_combinations(len(pids), include_zero=False), subgroup_ind)
 
@@ -381,28 +490,65 @@ if __name__ == "__main__":
         dmr_res_s1.to_pickle(fn, include_annotation=False)
         print "Saved DMR results to %s" % fn
 
-    dmr_classes = ['tss', 'island']
+    # extract results
+    dmr_res_full_s1 = dmr_res_s1.results
+    dmr_res_sign_s1 = dmr_res_s1.results_significant
 
-    # extract combined significant results for tss and island
-    dmr_res_all_cls = dmr_res_s1.results_by_class()
-    dmr_res_sign_all_cls = dmr_res_s1.results_significant_by_class()
+    # as we have been sequencing various additional samples, we should explicitly list those that go into this
+    # analysis, to avoid changing results in the future
+    rnaseq_sample_names = [
+        'GBM018_P12',
+        'GBM018_P10',
+        'DURA018_NSC_N4_P4',
+        'DURA018_NSC_N2_P6',
+        'GBM019_P4',
+        'GBM019_P3n6',
+        'DURA019_NSC_N8C_P2',
+        'DURA019_NSC_N5C1_P2',
+        'GBM030_P9n10',
+        'GBM030_P5',
+        'DURA030_NSC_N16B6_P1',
+        'DURA030_NSC_N9_P2',
+        'GBM031_P7',
+        'GBM031_P4',
+        'DURA031_NSC_N44B_P2',
+        'DURA031_NSC_N44_P3',
+        'GBM017_P3',
+        'GBM017_P4',
+        'DURA017_NSC_N3C5_P4',
+        'GBM050_P7n8',
+        'GBM050_P9',
+        'DURA050_NSC_N12_P3',
+        'DURA050_NSC_N16_P4',
+        'GBM054_P4',
+        'GBM054_P6',
+        'DURA054_NSC_N3C_P2',
+        'DURA054_NSC_N2E_P1',
+        'GBM061_P3',
+        'GBM061_P5',
+        'DURA061_NSC_N4_P2',
+        'DURA061_NSC_N1_P3',
+        'GBM026_P8',
+        'GBM026_P3n4',
+        'DURA026_NSC_N31D_P5',
+        'GBM052_P6n7',
+        'GBM052_P4n5',
+        'DURA052_NSC_N4_P3',
+        'DURA052_NSC_N5_P2',
+        'GIBCO_NSC_P4',
+        'H9_NSC_1',
+        'H9_NSC_2',
+    ]
 
-    dmr_res_full_s1 = {}
-    dmr_res_sign_s1 = {}
-    for k1 in dmr_res_sign_all_cls:
-        # for k2 in dmr_res_sign_all_cls[k1]:
-        dmr_res_sign_s1[k1] = {}
-        dmr_res_full_s1[k1] = {}
-        for dc in dmr_classes:
-            dmr_res_sign_s1[k1].update(dmr_res_sign_all_cls[k1][dc])
-            dmr_res_full_s1[k1].update(dmr_res_all_cls[k1][dc])
-        # only need the keys for the significant DMR list
-        dmr_res_sign_s1[k1] = dmr_res_sign_s1[k1].keys()
-
-    rnaseq_obj = load_rnaseq(pids, external_ref_names_de, strandedness=external_ref_strandedness_de)
+    rnaseq_obj = load_rnaseq(
+        pids,
+        external_ref_names_de,
+        strandedness=external_ref_strandedness_de,
+        discard_filter=['IPSC', 'ASTRO', '_FB']
+    )
 
     # remove unneeded samples
-    idx = (~rnaseq_obj.meta.index.isin(['DURA061_NSC_N1_P5', 'DURA061_NSC_N6_P4']))
+    idx = rnaseq_obj.meta.index.isin(rnaseq_sample_names)
     rnaseq_obj.filter_samples(idx)
 
     #########################################################################
@@ -413,26 +559,42 @@ if __name__ == "__main__":
     dat_s1 = rnaseq_obj.data.loc[
              :,
              rnaseq_obj.batch_id.str.contains('wtchg') & (~rnaseq_obj.data.columns.str.contains('GIBCO'))
-    ]
+             ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
-    groups_s1 = pd.Series(index=meta_s1.index)
-    comparisons_s1 = {}
-    for pid in pids:
-        groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
-        groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
 
-        comparisons_s1[("GBM%s" % pid, "iNSC%s" % pid)] = "GBM%s - iNSC%s" % (pid, pid)
+    the_hash = de_results_hash(meta_s1.index.tolist(), de_params)
+    filename = 'de_results_paired_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DE_LOAD_DIR, filename)
 
-    de_res_full_s1 = de_grouped_dispersion(
-        dat_s1,
-        groups_s1,
-        comparisons_s1,
-        min_cpm=min_cpm,
-        return_full=True,
-        **de_params
-    )
-    # rename the keys to simplify
-    de_res_full_s1 = dict([(pid, de_res_full_s1[("GBM%s" % pid, "iNSC%s" % pid)]) for pid in pids])
+    if os.path.isfile(fn):
+        logger.info("Reading S1 DE results from %s", fn)
+        with open(fn, 'rb') as f:
+            de_res_full_s1 = pickle.load(f)
+    else:
+        groups_s1 = pd.Series(index=meta_s1.index)
+        comparisons_s1 = {}
+        for pid in pids:
+            groups_s1[groups_s1.index.str.contains('GBM') & groups_s1.index.str.contains(pid)] = "GBM%s" % pid
+            groups_s1[groups_s1.index.str.contains('NSC') & groups_s1.index.str.contains(pid)] = "iNSC%s" % pid
+
+            comparisons_s1[("GBM%s" % pid, "iNSC%s" % pid)] = "GBM%s - iNSC%s" % (pid, pid)
+
+        de_res_full_s1 = de_grouped_dispersion(
+            dat_s1,
+            groups_s1,
+            comparisons_s1,
+            min_cpm=min_cpm,
+            return_full=True,
+            **de_params
+        )
+        # rename the keys to simplify
+        de_res_full_s1 = dict([(pid, de_res_full_s1[("GBM%s" % pid, "iNSC%s" % pid)]) for pid in pids])
+
+        with open(fn, 'wb') as f:
+            pickle.dump(de_res_full_s1, f)
+
+        logger.info("Saved S1 DE results to %s", fn)
+
     # extract only significant DE genes
     de_res_s1 = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full_s1.items()])
 
@@ -463,33 +625,110 @@ if __name__ == "__main__":
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de.tiff"), dpi=200)
 
     # generate wide-form lists and save to Excel file
-    data = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, full_data=de_res_full_s1)
+    data = setops.venn_set_to_wide_dataframe(
+        de_res_s1,
+        venn_set,
+        pids,
+        full_data=de_res_full_s1,
+        cols_to_include=['logFC', 'FDR'],
+        static_cols_to_include=['Gene Symbol'],
+        consistency_check_col='logFC',
+        consistency_check_method='sign'
+    )
     data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
+    de_export_to_ipa(data, pids).to_excel(os.path.join(outdir_s1_ipa, "full_de_for_ipa.xlsx"))
 
     # expanded core (genes DE in multiple subgroups)
-    data_ec = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ec_sets)
+    data_ec = setops.venn_set_to_wide_dataframe(
+        de_res_s1,
+        venn_set,
+        pids,
+        include_sets=ec_sets,
+        full_data=de_res_full_s1,
+        cols_to_include=['logFC', 'FDR'],
+        static_cols_to_include=['Gene Symbol'],
+        consistency_check_col='logFC',
+        consistency_check_method='sign'
+    )
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de.xlsx'))
+    de_export_to_ipa(data_ec, pids).to_excel(os.path.join(outdir_s1_ipa, "expanded_core_de_for_ipa.xlsx"))
 
-    # subgroup-specific
-    data_ss = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=ss_sets)
-    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de.xlsx'))
+    # subgroup-specific (full - must be in all patients)
+    # split: one subgroup per tab
+    data_ss = {}
+    for sg in subgroups:
+        k = ''.join(subgroup_ind[sg].astype(int).astype(str))
+        data_ss[sg] = setops.venn_set_to_wide_dataframe(
+            de_res_s1,
+            venn_set,
+            pids,
+            include_sets=[k],
+            full_data=de_res_full_s1,
+            cols_to_include=['logFC', 'FDR'],
+            static_cols_to_include=['Gene Symbol'],
+            consistency_check_col='logFC',
+            consistency_check_method='sign'
+        )
+    excel.pandas_to_excel(data_ss, os.path.join(outdir_s1, 'full_subgroup_specific_de.xlsx'))
 
-    # patient unique
-    data_pu = differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pu_sets)
+    # subgroup-specific (partial: at least 2 members)
+    # split: one subgroup per tab
+    data_ss_part = {}
+    for sg in subgroups:
+        data_ss_part[sg] = setops.venn_set_to_wide_dataframe(
+            de_res_s1,
+            venn_set,
+            pids,
+            include_sets=ss_part_sets[sg],
+            full_data=de_res_full_s1,
+            cols_to_include=['logFC', 'FDR'],
+            static_cols_to_include=['Gene Symbol'],
+            consistency_check_col='logFC',
+            consistency_check_method='sign'
+        )
+    excel.pandas_to_excel(data_ss_part, os.path.join(outdir_s1, 'partial_subgroup_specific_de.xlsx'))
+
+    # patient specific
+    data_pu = setops.venn_set_to_wide_dataframe(
+        de_res_s1,
+        venn_set,
+        pids,
+        include_sets=pu_sets,
+        full_data=de_res_full_s1,
+        cols_to_include=['logFC', 'FDR'],
+        static_cols_to_include=['Gene Symbol'],
+        consistency_check_col='logFC',
+        consistency_check_method='sign'
+    )
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_de.xlsx'))
+    de_export_to_ipa(data_pu, pids).to_excel(os.path.join(outdir_s1_ipa, "patient_specific_de_for_ipa.xlsx"))
 
-    # patient and subgroup-specific
-    data_pss = dict([
-        (pid, differential_expression.venn_set_to_dataframe(de_res_s1, venn_set, pids, include_sets=pss_sets[pid]))
-        for pid in pids
-    ])
-    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de.xlsx'))
+    # patient or subgroup-specific
+    data_pss = {}
+    export_pss = pd.DataFrame(index=de_res_full_s1.values()[0].index)
+    for pid in pids:
+        data_pss[pid] = setops.venn_set_to_wide_dataframe(
+            de_res_s1,
+            venn_set,
+            pids,
+            include_sets=pss_sets[pid],
+            full_data=de_res_full_s1,
+            cols_to_include=['logFC', 'FDR'],
+            static_cols_to_include=['Gene Symbol'],
+            consistency_check_col='logFC',
+            consistency_check_method='sign'
+        )
+        this_export = de_export_to_ipa(data_pss[pid], pids)
+        export_pss.insert(0, "%s FDR" % pid, this_export.loc[:, "%s FDR" % pid])
+        export_pss.insert(0, "%s logFC" % pid, this_export.loc[:, "%s logFC" % pid])
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_or_subgroup_specific_de.xlsx'))
+    export_pss.to_excel(os.path.join(outdir_s1_ipa, "patient_or_subgroup_specific_de_for_ipa.xlsx"))
 
     ###################
     ### b) DMR only ###
     ###################
 
-    dmr_by_member = [dmr_res_sign_s1[pid] for pid in pids]
+    dmr_by_member = [dmr_res_sign_s1[pid].keys() for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
 
     # add null set manually from full DMR results
@@ -518,10 +757,13 @@ if __name__ == "__main__":
     data_for_dmr_table_full = {}
     for pid in pids:
         this_sign = dmr_res_s1[pid].to_table(include='significant', skip_geneless=True)
-        data_for_dmr_table[pid] = expand_dmr_results_table_by_gene(this_sign)
+        data_for_dmr_table[pid] = expand_dmr_results_table_by_gene_and_cluster(this_sign, drop_geneless=True)
 
         this_full = dmr_res_s1[pid].to_table(include='all',skip_geneless=True)
-        data_for_dmr_table_full[pid] = expand_dmr_results_table_by_gene(this_full)
+        data_for_dmr_table_full[pid] = expand_dmr_results_table_by_gene_and_cluster(this_full, drop_geneless=True)
+
+    # output data for IPA
+    export_dmr_data_for_ipa(data_for_dmr_table_full).to_excel(os.path.join(outdir_s1_ipa, "full_dmr_genes_for_ipa.xlsx"))
 
     # recalculate venn set
     dmr_by_member = [data_for_dmr_table[pid].index for pid in pids]
@@ -533,17 +775,21 @@ if __name__ == "__main__":
     venn_set[k_null] = list(data_for_dmr_table_full[pids[0]].index.difference(dmr_id_all))
     venn_ct[k_null] = len(venn_set[k_null])
 
+    # get all gene relation choices
+    gene_relation_choices = set()
+    for pp in dmr_res_s1.clusters.values():
+        gene_relation_choices.update([t[1] for t in list(pp.genes)])
+
     data = setops.venn_set_to_wide_dataframe(
         data_for_dmr_table,
         venn_set,
         pids,
         full_data=data_for_dmr_table_full,
         cols_to_include=('median_delta', 'padj'),
+        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data.insert(0, 'gene_symbol', [t[1] for t in data.index])
-    data.insert(0, 'cluster_id', [t[0] for t in data.index])
 
     # quick (bespoke) sanity check
     for pid in pids:
@@ -565,11 +811,11 @@ if __name__ == "__main__":
         full_data=data_for_dmr_table_full,
         include_sets=ec_sets,
         cols_to_include=('median_delta', 'padj'),
+        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_ec.insert(0, 'gene_symbol', [t[1] for t in data_ec.index])
-    data_ec.insert(0, 'cluster_id', [t[0] for t in data_ec.index])
+
     data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_dmr.xlsx'))
 
     # subgroup-specific
@@ -580,11 +826,11 @@ if __name__ == "__main__":
         full_data=data_for_dmr_table_full,
         include_sets=ss_sets,
         cols_to_include=('median_delta', 'padj'),
+        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_ss.insert(0, 'gene_symbol', [t[1] for t in data_ss.index])
-    data_ss.insert(0, 'cluster_id', [t[0] for t in data_ss.index])
+
     data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_dmr.xlsx'))
 
     # patient unique
@@ -595,34 +841,36 @@ if __name__ == "__main__":
         full_data=data_for_dmr_table_full,
         include_sets=pu_sets,
         cols_to_include=('median_delta', 'padj'),
+        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
         consistency_check_col='median_delta',
         consistency_check_method='sign'
     )
-    data_pu.insert(0, 'gene_symbol', [t[1] for t in data_pu.index])
-    data_pu.insert(0, 'cluster_id', [t[0] for t in data_pu.index])
+
     data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_dmr.xlsx'))
 
     # patient and subgroup-specific
     data_pss = {}
     for pid in pids:
         this_tbl = setops.venn_set_to_wide_dataframe(
-                data_for_dmr_table,
-                venn_set,
-                pids,
-                full_data=data_for_dmr_table_full,
-                include_sets=pss_sets[pid],
-                cols_to_include=('median_delta', 'padj'),
-                consistency_check_col='median_delta',
-                consistency_check_method='sign'
-            )
-        this_tbl.insert(0, 'gene_symbol', [t[1] for t in this_tbl.index])
-        this_tbl.insert(0, 'cluster_id', [t[0] for t in this_tbl.index])
+            data_for_dmr_table,
+            venn_set,
+            pids,
+            full_data=data_for_dmr_table_full,
+            include_sets=pss_sets[pid],
+            cols_to_include=('median_delta', 'padj'),
+            static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
+            consistency_check_col='median_delta',
+            consistency_check_method='sign'
+        )
+
         data_pss[pid] = this_tbl
-    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_dmr.xlsx'))
+    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_or_subgroup_specific_dmr.xlsx'))
 
     #############################
     ### c) Layered DE and DMR ###
     #############################
+
+    """
 
     # get the joint table
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
@@ -715,7 +963,7 @@ if __name__ == "__main__":
         consistency_check_method='sign'
     )
     annotate_de_dmr_wide_form(data_pu)
-    data_pu.to_excel(os.path.join(outdir_s1, 'patient_specific_de_dmr_concordant.xlsx'), index=False)
+    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
 
     # patient and subgroup-specific
     data_pss = {}
@@ -750,6 +998,8 @@ if __name__ == "__main__":
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
     upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
 
+    """
+
     ##################
     ### STRATEGY 2 ###
     ##################
@@ -765,36 +1015,51 @@ if __name__ == "__main__":
     )
     me_data_with_ref = me_obj_with_ref.data
 
-    # Compute DE cross-comparison
+    # Compute DE cross-comparison or load if results already exist
 
     dat_s2 = rnaseq_obj.data
     meta_s2 = rnaseq_obj.meta
-    groups_s2 = pd.Series(index=meta_s2.index)
-    comparisons_s2 = {}
-    for er, er_type in external_refs_de:
-        groups_s2[groups_s2.index.str.contains(er) & (meta_s2.loc[:, 'type'] == er_type)] = er
 
-    for pid in pids:
-        groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
-        groups_s2[groups_s2.index.str.contains('NSC') & groups_s2.index.str.contains(pid)] = "iNSC%s" % pid
+    the_hash = de_results_hash(meta_s2.index.tolist(), de_params)
+    filename = 'de_results_cross_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DE_LOAD_DIR, filename)
 
-        for pid2 in pids:
-            comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
+    if os.path.isfile(fn):
+        logger.info("Reading S2 DE results from %s", fn)
+        with open(fn, 'rb') as f:
+            de_res_full_s2 = pickle.load(f)
+    else:
+        groups_s2 = pd.Series(index=meta_s2.index)
+        comparisons_s2 = {}
         for er, er_type in external_refs_de:
-            comparisons_s2[("GBM%s" % pid, er)] = "GBM%s - %s" % (pid, er)
+            groups_s2[groups_s2.index.str.contains(er) & (meta_s2.loc[:, 'type'] == er_type)] = er
 
-    de_res_full_s2 = de_grouped_dispersion(
-        dat_s2,
-        groups_s2,
-        comparisons_s2,
-        min_cpm=min_cpm,
-        return_full=True,
-        **de_params
-    )
-    # rename for convenience
-    de_res_full_s2 = dict([
-        ((k[0].replace('GBM', ''), k[1].replace('iNSC', '')), v) for k, v in de_res_full_s2.items()
-    ])
+        for pid in pids:
+            groups_s2[groups_s2.index.str.contains('GBM') & groups_s2.index.str.contains(pid)] = "GBM%s" % pid
+            groups_s2[groups_s2.index.str.contains('NSC') & groups_s2.index.str.contains(pid)] = "iNSC%s" % pid
+
+            for pid2 in pids:
+                comparisons_s2[("GBM%s" % pid, "iNSC%s" % pid2)] = "GBM%s - iNSC%s" % (pid, pid2)
+            for er, er_type in external_refs_de:
+                comparisons_s2[("GBM%s" % pid, er)] = "GBM%s - %s" % (pid, er)
+
+        de_res_full_s2 = de_grouped_dispersion(
+            dat_s2,
+            groups_s2,
+            comparisons_s2,
+            min_cpm=min_cpm,
+            return_full=True,
+            **de_params
+        )
+        # rename for convenience
+        de_res_full_s2 = dict([
+            ((k[0].replace('GBM', ''), k[1].replace('iNSC', '')), v) for k, v in de_res_full_s2.items()
+        ])
+
+        with open(fn, 'wb') as f:
+            pickle.dump(de_res_full_s2, f)
+
+        logger.info("Saved S2 DE results to %s", fn)
 
     de_res_s2 = dict([(k, v.loc[v.FDR < de_params['fdr']]) for k, v in de_res_full_s2.items()])
 
@@ -826,27 +1091,104 @@ if __name__ == "__main__":
         dmr_res_s2.to_pickle(fn, include_annotation=False)
         print "Saved DMR results to %s" % fn
 
-    dmr_classes = ['tss', 'island']
-
-    # extract combined significant results for tss and island
-
-    dmr_res_all_cls = dmr_res_s2.results_by_class()
-    dmr_res_sign_all_cls = dmr_res_s2.results_significant_by_class()
-
     dmr_res_full_s2 = {}
     dmr_res_sign_s2 = {}
-    for k1 in dmr_res_sign_all_cls:
-        for k2 in dmr_res_sign_all_cls[k1]:
-            dmr_res_sign_s2[(k1, k2)] = {}
-            dmr_res_full_s2[(k1, k2)] = {}
-            for dc in dmr_classes:
-                dmr_res_sign_s2[(k1, k2)].update(dmr_res_sign_all_cls[k1][k2][dc])
-                dmr_res_full_s2[(k1, k2)].update(dmr_res_all_cls[k1][k2][dc])
-            dmr_res_sign_s2[(k1, k2)] = dmr_res_sign_s2[(k1, k2)].keys()
+
+    for k1 in dmr_res_s2.keys():
+        for k2 in dmr_res_s2[k1].keys():
+            dmr_res_sign_s2[(k1, k2)] = dmr_res_s2[k1][k2].results_significant
+            dmr_res_full_s2[(k1, k2)] = dmr_res_s2[k1][k2].results
 
     #######################
     ### a) Pair-only DE ###
     #######################
+
+    # export full syngeneic and reference comparisons (not cross comparisons) to Excel
+    for_export = {}
+    for pid in pids:
+        this_full = {}
+        this_export = {}
+        export_order = []
+        this_export["%s_syngeneic" % pid] = de_res_s2[(pid, pid)]
+        this_full["%s_syngeneic" % pid] = de_res_full_s2[(pid, pid)]
+        export_order.append("%s_syngeneic" % pid)
+        for r in external_refs_de_labels:
+            this_export["%s_%s" % (pid, r)] = de_res_s2[(pid, r)]
+            this_full["%s_%s" % (pid, r)] = de_res_full_s2[(pid, r)]
+            export_order.append("%s_%s" % (pid, r))
+
+        venn_set, _ = setops.venn_from_arrays(*[this_export[k].index for k in export_order])
+
+        for_export[pid] = differential_expression.venn_set_to_dataframe(
+            this_export,
+            venn_set,
+            export_order,
+            full_data=this_full,
+            add_null_set=True
+        )
+    excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_de_by_patient.xlsx"))
+
+    # wideform version of this (i.e. 30 blocks)
+    # we can't use the Venn approach here, but we don't need to
+    all_genes = sorted(setops.reduce_union(*[t.index for t in de_res_full_s2.values()]))
+    for_export = pd.DataFrame(index=all_genes)
+    member_cols = []
+    general.add_gene_symbols_to_ensembl_data(for_export)
+    for pid in pids:
+        for r in [pid] + external_refs_de_labels:
+            this_sign = de_res_s2[(pid, r)]
+            this_full = de_res_full_s2[(pid, r)]
+            this_yn = pd.Series('N', index=all_genes)
+            this_yn.loc[this_sign.index] = 'Y'
+            k = "%s_%s" % (pid, r if r != pid else 'syngeneic')
+            member_cols.append(k)
+            for_export.insert(
+                for_export.shape[1],
+                k,
+                this_yn
+            )
+            for_export.insert(
+                for_export.shape[1],
+                "%s_logFC" % k,
+                this_full.reindex(all_genes)['logFC']
+            )
+            for_export.insert(
+                for_export.shape[1],
+                "%s_FDR" % k,
+                this_full.reindex(all_genes)['FDR']
+            )
+
+    # consistency column: is this useful with this many samples?
+    all_yn = for_export.loc[:, member_cols]
+    all_logFC = for_export.loc[:, ["%s_logFC" % t for t in member_cols]].values
+    all_logFC[(all_yn == 'N').values] = np.nan
+    row_sum_abs = np.abs(np.nansum(np.sign(all_logFC), axis=1))
+    row_nz = (~np.isnan(np.sign(all_logFC))).sum(axis=1)
+
+    consist = pd.Series('N', index=all_genes)
+    consist.loc[row_sum_abs == row_nz] = 'Y'
+
+    for_export.insert(
+        for_export.shape[1],
+        'consistent',
+        consist
+    )
+    for_export.to_excel(os.path.join(outdir_s2, "full_de.xlsx"))
+
+    # export for IPA
+    # NB: we still need the syngeneic version, because it isn't *quite* the same as S1 (due to lumped dispersion)
+    ipa_export = for_export.drop(['Gene Symbol', 'consistent'], axis=1)
+
+    # since the maximum number of observations is 20, split this over 3 files
+    ix = ipa_export.columns.str.contains('_syngeneic') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_syngeneic.xlsx"))
+    ix = ipa_export.columns.str.contains('_H9') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_h9.xlsx"))
+    ix = ipa_export.columns.str.contains('_GIBCO') & ipa_export.columns.str.contains(r'(_logFC)|(_FDR)')
+    ipa_export.loc[:, ix].to_excel(os.path.join(outdir_s2_ipa, "full_de_gibco.xlsx"))
+
+    # Find DE genes that are "pair only" in ALL cross comparisons
+    # These are not syngeneic-specific, but are "our iNSC specific", suggesting they may be an artefact?
 
     de_res_s2_idx = dict([
         (k, v.index) for k, v in de_res_s2.items()
@@ -868,11 +1210,11 @@ if __name__ == "__main__":
 
     # take the intersection of the PO lists, then export to a file
     po_de_export = {}
-    po_de_export_full = {}
+    # po_de_export_full = {}
     for pid in pids:
-        po_de_export_full[pid] = de_res_full_s2[(pid, pid)].copy()
+        # po_de_export_full[pid] = de_res_full_s2[(pid, pid)].copy()
 
-        this_row = pair_only_de.loc[pid, [t[0] for t in external_refs_de]]
+        this_row = pair_only_de.loc[pid, external_refs_de_labels]
         this_genes_pre = setops.reduce_intersection(*this_row)
 
         # can correct as follows
@@ -884,16 +1226,15 @@ if __name__ == "__main__":
         # we won't, to avoid cross-comparison issues
         this_genes = this_genes_pre
 
-        po_col = pd.Series('N', index=po_de_export_full[pid].index)
+        po_col = pd.Series('N', index=de_res_full_s2[(pid, pid)].index)
         po_col.loc[this_genes] = 'Y'
-        po_de_export_full[pid].insert(po_de_export_full[pid].shape[1], 'pair_only', po_col)
-
         po_de_export[pid] = de_res_s2[(pid, pid)].loc[this_genes]
 
-    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, 'pair_only_de.xlsx'))
-    excel.pandas_to_excel(po_de_export_full, os.path.join(outdir_s2, 'pair_only_de_full.xlsx'))
+    # export
+    excel.pandas_to_excel(po_de_export, os.path.join(outdir_s2, "pair_only_de.xlsx"))
 
     # export with a different layout, analogous to strategy 1
+    # this is helpful for comparing BETWEEN patients
     venn_set, venn_ct = setops.venn_from_arrays(*[po_de_export[pid].index for pid in pids])
     po_combination_export = differential_expression.venn_set_to_dataframe(po_de_export, venn_set, pids)
 
@@ -902,11 +1243,15 @@ if __name__ == "__main__":
         venn_set,
         pids,
         cols_to_include=('logFC', 'FDR'),
+        static_cols_to_include=['Gene Symbol'],
         consistency_check_col='logFC',
         consistency_check_method="sign"
     )
+    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_inter_patient.xlsx'))
 
-    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_wideform.xlsx'))
+    # can also use this representation to export to IPA
+    de_export_to_ipa(po_combination_export, pids).to_excel(os.path.join(outdir_s2_ipa, "pair_only_de_for_ipa.xlsx"))
+
 
     # array of Venn plots: GBM vs X (# DE genes)
     # only possible if number of references <= 3 (otherwise too many sets)
@@ -967,7 +1312,7 @@ if __name__ == "__main__":
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s vs..." % pid)
         ax_set.remove(axs[i, j])
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.02, right=1., bottom=0.05, top=.95, wspace=0.1, hspace=0.3)
     for ax in ax_set:
         ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_de_multiple_references.png'), dpi=200)
@@ -1021,9 +1366,73 @@ if __name__ == "__main__":
     ### b) Pair-only DMR ###
     ########################
 
-    # Compute cross-comparison
+    # export full syngeneic and reference comparisons (not cross comparisons) to Excel
+    for_export = {}
+    for_ipa = {'syngeneic': {}}
+    for r in external_refs_dm_labels:
+        for_ipa[r] = {}
+
+    for pid in pids:
+        this_full = {}
+        this_export = {}
+        export_order = []
+
+        this_export["%s_syngeneic" % pid] = dmr_res_s2[pid][pid].to_table(include='significant', skip_geneless=False)
+        this_export["%s_syngeneic" % pid] = expand_dmr_results_table_by_gene_and_cluster(
+            this_export["%s_syngeneic" % pid],
+            drop_geneless=False
+        )
+        for_ipa['syngeneic']["%s_syngeneic" % pid] = this_export["%s_syngeneic" % pid]
+
+        this_full["%s_syngeneic" % pid] = dmr_res_s2[pid][pid].to_table(include='all', skip_geneless=False)
+        this_full["%s_syngeneic" % pid] = expand_dmr_results_table_by_gene_and_cluster(
+            this_full["%s_syngeneic" % pid],
+            drop_geneless=False
+        )
+
+        export_order.append("%s_syngeneic" % pid)
+        for r in external_refs_dm_labels:
+            this_export["%s_%s" % (pid, r)] = dmr_res_s2[pid][r].to_table(include='significant', skip_geneless=False)
+            this_export["%s_%s" % (pid, r)] = expand_dmr_results_table_by_gene_and_cluster(
+                this_export["%s_%s" % (pid, r)],
+                drop_geneless=False
+            )
+            for_ipa[r]["%s_%s" % (pid, r)] = this_export["%s_%s" % (pid, r)]
+
+            this_full["%s_%s" % (pid, r)] = dmr_res_s2[pid][r].to_table(include='all', skip_geneless=False)
+            this_full["%s_%s" % (pid, r)] = expand_dmr_results_table_by_gene_and_cluster(
+                this_full["%s_%s" % (pid, r)],
+                drop_geneless=False
+            )
+            export_order.append("%s_%s" % (pid, r))
+
+        venn_set, _ = setops.venn_from_arrays(*[this_export[k].index for k in export_order])
+
+        for_export[pid] = setops.venn_set_to_wide_dataframe(
+            this_export,
+            venn_set,
+            export_order,
+            full_data=this_full,
+            cols_to_include=('median_delta', 'padj'),
+            static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
+            consistency_check_col='median_delta',
+            consistency_check_method="sign"
+        )
+    excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_dmr.xlsx"))
+
+    # Export data for IPA analysis TODO: check
+    # split into 3 x 10 to allow uploading (max: 20)
+    for k, v in for_ipa.items():
+        export_dmr_data_for_ipa(v).to_excel(os.path.join(outdir_s2_ipa, "full_dmr_genes_for_ipa_%s.xlsx" % k.lower()))
+
+    # Compute cross-comparison using cluster IDs (only)
+
+    dmr_res_s2_idx = dict([
+        (k, v.keys()) for k, v in dmr_res_sign_s2.items()
+    ])
+
     cc_dict_dmr = cross_comparison.compute_cross_comparison_correction(
-        dmr_res_sign_s2,
+        dmr_res_s2_idx,
         pids,
         external_refs=external_refs_dm_labels,
         set_type='pair_only'
@@ -1032,14 +1441,18 @@ if __name__ == "__main__":
     po_specific_to_all_refs_dmr = sorted(cc_dict_dmr['specific_to_all_refs'])
     pair_only_dmr = cc_dict_dmr['venn_set']
 
-    #for DMR, just dump some information to a file
+    # export list of reference-specific pair only cluster IDs, together with DMR information
+    if len(po_specific_to_all_refs_dmr) > 0:
+        this_export = {}
+        for pid in pids:
+            this_tbl = expand_dmr_results_table_by_gene_and_cluster(
+                dmr_res_s2[pid][pid].to_table(include='all', skip_geneless=False),
+                drop_geneless=False
+            )
+            this_tbl = this_tbl.loc[this_tbl.cluster_id.isin(po_specific_to_all_refs_dmr)]
+            this_export[pid] = this_tbl
 
-    for_export = []
-    for i in po_specific_to_all_refs_dmr:
-        t = dmr_res_s2.clusters[i].summary_dict
-        for_export.append('\n'.join(["%s: %s" % (k, str(v)) for k, v in t.items()]))
-    with open(os.path.join(outdir_s2, 'consistently_in_pair_only_across_all_refs_dmr.txt'), 'wb') as f:
-        f.write("\n\n***\n\n".join(for_export))
+        excel.pandas_to_excel(this_export, os.path.join(outdir_s2, "consistently_in_pair_only_across_all_refs_dmr.xlsx"))
 
     # take the intersection of the PO lists, then export to a file
     po_dmr_export = {}
@@ -1059,31 +1472,24 @@ if __name__ == "__main__":
 
         # reduce to pair only
         this_sign = this_sign.loc[this_dmr]
-        # # filter to include only TSS and Island - should be unnecessary
-        # this_sign = this_sign.loc[this_sign.class_island | this_sign.class_tss]
 
         # expand by gene
-        this_sign = expand_dmr_results_table_by_gene(this_sign, drop_geneless=True)
+        this_sign = expand_dmr_results_table_by_gene_and_cluster(this_sign, drop_geneless=False)
 
         this_full = dmr_res_s2[pid][pid].to_table(include='all', skip_geneless=False)
-        # # filter to include only TSS and Island  - should be unnecessary
-        # this_full = this_full.loc[this_full.class_island | this_full.class_tss]
+
         # annotate pair only
         po_col = pd.Series('N', index=this_full.index)
         po_col.loc[this_dmr] = 'Y'
         this_full.insert(this_full.shape[1], 'pair_only', po_col)
+
         # annotate significant (otherwise it isn't obvious)
         dm_col = pd.Series('N', index=this_full.index)
         dm_col.loc[sign_cl_ids] = 'Y'
         this_full.insert(this_full.shape[1], 'significant_dmr', dm_col)
-        # expand by gene
-        this_full = expand_dmr_results_table_by_gene(this_full, drop_geneless=True)
 
-        # for export reasons, we need to convert the class_ boolean fields
-        this_sign.loc[:, this_sign.columns.str.contains('class_')] = \
-            this_sign.loc[:, this_sign.columns.str.contains('class_')].astype(int)
-        this_full.loc[:, this_full.columns.str.contains('class_')] = \
-            this_full.loc[:, this_full.columns.str.contains('class_')].astype(int)
+        # expand by gene
+        this_full = expand_dmr_results_table_by_gene_and_cluster(this_full, drop_geneless=False)
 
         po_dmr_export_full[pid] = this_full
         po_dmr_export[pid] = this_sign
@@ -1092,23 +1498,70 @@ if __name__ == "__main__":
     excel.pandas_to_excel(po_dmr_export_full, os.path.join(outdir_s2, 'pair_only_dmr_full.xlsx'))
 
     # export with a different layout, analogous to strategy 1
+
+    # get all gene relation choices
+    gene_relation_choices = set()
+    for pp in dmr_res_s2.clusters.values():
+        gene_relation_choices.update([t[1] for t in list(pp.genes)])
+
     venn_set, venn_ct = setops.venn_from_arrays(*[po_dmr_export[pid].index for pid in pids])
     po_combination_export = setops.venn_set_to_wide_dataframe(
         po_dmr_export,
         venn_set,
         pids,
         cols_to_include=('median_delta', 'padj'),
+        static_cols_to_include=['cluster_id', 'gene'] + sorted(gene_relation_choices),
         consistency_check_col='median_delta',
         consistency_check_method="sign"
     )
 
     po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_dmr_wideform.xlsx'))
 
+    # array of Venn plots: GBM vs X (# DMRs)
+    # only possible if number of references <= 3 (otherwise too many sets)
+    if len(external_refs_dm_labels) < 4:
+        nrows = len(subgroups)
+        ncols = max([len(t) for t in subgroups.values()])
+        set_labels = ['Syngeneic iNSC'] + external_refs_dm_labels
+        set_colours = ['r', 'g', 'b']
+        fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+        # assume we'll have one axis leftover!
+        # TODO: if not, we'll need to add one or move the legend outside the main figure?
+        cax = axs[-1, -1]
+        ax_set = set(axs.flat)
+        for pid in pids:
+            sg = subgroups_lookup[pid]
+            sg_members = subgroups[sg]
+            i = subgroups.keys().index(sg)
+            j = sg_members.index(pid)
+            the_lists = [
+                dmr_res_s2_idx[(pid, r)] for r in [pid] + external_refs_de_labels
+            ]
+            venn_sets, cts = setops.venn_from_arrays(*the_lists)
+            venn.venn_diagram(*the_lists, set_labels=None, ax=axs[i, j])
+            axs[i, j].set_title("GBM%s" % pid, y=0.95)
+            ax_set.remove(axs[i, j])
+            # resize text
+            h_txt = [t for t in axs[i, j].get_children() if isinstance(t, text.Text)]
+            plt.setp(h_txt, fontsize=12)
+        for ax in ax_set:
+            ax.axis('off')
+
+        # legend
+        leg_objs = [
+            patches.Rectangle([0, 0], 1, 1, color=c, alpha=0.4, label=l) for c, l in zip(set_colours, set_labels)
+        ]
+        cax.legend(handles=leg_objs, loc='center')
+
+        fig.subplots_adjust(left=0., right=1., bottom=0., top=.93, wspace=0., hspace=0.05)
+
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_dmr_all_nsc.png'), dpi=200)
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_dmr_all_nsc.tiff'), dpi=200)
+
     dmr_members = {}
     for pid in pids:
         for r in external_refs_dm_labels:
             this_tbl = dmr_res_s2[pid][r].to_table(include='significant', skip_geneless=False)
-            this_tbl = this_tbl.loc[this_tbl.class_island | this_tbl.class_tss]
             dmr_members[(pid, r)] = this_tbl.index
 
     nrows = len(subgroups)
@@ -1128,7 +1581,7 @@ if __name__ == "__main__":
         axs[i, j].set_title("GBM%s vs..." % pid)
         ax_set.remove(axs[i, j])
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.03, right=0.98, bottom=.02, top=0.95, hspace=0.2, wspace=0.15)
     for ax in ax_set:
         ax.set_visible(False)
     fig.savefig(os.path.join(outdir_s2, 'number_dmr_multiple_references.png'), dpi=200)
@@ -1291,7 +1744,7 @@ if __name__ == "__main__":
         j = sg_members.index(pid)
         the_lists = [
             set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
-            ]
+        ]
         venn_sets, cts = setops.venn_from_arrays(*the_lists)
         venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
         axs[i, j].set_title("GBM%s pair only" % pid)

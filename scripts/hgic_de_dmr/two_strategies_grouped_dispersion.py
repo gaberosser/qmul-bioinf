@@ -1373,6 +1373,7 @@ if __name__ == "__main__":
 
     # export full syngeneic and reference comparisons (not cross comparisons) to Excel
     for_export = {}
+    for_ipa = {}
     for pid in pids:
         this_full = {}
         this_export = {}
@@ -1383,6 +1384,7 @@ if __name__ == "__main__":
             this_export["%s_syngeneic" % pid],
             drop_geneless=False
         )
+        for_ipa["%s_syngeneic" % pid] = this_export["%s_syngeneic" % pid]
 
         this_full["%s_syngeneic" % pid] = dmr_res_s2[pid][pid].to_table(include='all', skip_geneless=False)
         this_full["%s_syngeneic" % pid] = expand_dmr_results_table_by_gene_and_cluster(
@@ -1397,6 +1399,7 @@ if __name__ == "__main__":
                 this_export["%s_%s" % (pid, r)],
                 drop_geneless=False
             )
+            for_ipa["%s_%s" % (pid, r)] = this_export["%s_%s" % (pid, r)]
 
             this_full["%s_%s" % (pid, r)] = dmr_res_s2[pid][r].to_table(include='all', skip_geneless=False)
             this_full["%s_%s" % (pid, r)] = expand_dmr_results_table_by_gene_and_cluster(
@@ -1418,6 +1421,9 @@ if __name__ == "__main__":
             consistency_check_method="sign"
         )
     excel.pandas_to_excel(for_export, os.path.join(outdir_s2, "full_dmr.xlsx"))
+
+    # Export data for IPA analysis TODO: check
+    export_dmr_data_for_ipa(for_ipa).to_excel(os.path.join(outdir_s2_ipa, "full_dmr_genes_for_ipa.xlsx"))
 
     # Compute cross-comparison using cluster IDs (only)
 

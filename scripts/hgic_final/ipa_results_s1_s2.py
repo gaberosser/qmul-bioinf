@@ -244,16 +244,41 @@ if __name__ == '__main__':
 
     # number syngen. only, ref. only and intersection
     n_set = pd.DataFrame(0, index=all_p.index, columns=['Syngen. only', 'Ref. only', 'Intersect.'], dtype=int)
-    so = {}
-    ro = {}
-    inters = {}
+    so = dict([(pw, []) for pw in pathways_to_keep])
+    ro = dict([(pw, []) for pw in pathways_to_keep])
+    inters = dict([(pw, []) for pw in pathways_to_keep])
     for pid in pids:
         s = all_in.index[all_in.loc[:, "%s_syngeneic" % pid]]
         r = all_in.index[all_in.loc[:, ["%s_%s" % (pid, t) for t in comps.keys()[1:]]].any(axis=1)]
         vs, _ = setops.venn_from_arrays(s, r)
+
         n_set.loc[vs['10'], 'Syngen. only'] += 1
         n_set.loc[vs['01'], 'Ref. only'] += 1
         n_set.loc[vs['11'], 'Intersect.'] += 1
+
+        for pw in vs['10']:
+            so[pw].append(pid)
+        for pw in vs['01']:
+            ro[pw].append(pid)
+        for pw in vs['11']:
+            inters[pw].append(pid)
+
+    # output excel file giving at-a-glance access to which patients are involved in each pathway, categorised as
+    # 'syn only', 'ref only' and 'intersection'
+    at_a_glance = pd.DataFrame(
+        index=pathways_to_keep,
+        columns=['n_syngen_only', 'syngen_only_pids', 'n_ref_only', 'ref_only_pids', 'n_intersect', 'intersect_pids'],
+        dtype=object
+    )
+    for pw in pathways_to_keep:
+        at_a_glance.loc[pw, 'n_syngen_only'] = len(so[pw])
+        at_a_glance.loc[pw, 'syngen_only_pids'] = ';'.join(so[pw])
+        at_a_glance.loc[pw, 'n_ref_only'] = len(ro[pw])
+        at_a_glance.loc[pw, 'ref_only_pids'] = ';'.join(ro[pw])
+        at_a_glance.loc[pw, 'n_intersect'] = len(inters[pw])
+        at_a_glance.loc[pw, 'intersect_pids'] = ';'.join(inters[pw])
+
+    at_a_glance.to_excel(os.path.join(outdir, "ipa_results_patients_by_s2_category.xlsx"))
 
     z_min = all_z.min().min()
     z_max = all_z.max().max()
