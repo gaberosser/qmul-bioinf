@@ -105,4 +105,3 @@ if __name__ == '__main__':
     # TODO: open questions
     # 1) How to specify the genes shared along the edges?
     # 2)
-
