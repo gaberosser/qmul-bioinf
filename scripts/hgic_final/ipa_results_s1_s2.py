@@ -145,10 +145,12 @@ def pathway_involvement_heatmap_by_p(
 if __name__ == '__main__':
     # set a minimum pval for pathways to be used
     alpha = 0.005
+    plogalpha = -np.log10(alpha)
     # more lenient pval threshold for considering pathways as relevant
     alpha_relevant = 0.05
+    plogalpha_relevant = -np.log10(alpha_relevant)
 
-    indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq/s2_syngeneic_vs_reference/ipa/pathways')
+    indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways')
     outdir = output.unique_output_dir()
 
     # keys are the term used in the filename, values are those used in the columns
@@ -163,6 +165,59 @@ if __name__ == '__main__':
         'gibco': 'Gibco'
     }
     pids = consts.PIDS
+
+    # first, load from raw data and combine into a single export file
+    # format: Excel, wideform
+    file_patt = 'de_s2_{pid}_{cmp}.txt'
+    to_export = {}
+    col_order = []
+    for pid in pids:
+        for c in comps:
+            fn = os.path.join(indir, file_patt.format(pid=pid, cmp=c))
+            this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
+            this.columns = ['-logp', 'ratio', 'z', 'genes']
+            # replace genes column with n genes (to avoid overcomplicating it)
+            this.insert(3, 'n_gene', this.genes.str.split(',').apply(len))
+            # resolve encoding in index
+            this.index = [x.decode('utf-8') for x in this.index]
+            # restrict to relevant pathways
+            rele_ix = this.index[this['-logp'] >= plogalpha_relevant]
+            this = this.loc[rele_ix]
+            to_export["%s_%s" % (pid, c)] = this
+            col_order.append("%s_%s" % (pid, c))
+
+    # wideform version of this (i.e. 30 blocks)
+    # we can't use the Venn approach here, but we don't need to
+    all_pathways = sorted(setops.reduce_union(*[t.index for t in to_export.values()]))
+    export_wideform = pd.DataFrame(index=all_pathways)
+    member_cols = []
+    for pid in pids:
+        for c in comps:
+            k = "%s_%s" % (pid, c)
+            this = to_export[k]
+            sign_ix = this.index[this['-logp'] >= plogalpha]
+            this_yn = pd.Series('N', index=all_pathways)
+            this_yn.loc[sign_ix] = 'Y'
+            member_cols.append(k)
+            export_wideform.insert(
+                export_wideform.shape[1],
+                k,
+                this_yn
+            )
+            for col in ['-logp', 'z', 'ratio', 'n_gene']:
+                export_wideform.insert(
+                    export_wideform.shape[1],
+                    "%s_%s" % (k, col),
+                    this.reindex(all_pathways)[col]
+                )
+
+    # add n gene in pathway as single const column
+    rr = export_wideform.loc[:, export_wideform.columns.str.contains('ratio')]
+    ng = export_wideform.loc[:, export_wideform.columns.str.contains('n_gene')]
+    n_gene_tot = (ng.astype(float).values / rr.astype(float)).mean(axis=1).round().astype(int)
+    export_wideform.insert(0, 'n_gene_in_pathway', n_gene_tot)
+
+    export_wideform.to_excel(os.path.join(outdir, "full_de_ipa_results.xlsx"))
 
     # first pass: load data and obtain list of pathways considered 'significant' (based on alpha)
     pathways_to_keep = set()
@@ -202,7 +257,7 @@ if __name__ == '__main__':
 
             pathways_to_keep.update(ipa_res['%s_%s' % (pid, c)].index)
 
-    excel.pandas_to_excel(ipa_res, os.path.join(outdir, "ipa_results_s2_de_significant.xlsx"))
+    excel.pandas_to_excel(ipa_res, os.path.join(outdir, "full_de_ipa_results_significant_separated.xlsx"))
 
     pathways_to_keep = sorted(pathways_to_keep)
 
@@ -218,7 +273,7 @@ if __name__ == '__main__':
     z_for_export.columns = ["%s_z" % t for t in z_for_export.columns]
     for_export = pd.concat((p_for_export, z_for_export, s_for_export), axis=1).sort_index(axis=1)
 
-    for_export.to_excel(os.path.join(outdir, "ipa_results_s2_de_relevant.xlsx"))
+    for_export.to_excel(os.path.join(outdir, "full_de_ipa_results_significant.xlsx"))
 
 
     # second pass: obtain full data from each comparison, providing the pathway is 'relevant' (based on alpha_relevant)

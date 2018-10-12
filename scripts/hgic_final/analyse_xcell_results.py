@@ -368,7 +368,7 @@ if __name__ == '__main__':
     fn = os.path.join(
         HGIC_LOCAL_DIR,
         'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways',
-        'ipa_results_s2_de_relevant.xlsx'
+        'full_de_ipa_results_significant.xlsx'
     )
     ipa_res = pd.read_excel(fn)
 
@@ -387,6 +387,16 @@ if __name__ == '__main__':
         corr_metric=corr_metric,
         **corr_kwds
     )
+    # print all significant combinations
+    for pw in co_p.columns[(co_p < alpha).any(axis=0)]:
+        for ct in co_p[pw].index[co_p[pw] < alpha]:
+            print "('%s', '%s')" % (
+                pw,
+                ct,
+            )
+
+    # set of pathways with any significance
+
 
     print "%d pathways enriched in at least one syngeneic comparison and retained after correlation analysis" % co.shape[1]
 
