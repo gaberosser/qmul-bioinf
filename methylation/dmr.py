@@ -18,6 +18,7 @@ import types
 from statsmodels.sandbox.stats import multicomp
 from utils.dictionary import dict_by_sublevel, dict_iterator, filter_dictionary, nested_dict_to_flat, flat_dict_to_nested
 from utils import setops
+import os
 
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
@@ -1097,14 +1098,14 @@ def wilcoxon_signed_rank_permutation(dat1, dat2, n_max=9999, return_stats=False)
         multipliers = stats.binom.rvs(1, 0.5, size=(n, n_it)) * -2 + 1
         perm_d = np.tile(d_diff, (n_it, 1)).transpose() * multipliers
         for i in range(n_it):
-            stat[i] = nht.wilcoxon_signed_rank_statistic(perm_d[:, i])
+            stat[i] = nht.wilcoxon_signed_rank_statistic(perm_d[:, i])['T']
     else:
         stat = np.zeros(n_it)
         print "Exact strategy with %d iterations" % n_it
         for i in range(n_it):
             str_fmt = ("{0:0%db}" % n).format(i)
             cc = (np.array(list(str_fmt)) == '1') * -2 + 1
-            stat[i] = nht.wilcoxon_signed_rank_statistic(d_diff * cc)
+            stat[i] = nht.wilcoxon_signed_rank_statistic(d_diff * cc)['T']
 
     t = stats.wilcoxon(dat1, dat2)
     p = (stat <= t.statistic).sum() / float(n_it)
@@ -1425,6 +1426,7 @@ if __name__ == "__main__":
 
     # plot illustrating probe locations/classes and regions of interest
     if False:
+        from methylation import plots
         loc_from = 1000000
         loc_to = loc_from + 200000
 
@@ -1441,6 +1443,9 @@ if __name__ == "__main__":
     # multipanel plot showing probe locations/classes, regions of potential interest and methylation data for the
     # same probes
     if False:
+        from methylation import plots
+        from matplotlib import pyplot as plt
+
         the_chr = '1'
         loc_from = 1000000
         loc_to = loc_from + 200000

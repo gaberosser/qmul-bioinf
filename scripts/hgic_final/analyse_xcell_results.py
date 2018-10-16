@@ -8,7 +8,7 @@ from the corresponding GIC-NSC (cell culture) comparison.
 import pandas as pd
 import os
 import re
-from settings import HGIC_LOCAL_DIR
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
 from matplotlib import pyplot as plt
 import seaborn as sns
 from plotting import clustering
@@ -20,6 +20,33 @@ from utils import setops
 import consts
 from stats import nht
 import multiprocessing as mp
+
+
+def load_ipa_pathway_genes(ipa_indir, pids, comparisons, pathways):
+    """
+    Load pathway genes from raw IPA reports.
+    We collapse the gene list (union) over all comparisons
+    :param ipa_indir:
+    :param pids:
+    :param pathways:
+    :return:
+    """
+    # load genes from raw reports
+    file_patt = 'de_s2_{pid}_{cmp}.txt'
+    ipa_pathway_signatures = {}
+    for pid in pids:
+        for c in comparisons:
+            fn = os.path.join(ipa_indir, file_patt.format(pid=pid, cmp=c))
+            this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
+            this.columns = ['-logp', 'ratio', 'z', 'genes']
+            this.index = [x.decode('utf-8') for x in this.index]
+            for pw in this.index.intersection(pathways):
+                this_list = set(this.loc[pw, 'genes'].split(','))
+                if pw in ipa_pathway_signatures:
+                    ipa_pathway_signatures[pw] = ipa_pathway_signatures[pw].union(this_list)
+                else:
+                    ipa_pathway_signatures[pw] = this_list
+    return ipa_pathway_signatures
 
 
 def pathway_cell_type_composition_correlation_analysis(
@@ -142,13 +169,63 @@ def quantify_follow_up_pathways(
     return follow_up_pathways
 
 
+def compute_cell_type_pathway_overlap(
+        ipa_pathway_signatures,
+        xcell_signatures,
+        cell_types=None
+):
+    # compare in a pairwise fashion
+    so_ipa_not_cts = {}
+    so_cts_not_ipa = {}
+    so_both = {}
+    all_ = [so_ipa_not_cts, so_cts_not_ipa, so_both]
+
+    for pw, pw_arr in ipa_pathway_signatures.items():
+        for a in all_:
+            if pw not in a:
+                a[pw] = {}
+        for cts, cts_arr in xcell_signatures.items():
+            m = len(pw_arr)
+            n = len(cts_arr)
+            its = len(pw_arr.intersection(cts_arr))
+            so_ipa_not_cts[pw][cts] = m - its
+            so_cts_not_ipa[pw][cts] = n - its
+            so_both[pw][cts] = its
+
+    so_ipa_not_cts = pd.DataFrame(so_ipa_not_cts)
+    so_cts_not_ipa = pd.DataFrame(so_cts_not_ipa)
+    so_both = pd.DataFrame(so_both)
+
+    # if necessary, define the cell types (each of which has multiple associated signatures)
+    if cell_types is None:
+        cell_types = so_both.index.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>').unique()
+
+    ix = []
+    for ct in cell_types:
+        ix.extend(so_both.index[so_both.index.str.contains(ct + '_', regex=False)])  # disable regex or + causes trouble
+
+    pct_shared = (so_both.loc[ix] / (so_both.loc[ix] + so_ipa_not_cts.loc[ix]) * 100.).sort_index().transpose()
+    return pct_shared
+
+
 def plot_heatmap_with_quantification(
         corr_df,
         corr_pval_df,
         quantification_df,
+        hatch_df=None,
         figsize=(7, 10.5),
         alpha=0.05
 ):
+    """
+
+    :param corr_df:
+    :param corr_pval_df:
+    :param quantification_df:
+    :param hatch_df: If supplied, this is a boolean dataframe. Regions matching True are plotted with a hatch pattern.
+    :param figsize:
+    :param alpha:
+    :return:
+    """
 
     fig = plt.figure(figsize=figsize)
     gs = plt.GridSpec(
@@ -204,6 +281,16 @@ def plot_heatmap_with_quantification(
     plt.setp(ax2.xaxis.get_ticklabels(), rotation=90)
     plt.setp(ax2.xaxis.get_ticklabels(), fontsize=8)
 
+    if hatch_df is not None:
+        hatch_masked = np.ma.masked_where(~hatch_df, np.zeros_like(hatch_df))
+        ax.pcolor(
+            hatch_masked[::-1],
+            alpha=0.,
+            facecolor='k',
+            hatch='xxxxx',
+            cmap='Greys_r'
+        )
+
     return {
         'fig': fig,
         'main_ax': ax,
@@ -233,6 +320,8 @@ if __name__ == '__main__':
         'nperm': 2000,
         'seed': 42
     }
+    # cutoff for pct of genes shared between pathway and cell type signature
+    pct_shared_max = 10.
 
     pids = consts.PIDS
 
@@ -364,13 +453,42 @@ if __name__ == '__main__':
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.tiff"), dpi=200)
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.pdf"), dpi=200)
 
-    # correlation between inflammatory response pathway (?) and different cell types
-    fn = os.path.join(
+    # analyse correlation between pathways and different cell types
+
+    # precursor: check for cases where there is a substantial overlap in genes in pathways and cell type signatures
+    # load signatures
+    xcell_sign_fn = os.path.join(GIT_LFS_DATA_DIR, 'xcell', 'ESM3_signatures.xlsx')
+    xcell_s = pd.read_excel(xcell_sign_fn, header=0, index_row=0)
+    xcell_signatures = {}
+    for i, row in xcell_s.iterrows():
+        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
+
+    # load IPA pathway genes
+    ipa_indir = os.path.join(
         HGIC_LOCAL_DIR,
-        'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways',
+        'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways'
+    )
+    fn = os.path.join(
+        ipa_indir,
         'full_de_ipa_results_significant.xlsx'
     )
     ipa_res = pd.read_excel(fn)
+    ipa_signatures = load_ipa_pathway_genes(
+        ipa_indir,
+        pids,
+        comparisons,
+        ipa_res.index
+    )
+
+    # compute overlap between cell type signatures and IPA signatures
+    pct_shared = compute_cell_type_pathway_overlap(
+        ipa_signatures,
+        xcell_signatures,
+        cell_types=df.index
+    )
+    # aggregate taking max over pathways
+    cc = pct_shared.columns.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>')
+    pct_shared_aggr = pct_shared.groupby(cc, axis=1).max()
 
     # 1. Start with syngeneic pathways
     # Although we extract all pathways, in the correlation computation we lose any that don't have at least 2 results
@@ -396,8 +514,6 @@ if __name__ == '__main__':
             )
 
     # set of pathways with any significance
-
-
     print "%d pathways enriched in at least one syngeneic comparison and retained after correlation analysis" % co.shape[1]
 
     # run clustering to order the rows/cols nicely
@@ -425,7 +541,8 @@ if __name__ == '__main__':
         co,
         co_p,
         follow_up_pathways,
-        alpha=alpha
+        alpha=alpha,
+        hatch_df=pct_shared_aggr.loc[co.columns, co.index] > pct_shared_max
     )
 
     gs = plot_dict['gs']
@@ -498,6 +615,7 @@ if __name__ == '__main__':
         co,
         co_p,
         follow_up_pathways,
+        hatch_df=pct_shared_aggr.loc[co.columns, co.index] > pct_shared_max,
         alpha=alpha
     )
 

@@ -15,7 +15,7 @@ if RFUNCTIONS_PRESENT:
         frm = Formula("y ~ x")
         frm.environment["x"] = FloatVector(x)
         frm.environment["y"] = FloatVector(y)
-        res = robjects.r("wilcoxsign_test")(frm)
+        res = robjects.r("wilcoxsign_test")(frm, distribution=distribution)
         return robjects.r('pvalue')(res)[0]
 
     wilcoxsign_test = rinterface.RFunctionDeferred(wilcoxsign_test_func, imports=['coin'])
@@ -105,10 +105,14 @@ def wilcoxon_signed_rank_statistic(x, y=None, zero_method="wilcox"):
         r_minus += r_zero / 2.
 
     T = min(r_plus, r_minus)
-    return T
+    return {
+        'r_plus': r_plus,
+        'r_minus': r_minus,
+        'T': T
+    }
 
 
-def wilcoxon_signed_rank_test(x, y):
+def wilcoxon_signed_rank_test(x, y, distribution='exact'):
     """
     Compute the Wilcoxon signed rank test for paired samples. We use an R package to make the computation exact.
     :param x:
@@ -117,7 +121,7 @@ def wilcoxon_signed_rank_test(x, y):
     """
     if not RFUNCTIONS_PRESENT:
         raise r_absent_exc
-    return wilcoxsign_test(x, y)
+    return wilcoxsign_test(x, y, distribution=distribution)
 
 
 def spearman_exact(a, b, nperm=1000, seed=None):

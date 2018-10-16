@@ -208,6 +208,7 @@ class DatasetLoader(object):
         """
         self.meta = self.meta.loc[keep_idx]
         self.data = self.data.loc[:, self.meta.index]
+        self.input_files = self.input_files.loc[keep_idx]
 
     def aggregate_by_pattern(self, search_patt, new_name, how='mean'):
         _aggregate_by_regex(self, search_patt, new_name, how=how)

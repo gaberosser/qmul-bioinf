@@ -7,6 +7,8 @@ import consts
 from matplotlib import pyplot as plt, patches, collections, gridspec
 import seaborn as sns
 import numpy as np
+from scipy import stats
+from stats import nht, basic
 
 
 def pathway_involvement_heatmap_by_p(
@@ -481,3 +483,145 @@ if __name__ == '__main__':
 
         fig.savefig(os.path.join(outdir, "heatmap_all_pathways_de.png"), dpi=200)
         fig.savefig(os.path.join(outdir, "heatmap_all_pathways_de.tiff"), dpi=200)
+
+    # in development: quantifying the relative contribution of syngeneic and reference comparisons to the pathways list
+
+    N = all_in.shape[0]
+    Ntot = N * (N - 1) / 2.
+
+    # Wilcoxon signed rank sum test (manually): look at effect size and direction
+    # number of comparisons in syngeneic and reference (not only)
+    nn = n_set.iloc[:, :2].add(n_set.iloc[:, -1], axis=0)
+    nn.columns = ['syn', 'ref']
+    delta = nn.syn - nn.ref
+
+    this_wsrt = nht.wilcoxon_signed_rank_statistic(nn.syn, nn.ref, zero_method='pratt')
+    this_p = nht.wilcoxon_signed_rank_test(nn.syn, nn.ref, distribution='exact')
+    this_rank_corr = (this_wsrt['r_plus'] - this_wsrt['r_minus']) / Ntot
+
+    print "Comparing the NUMBER of samples showing enrichment in a given pathway, combining references."
+    if this_p < 0.05:
+        print "Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
+            this_p,
+            this_rank_corr,
+            "syn > ref" if this_rank_corr > 0 else "ref > syn"
+        )
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist(delta, np.arange(-7, 7) + 0.5)
+    ax.set_xlabel('Difference in number of comparisons (syn - ref)')
+    fig.tight_layout()
+    ax.axvline(delta.median(), ls='--', color='k')
+    fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.png"), dpi=200)
+
+    # number of comparisons, considering references separately
+    n_in = {}
+    for c in comps:
+        this = all_in.loc[:, all_in.columns.str.contains(c)]
+        this.columns = this.columns.str.replace('_%s' % c, '')
+        n_in[c] = this.sum(axis=1)
+
+    # now run wilcoxon signed rank sum test separately for syngeneic vs each ref. on the NUMBER of times the pathway
+    # is detected
+    print "Comparing the NUMBER of samples showing enrichment in a given pathway"
+
+    wsrt = {}
+    pval = {}
+    rank_corr = {}
+
+    for c in comps:
+        if c == 'syngeneic': continue
+        wsrt[c] = nht.wilcoxon_signed_rank_statistic(n_in['syngeneic'], n_in[c], zero_method='pratt')
+        pval[c] = nht.wilcoxon_signed_rank_test(n_in['syngeneic'], n_in[c], distribution='exact')
+        rank_corr[c] = (wsrt[c]['r_plus'] - wsrt[c]['r_minus']) / Ntot
+
+        if pval[c] < 0.05:
+            print "Comparison syngeneic vs %s. Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
+                c,
+                pval[c],
+                rank_corr[c],
+                "syn > ref" if rank_corr[c] > 0 else "ref > syn"
+            )
+
+    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
+    i = 0
+    for c in comps:
+        if c == 'syngeneic': continue
+        this_delta = n_in['syngeneic'] - n_in[c]
+        axs[i].hist(this_delta, np.arange(-7, 7) + 0.5)
+        # axs[i].axvline(this_delta.median(), ls='--', color='k')
+        axs[i].axvline(this_delta.mean(), ls='--', color='k', label='Mean')
+        axs[i].set_xlim([-6, 6])
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+        # axs[i].set_title("Syngeneic - %s" % c.title())
+        i += 1
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.png"), dpi=200)
+
+    # plot ECDF (ish)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comps:
+        ax.plot(n_in[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative number of patients with enrichment')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.png"), dpi=200)
+
+    # now repeat but use the sum of -log10(p) values instead of the number of times the pathway appears
+    # this weights results by the level of enrichment
+    p_sum = {}
+    for c in comps:
+        this = all_p.loc[:, all_p.columns.str.contains(c)]
+        this.columns = this.columns.str.replace('_%s' % c, '')
+        p_sum[c] = this.sum(axis=1)
+
+    print "Comparing the SUM OF -log10(p) VALUES for a given pathway and comparison type."
+
+
+    wsrt_w = {}
+    pval_w = {}
+    rank_corr_w = {}
+
+    for c in comps:
+        if c == 'syngeneic': continue
+        wsrt_w[c] = nht.wilcoxon_signed_rank_statistic(p_sum['syngeneic'], p_sum[c], zero_method='pratt')
+        pval_w[c] = nht.wilcoxon_signed_rank_test(p_sum['syngeneic'], p_sum[c], distribution='exact')
+        rank_corr_w[c] = (wsrt_w[c]['r_plus'] - wsrt_w[c]['r_minus']) / Ntot
+
+        if pval[c] < 0.05:
+            print "Comparison syngeneic vs %s. Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
+                c,
+                pval_w[c],
+                rank_corr_w[c],
+                "syn > ref" if rank_corr_w[c] > 0 else "ref > syn"
+            )
+
+    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
+    i = 0
+    for c in comps:
+        if c == 'syngeneic': continue
+        this_delta = p_sum['syngeneic'] - p_sum[c]
+        axs[i].hist(this_delta, np.linspace(-35, 34, 20) + 0.5)
+        # axs[i].axvline(this_delta.median(), ls='--', color='k')
+        axs[i].axvline(this_delta.mean(), ls='--', color='k', label='Mean')
+        axs[i].set_xlim([-35, 35])
+        axs[i].set_xlabel("Syngeneic - %s" % c.title())
+        i += 1
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.png"), dpi=200)
+
+    # plot ECDF (ish)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comps:
+        ax.plot(p_sum[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative sum of -log10(p)')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
