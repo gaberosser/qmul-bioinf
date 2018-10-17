@@ -28,8 +28,9 @@ def conversion_table(type='protein_coding', tax_id=9606):
         if type == 'protein_coding':
             in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'protein_coding', 'genenames.org.2017.01.tsv')
         elif type == 'all':
-            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
+            # in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
             # in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.03.tsv')
+            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.10.tsv')
         else:
             raise ValueError("Unsupported type option '%s'" % type)
         # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')
@@ -59,6 +60,11 @@ def gene_symbol_to_entrez(g, tax_id=9606):
 def entrez_to_gene_symbol(e, tax_id=9606):
     cat = conversion_table(type='all', tax_id=tax_id)
     return _translate(cat, e, 'Approved Symbol', 'Entrez Gene ID')
+
+
+def entrez_to_ensembl(e, tax_id=9606):
+    cat = conversion_table(type='all', tax_id=tax_id)
+    return _translate(cat, e, 'Ensembl Gene ID', 'Entrez Gene ID')
 
 
 def gene_symbol_to_ensembl(g, tax_id=9606):
