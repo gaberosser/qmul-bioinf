@@ -52,10 +52,13 @@ class ssGSEAClassifier(object):
                 logger.warn("Some signature IDs are not in the data: %s", ', '.join(missing))
 
         # compute score
+        ## TODO: check this - syntax for ssgsea has changed
         scores = pd.DataFrame(index=self.signatures.keys(), columns=sample_data.columns)
-        for s, arr in self.signatures.items():
-            for col, dat in sample_data.iteritems():
-                scores.loc[s, col] = gsea.ssgsea(dat, arr, **self.ssgsea_kwds)
+        for col, dat in sample_data.iteritems():
+            scores.loc[:, col] = pd.Series(gsea.ssgsea(dat, self.signatures, **self.ssgsea_kwds))
+        # for s, arr in self.signatures.items():
+        #     for col, dat in sample_data.iteritems():
+        #         scores.loc[s, col] = gsea.ssgsea(dat, arr, **self.ssgsea_kwds)
 
         if series_in:
             return scores.iloc[:, 0]

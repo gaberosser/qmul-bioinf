@@ -22,6 +22,17 @@ from stats import nht
 import multiprocessing as mp
 
 
+XCELL_SIGNATURE_FN = os.path.join(GIT_LFS_DATA_DIR, 'xcell', 'ESM3_signatures.xlsx')
+IPA_PATHWAY_DIR = os.path.join(
+    HGIC_LOCAL_DIR,
+    'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways'
+)
+IPA_PATHWAY_FN = os.path.join(
+    IPA_PATHWAY_DIR,
+    'full_de_ipa_results_significant.xlsx'
+)
+
+
 def load_ipa_pathway_genes(ipa_indir, pids, comparisons, pathways):
     """
     Load pathway genes from raw IPA reports.
@@ -71,8 +82,8 @@ def pathway_cell_type_composition_correlation_analysis(
     pathways = pathway_enrichment.index
     cell_types = cell_type_proportions.index
 
-    co = pd.DataFrame(index=cell_type_proportions.index, columns=pathways, dtype=float)
-    co_p = pd.DataFrame(index=cell_type_proportions.index, columns=pathways, dtype=float)
+    co = pd.DataFrame(index=cell_types, columns=pathways, dtype=float)
+    co_p = pd.DataFrame(index=cell_types, columns=pathways, dtype=float)
     pool = mp.Pool()
     jobs = {}
 
@@ -187,7 +198,7 @@ def compute_cell_type_pathway_overlap(
         for cts, cts_arr in xcell_signatures.items():
             m = len(pw_arr)
             n = len(cts_arr)
-            its = len(pw_arr.intersection(cts_arr))
+            its = len(set(pw_arr).intersection(cts_arr))
             so_ipa_not_cts[pw][cts] = m - its
             so_cts_not_ipa[pw][cts] = n - its
             so_both[pw][cts] = its
@@ -208,10 +219,40 @@ def compute_cell_type_pathway_overlap(
     return pct_shared
 
 
+def compute_pathway_signature_overlap(
+    pids,
+    comparisons,
+    cell_types,
+    xcell_signature_fn=XCELL_SIGNATURE_FN,
+    ipa_pathway_dir=IPA_PATHWAY_DIR,
+    ipa_pathway_fn=IPA_PATHWAY_FN,
+):
+    xcell_s = pd.read_excel(xcell_signature_fn, header=0, index_row=0)
+    xcell_signatures = {}
+    for i, row in xcell_s.iterrows():
+        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
+
+    # load IPA pathway genes
+    ipa_res = pd.read_excel(ipa_pathway_fn)
+    ipa_signatures = load_ipa_pathway_genes(
+        ipa_pathway_dir,
+        pids,
+        comparisons,
+        ipa_res.index
+    )
+
+    # compute overlap between cell type signatures and IPA signatures
+    return compute_cell_type_pathway_overlap(
+        ipa_signatures,
+        xcell_signatures,
+        cell_types=cell_types
+    )
+
+
 def plot_heatmap_with_quantification(
         corr_df,
         corr_pval_df,
-        quantification_df,
+        quantification_df=None,
         hatch_df=None,
         figsize=(7, 10.5),
         alpha=0.05
@@ -228,14 +269,23 @@ def plot_heatmap_with_quantification(
     """
 
     fig = plt.figure(figsize=figsize)
-    gs = plt.GridSpec(
-        ncols=3,
-        nrows=5,
-        width_ratios=[10, 1, 1]
-    )
+    if quantification_df is not None:
+        gs = plt.GridSpec(
+            ncols=3,
+            nrows=5,
+            width_ratios=[10, 1, 1]
+        )
+        ax2 = fig.add_subplot(gs[:, 1])  # quantification block
+    else:
+        gs = plt.GridSpec(
+            ncols=2,
+            nrows=5,
+            width_ratios=[10, 1]
+        )
+        ax2 = None  # to appease my IDE
+
     ax = fig.add_subplot(gs[:, 0])  # main heatmap
-    ax2 = fig.add_subplot(gs[:, 1])  # quantification block
-    cax = fig.add_subplot(gs[1:-1, 2])  # colour bar (reduced height)
+    cax = fig.add_subplot(gs[1:-1, -1])  # colour bar (reduced height)
 
     sns.heatmap(
         corr_df.transpose(),
@@ -263,23 +313,24 @@ def plot_heatmap_with_quantification(
     plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
 
     # pad the follow up pathways dataframe with zeros to conform to same layout
-    follow_up_pathways_plot = pd.DataFrame(index=corr_df.columns, columns=quantification_df.columns)
-    follow_up_pathways_plot.loc[quantification_df.index] = quantification_df
-    follow_up_pathways_plot = follow_up_pathways_plot.fillna(0)
+    if quantification_df is not None:
+        follow_up_pathways_plot = pd.DataFrame(index=corr_df.columns, columns=quantification_df.columns)
+        follow_up_pathways_plot.loc[quantification_df.index] = quantification_df
+        follow_up_pathways_plot = follow_up_pathways_plot.fillna(0)
 
-    sns.heatmap(
-        follow_up_pathways_plot,
-        mask=follow_up_pathways_plot== 0,
-        cmap='Blues',
-        cbar=False,
-        ax=ax2,
-        annot=True,
-        fmt="d",
-        annot_kws={"size": 6}
-    )
-    ax2.yaxis.set_ticks([])
-    plt.setp(ax2.xaxis.get_ticklabels(), rotation=90)
-    plt.setp(ax2.xaxis.get_ticklabels(), fontsize=8)
+        sns.heatmap(
+            follow_up_pathways_plot,
+            mask=follow_up_pathways_plot== 0,
+            cmap='Blues',
+            cbar=False,
+            ax=ax2,
+            annot=True,
+            fmt="d",
+            annot_kws={"size": 6}
+        )
+        ax2.yaxis.set_ticks([])
+        plt.setp(ax2.xaxis.get_ticklabels(), rotation=90)
+        plt.setp(ax2.xaxis.get_ticklabels(), fontsize=8)
 
     if hatch_df is not None:
         hatch_masked = np.ma.masked_where(~hatch_df, np.zeros_like(hatch_df))
@@ -341,7 +392,7 @@ if __name__ == '__main__':
     df_pval.drop('Patient ID', axis=0, inplace=True)
 
     # zero out any non-significant results
-    df[df_pval > alpha] = 0.
+    # df[df_pval > alpha] = 0.
 
     # improve naming clarity
     df.columns = df.columns.str.replace(r'(?P<n>[0-9])DEF', '\g<n>_DEF')
@@ -362,9 +413,10 @@ if __name__ == '__main__':
     df.columns = tt
 
     # number of samples with detectable levels of cell types
+    detected = (df_pval <= alpha)
     fig = plt.figure(figsize=(6, 9))
     ax = fig.add_subplot(111)
-    (df != 0).sum(axis=1).sort_values(ascending=False).plot.barh(ax=ax, color='k')
+    detected.sum(axis=1).sort_values(ascending=False).plot.barh(ax=ax, color='k')
     ax.set_xlabel("Number of samples with detectable levels (%d total)" % df.shape[1])
     ax.set_xlim([0, df.shape[1]])
     fig.tight_layout()
@@ -373,7 +425,7 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "number_detectable_by_cell_type.pdf"), dpi=200)
 
     # filter based on this
-    keep_ix = (df != 0).sum(axis=1) >= min_n_samples
+    keep_ix = detected.sum(axis=1) >= min_n_samples
     print "The following %d cell types do not meet the requirement for detection in %d or more samples: \n%s" % (
         (~keep_ix).sum(),
         min_n_samples,

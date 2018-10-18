@@ -4,6 +4,7 @@ import re
 import pandas as pd
 from utils.log import get_console_logger
 from utils import rinterface
+import multiprocessing as mp
 logger = get_console_logger(__name__)
 
 
@@ -113,35 +114,18 @@ def create_gsea_params_file(outfn, rpt_label='foo', permute='gene_set', **kwargs
             f.write("\t".join([str(t) for t in x]) + "\n")
 
 
-def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ecdf=False):
-    """
-    Run single sample gene set enrichment analysis (ssGSEA) on the supplied data, following the details given in:
-
-    Barbie, D.A., Tamayo, P., Boehm, J.S., Kim, S.Y., Moody, S.E., Dunn, I.F., Schinzel, A.C., Sandy, P., Meylan, E.,
-    Scholl, C., et al. (2009). Systematic RNA interference reveals that oncogenic KRAS-driven cancers require TBK1.
-    Nature 462, 108-112.
-
-    See R/stats/ssgsea.R for a further example (found online)
-
-    :param sample_data: Pandas Series
-    :param gene_set: Dictionary. Each entry has a key giving the name of the gene set and value giving a list of genes.
-    :param alpha: The weighting used to compute the ECDF. Default is 0.25 following Barbie et al. (2009)
-    :param return_ecdf: If True, also return the two ECDFs being considered. Useful for plotting?
-    :return:
-    """
-    s = sample_data
-
+def run_one_ssgsea(sample_data, gs, alpha=0.25, norm_by_gene_count=True, return_ecdf=False):
     # FIXME: CRUCIAL: which order do we rank in?
     # rank the sample in ascending order (1 corresponds to lowest expression)
-    rs = s.rank(method='average', ascending=True)  # ties resolved by averaging
+    rs = sample_data.rank(method='average', ascending=True)  # ties resolved by averaging
 
     # sort in decreasing order
     # the most expressed genes come first in the list
     rs = rs.sort_values(ascending=False)
 
     # boolean vector for inclusion in gene set
-    in_gene_set = rs.index.isin(gene_set).astype(float)
-    out_gene_set = (~rs.index.isin(gene_set)).astype(float)
+    in_gene_set = rs.index.isin(gs).astype(float)
+    out_gene_set = (~rs.index.isin(gs)).astype(float)
 
     # ECDF
     x_in = (rs * in_gene_set) ** alpha
@@ -164,6 +148,103 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
         return (es, ecdf_in, ecdf_out)
     else:
         return es
+
+
+
+def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ecdf=False, threads=None):
+    """
+    Run single sample gene set enrichment analysis (ssGSEA) on the supplied data, following the details given in:
+
+    Barbie, D.A., Tamayo, P., Boehm, J.S., Kim, S.Y., Moody, S.E., Dunn, I.F., Schinzel, A.C., Sandy, P., Meylan, E.,
+    Scholl, C., et al. (2009). Systematic RNA interference reveals that oncogenic KRAS-driven cancers require TBK1.
+    Nature 462, 108-112.
+
+    See R/stats/ssgsea.R for a further example (found online)
+
+    :param sample_data: Pandas Series
+    :param gene_set: Dictionary. Each entry has a key giving the name of the gene set and value giving a list of genes.
+    :param alpha: The weighting used to compute the ECDF. Default is 0.25 following Barbie et al. (2009)
+    :param return_ecdf: If True, also return the two ECDFs being considered. Useful for plotting?
+    :return:
+    """
+    b_one_sample = False
+    if not isinstance(gene_set, dict):
+        b_one_sample = True
+        gene_set = {'result': gene_set}
+
+    n = len(gene_set)
+
+    pool = None
+    if threads != 1 and n > 1:
+        pool = mp.Pool(processes=threads)
+
+    res = {}
+    jobs = {}
+    ssgsea_kwds = dict(
+        alpha=alpha,
+        norm_by_gene_count=norm_by_gene_count,
+        return_ecdf=return_ecdf
+    )
+
+    for name, gs in gene_set.items():
+        if pool is None:
+            res[name] = run_one_ssgsea(
+                sample_data,
+                gs,
+                **ssgsea_kwds
+            )
+        else:
+            jobs[name] = pool.apply_async(
+                run_one_ssgsea,
+                args=(sample_data, gs),
+                kwds=ssgsea_kwds
+            )
+
+    if pool is not None:
+        pool.close()
+        pool.join()
+        for name, j in jobs.items():
+            res[name] = j.get()
+
+    if b_one_sample:
+        return res['result']
+
+    return res
+
+
+    # # FIXME: CRUCIAL: which order do we rank in?
+    # # rank the sample in ascending order (1 corresponds to lowest expression)
+    # rs = sample_data.rank(method='average', ascending=True)  # ties resolved by averaging
+    #
+    # # sort in decreasing order
+    # # the most expressed genes come first in the list
+    # rs = rs.sort_values(ascending=False)
+    #
+    # # boolean vector for inclusion in gene set
+    # in_gene_set = rs.index.isin(gene_set).astype(float)
+    # out_gene_set = (~rs.index.isin(gene_set)).astype(float)
+    #
+    # # ECDF
+    # x_in = (rs * in_gene_set) ** alpha
+    # ecdf_in = (x_in.cumsum() / x_in.sum()).values
+    #
+    # # the ECDF for samples out is NOT weighted, which is strange
+    # ecdf_out = out_gene_set.cumsum() / out_gene_set.sum()
+    #
+    # # if we were to weight it, it would look like:
+    # # x_out = (rs * out_gene_set) ** alpha
+    # # ecdf_out = x_out.cumsum() / x_out.sum()
+    #
+    # # enrichment score is the difference in the integrals
+    # es = (ecdf_in - ecdf_out).sum()
+    #
+    # if norm_by_gene_count:
+    #     es /= float(rs.shape[0])
+    #
+    # if return_ecdf:
+    #     return (es, ecdf_in, ecdf_out)
+    # else:
+    #     return es
 
 
 try:

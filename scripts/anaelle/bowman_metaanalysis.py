@@ -1,4 +1,4 @@
-from rnaseq.gsea import ssgsea
+from rnaseq.gsea import ssgsea, run_one_ssgsea
 import pandas as pd
 from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
 import os
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         rna_ecdf_in[s_name] = dict()
         rna_ecdf_out[s_name] = dict()
         for g_name in rna_list_hu:
-            rna_es.loc[g_name, s_name], rna_ecdf_in[s_name][g_name], rna_ecdf_out[s_name][g_name] = ssgsea(
+            rna_es.loc[g_name, s_name], rna_ecdf_in[s_name][g_name], rna_ecdf_out[s_name][g_name] = run_one_ssgsea(
                 rnaseq_dat.loc[:, s_name],
                 rna_list_hu[g_name],
                 alpha=0.25,
@@ -477,7 +477,7 @@ if __name__ == "__main__":
 
     # compute scores associated with each of these
     mtor_ad_scores = pd.Series([
-        ssgsea(
+        run_one_ssgsea(
             rnaseq_dat.loc[:, s_name],
             mtor_geneset_ad,
             alpha=0.25,
@@ -486,7 +486,7 @@ if __name__ == "__main__":
     ], index=rnaseq_dat.columns)
 
     mtor_kegg_scores = pd.Series([
-        ssgsea(
+        run_one_ssgsea(
             rnaseq_dat.loc[:, s_name],
             mtor_geneset_kegg,
             alpha=0.25,
