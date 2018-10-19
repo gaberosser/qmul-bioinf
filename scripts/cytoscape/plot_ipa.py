@@ -1,12 +1,15 @@
 """
 Aim:
 
-Visualise the GSEA pathway results with Cytoscape.
+Visualise the IPA core analysis results with Cytoscape.
 
 We're going to show the merged (union) pathway network for syngeneic and 2 x ref. comparisons, but use formatting
 to distinguish nodes and edges that are reference-only or syngeneic-only.
 
-We'll need one of these for each patient, I suppose?
+We'll need one of these for each patient, I suppose.
+
+Then will investigate using a single combined network, highlighting only nodes that stand out as syngeneic only or
+patient-specific.
 """
 
 from apps.py2cytoscape import cyrest
@@ -24,61 +27,33 @@ from settings import HGIC_LOCAL_DIR
 import collections
 from plotting import common
 
-from utils import setops, output
+from utils import setops, output, ipa
+from scripts.hgic_final.analyse_xcell_results import IPA_PATHWAY_DIR, IPA_PATHWAY_FN
+from scripts.hgic_final import consts
 
-
-pathway_files = {
-    'all': 'msigdb.v6.1.symbols.gmt',
-    'hallmark': 'h.all.v6.2.symbols.gmt',
-    'kegg': 'c2.cp.kegg.v6.2.symbols.gmt',
-    'go': 'c5.all.v6.2.symbols.gmt',
-}
 
 if __name__ == '__main__':
-    pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
-
-    # set a minimum pval for pathways to be used
+    pids = consts.PIDS
+    # basic pvalue cutoff
     alpha = 0.05
-    # more lenient pval threshold for considering pathways as relevant
-    alpha_relevant = 0.1
-    # small offset to avoid zero FDR
-    # set this slightly lower than the smallest non-zero FDR value
-    eps = 1e-6
-    src = 'go'
-
+    log_alpha = -np.log10(alpha)
+    # more stringent cutoff, as used in the IPA S1/S2 analysis
+    alpha_strict = 0.005
+    log_alpha_strict = -np.log10(alpha_strict)
     # minimum number of shared genes required to plot an edge
     min_n_gene_shared = 10
 
-    outdir = output.unique_output_dir()
+    comparisons = ['syngeneic', 'h9', 'gibco']
 
-    indir = os.path.join(
-        HGIC_LOCAL_DIR,
-        'current/core_pipeline/rnaseq/s0_individual_patients_direct_comparison/gsea/results/raw'
+    # load pathways, processed data and estimate signatures
+    ipa_res = pd.read_excel(IPA_PATHWAY_FN)
+    all_ipa = ipa.load_raw_reports(IPA_PATHWAY_DIR, "de_s2_{0}_{1}.txt", pids, comparisons)
+    ipa_signatures = ipa.load_supported_signatures_from_raw(
+        IPA_PATHWAY_DIR,
+        "de_s2_{0}_{1}.txt",
+        [pids, comparisons],
+        pathways=ipa_res.index
     )
-    msigdb_fn = os.path.join(
-        HGIC_LOCAL_DIR,
-        'current/core_pipeline/rnaseq/s0_individual_patients_direct_comparison/gsea/msigdb/%s'
-    ) % pathway_files[src]
-
-    comparison_names = collections.OrderedDict([
-        ('', 'syngeneic'),
-        ('_h9_nsc', 'h9',),
-        ('_gibco_nsc', 'gibco')
-    ])
-
-    # load C5 (all GO term pathways) for filtering and network analysis
-    gmt = gsea.read_gmt_file(msigdb_fn)
-
-    res = collections.OrderedDict()
-    res_full = collections.OrderedDict()
-    for pid in pids:
-        for c in comparison_names:
-            fn = os.path.join(indir, "%s%s.csv" % (pid, c))
-            this = pd.read_csv(fn, sep='\t', header=0, index_col=0, usecols=[0, 3, 5, 7])
-            this.columns = ['n_gene', 'nes', 'fdr']
-            this = this.reindex(gmt.keys()).dropna(how='all')
-            res_full["%s_%s" % (pid, comparison_names[c])] = this.loc[this.fdr < alpha_relevant]
-            res["%s_%s" % (pid, comparison_names[c])] = this.loc[this.fdr < alpha]
 
     # functional API - the python bindings are incomplete here?
     cy = CyRestClient()
@@ -88,18 +63,17 @@ if __name__ == '__main__':
     # command API - the python bindings are much better
     cy_cmd = cyrest.cyclient()
 
+    cy_nets = []
+    cy_styles = []
+
+    # one network per patient:
     for pid in pids:
+        this_ipa = [all_ipa[(pid, c)].loc[all_ipa[(pid, c)]['-logp'] >= log_alpha] for c in comparisons]
+        all_pathways = setops.reduce_union(*[t.index for t in this_ipa])
 
-        # three networks to work with
-        res_syn = res['%s_syngeneic' % pid]
-        res_r1 = res['%s_h9' % pid]
-        res_r2 = res['%s_gibco' % pid]
-
-        all_pathways = setops.reduce_union(*[t.index for t in (res_syn, res_r1, res_r2)])
-
-        p_to_g = dict([
-            (p, gmt[p]) for p in all_pathways
-        ])
+        p_to_g = {}
+        for p in all_pathways:
+            p_to_g[p] = setops.reduce_union(*[t.loc[p, 'genes'].split(',') if p in t.index else [] for t in this_ipa])
 
         # to get connectivity, we need to create the complementary dictionary (indexed by genes)
         g_to_p = {}
@@ -113,42 +87,47 @@ if __name__ == '__main__':
         # reds for ref. only
         # blues for syn. only
         # colours are defined by HEX values? Add these to the nodes
-        logp_syn = -np.log10(res_syn.fdr + eps)
-        logp_r1 = -np.log10(res_r1.fdr + eps)
-        logp_r2 = -np.log10(res_r2.fdr + eps)
-        vmax = max(
-            logp_syn.max(),
-            logp_r1.max(),
-            logp_r2.max(),
-        )
+        logp_vals = [t['-logp'] for t in this_ipa]
+        vmax = max([t.max() for t in logp_vals])
 
+        # we need a lower offset for the non-grey colours, otherwise all the white shades look very similar
+        vmin = -2
         cmap_both_func = common.continuous_cmap(0, vmax, cmap='Greys')
-        cmap_syn_func = common.continuous_cmap(0, vmax, cmap='Blues')
-        cmap_ref_func = common.continuous_cmap(0, vmax, cmap='Reds')
-        vs, _ = setops.venn_from_arrays(*[t.index for t in (res_syn, res_r1, res_r2)])
+        cmap_syn_func = common.continuous_cmap(vmin, vmax, cmap='Blues')
+        cmap_ref_func = common.continuous_cmap(vmin, vmax, cmap='Reds')
+        vs, _ = setops.venn_from_arrays(*[t.index for t in this_ipa])
 
+        node_significance = {}
         node_colours = {}
-        for pth in vs['111'] + vs['101'] + vs['110']:
-            node_colours[pth] = cmap_both_func(logp_syn[pth])
-        for pth in vs['100']:
-            node_colours[pth] = cmap_syn_func(logp_syn[pth])
-        for pth in vs['011']:
-            # mean P for refs
-            node_colours[pth] = cmap_ref_func(0.5 * (logp_r1[pth] + logp_r2[pth]))
-        for pth in vs['010']:
-            node_colours[pth] = cmap_ref_func(logp_r1[pth])
-        for pth in vs['001']:
-            node_colours[pth] = cmap_ref_func(logp_r2[pth])
+        node_attrs = {}
+        for k, p_arr in vs.items():
+            ix = [t == '1' for t in k]
+            n = float(sum(ix))
+            for pth in p_arr:
+                m = 0
+                for i, t in enumerate(ix):
+                    if t:
+                        m += logp_vals[i][pth]
+                        node_attrs.setdefault(pth, {})["plogp_%s" % comparisons[i]] = logp_vals[i][pth]
+                m /= n
+                node_attrs.setdefault(pth, {})['mean_plogp'] = m
+                if ix[0] and any(ix[1:]):
+                    node_colours[pth] = cmap_both_func(m)
+                elif ix[0]:
+                    node_colours[pth] = cmap_syn_func(m)
+                else:
+                    node_colours[pth] = cmap_ref_func(m)
 
-        graph = nx.Graph(db=src)
+        graph = nx.Graph(db="%s_ipa" % pid)
 
         for pth in all_pathways:
             graph.add_node(
                 pth,
-                genes=p_to_g[pth],
+                genes=sorted(p_to_g[pth]),
                 n_gene=len(p_to_g[pth]),
                 fill_colour=node_colours[pth],
-                comparisons=[v for u, v in zip([res_syn, res_r1, res_r2], ['Syngeneic', 'Ref. 1', 'Ref. 2']) if pth in u.index]
+                comparisons=[v for u, v in zip(this_ipa, comparisons) if pth in u.index],
+                **node_attrs[pth]
             )
 
         edges = {}
@@ -164,6 +143,7 @@ if __name__ == '__main__':
 
         # add network
         cy_net = cy.network.create_from_networkx(graph, collection=pid)
+        cy_nets.append(cy_net)
 
         cy_style = cy.style.create(pid)
 
@@ -182,6 +162,7 @@ if __name__ == '__main__':
         cy_style.create_continuous_mapping(column='gene_count', vp='EDGE_WIDTH', col_type='Double', points=edge_width_map)
 
         cy.style.apply(cy_style, network=cy_net)
+        cy_styles.append(cy_style)
 
         # layout
         cy_cmd.layout.force_directed(
@@ -191,6 +172,5 @@ if __name__ == '__main__':
             maxWeightCutoff=vmax,
             network=pid
         )
-
 
 

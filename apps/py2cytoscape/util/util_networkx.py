@@ -41,8 +41,10 @@ def __create_node(node, node_id):
     node_columns = node.keys()
     data = __map_table_data(node_columns, node)
     # Override special keys
-    data[ID] = str(node_id)
-    data[NAME] = str(node_id)
+    # data[ID] = str(node_id)
+    data[ID] = unicode(node_id)
+    # data[NAME] = str(node_id)
+    data[NAME] = unicode(node_id)
 
     if 'position' in node.keys():
         position = node['position']
@@ -58,9 +60,12 @@ def __build_multi_edge(edge_tuple, g):
     key = edge_tuple[2]
     data = edge_tuple[3]
 
-    data['source'] = str(source)
-    data['target'] = str(target)
-    data['interaction'] = str(key)
+    # data['source'] = str(source)
+    data['source'] = unicode(source)
+    # data['target'] = str(target)
+    data['target'] = unicode(target)
+    # data['interaction'] = str(key)
+    data['interaction'] = unicode(key)
     return {DATA: data}
 
 
@@ -69,8 +74,10 @@ def __build_edge(edge_tuple, g):
     target = edge_tuple[1]
     data = edge_tuple[2]
 
-    data['source'] = str(source)
-    data['target'] = str(target)
+    # data['source'] = str(source)
+    data['source'] = unicode(source)
+    # data['target'] = str(target)
+    data['target'] = unicode(target)
     return {DATA: data}
 
 

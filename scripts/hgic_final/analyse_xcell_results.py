@@ -516,17 +516,9 @@ if __name__ == '__main__':
         xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
 
     # load IPA pathway genes
-    ipa_indir = os.path.join(
-        HGIC_LOCAL_DIR,
-        'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways'
-    )
-    fn = os.path.join(
-        ipa_indir,
-        'full_de_ipa_results_significant.xlsx'
-    )
-    ipa_res = pd.read_excel(fn)
+    ipa_res = pd.read_excel(IPA_PATHWAY_FN)
     ipa_signatures = load_ipa_pathway_genes(
-        ipa_indir,
+        IPA_PATHWAY_DIR,
         pids,
         comparisons,
         ipa_res.index

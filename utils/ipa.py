@@ -1,6 +1,8 @@
 import datetime
 import os
 import csv
+import itertools
+import pandas as pd
 
 
 def results_to_ipa_format(
@@ -35,3 +37,50 @@ def results_to_ipa_format(
             # reduced block
             reduced_block = bl.loc[:, incl_cols]
             c.writerows(reduced_block.itertuples())
+
+
+def load_raw_reports(indir, file_pattern, *args):
+    """
+    Load all raw reports matching file_pattern in the specified directory.
+    Reports are processed to clean up the column naming, then packaged into a dictionary.
+    :param indir: Input directory.
+    :param file_pattern: A string supporting .format() operations (i.e. {0}, {1}, etc).
+    The arrays in *args will be passed in, so these should match.
+    :param args: One or more arrays containing variables that will be substituted into filename_format using .format().
+    :return: Flat dictionary, keys given as tuples matching the input *args.
+    """
+    res = {}
+    for tup in itertools.product(*args):
+        fn = os.path.join(indir, file_pattern.format(*tup))
+        this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
+        this.columns = ['-logp', 'ratio', 'z', 'genes']
+        this.index = [x.decode('utf-8') for x in this.index]
+        res[tup] = this
+    return res
+
+
+def load_supported_signatures_from_raw(indir, file_pattern, args, pathways=None):
+    """
+    Based on all the raw reports, compute the union of the features involved in each of the pathways.
+    For example, this can be used to estimate a number of the DE genes in each pathway.
+    :param indir:
+    :param file_pattern:
+    :param args: Iterable of iterables, which will be passed into the input *args of `load_raw_reports`
+    :param pathways: If supplied, only these pathways are included
+    :return: Dictionary, keyed by pathway name. Values are lists of features.
+    """
+    res = load_raw_reports(indir, file_pattern, *args)
+    ipa_pathway_signatures = {}
+    for this in res.values():
+        if pathways is None:
+            this_pw_list = this.index
+        else:
+            this_pw_list = this.index.intersection(pathways)
+        for pw in this_pw_list:
+            this_list = set(this.loc[pw, 'genes'].split(','))
+            if pw in ipa_pathway_signatures:
+                ipa_pathway_signatures[pw] = ipa_pathway_signatures[pw].union(this_list)
+            else:
+                ipa_pathway_signatures[pw] = this_list
+
+    return ipa_pathway_signatures
