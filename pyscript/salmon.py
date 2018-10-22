@@ -89,6 +89,15 @@ class SalmonMultilaneIlluminaPEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.P
     pass
 
 
+class SalmonMultilaneBartsPEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqBartsMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    pass
+
+
+class SalmonMultilaneBartsPEBash(jobs.BashArrayJobMixin, SalmonPEBase, jobs.PEFastqBartsMultiLaneMixin):
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    pass
+
 
 class SalmonPEApocrita(SalmonSgeRequirements, SalmonPEBase, jobs.PEFastqFileIteratorMixin):
     pass
@@ -115,10 +124,12 @@ def run_salmon(run_type):
         'pe_bash': SalmonPEBash,
         'pe_multilane_bash': SalmonMultilaneIlluminaPEBash,
         'pe_multilane_encode_bash': SalmonMultilaneEncodePEBash,
+        'pe_multilane_barts_bash': SalmonMultilaneBartsPEBash,
         'se_apocrita': SalmonSEApocrita,
         'pe_apocrita': SalmonPEApocrita,
         'pe_multilane_apocrita': SalmonMultilaneIlluminaPEApocrita,
         'pe_multilane_encode_apocrita': SalmonMultilaneEncodePEApocrita,
+        'pe_multilane_barts_apocrita': SalmonMultilaneBartsPEApocrita,
     }
 
     if run_type not in run_type_dict:
