@@ -18,12 +18,12 @@ import consts
 logger = log.get_console_logger()
 
 
-def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None):
+def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None, patient_samples=None):
     """
     Load and prepare the Illumina methylation data
     """
     # patient data
-    obj = methylation_loader.load_by_patient(pids, norm_method=norm_method)
+    obj = methylation_loader.load_by_patient(pids, norm_method=norm_method, samples=patient_samples)
     anno = methylation_loader.load_illumina_methylationepic_annotation()
 
     # reference data
@@ -462,14 +462,9 @@ if __name__ == "__main__":
     # For S1, we just need the paired comparison. This is important - any other samples lead to a change in the final
     # probe list (any NA rows are dropped from ALL samples).
 
-    me_obj, anno = load_methylation(pids, norm_method=norm_method_s1)
+    me_obj, anno = load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
     me_data = me_obj.data
     me_meta = me_obj.meta
-
-    # remove unneeded samples
-    me_meta = me_meta.loc[me_meta.index != 'DURA061_NSC_N6_P4']
-    me_meta = me_meta.loc[me_meta.type.isin(['GBM', 'iNSC', 'NSC'])]
-    me_data = me_data.loc[:, me_meta.index]
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results
@@ -494,71 +489,21 @@ if __name__ == "__main__":
     dmr_res_full_s1 = dmr_res_s1.results
     dmr_res_sign_s1 = dmr_res_s1.results_significant
 
-    # as we have been sequencing various additional samples, we should explicitly list those that go into this
-    # analysis, to avoid changing results in the future
-    rnaseq_sample_names = [
-        'GBM018_P12',
-        'GBM018_P10',
-        'DURA018_NSC_N4_P4',
-        'DURA018_NSC_N2_P6',
-        'GBM019_P4',
-        'GBM019_P3n6',
-        'DURA019_NSC_N8C_P2',
-        'DURA019_NSC_N5C1_P2',
-        'GBM030_P9n10',
-        'GBM030_P5',
-        'DURA030_NSC_N16B6_P1',
-        'DURA030_NSC_N9_P2',
-        'GBM031_P7',
-        'GBM031_P4',
-        'DURA031_NSC_N44B_P2',
-        'DURA031_NSC_N44_P3',
-        'GBM017_P3',
-        'GBM017_P4',
-        'DURA017_NSC_N3C5_P4',
-        'GBM050_P7n8',
-        'GBM050_P9',
-        'DURA050_NSC_N12_P3',
-        'DURA050_NSC_N16_P4',
-        'GBM054_P4',
-        'GBM054_P6',
-        'DURA054_NSC_N3C_P2',
-        'DURA054_NSC_N2E_P1',
-        'GBM061_P3',
-        'GBM061_P5',
-        'DURA061_NSC_N4_P2',
-        'DURA061_NSC_N1_P3',
-        'GBM026_P8',
-        'GBM026_P3n4',
-        'DURA026_NSC_N31D_P5',
-        'GBM052_P6n7',
-        'GBM052_P4n5',
-        'DURA052_NSC_N4_P3',
-        'DURA052_NSC_N5_P2',
-        'GIBCO_NSC_P4',
-        'H9_NSC_1',
-        'H9_NSC_2',
-    ]
-
     rnaseq_obj = load_rnaseq(
         pids,
         external_ref_names_de,
         strandedness=external_ref_strandedness_de,
-        discard_filter=['IPSC', 'ASTRO', '_FB']
     )
 
-    # remove unneeded samples
-    idx = rnaseq_obj.meta.index.isin(rnaseq_sample_names)
-    rnaseq_obj.filter_samples(idx)
+    rnaseq_obj.filter_by_sample_name(consts.ALL_RNASEQ_SAMPLES)
 
     #########################################################################
     ### STRATEGY 1: No references, just compare GBM-iNSC for each patient ###
     #########################################################################
 
-    # only keep the syngeneic samples
+    # only keep the required syngeneic samples for this analysis
     dat_s1 = rnaseq_obj.data.loc[
-             :,
-             rnaseq_obj.batch_id.str.contains('wtchg') & (~rnaseq_obj.data.columns.str.contains('GIBCO'))
+                :, rnaseq_obj.meta.index.isin(consts.S1_RNASEQ_SAMPLES)
              ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
 
@@ -1011,7 +956,8 @@ if __name__ == "__main__":
         pids,
         ref_names=external_ref_names_dm,
         ref_name_filter=external_ref_samples_dm,
-        norm_method=norm_method_s2
+        norm_method=norm_method_s2,
+        patient_samples=consts.ALL_METHYL_SAMPLES  # technically contains H9 too, but these will be ignored
     )
     me_data_with_ref = me_obj_with_ref.data
 

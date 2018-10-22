@@ -193,6 +193,13 @@ class DatasetLoader(object):
         """
 
     def filter_by_sample_name(self, filt, exact=True):
+        """
+        Filter by the sample name, either with a single name or array of names to keep (exact = True), or a str for
+        matching or arrayof strings (exact = False).
+        :param filt:
+        :param exact:
+        :return:
+        """
         if not self.meta_is_linked:
             raise NotImplementedError("Meta data are not linked to the data, so we can't filter. Run it manually on the data attribute.")
         idx = _filter_by_sample_name_index(self.meta.index, filt, exact=exact)
@@ -632,6 +639,20 @@ class MultipleBatchLoader(object):
         self.meta = self.meta.loc[keep_idx]
         self.data = self.data.loc[:, keep_idx]
         self.batch_id = self.batch_id.loc[keep_idx]
+
+    def reorder_samples(self, new_order):
+        """
+        Reorder samples according to the input iterable new_order. This is safer than manually reordering selected
+        elements, because that can lead to, e.g., mismatched meta and data.
+        :param new_order: Iterable of sample names, used for modifying the sample order.
+        :return:
+        """
+        new_order = pd.Index(new_order)
+        if new_order.sort_values() != self.meta.index.sort_values():
+            raise ValueError("new_order must have the same entries as existing samples")
+        self.meta = self.meta.loc[new_order]
+        self.data = self.data.loc[:, new_order]
+        self.batch_id = self.batch_id.loc[new_order]
 
     def aggregate_by_pattern(self, search_patt, new_name):
         _aggregate_by_regex(self, search_patt, new_name)

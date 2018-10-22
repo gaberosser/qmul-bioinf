@@ -204,9 +204,10 @@ fit2 <- eBayes(fit2)
 
 summary(decideTests(fit2))
 
-this_res <- topTable(fit2, coef = i, number = Inf)
-this_res <- this_res[this_res$P.Value < 0.05,]
-write.xlsx(this_res, paste0("dmps_lumped.xlsx"), colNames = T, rowNames = T)
+# Need to fix this bit:
+# this_res <- topTable(fit2, coef = i, number = Inf)
+# this_res <- this_res[this_res$P.Value < 0.05,]
+# write.xlsx(this_res, paste0("dmps_lumped.xlsx"), colNames = T, rowNames = T)
 
 #' Outcome: no DMPs
 

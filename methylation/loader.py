@@ -458,7 +458,8 @@ def load_by_patient(
         patient_ids,
         type='cell_culture',
         norm_method='swan',
-        include_control=True
+        include_control=True,
+        samples=None
 ):
     """
     Load all RNA-Seq count data associated with the patient ID(s) supplied
@@ -502,7 +503,7 @@ def load_by_patient(
             sample_order.append(s)
 
     objs = []
-    for ldr, samples in by_loader.items():
+    for ldr, smp in by_loader.items():
         base_dir = os.path.join(project_dirs[ldr], 'beta')
         meta_fn = os.path.join(project_dirs[ldr], 'sources.csv')
 
@@ -510,20 +511,25 @@ def load_by_patient(
             cls(
                 base_dir=base_dir,
                 meta_fn=meta_fn,
-                samples=samples,
+                samples=smp,
                 norm_method=norm_method,
                 batch_id=ldr
             )
         )
 
     if len(objs) > 1:
-        res = loader.MultipleBatchLoader(objs)
+        # retain missing probes here for accountability - we can drop them later
+        res = loader.MultipleBatchLoader(objs, intersection_only=False)
     else:
         res = objs[0]
 
     # apply original ordering
     res.meta = res.meta.loc[sample_order]
     res.data = res.data.loc[:, res.meta.index]
+    res.batch_id = res.batch_id.loc[sample_order]
+
+    if samples is not None:
+        res.filter_by_sample_name(samples, exact=True)
 
     # check for missing data and warn if too substantial
     n_init = res.data.shape[0]
