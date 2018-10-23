@@ -217,6 +217,20 @@ class DatasetLoader(object):
         self.data = self.data.loc[:, self.meta.index]
         self.input_files = self.input_files.loc[keep_idx]
 
+    def reorder_samples(self, new_order):
+        """
+        Reorder samples according to the input iterable new_order. This is safer than manually reordering selected
+        elements, because that can lead to, e.g., mismatched meta and data.
+        :param new_order: Iterable of sample names, used for modifying the sample order.
+        :return:
+        """
+        new_order = pd.Index(new_order)
+        if new_order.sort_values() != self.meta.index.sort_values():
+            raise ValueError("new_order must have the same entries as existing samples")
+        self.meta = self.meta.loc[new_order]
+        self.data = self.data.loc[:, new_order]
+        self.input_files = self.input_files.loc[new_order]
+
     def aggregate_by_pattern(self, search_patt, new_name, how='mean'):
         _aggregate_by_regex(self, search_patt, new_name, how=how)
 
@@ -648,7 +662,7 @@ class MultipleBatchLoader(object):
         :return:
         """
         new_order = pd.Index(new_order)
-        if new_order.sort_values() != self.meta.index.sort_values():
+        if not new_order.sort_values().equals(self.meta.index.sort_values()):
             raise ValueError("new_order must have the same entries as existing samples")
         self.meta = self.meta.loc[new_order]
         self.data = self.data.loc[:, new_order]
@@ -665,25 +679,5 @@ class MultipleBatchLoader(object):
         :param existing_attr: String giving the name of a column in meta.
         :return:
         """
-        # if new_attr is None and existing_attr is None:
-        #     raise AttributeError("Must specify one of new_attr or existing attr")
-        #
-        # if new_attr is not None and existing_attr is not None:
-        #     raise AttributeError("Must specify one of new_attr or existing attr")
-        #
-        # if existing_attr is not None:
-        #     new_attr = self.meta.loc[:, existing_attr]
-        #
-        # # rename to include publication / reference
-        # new_index = np.array(self.meta.index.tolist()).astype(object)  # need to cast this or numpy truncates it later
-        # for suff in new_attr.unique():
-        #     ix = new_attr == suff
-        #     old_names = self.meta.index[ix]
-        #     new_names = ["%s (%s)" % (t, suff) for t in old_names]
-        #     new_index[ix] = new_names
-        #
-        # self.meta.index = new_index
-        # self.data.columns = new_index
-        # self.batch_id.index = new_index
         _rename_with_attributes(self, new_attr=new_attr, existing_attr=existing_attr)
         self.batch_id.index = self.meta.index

@@ -230,7 +230,8 @@ def venn_set_to_wide_dataframe(
         elif len(static_cols_to_include) > 0 and full_data is not None:
             # this must have been the null set, no pid has been found to add the static variables
             # in this case, we use the full data to fill in variables
-            static_block = full_data.values()[0].loc[ids, static_cols_to_include]
+            # static_block = full_data.values()[0].loc[ids, static_cols_to_include]
+            static_block = full_data.values()[0].reindex(ids)[static_cols_to_include]
             blocks = [static_block] + blocks
 
         core_block = pd.concat(blocks, axis=1)

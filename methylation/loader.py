@@ -524,9 +524,7 @@ def load_by_patient(
         res = objs[0]
 
     # apply original ordering
-    res.meta = res.meta.loc[sample_order]
-    res.data = res.data.loc[:, res.meta.index]
-    res.batch_id = res.batch_id.loc[sample_order]
+    res.reorder_samples(sample_order)
 
     if samples is not None:
         res.filter_by_sample_name(samples, exact=True)

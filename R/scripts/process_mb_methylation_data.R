@@ -236,13 +236,23 @@ for (cl in c('3021', '1299')) {
   
   design <- model.matrix(~0 + condition + batch)
   fit <- lmFit(this.m, design)
-  
   contrasts <- makeContrasts(
     conditionshBMI1-conditionScr, 
     conditionshCHD7-conditionScr, 
     conditionshBMI1shCHD7-conditionshBMI1, 
     conditionshBMI1shCHD7-conditionshCHD7, 
     conditionshBMI1shCHD7-conditionScr, 
+    levels=design
+  )
+  
+  design <- model.matrix(~0 + batch + condition)
+  fit <- lmFit(this.m, design)
+  contrasts <- makeContrasts(
+    conditionshBMI1, 
+    conditionshCHD7, 
+    conditionshBMI1shCHD7-conditionshBMI1, 
+    conditionshBMI1shCHD7-conditionshCHD7, 
+    conditionshBMI1shCHD7, 
     levels=design
   )
   
@@ -257,13 +267,7 @@ for (cl in c('3021', '1299')) {
     this_res <- topTable(fit2, coef = i, number = Inf)
     this_res <- this_res[this_res$P.Value < 0.05,]
     dmps[[cl]][[ttl]] <- this_res
-    ## TODO: export results to xlsx or similar
-    # write.csv(dmps[[cl]][[colnames(contrasts)[i]]])
   }
   write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"), colNames = T, rowNames = T)
 
 }
-
-# for (cl in c('3021', '1299')) {
-  # write.xlsx(dmps[[cl]], paste0("dmps_", cl, ".xlsx"), colNames = T, rowNames = T)
-# }

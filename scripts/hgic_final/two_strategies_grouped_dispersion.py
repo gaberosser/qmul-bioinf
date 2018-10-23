@@ -576,10 +576,11 @@ if __name__ == "__main__":
         pids,
         full_data=de_res_full_s1,
         cols_to_include=['logFC', 'FDR'],
-        static_cols_to_include=['Gene Symbol'],
         consistency_check_col='logFC',
         consistency_check_method='sign'
     )
+    # add gene symbols back in
+    general.add_gene_symbols_to_ensembl_data(data)
     data.to_excel(os.path.join(outdir_s1, 'full_de.xlsx'))
     de_export_to_ipa(data, pids).to_excel(os.path.join(outdir_s1_ipa, "full_de_for_ipa.xlsx"))
 
