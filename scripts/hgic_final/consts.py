@@ -19,7 +19,6 @@ SUBGROUP_SET_COLOURS = {
     'Specific': '#f4e842',
     }
 
-
 S1_RNASEQ_SAMPLES = [
     'GBM018_P12',
     'GBM018_P10',
@@ -112,3 +111,21 @@ ALL_METHYL_SAMPLES = S1_METHYL_SAMPLES + [
     'H9 NPC 1',
     'H9 NPC 2',
 ]
+
+# parameters
+
+DE_PARAMS = {
+    'lfc': 1,
+    'fdr': 0.01,
+    'method': 'QLGLM'
+}
+
+DMR_PARAMS = {
+    'd_max': 400,
+    'n_min': 6,
+    'delta_m_min': 1.4,
+    'alpha': 0.01,
+    'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
+    'test_kwargs': {},
+    'n_jobs': None  # NB: fill this in within the script
+}

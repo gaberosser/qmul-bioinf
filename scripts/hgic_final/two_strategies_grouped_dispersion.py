@@ -362,21 +362,10 @@ if __name__ == "__main__":
 
     min_cpm = 1.
 
-    de_params = {
-        'lfc': 1,
-        'fdr': 0.01,
-        'method': 'QLGLM'
-    }
+    de_params = consts.DE_PARAMS
+    dmr_params = consts.DMR_PARAMS
+    dmr_params['n_jobs'] = mp.cpu_count()
 
-    dmr_params = {
-        'd_max': 400,
-        'n_min': 6,
-        'delta_m_min': 1.4,
-        'alpha': 0.01,
-        'dmr_test_method': 'mwu',  # 'mwu', 'mwu_permute'
-        'test_kwargs': {},
-        'n_jobs': mp.cpu_count(),
-    }
     norm_method_s1 = 'swan'
 
     pids = consts.PIDS

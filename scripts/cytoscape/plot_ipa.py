@@ -68,7 +68,7 @@ if __name__ == '__main__':
 
     # one network per patient:
     for pid in pids:
-        this_ipa = [all_ipa[(pid, c)].loc[all_ipa[(pid, c)]['-logp'] >= log_alpha] for c in comparisons]
+        this_ipa = [all_ipa[(pid, c)].loc[all_ipa[(pid, c)]['-logp'] >= log_alpha_strict] for c in comparisons]
         all_pathways = setops.reduce_union(*[t.index for t in this_ipa])
 
         p_to_g = {}
