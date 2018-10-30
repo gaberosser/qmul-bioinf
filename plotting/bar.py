@@ -6,7 +6,7 @@ import pandas as pd
 DEFAULT_COLOURS = ('k', 'b', 'r', 'g', 'y', 'gray', 'c', 'm')
 
 
-def grouped_bar_chart(series, width=0.8, ax=None, colours=None, ylim=None, mark_clipped=True, labels=None):
+def grouped_bar_chart(series, width=0.8, ax=None, colours=None, ylim=None, mark_clipped=True, labels=None, **kwargs):
     """
     Plot a bar chart with groups.
     :param series: Iterable of data objects. We assume these are ordered correctly.
@@ -15,6 +15,7 @@ def grouped_bar_chart(series, width=0.8, ax=None, colours=None, ylim=None, mark_
     :param colours: Optional iterable containing the colours for the groups
     :param ylim: Optional iterable of length 2. If supplied, this specifies the values at which y values are clipped.
     :param mark_clipped: If True, any values that are clipped will be filled with a hatched pattern to indicate clipping.
+    :param kwargs: Passed to ax.bar() (unclipped only)
     :return:
     """
     if colours is None:
@@ -50,15 +51,30 @@ def grouped_bar_chart(series, width=0.8, ax=None, colours=None, ylim=None, mark_
             yc[yc < ylim[0]] = ylim[0]
             yc[yc > ylim[1]] = ylim[1]
         col = colours[i % ns]  # cyclic with period n
+
+        bar_kwargs = {
+            'facecolor': col,
+            'edgecolor': 'none',
+            'label': lab
+        }
+        bar_kwargs.update(kwargs)
+
         # plot unclipped
-        ax.bar(xr, yr, dw, facecolor=col, edgecolor='none', label=lab)
+        ax.bar(xr, yr, dw, **bar_kwargs)
         if ylim is not None:
             if mark_clipped:
                 hatch = "/"
             else:
                 hatch = None
             # plot clipped
-            h = ax.bar(xc, yc, dw, facecolor=col, edgecolor='k', hatch=hatch)
+            bar_kwargs = {
+                'facecolor': col,
+                'hatch': hatch
+            }
+            bar_kwargs.update(kwargs)
+            # override edgecolor
+            bar_kwargs['edgecolor'] = 'k'
+            h = ax.bar(xc, yc, dw, **bar_kwargs)
 
     ax.set_xticks(np.arange(max_series_length) + width / 2.)
     # if supplied series are pandas dataframes, use the index to label
