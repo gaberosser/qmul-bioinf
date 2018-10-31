@@ -5,6 +5,7 @@ from utils import output, setops, genomics, log
 import multiprocessing as mp
 import os
 import numpy as np
+from scipy import stats
 from matplotlib import pyplot as plt
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
@@ -49,7 +50,7 @@ def bed_file_from_probes(anno, probes, out_fn, probe_half_len=61):
     genomics.write_bed_file(this_regions, out_fn)
 
 
-def count_dm_by_direction(dmr_res, pids=consts.PIDS, venn_set=None):
+def count_dm_by_direction(dmr_res, pids=consts.PIDS):
     """
     For each patient, count the regions/probes based on direction of differential methylation
     :param dmr_res: Dictionary, keyed by patient ID. Each value is another dictionary, keyed by probe or cluster ID.
@@ -59,11 +60,7 @@ def count_dm_by_direction(dmr_res, pids=consts.PIDS, venn_set=None):
     dmr_direction = {}
 
     for pid in pids:
-        if venn_set is None:
-            keys = dmr_res[pid].keys()
-        else:
-            keys = venn_set[pid]
-        this_res = pd.DataFrame.from_dict([dmr_res[pid][k] for k in keys])
+        this_res = pd.DataFrame.from_dict(dmr_res[pid]).transpose()
         dmr_direction[pid] = {
             'Hyper': (this_res['median_change'] > 0).sum(),
             'Hypo': (this_res['median_change'] < 0).sum(),
@@ -73,7 +70,6 @@ def count_dm_by_direction(dmr_res, pids=consts.PIDS, venn_set=None):
 
 def direction_of_dm_bar_plot(
         dmr_res,
-        venn_set=None,
         pids=consts.PIDS,
         as_pct=True,
         legend=True,
@@ -85,8 +81,6 @@ def direction_of_dm_bar_plot(
     results.
     :param dmr_res: Dictionary, keyed by patient ID. Each value is another dictionary, keyed by probe or cluster ID.
     Each value of those contains an object with the attribute `median_change` that is used to assess direction.
-    :param venn_set: If supplied, this is a dictionary keyed by pids with iterable values giving cluster/probe IDs.
-    Limit the clusters/probes included to those IDs.
     :param pids: Useful to specify the ordering of the PIDs.
     :param as_pct: If True (default), values are plotted as percentages.
     :param kwargs: Passed to the plotting function `bar.stacked_bar_chart()`. For example, might include `ax=...` to
@@ -94,7 +88,7 @@ def direction_of_dm_bar_plot(
     :return:
     """
 
-    for_plot = count_dm_by_direction(dmr_res, pids=pids, venn_set=venn_set)
+    for_plot = count_dm_by_direction(dmr_res, pids=pids)
 
     if as_pct:
         for_plot = for_plot.divide(for_plot.sum(), axis=1) * 100.
@@ -117,7 +111,7 @@ def direction_of_dm_bar_plot(
     return fig, ax
 
 
-def cpg_island_status(dmr_res, anno, clusters, all_probes=None, pids=consts.PIDS, venn_set=None):
+def cpg_island_status(dmr_res, anno, clusters, all_probes=None, pids=consts.PIDS):
     """
 
     :param dmr_res:
@@ -125,8 +119,6 @@ def cpg_island_status(dmr_res, anno, clusters, all_probes=None, pids=consts.PIDS
     :param clusters:
     :param all_probes:
     :param pids:
-    :param venn_set: If supplied, this is a dictionary keyed by PID. Each entry gives a list of DMR IDs and only
-    these are used for that patient. Useful to limit to patient-specific regions.
     :return:
     """
     if all_probes is None:
@@ -146,11 +138,7 @@ def cpg_island_status(dmr_res, anno, clusters, all_probes=None, pids=consts.PIDS
                 v[pid] = set(all_probes)
             else:
                 v[pid] = set()
-        if venn_set is not None:
-            the_keys = venn_set[pid]
-        else:
-            the_keys = dmr_res[pid].keys()
-        for k in the_keys:
+        for k in dmr_res[pid].keys():
             this_probe_ids = clusters[k].pids
             pid_sets['dmr'][pid].update(this_probe_ids)
             mc = dmr_res[pid][k]['median_change']
@@ -219,8 +207,8 @@ def dm_probe_direction_panel_plot(
         n_hyper = (arr > 0.).sum()
         n_tot = float(n_hypo + n_hyper)
         probe_pct[pid] = {
-            'Hypo': n_hypo / n_tot * 100.,
-            'Hyper': n_hyper / n_tot * 100.,
+            'hypo': n_hypo / n_tot * 100.,
+            'hyper': n_hyper / n_tot * 100.,
         }
     probe_pct = pd.DataFrame(probe_pct)[pids]
 
@@ -258,7 +246,7 @@ def dm_probe_direction_panel_plot(
         ax_pie = fig.add_subplot(gs[1, i])
         ax_pie.pie(
             probe_pct[pid].values,
-            colors=[colours['hypo'], colours['hyper']],
+            colors=[colours[t] for t in probe_pct.index],
             radius=1.,
             wedgeprops={'edgecolor': 'w', 'width': 0.5},
             startangle=90,
@@ -286,8 +274,8 @@ def plot_panel_cpg_status(
         n_hyper = (arr > 0.).sum()
         n_tot = float(n_hypo + n_hyper)
         probe_pct[pid] = {
-            'Hypo': n_hypo / n_tot * 100.,
-            'Hyper': n_hyper / n_tot * 100.,
+            'hypo': n_hypo / n_tot * 100.,
+            'hyper': n_hyper / n_tot * 100.,
         }
     probe_pct = pd.DataFrame(probe_pct)[pids]
 
@@ -340,7 +328,7 @@ def plot_panel_cpg_status(
         # pie plot in next row
         ax_pie.pie(
             probe_pct[pid].values,
-            colors=[colours['hypo'], colours['hyper']],
+            colors=[colours[t] for t in probe_pct.index],
             radius=1.,
             wedgeprops={'edgecolor': 'w', 'width': 0.5},
             startangle=90,
@@ -426,23 +414,77 @@ if __name__ == "__main__":
         dmr_res_s1.to_pickle(fn, include_annotation=False)
         logger.info("Saved DMR results to %s", fn)
 
-    # extract results
-    dmr_res_full_s1 = dmr_res_s1.results
-    dmr_res_sign_s1 = dmr_res_s1.results_significant
+    # extract full (all significant) results
+    dmr_res_all = dmr_res_s1.results_significant
+
+    # patient-specific DMRs
+    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
+    venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_all[pid] for pid in pids])
+    vs = dict([
+        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
+    ])
+    dmr_res_specific = dict([
+        (
+            pid,
+            dict([(t, dmr_res_all[pid][t]) for t in vs[pid]])
+        ) for pid in pids
+    ])
+
+    # full DMPs
+    dmp_ids_all = {}
+    dmp_res_all = {}
+    for pid in pids:
+        dmp_ids_all[pid] = set()
+        dmp_res_all[pid] = {}
+        gbm_samples = me_data.columns[me_data.columns.str.contains('GBM%s' % pid)]
+        nsc_samples = me_data.columns[me_data.columns.str.contains('DURA%s' % pid)]
+        for cl_id in dmr_res_all[pid]:
+            dmp_ids_all[pid].update(dmr_res_s1.clusters[cl_id].pids)
+        dmp_ids_all[pid] = sorted(dmp_ids_all[pid])
+        gbm_median = me_data.loc[dmp_ids_all[pid], gbm_samples].median(axis=1)
+        nsc_median = me_data.loc[dmp_ids_all[pid], nsc_samples].median(axis=1)
+        dmp_res_all[pid] = dict(
+            [(k, {'median_change': v}) for k, v in (gbm_median - nsc_median).items()]
+        )
+
+    # patient-specific DMPs
+    # define these as the probes in patient-specific DMRs
+    dmp_ids_specific = {}
+    for pid in pids:
+        dmp_ids_specific[pid] = set()
+        for cl_id in vs[pid]:
+            dmp_ids_specific[pid].update(dmr_res_s1.clusters[cl_id].pids)
+        dmp_ids_specific[pid] = sorted(dmp_ids_specific[pid])
+
+    venn_set_dmp, venn_ct_dmp = setops.venn_from_arrays(*[dmp_ids_specific[pid] for pid in pids])
+    vs_dmp = dict([
+        (p, venn_set_dmp[q]) for p, q in zip(pids, pu_sets)
+    ])
+
+    dmp_res_specific = {}
+    for pid in pids:
+        dmp_res_specific[pid] = {}
+        gbm_samples = me_data.columns[me_data.columns.str.contains('GBM%s' % pid)]
+        nsc_samples = me_data.columns[me_data.columns.str.contains('DURA%s' % pid)]
+        gbm_median = me_data.loc[vs_dmp[pid], gbm_samples].median(axis=1)
+        nsc_median = me_data.loc[vs_dmp[pid], nsc_samples].median(axis=1)
+        dmp_res_specific[pid] = dict(
+            [(k, {'median_change': v}) for k, v in (gbm_median - nsc_median).items()]
+        )
 
     # 1) direction of methylation change for all DMRs
     # a) clusters: absolute and relative values
     gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
     fig = plt.figure(figsize=(6, 7))
     fig, ax = direction_of_dm_bar_plot(
-        dmr_res_sign_s1,
+        dmr_res_all,
         as_pct=False,
         ax=fig.add_subplot(gs[1]),
         legend_loc='upper right'
     )
     ax.set_ylabel("Number DMRs")
     fig, ax = direction_of_dm_bar_plot(
-        dmr_res_sign_s1,
+        dmr_res_all,
         ax=fig.add_subplot(gs[0]),
         legend=False
     )
@@ -452,22 +494,6 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "all_dmr_direction.tiff"), dpi=200)
 
     # b) probes: otherwise as above
-    dmp_ids_all = {}
-    dmp_res_all = {}
-    for pid in pids:
-        dmp_ids_all[pid] = set()
-        dmp_res_all[pid] = {}
-        gbm_samples = me_data.columns[me_data.columns.str.contains('GBM%s' % pid)]
-        nsc_samples = me_data.columns[me_data.columns.str.contains('DURA%s' % pid)]
-        for cl_id in dmr_res_sign_s1[pid]:
-            dmp_ids_all[pid].update(dmr_res_s1.clusters[cl_id].pids)
-        dmp_ids_all[pid] = sorted(dmp_ids_all[pid])
-        gbm_median = me_data.loc[dmp_ids_all[pid], gbm_samples].median(axis=1)
-        nsc_median = me_data.loc[dmp_ids_all[pid], nsc_samples].median(axis=1)
-        dmp_res_all[pid] = dict(
-            [(k, {'median_change': v}) for k, v in (gbm_median - nsc_median).items()]
-        )
-
     gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
     fig = plt.figure(figsize=(6, 7))
     fig, ax = direction_of_dm_bar_plot(
@@ -489,7 +515,7 @@ if __name__ == "__main__":
 
     # c) probes with KDE and pie chart
     plot_dict = dm_probe_direction_panel_plot(
-        dmr_res_sign_s1,
+        dmr_res_all,
         dmp_res_all
     )
 
@@ -498,25 +524,17 @@ if __name__ == "__main__":
 
     # 2) direction of methylation change for patient-specific DMRs
     # a) clusters: absolute and relative values
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_sign_s1[pid].keys() for pid in pids])
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
-    vs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
-
     gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
     fig = plt.figure(figsize=(6, 7))
     fig, ax = direction_of_dm_bar_plot(
-        dmr_res_sign_s1,
-        venn_set=vs,
+        dmr_res_specific,
         as_pct=False,
         ax=fig.add_subplot(gs[1]),
         legend_loc='upper right'
     )
     ax.set_ylabel("Number patient-specific DMRs")
     fig, ax = direction_of_dm_bar_plot(
-        dmr_res_sign_s1,
-        venn_set=vs,
+        dmr_res_specific,
         ax=fig.add_subplot(gs[0]),
         legend=False
     )
@@ -525,31 +543,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.tiff"), dpi=200)
 
-    # b-i) probes: obtained by converting regions -> probes, then getting those specific to each patient
-    # arguably, this is a bit of a strange way to get 'patient-specific probes' (see b-ii)
-    dmp_ids_specific = {}
-    for pid in pids:
-        dmp_ids_specific[pid] = set()
-        for cl_id in dmr_res_sign_s1[pid]:
-            dmp_ids_specific[pid].update(dmr_res_s1.clusters[cl_id].pids)
-        dmp_ids_specific[pid] = sorted(dmp_ids_specific[pid])
-
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmp_ids_specific[pid] for pid in pids])
-    vs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
-
-    dmp_res_specific = {}
-    for pid in pids:
-        dmp_res_specific[pid] = {}
-        gbm_samples = me_data.columns[me_data.columns.str.contains('GBM%s' % pid)]
-        nsc_samples = me_data.columns[me_data.columns.str.contains('DURA%s' % pid)]
-        gbm_median = me_data.loc[vs[pid], gbm_samples].median(axis=1)
-        nsc_median = me_data.loc[vs[pid], nsc_samples].median(axis=1)
-        dmp_res_specific[pid] = dict(
-            [(k, {'median_change': v}) for k, v in (gbm_median - nsc_median).items()]
-        )
-
+    # b) probes: obtained by converting patient-specific DMRs to probes
     gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
     fig = plt.figure(figsize=(6, 7))
     fig, ax = direction_of_dm_bar_plot(
@@ -566,69 +560,10 @@ if __name__ == "__main__":
     )
     ax.xaxis.set_visible(False)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "patient_specific_direct_dmp_direction.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "patient_specific_direct_dmp_direction.tiff"), dpi=200)
-
-    # b-ii) probes: obtained by converting patient-specific DMRs to probes
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_sign_s1[pid].keys() for pid in pids])
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
-    vs_dmrs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
-
-    dmp_ids_specific = {}
-    for pid in pids:
-        dmp_ids_specific[pid] = set()
-        for cl_id in vs_dmrs[pid]:
-            dmp_ids_specific[pid].update(dmr_res_s1.clusters[cl_id].pids)
-        dmp_ids_specific[pid] = sorted(dmp_ids_specific[pid])
-
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmp_ids_specific[pid] for pid in pids])
-    vs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
-
-    dmp_res_specific = {}
-    for pid in pids:
-        dmp_res_specific[pid] = {}
-        gbm_samples = me_data.columns[me_data.columns.str.contains('GBM%s' % pid)]
-        nsc_samples = me_data.columns[me_data.columns.str.contains('DURA%s' % pid)]
-        gbm_median = me_data.loc[vs[pid], gbm_samples].median(axis=1)
-        nsc_median = me_data.loc[vs[pid], nsc_samples].median(axis=1)
-        dmp_res_specific[pid] = dict(
-            [(k, {'median_change': v}) for k, v in (gbm_median - nsc_median).items()]
-        )
-
-    gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
-    fig = plt.figure(figsize=(6, 7))
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_specific,
-        as_pct=False,
-        ax=fig.add_subplot(gs[1]),
-        legend_loc='upper right'
-    )
-    ax.set_ylabel("Number DMPs")
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_specific,
-        ax=fig.add_subplot(gs[0]),
-        legend=False
-    )
-    ax.xaxis.set_visible(False)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "patient_specific_dmp_via_dmr_direction.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "patient_specific_dmp_via_dmr_direction.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "patient_specific_dmp_direction.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "patient_specific_dmp_direction.tiff"), dpi=200)
 
     # c) probes with KDE and pie chart
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_sign_s1[pid] for pid in pids])
-    vs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
-    dmr_res_specific = dict([
-        (
-            pid,
-            dict([(t, dmr_res_sign_s1[pid][t]) for t in vs[pid]])
-        ) for pid in pids
-    ])
     plot_dict = dm_probe_direction_panel_plot(
         dmr_res_specific,
         dmp_res_specific
@@ -641,11 +576,10 @@ if __name__ == "__main__":
     # 1) All DMRs
 
     cpg_island_counts = cpg_island_status(
-        dmr_res_sign_s1,
+        dmr_res_all,
         anno,
         dmr_res_s1.clusters,
         all_probes=me_data.index,
-        venn_set=None
     )
     dist_as_pct = cpg_island_counts.divide(cpg_island_counts.sum(axis=1), axis=0) * 100.
     probe_values_all = dict([
@@ -659,25 +593,30 @@ if __name__ == "__main__":
     plot_dict['fig'].savefig(os.path.join(outdir, "probe_cpg_island_status_all.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "probe_cpg_island_status_all.tiff"), dpi=200)
 
-    # 2) Patient-specific DMRs
-    venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_sign_s1[pid].keys() for pid in pids])
-    pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
-    vs = dict([
-        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-    ])
+    # statistical test: which distributions are significantly different from the background?
+    cpg_island_pval_all = {}
+    cpg_island_chisq_all = {}
+    bg = cpg_island_counts.loc[(pids[0], 'background')]  # can use any PID here, they are all the same
+    for pid in pids:
+        cpg_island_chisq_all[pid] = {}
+        cpg_island_pval_all[pid] = {}
+        for typ in ['dmr', 'hypo', 'hyper']:
+            cpg_island_chisq_all[pid][typ], cpg_island_pval_all[pid][typ] = stats.chisquare(
+                cpg_island_counts.loc[(pid, typ)],
+                bg
+            )
 
+    # 2) Patient-specific DMRs
     probe_values_specific = dict([
         (pid, np.array([v['median_change'] for v in dmp_res_specific[pid].values()])) for pid in pids
     ])
     cpg_island_counts = cpg_island_status(
-        dmr_res_sign_s1,
+        dmr_res_specific,
         anno,
         dmr_res_s1.clusters,
         all_probes=me_data.index,
-        venn_set=vs
     )
     dist_as_pct = cpg_island_counts.divide(cpg_island_counts.sum(axis=1), axis=0) * 100.
-
 
     plot_dict = plot_panel_cpg_status(
         dist_as_pct,
@@ -685,6 +624,19 @@ if __name__ == "__main__":
     )
     plot_dict['fig'].savefig(os.path.join(outdir, "probe_cpg_island_status_specific.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "probe_cpg_island_status_specific.tiff"), dpi=200)
+
+    # statistical test: which distributions are significantly different from the background?
+    cpg_island_pval_specific = {}
+    cpg_island_chisq_specific = {}
+    bg = cpg_island_counts.loc[(pids[0], 'background')]  # can use any PID here, they are all the same
+    for pid in pids:
+        cpg_island_chisq_specific[pid] = {}
+        cpg_island_pval_specific[pid] = {}
+        for typ in ['dmr', 'hypo', 'hyper']:
+            cpg_island_chisq_specific[pid][typ], cpg_island_pval_specific[pid][typ] = stats.chisquare(
+                cpg_island_counts.loc[(pid, typ)],
+                bg
+            )
 
 
     # export the probe regions for each patient to a BED file for motif enrichment
