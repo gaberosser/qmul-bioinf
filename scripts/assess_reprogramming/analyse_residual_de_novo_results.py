@@ -4,7 +4,7 @@ comparison. We'll load them in and analyse the combined results.
 """
 
 from methylation import loader
-from plotting import venn, common
+from plotting import venn, common, bar
 import pandas as pd
 from utils import output, setops, log
 import numpy as np
@@ -234,7 +234,7 @@ def scatter_cluster_mvals_classified(
         y_vals - base_vals,
         facecolors='w',
         edgecolors='k',
-        label='Other probes',
+        label='Other clusters',
         zorder=1.
     )
 
@@ -566,9 +566,11 @@ if __name__ == "__main__":
 
     # to_plot nesting format: iNSC then FB
     k_our_fb = 'Our data (n=%d)' % len(fb_samples['ours'])
-    k_e6194_fb = 'E-MTAB-6194 (n=%d)' % len(fb_samples['e6194'])
+    # k_e6194_fb = 'E-MTAB-6194 (n=%d)' % len(fb_samples['e6194'])
+    k_e6194_fb = 'Weltner et al. (n=%d)' % len(fb_samples['e6194'])
     k_our_ipsc = 'Our data (n=%d)' % len(ipsc_samples['ours'])
-    k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_samples['e6194'])
+    # k_e6194_ipsc = 'E-MTAB-6194 (n=%d)' % len(ipsc_samples['e6194'])
+    k_e6194_ipsc = 'Weltner et al. (n=%d)' % len(ipsc_samples['e6194'])
     k_hipsci_ipsc = 'HipSci (n=%d)' % len(ipsc_samples['hipsci'])
     k_banov_ipsc = 'Banovich (n=%d)' % len(ipsc_samples['banov'])
 
@@ -843,45 +845,100 @@ if __name__ == "__main__":
     df_hyper = pd.concat([pd.DataFrame(dict(val=n_core_hyper[k1], typ=k1)) for k1 in n_core_hyper])
     df_hypo = pd.concat([pd.DataFrame(dict(val=n_core_hypo[k1], typ=k1)) for k1 in n_core_hypo])
 
-    fig, axs = plt.subplots(nrows=2, figsize=(6.5, 7.5))
+    gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[3, 1])
+    fig = plt.figure(figsize=(6, 6))
+
+    ax = fig.add_subplot(gs[1, 0])
     sns.swarmplot(
         x='typ',
         y='val',
-        data=df_hypo,
-        ax=axs[0],
+        data=df_hypo.loc[~df_hypo.typ.str.contains('Banovich')],
+        ax=ax,
         edgecolor='k',
         linewidth=1.5,
         color='w'
-    )  # TODO: make markers unfilled?
-    sns.boxplot(
-        x='typ',
-        y='val',
-        data=df_hypo,
-        ax=axs[0],
-        whis="range"
     )
-    sns.swarmplot(
-        x='typ',
-        y='val',
-        data=df_hyper,
-        ax=axs[1],
-        edgecolor='k',
-        linewidth=1.5,
-        color='w'
-    )  # TODO: make markers unfilled?
     sns.boxplot(
         x='typ',
         y='val',
-        data=df_hyper,
-        ax=axs[1],
-        whis="range"
+        data=df_hypo.loc[~df_hypo.typ.str.contains('Banovich')],
+        ax=ax,
+        whis="range",
+        color='#b2df8a'
     )
 
-    plt.setp(axs[0].xaxis.get_label(), visible=False)
-    plt.setp(axs[1].xaxis.get_label(), visible=False)
-    plt.setp(axs[0].xaxis.get_ticklabels(), visible=False)
-    axs[0].set_ylabel("Number hypomethylated DMRs")
-    axs[1].set_ylabel("Number hypermethylated DMRs")
+    # plt.setp(ax.xaxis.get_ticklabels(), visible=False)
+    plt.setp(ax.xaxis.get_label(), visible=False)
+    ax.set_ylabel('Hypomethylated DMRs')
+    ylim = ax.get_ylim()
+    ax.set_ylim([0, ylim[1]])
+
+    ax = fig.add_subplot(gs[1, 1])
+    sns.swarmplot(
+        x='typ',
+        y='val',
+        data=df_hypo.loc[df_hypo.typ.str.contains('Banovich')],
+        ax=ax,
+        edgecolor='k',
+        linewidth=1.5,
+        color='w'
+    )
+    sns.boxplot(
+        x='typ',
+        y='val',
+        data=df_hypo.loc[df_hypo.typ.str.contains('Banovich')],
+        ax=ax,
+        whis="range",
+        color='#b2df8a'
+    )
+    plt.setp(ax.xaxis.get_label(), visible=False)
+    plt.setp(ax.yaxis.get_label(), visible=False)
+    ylim = ax.get_ylim()
+    ax.set_ylim([0, ylim[1]])
+
+    ax = fig.add_subplot(gs[0, 0])
+    sns.swarmplot(
+        x='typ',
+        y='val',
+        data=df_hyper.loc[~df_hyper.typ.str.contains('Banovich')],
+        ax=ax,
+        edgecolor='k',
+        linewidth=1.5,
+        color='w'
+    )
+    sns.boxplot(
+        x='typ',
+        y='val',
+        data=df_hyper.loc[~df_hyper.typ.str.contains('Banovich')],
+        ax=ax,
+        whis="range",
+        color='#fb9a99'
+    )
+    plt.setp(ax.xaxis.get_label(), visible=False)
+    plt.setp(ax.xaxis.get_ticklabels(), visible=False)
+    ax.set_ylabel('Hypermethylated DMRs')
+
+    ax = fig.add_subplot(gs[0, 1])
+    sns.swarmplot(
+        x='typ',
+        y='val',
+        data=df_hyper.loc[df_hyper.typ.str.contains('Banovich')],
+        ax=ax,
+        edgecolor='k',
+        linewidth=1.5,
+        color='w'
+    )
+    sns.boxplot(
+        x='typ',
+        y='val',
+        data=df_hyper.loc[df_hyper.typ.str.contains('Banovich')],
+        ax=ax,
+        whis="range",
+        color='#fb9a99'
+    )
+    plt.setp(ax.xaxis.get_label(), visible=False)
+    plt.setp(ax.yaxis.get_label(), visible=False)
+    plt.setp(ax.xaxis.get_ticklabels(), visible=False)
 
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.png"), dpi=200)
@@ -1093,11 +1150,17 @@ if __name__ == "__main__":
     df2 = pd.DataFrame(core_dmr_classified_count_e6194)
     df = pd.concat((df1, df2), axis=1).transpose()
 
-    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6.5, 5.5))
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(4.5, 5))
     for i, typ in enumerate(['hyper', 'hypo']):
         ax = axs[i]
-        df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
-        ax.set_ylabel('Number DMRs')
+        this = df.loc[:, df.columns.str.contains(typ)].transpose()
+        this.index = ['De novo', 'Residual']
+        bar.stacked_bar_chart(this, colours=plot_colours[typ], ax=ax, width=0.8, ec='k', lw=1.0)
+        ax.set_ylabel('%s DMRs' % ('Hypomethylated' if typ == 'hypo' else 'Hypermethylated'))
+        plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+
+        # df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
+        # ax.set_ylabel('Number DMRs')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)

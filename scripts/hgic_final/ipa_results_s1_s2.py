@@ -1,14 +1,207 @@
 import os
 from settings import HGIC_LOCAL_DIR
 import pandas as pd
-from utils import output, setops, excel
+from utils import output, setops, excel, ipa
 from plotting import common
+import collections
 import consts
 from matplotlib import pyplot as plt, patches, collections, gridspec
 import seaborn as sns
 import numpy as np
 from scipy import stats
 from stats import nht, basic
+
+
+def ipa_results_to_wideform(res, plogalpha):
+    """
+    Convert the IPA results dictionary into a wideform pd.DataFrame.
+    Owing to the potentially large number of comparisons, we can't use the Venn approach here, but there's no need.
+    :param res:
+    :param plogalpha:
+    :return:
+    """
+    de_all_pathways = sorted(setops.reduce_union(*[t.index for t in res.values()]))
+    export_wideform = pd.DataFrame(index=de_all_pathways)
+    member_cols = []
+    for k, v in res.items():
+        sign_ix = v.index[v['-logp'] >= plogalpha]
+        this_yn = pd.Series('N', index=de_all_pathways)
+        this_yn.loc[sign_ix] = 'Y'
+        member_cols.append(k)
+        export_wideform.insert(
+            export_wideform.shape[1],
+            k,
+            this_yn
+        )
+        for col in ['-logp', 'z', 'ratio', 'n_gene']:
+            export_wideform.insert(
+                export_wideform.shape[1],
+                "%s_%s" % (k, col),
+                v.reindex(de_all_pathways)[col]
+            )
+
+    # add n gene in pathway as single const column
+    rr = export_wideform.loc[:, export_wideform.columns.str.contains('ratio')]
+    ng = export_wideform.loc[:, export_wideform.columns.str.contains('n_gene')]
+    n_gene_tot = (ng.astype(float).values / rr.astype(float)).mean(axis=1).round().astype(int)
+    export_wideform.insert(0, 'n_gene_in_pathway', n_gene_tot)
+
+    return export_wideform
+
+
+def generate_summary_df(all_in, comps, pids=consts.PIDS):
+    """
+    Given the full results dictionary, generate a single DataFrame summary of the number of comparisons and IDs
+    exhibiting each pathway.
+    :param all_in: DataFrame, indexes are pathways and columns are comparison names. Entries are boolean, where a T
+    indicates that the pathway is significant in that comparison
+    :param comps: List of comparisons, not including syngeneic
+    :param pids: List of PIDs.
+    :return:
+    """
+    pathways = all_in.index
+
+    n_set = pd.DataFrame(
+        0,
+        index=pathways,
+        columns=['Syngen. only', 'Ref. only', 'Intersect.'],
+        dtype=int
+    )
+    so = dict([(pw, []) for pw in pathways])
+    ro = dict([(pw, []) for pw in pathways])
+    inters = dict([(pw, []) for pw in pathways])
+    for pid in pids:
+        s = all_in.index[all_in.loc[:, "%s_syngeneic" % pid]]
+        r = all_in.index[all_in.loc[:, ["%s_%s" % (pid, t) for t in comps]].any(axis=1)]
+        vs, _ = setops.venn_from_arrays(s, r)
+
+        n_set.loc[vs['10'], 'Syngen. only'] += 1
+        n_set.loc[vs['01'], 'Ref. only'] += 1
+        n_set.loc[vs['11'], 'Intersect.'] += 1
+
+        for pw in vs['10']:
+            so[pw].append(pid)
+        for pw in vs['01']:
+            ro[pw].append(pid)
+        for pw in vs['11']:
+            inters[pw].append(pid)
+
+    # output excel file giving at-a-glance access to which patients are involved in each pathway, categorised as
+    # 'syn only', 'ref only' and 'intersection'
+    at_a_glance = pd.DataFrame(
+        index=pathways,
+        columns=['n_syngen_only', 'syngen_only_pids', 'n_ref_only', 'ref_only_pids', 'n_intersect', 'intersect_pids'],
+        dtype=object
+    )
+    for pw in pathways:
+        at_a_glance.loc[pw, 'n_syngen_only'] = len(so[pw])
+        at_a_glance.loc[pw, 'syngen_only_pids'] = ';'.join(so[pw])
+        at_a_glance.loc[pw, 'n_ref_only'] = len(ro[pw])
+        at_a_glance.loc[pw, 'ref_only_pids'] = ';'.join(ro[pw])
+        at_a_glance.loc[pw, 'n_intersect'] = len(inters[pw])
+        at_a_glance.loc[pw, 'intersect_pids'] = ';'.join(inters[pw])
+
+    return n_set, at_a_glance
+
+
+def compute_enrichment_combined_references(df):
+    """
+    Compute the effect and significance of enrichment of pathways in either syngeneic or reference comparisons.
+    :param df: DataFrame containing two columns, 'syn' and 'ref'. These can either be the count (number of
+    comparisons identifying this pathway) or the sum of -logp values ('total significance' of this pathway).
+    :return:
+    """
+    N = df.shape[0]
+    # Ntot is the number of pairwise comparisons
+    Ntot = N * (N - 1) / 2.
+
+    this_wsrt = nht.wilcoxon_signed_rank_statistic(df.syn, df.ref, zero_method='pratt')
+    this_p = nht.wilcoxon_signed_rank_test(df.syn, df.ref, distribution='exact')
+    this_rank_corr = (this_wsrt['r_plus'] - this_wsrt['r_minus']) / Ntot
+
+    print "Comparing the NUMBER of samples showing enrichment in a given pathway, combining references."
+    if this_p < 0.05:
+        print "Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
+            this_p,
+            this_rank_corr,
+            "syn > ref" if this_rank_corr > 0 else "ref > syn"
+        )
+
+    res = {
+        'pval': this_p,
+        'rank_correlation': this_rank_corr,
+    }
+    res.update(this_wsrt)
+    return res
+
+
+def compute_enrichment_separate_references(df, comps):
+    """
+    Compute the relative enrichment of pathways identified by the syngeneic comparison, vs each of the other
+    comparisons.
+    :param df: DataFrame, index is pathway, column is comparison. Value is whatever we want to test (e.g. count,
+    sum plogp).
+    :param comps: Array of comparison names. The first should be 'syngeneic' (or whatever we are testing).
+    :return:
+    """
+    N = df.shape[0]
+    # Ntot is the number of pairwise comparisons
+    Ntot = N * (N - 1) / 2.
+
+    wsrt = {}
+    pval = {}
+    rank_corr = {}
+
+    c_base = comps[0]
+
+    for c in comps[1:]:
+        wsrt[c] = nht.wilcoxon_signed_rank_statistic(df[c_base], df[c], zero_method='pratt')
+        pval[c] = nht.wilcoxon_signed_rank_test(df[c_base], df[c], distribution='exact')
+        rank_corr[c] = (wsrt[c]['r_plus'] - wsrt[c]['r_minus']) / Ntot
+
+        if pval[c] < 0.05:
+            print "Comparison syngeneic vs %s. Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
+                c,
+                pval[c],
+                rank_corr[c],
+                "syn > ref" if rank_corr[c] > 0 else "ref > syn"
+            )
+        else:
+            print "Comparison syngeneic vs %s. Do not reject null (p=%.3f)." % (
+                c,
+                pval[c]
+            )
+
+    res = {
+        'p': pval,
+        'rank_correlation': rank_corr,
+        'statistic': wsrt
+    }
+    return res
+
+
+def generate_plotting_structures(res, pathways, plogalpha):
+    all_p = {}
+    all_z = {}
+    all_in = {}
+
+    for k, v in res.items():
+        # only keep significant pathways
+        the_dat = v.reindex(pathways)
+
+        all_in[k] = the_dat['-logp'] > plogalpha
+        all_p[k] = the_dat['-logp'].mask(the_dat['-logp'] < plogalpha)
+        all_z[k] = the_dat['z']
+
+    all_in = pd.DataFrame(all_in).fillna(False)
+    all_z = pd.DataFrame(all_z)
+    all_p = pd.DataFrame(all_p)
+
+    return {
+        'in': all_in,
+        'z': all_z,
+        'p': all_p
+    }
 
 
 def pathway_involvement_heatmap_by_p(
@@ -20,6 +213,7 @@ def pathway_involvement_heatmap_by_p(
         orientation='vertical',
         vmin=None,
         vmax=None,
+        count_cmap='Blues'
 ):
     n = len(pids) + 2
     m = 5
@@ -111,7 +305,7 @@ def pathway_involvement_heatmap_by_p(
     sns.heatmap(
         n_set_plot,
         mask=n_set_plot == 0,
-        cmap='Blues',
+        cmap=count_cmap,
         cbar=False,
         ax=eax,
         annot=True,
@@ -144,6 +338,38 @@ def pathway_involvement_heatmap_by_p(
     }
 
 
+def plot_delta_histogram(
+    y,
+    x,
+    nbin=10,
+    fmin=0.01,
+    fmax=0.99,
+    ax=None,
+    summary_metric='median'
+):
+    delta = y - x
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    dsort = sorted(delta)
+    dmin = dsort[int(fmin * len(dsort))]
+    dmax = dsort[int(fmax * len(dsort))]
+
+    edges = np.linspace(dmin, dmax, nbin)
+    # make this symmetric about zero
+    if (dmin < 0) and (dmax > 0):
+        ix = np.searchsorted(edges, 0, side='left')
+        dx = edges[1] - edges[0]
+        edges += -edges[ix] - dx / 2.
+
+    ax.hist(delta, edges)
+    ax.set_xlabel('Difference in number of comparisons (syn - ref)')
+    ax.axvline(getattr(delta, summary_metric)(), ls='--', color='k', label=summary_metric)
+
+    return ax
+
+
 if __name__ == '__main__':
     # set a minimum pval for pathways to be used
     alpha = 0.005
@@ -152,10 +378,12 @@ if __name__ == '__main__':
     alpha_relevant = 0.05
     plogalpha_relevant = -np.log10(alpha_relevant)
 
-    indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways')
+    de_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways')
+    dm_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/methylation/merged_s1_s2/ipa/pathways')
     outdir = output.unique_output_dir()
 
     # keys are the term used in the filename, values are those used in the columns
+    ref_names = ['h9', 'gibco']
     comps = {
         'syngeneic': 'syngeneic',
         'h9': 'H9',
@@ -168,460 +396,320 @@ if __name__ == '__main__':
     }
     pids = consts.PIDS
 
-    # first, load from raw data and combine into a single export file
+    #######################################################
+    # DE
+    #######################################################
+
+    # load IPA results from raw data and combine into a single export file
     # format: Excel, wideform
-    file_patt = 'de_s2_{pid}_{cmp}.txt'
-    to_export = {}
-    col_order = []
-    for pid in pids:
-        for c in comps:
-            fn = os.path.join(indir, file_patt.format(pid=pid, cmp=c))
-            this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
-            this.columns = ['-logp', 'ratio', 'z', 'genes']
-            # replace genes column with n genes (to avoid overcomplicating it)
-            this.insert(3, 'n_gene', this.genes.str.split(',').apply(len))
-            # resolve encoding in index
-            this.index = [x.decode('utf-8') for x in this.index]
-            # restrict to relevant pathways
-            rele_ix = this.index[this['-logp'] >= plogalpha_relevant]
-            this = this.loc[rele_ix]
-            to_export["%s_%s" % (pid, c)] = this
-            col_order.append("%s_%s" % (pid, c))
+    de_res = ipa.load_raw_reports(
+        de_indir,
+        'de_s2_{0}_{1}.txt',
+        pids,
+        comps
+    )
+    for k, v in de_res.items():
+        rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
+        de_res['_'.join(k)] = v.loc[rele_ix]
+        de_res.pop(k)
 
     # wideform version of this (i.e. 30 blocks)
-    # we can't use the Venn approach here, but we don't need to
-    all_pathways = sorted(setops.reduce_union(*[t.index for t in to_export.values()]))
-    export_wideform = pd.DataFrame(index=all_pathways)
-    member_cols = []
-    for pid in pids:
-        for c in comps:
-            k = "%s_%s" % (pid, c)
-            this = to_export[k]
-            sign_ix = this.index[this['-logp'] >= plogalpha]
-            this_yn = pd.Series('N', index=all_pathways)
-            this_yn.loc[sign_ix] = 'Y'
-            member_cols.append(k)
-            export_wideform.insert(
-                export_wideform.shape[1],
-                k,
-                this_yn
-            )
-            for col in ['-logp', 'z', 'ratio', 'n_gene']:
-                export_wideform.insert(
-                    export_wideform.shape[1],
-                    "%s_%s" % (k, col),
-                    this.reindex(all_pathways)[col]
-                )
+    de_res_wide = ipa_results_to_wideform(de_res, plogalpha)
+    de_res_wide.to_excel(os.path.join(outdir, "full_de_ipa_results.xlsx"))
 
-    # add n gene in pathway as single const column
-    rr = export_wideform.loc[:, export_wideform.columns.str.contains('ratio')]
-    ng = export_wideform.loc[:, export_wideform.columns.str.contains('n_gene')]
-    n_gene_tot = (ng.astype(float).values / rr.astype(float)).mean(axis=1).round().astype(int)
-    export_wideform.insert(0, 'n_gene_in_pathway', n_gene_tot)
+    # get a list of significant pathways (in at least one comparison)
+    de_pathways_significant = set()
+    for k, v in de_res.items():
+        de_pathways_significant.update(v.index[v['-logp'] > plogalpha])
 
-    export_wideform.to_excel(os.path.join(outdir, "full_de_ipa_results.xlsx"))
+    # export significant results to an Excel file with separate tabs
+    de_res_sign = dict([
+        (k, v.loc[v['-logp'] > plogalpha]) for k, v in de_res.items()
+    ])
+    excel.pandas_to_excel(de_res_sign, os.path.join(outdir, "full_de_ipa_results_significant_separated.xlsx"))
 
-    # first pass: load data and obtain list of pathways considered 'significant' (based on alpha)
-    pathways_to_keep = set()
-
-    ipa_res = {}
-    ipa_res_full = {}
-    for c, kc in comps.items():
-        p = pd.read_csv(
-            os.path.join(indir, 'full_de_%s_logp.txt' % c),
-            sep='\t',
-            skiprows=2,
-            index_col=0,
-            header=0,
-            usecols=range(11)
-        )
-        z = pd.read_csv(
-            os.path.join(indir, 'full_de_%s_z.txt' % c),
-            sep='\t',
-            skiprows=2,
-            index_col=0,
-            header=0,
-            usecols=range(11)
-        ).reindex(p.index)
-        p.columns = p.columns.str.replace('_logFC', '')
-        z.columns = z.columns.str.replace('_logFC', '')
-        for pid in pids:
-            t = pd.DataFrame(index=p.index, columns=['-logp', 'z'])
-            t.loc[:, '-logp'] = p["%s_%s" % (pid, kc)]
-            t.loc[:, 'z'] = z["%s_%s" % (pid, kc)]
-            # resolve encoding in index
-            t.index = [x.decode('utf-8') for x in t.index]
-
-            # store relevant results
-            ipa_res_full['%s_%s' % (pid, c)] = t.loc[t['-logp'] > -np.log10(alpha_relevant)]
-            # store significant results
-            ipa_res['%s_%s' % (pid, c)] = t.loc[t['-logp'] > -np.log10(alpha)]
-
-            pathways_to_keep.update(ipa_res['%s_%s' % (pid, c)].index)
-
-    excel.pandas_to_excel(ipa_res, os.path.join(outdir, "full_de_ipa_results_significant_separated.xlsx"))
-
-    pathways_to_keep = sorted(pathways_to_keep)
-
-    # use this list to export a second wideform Excel file with the top list of pathways
-    p_for_export = pd.DataFrame(index=pathways_to_keep, columns=sorted(ipa_res.keys()))
-    z_for_export = pd.DataFrame(index=pathways_to_keep, columns=sorted(ipa_res.keys()))
-    s_for_export = pd.DataFrame('N', index=pathways_to_keep, columns=sorted(ipa_res.keys()))
-    for k, v in ipa_res_full.items():
-        p_for_export.loc[pathways_to_keep, k] = v.reindex(pathways_to_keep).loc[:, '-logp']
-        z_for_export.loc[pathways_to_keep, k] = v.reindex(pathways_to_keep).loc[:, 'z']
-        s_for_export.loc[v.reindex(pathways_to_keep).loc[:, '-logp'] > -np.log10(alpha), k] = 'Y'
-    p_for_export.columns = ["%s_-logp" % t for t in p_for_export.columns]
-    z_for_export.columns = ["%s_z" % t for t in z_for_export.columns]
-    for_export = pd.concat((p_for_export, z_for_export, s_for_export), axis=1).sort_index(axis=1)
-
-    for_export.to_excel(os.path.join(outdir, "full_de_ipa_results_significant.xlsx"))
-
-
-    # second pass: obtain full data from each comparison, providing the pathway is 'relevant' (based on alpha_relevant)
-    all_p = {}
-    all_z = {}
-    all_in = {}
-
-    for i, pid in enumerate(pids):
-        this_data = []
-        this_p = []
-        this_z = []
-        for c in sorted(comps.keys()):
-            the_dat = ipa_res['%s_%s' % (pid, c)].reindex(pathways_to_keep)
-            the_dat = the_dat.loc[the_dat['-logp'] > -np.log10(alpha_relevant)]
-
-            all_in["%s_%s" % (pid, c)] = the_dat['-logp'] > np.log10(alpha)
-            all_p["%s_%s" % (pid, c)] = the_dat['-logp']
-            all_z["%s_%s" % (pid, c)] = the_dat['z']
-
-    all_in = pd.DataFrame(all_in).fillna(False)
-    all_z = pd.DataFrame(all_z)
-    all_p = pd.DataFrame(all_p)
-
-    # number syngen. only, ref. only and intersection
-    n_set = pd.DataFrame(0, index=all_p.index, columns=['Syngen. only', 'Ref. only', 'Intersect.'], dtype=int)
-    so = dict([(pw, []) for pw in pathways_to_keep])
-    ro = dict([(pw, []) for pw in pathways_to_keep])
-    inters = dict([(pw, []) for pw in pathways_to_keep])
-    for pid in pids:
-        s = all_in.index[all_in.loc[:, "%s_syngeneic" % pid]]
-        r = all_in.index[all_in.loc[:, ["%s_%s" % (pid, t) for t in comps.keys()[1:]]].any(axis=1)]
-        vs, _ = setops.venn_from_arrays(s, r)
-
-        n_set.loc[vs['10'], 'Syngen. only'] += 1
-        n_set.loc[vs['01'], 'Ref. only'] += 1
-        n_set.loc[vs['11'], 'Intersect.'] += 1
-
-        for pw in vs['10']:
-            so[pw].append(pid)
-        for pw in vs['01']:
-            ro[pw].append(pid)
-        for pw in vs['11']:
-            inters[pw].append(pid)
-
-    # output excel file giving at-a-glance access to which patients are involved in each pathway, categorised as
-    # 'syn only', 'ref only' and 'intersection'
-    at_a_glance = pd.DataFrame(
-        index=pathways_to_keep,
-        columns=['n_syngen_only', 'syngen_only_pids', 'n_ref_only', 'ref_only_pids', 'n_intersect', 'intersect_pids'],
-        dtype=object
+    # export wideform, reduced to include only significant pathways
+    de_res_wide.loc[sorted(de_pathways_significant)].to_excel(
+        os.path.join(outdir, "full_de_ipa_results_significant.xlsx")
     )
-    for pw in pathways_to_keep:
-        at_a_glance.loc[pw, 'n_syngen_only'] = len(so[pw])
-        at_a_glance.loc[pw, 'syngen_only_pids'] = ';'.join(so[pw])
-        at_a_glance.loc[pw, 'n_ref_only'] = len(ro[pw])
-        at_a_glance.loc[pw, 'ref_only_pids'] = ';'.join(ro[pw])
-        at_a_glance.loc[pw, 'n_intersect'] = len(inters[pw])
-        at_a_glance.loc[pw, 'intersect_pids'] = ';'.join(inters[pw])
 
-    at_a_glance.to_excel(os.path.join(outdir, "ipa_results_patients_by_s2_category.xlsx"))
-
-    z_min = all_z.min().min()
-    z_max = all_z.max().max()
+    # useful structures for plots
+    dd = generate_plotting_structures(de_res, de_pathways_significant, plogalpha)
+    de_all_p = dd['p']
+    de_all_z = dd['z']
+    de_all_in = dd['in']
+    
+    # at-a-glance export
+    de_n_set, at_a_glance = generate_summary_df(de_all_in, ref_names)
+    at_a_glance.to_excel(os.path.join(outdir, "de_ipa_results_patients_by_s2_category.xlsx"))
 
     # plot 1) P values, ordered by sum of -log(P)
-    p_order = all_p.sum(axis=1).sort_values(ascending=False).index
+    p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
     plot_dict = pathway_involvement_heatmap_by_p(
-        all_p,
-        n_set,
+        de_all_p,
+        de_n_set,
         p_order,
         pids,
         comparison_names
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.pdf"), dpi=200)
 
     # plot 2) P values, ordered by mean of -log(P)
-    p_order = all_p.mean(axis=1).sort_values(ascending=False).index
+    p_order = de_all_p.mean(axis=1).sort_values(ascending=False).index
     plot_dict = pathway_involvement_heatmap_by_p(
-        all_p,
-        n_set,
+        de_all_p,
+        de_n_set,
         p_order,
         pids,
         comparison_names
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.pdf"), dpi=200)
 
-    # TODO: use this to make a Z value function, then delete?
-    if False:
+    # Test relative enrichment of pathway detection by syngeneic and references
+    # 1a) Combined references, number of detections
 
-        # again but vertical and with labels
-        plot = 'p'
-
-
-        fig = plt.figure(figsize=(9., 11.5))
-        gs_kw = dict(
-            left=0.43,
-            right=0.93,
-            top=0.998,
-            bottom=0.1,
-            wspace=0.1,
-            hspace=0.1,
-        )
-
-        # set up axis grid
-        gs = gridspec.GridSpec(
-            ncols=len(pids) + 2,
-            nrows=5,
-            width_ratios=[1] * len(pids) + [1, .5],
-            **gs_kw
-        )
-        cax = fig.add_subplot(gs[1:-1, -1])
-        axs = []
-
-        for i, pid in enumerate(pids):
-            ax = fig.add_subplot(gs[:, i])
-            axs.append(ax)
-            this_p = []
-            this_z = []
-            for j, c in enumerate(sorted(comps.keys())):
-                # embed this set of data in full sorted list
-                the_z = all_z.loc[:, '%s_%s' % (pid, c)].reindex(p_order)
-                the_p = all_p.loc[:, '%s_%s' % (pid, c)].reindex(p_order)
-                this_z.append(the_z)
-                this_p.append(the_p)
-
-            this_z = pd.concat(this_z, axis=1).iloc[:, ::-1]
-            this_p = pd.concat(this_p, axis=1).iloc[:, ::-1]
-
-            if plot == 'z':
-
-                # Z not null, P not null: pathway is enriched and has direction
-                sns.heatmap(
-                    this_z,
-                    mask=this_p.isnull() | this_z.isnull(),
-                    cmap='RdBu_r',
-                    linewidths=.2,
-                    linecolor='w',
-                    vmin=z_min,
-                    vmax=z_max,
-                    yticklabels=False,
-                    cbar=i == 0,
-                    cbar_ax=cax,
-                    cbar_kws={"orientation": "vertical"},
-                    ax=ax,
-                )
-                # Z null, P not null: no direction information, but pathway is enriched
-                tmp = this_z.fillna(1.)
-                tmp[tmp != 1] = 0.
-                sns.heatmap(
-                    tmp,
-                    mask=(~this_z.isnull()) | this_p.isnull(),
-                    cmap='binary',
-                    linewidths=.2,
-                    linecolor='w',
-                    yticklabels=False,
-                    cbar=False,
-                    ax=ax
-                )
-                cax.set_ylabel('Z score')
-            else:
-                sns.heatmap(
-                    this_p,
-                    mask=this_p.isnull(),
-                    cmap='YlOrRd',
-                    linewidths=.2,
-                    linecolor='w',
-                    # vmin=z_min,
-                    # vmax=z_max,
-                    yticklabels=False,
-                    cbar=i == 0,
-                    cbar_ax=cax,
-                    cbar_kws={"orientation": "vertical"},
-                    ax=ax,
-                )
-                cax.set_ylabel('$-\log(p)$')
-            plt.setp(ax.xaxis.get_ticklabels(), rotation=0)
-            ax.xaxis.set_ticklabels(['Syngen.', 'H9', 'Gibco'], rotation=90.)
-            ax.set_xlabel(pid)
-            ax.set_facecolor('0.6')
-
-        eax = fig.add_subplot(gs[:, len(pids)])
-        sns.heatmap(
-            n_set,
-            mask=n_set==0,
-            cmap='Blues',
-            # yticklabels=False,
-            cbar=False,
-            ax=eax,
-            annot=True,
-            fmt="d",
-            annot_kws={"size": 6}
-        )
-        eax.yaxis.set_ticks([])
-        plt.setp(eax.xaxis.get_ticklabels(), rotation=90)
-
-        # colorbar outline
-        cbar = axs[0].collections[0].colorbar
-        cbar.outline.set_linewidth(1.)
-        cbar.outline.set_edgecolor('k')
-
-        axs[0].set_yticks(0.5 + np.arange(len(p_order)))
-        axs[0].set_yticklabels(p_order[::-1], rotation=0, fontsize=7)
-
-        fig.savefig(os.path.join(outdir, "heatmap_all_pathways_de.png"), dpi=200)
-        fig.savefig(os.path.join(outdir, "heatmap_all_pathways_de.tiff"), dpi=200)
-
-    # in development: quantifying the relative contribution of syngeneic and reference comparisons to the pathways list
-
-    N = all_in.shape[0]
-    Ntot = N * (N - 1) / 2.
-
-    # Wilcoxon signed rank sum test (manually): look at effect size and direction
-    # number of comparisons in syngeneic and reference (not only)
-    nn = n_set.iloc[:, :2].add(n_set.iloc[:, -1], axis=0)
+    nn = de_n_set.iloc[:, :2].add(de_n_set.iloc[:, -1], axis=0)
     nn.columns = ['syn', 'ref']
-    delta = nn.syn - nn.ref
+    print "DE. COMBINED references. Number showing enrichment in a given pathway."
+    wsrt_res = compute_enrichment_combined_references(nn)
 
-    this_wsrt = nht.wilcoxon_signed_rank_statistic(nn.syn, nn.ref, zero_method='pratt')
-    this_p = nht.wilcoxon_signed_rank_test(nn.syn, nn.ref, distribution='exact')
-    this_rank_corr = (this_wsrt['r_plus'] - this_wsrt['r_minus']) / Ntot
+    ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
+    ax.figure.savefig(os.path.join(outdir, "de_histogram_delta_number_comparisons_references_together.png"), dpi=200)
 
-    print "Comparing the NUMBER of samples showing enrichment in a given pathway, combining references."
-    if this_p < 0.05:
-        print "Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
-            this_p,
-            this_rank_corr,
-            "syn > ref" if this_rank_corr > 0 else "ref > syn"
-        )
+    # 1b) Combined references, sum of plogp
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.hist(delta, np.arange(-7, 7) + 0.5)
-    ax.set_xlabel('Difference in number of comparisons (syn - ref)')
-    fig.tight_layout()
-    ax.axvline(delta.median(), ls='--', color='k')
-    fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.png"), dpi=200)
+    pp = pd.DataFrame(index=de_pathways_significant, columns=['syn', 'ref'])
+    pp.loc[:, 'syn'] = de_all_p[de_all_p.columns[de_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
+    pp.loc[:, 'ref'] = de_all_p[de_all_p.columns[~de_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
+    print "DE. COMBINED references. Sum of plogp showing enrichment in a given pathway."
+    wsrt_res = compute_enrichment_combined_references(pp)
 
-    # number of comparisons, considering references separately
-    n_in = {}
+    ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
+    ax.figure.savefig(os.path.join(outdir, "de_histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
+
+    # 2a) Consider references separately, number of detections
+    nn = {}
     for c in comps:
-        this = all_in.loc[:, all_in.columns.str.contains(c)]
-        this.columns = this.columns.str.replace('_%s' % c, '')
-        n_in[c] = this.sum(axis=1)
-
-    # now run wilcoxon signed rank sum test separately for syngeneic vs each ref. on the NUMBER of times the pathway
-    # is detected
-    print "Comparing the NUMBER of samples showing enrichment in a given pathway"
-
-    wsrt = {}
-    pval = {}
-    rank_corr = {}
-
-    for c in comps:
-        if c == 'syngeneic': continue
-        wsrt[c] = nht.wilcoxon_signed_rank_statistic(n_in['syngeneic'], n_in[c], zero_method='pratt')
-        pval[c] = nht.wilcoxon_signed_rank_test(n_in['syngeneic'], n_in[c], distribution='exact')
-        rank_corr[c] = (wsrt[c]['r_plus'] - wsrt[c]['r_minus']) / Ntot
-
-        if pval[c] < 0.05:
-            print "Comparison syngeneic vs %s. Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
-                c,
-                pval[c],
-                rank_corr[c],
-                "syn > ref" if rank_corr[c] > 0 else "ref > syn"
-            )
+        this = de_all_in.loc[:, de_all_in.columns.str.contains(c)]
+        nn[c] = this.sum(axis=1)
+    nn = pd.DataFrame(nn)
+    print "DE. SEPARATE references. Number showing enrichment in a given pathway"
+    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
 
     fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
     i = 0
-    for c in comps:
-        if c == 'syngeneic': continue
-        this_delta = n_in['syngeneic'] - n_in[c]
-        axs[i].hist(this_delta, np.arange(-7, 7) + 0.5)
-        # axs[i].axvline(this_delta.median(), ls='--', color='k')
-        axs[i].axvline(this_delta.mean(), ls='--', color='k', label='Mean')
-        axs[i].set_xlim([-6, 6])
+    for c in ref_names:
+        plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
         axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-        # axs[i].set_title("Syngeneic - %s" % c.title())
         i += 1
     axs[-1].legend(loc='upper left')
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_histogram_delta_number_comparisons.png"), dpi=200)
 
     # plot ECDF (ish)
+    p_order = de_all_in.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for c in comps:
-        ax.plot(n_in[c].loc[p_order].values.cumsum(), label=c.title())
+        ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative number of patients with enrichment')
     ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_number_comparisons_ranked_cumul_sum.png"), dpi=200)
 
-    # now repeat but use the sum of -log10(p) values instead of the number of times the pathway appears
-    # this weights results by the level of enrichment
-    p_sum = {}
+    # 2b) Consider references separately, sum of -logp
+    pp = {}
     for c in comps:
-        this = all_p.loc[:, all_p.columns.str.contains(c)]
-        this.columns = this.columns.str.replace('_%s' % c, '')
-        p_sum[c] = this.sum(axis=1)
-
-    print "Comparing the SUM OF -log10(p) VALUES for a given pathway and comparison type."
-
-
-    wsrt_w = {}
-    pval_w = {}
-    rank_corr_w = {}
-
-    for c in comps:
-        if c == 'syngeneic': continue
-        wsrt_w[c] = nht.wilcoxon_signed_rank_statistic(p_sum['syngeneic'], p_sum[c], zero_method='pratt')
-        pval_w[c] = nht.wilcoxon_signed_rank_test(p_sum['syngeneic'], p_sum[c], distribution='exact')
-        rank_corr_w[c] = (wsrt_w[c]['r_plus'] - wsrt_w[c]['r_minus']) / Ntot
-
-        if pval[c] < 0.05:
-            print "Comparison syngeneic vs %s. Reject null (p=%.3f). Effect size/direction: %.3f (%s)." % (
-                c,
-                pval_w[c],
-                rank_corr_w[c],
-                "syn > ref" if rank_corr_w[c] > 0 else "ref > syn"
-            )
+        this = de_all_p.loc[:, de_all_p.columns.str.contains(c)]
+        pp[c] = this.sum(axis=1)
+    pp = pd.DataFrame(pp)
+    print "DE. SEPARATE references. Sum of -logp for each given pathway"
+    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
 
     fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
     i = 0
-    for c in comps:
-        if c == 'syngeneic': continue
-        this_delta = p_sum['syngeneic'] - p_sum[c]
-        axs[i].hist(this_delta, np.linspace(-35, 34, 20) + 0.5)
-        # axs[i].axvline(this_delta.median(), ls='--', color='k')
-        axs[i].axvline(this_delta.mean(), ls='--', color='k', label='Mean')
-        axs[i].set_xlim([-35, 35])
-        axs[i].set_xlabel("Syngeneic - %s" % c.title())
+    for c in ref_names:
+        plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i])
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
         i += 1
+
     axs[-1].legend(loc='upper left')
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_histogram_delta_sum_pvalues.png"), dpi=200)
 
     # plot ECDF (ish)
+    p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for c in comps:
-        ax.plot(p_sum[c].loc[p_order].values.cumsum(), label=c.title())
+        ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative sum of -log10(p)')
     ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+
+    #######################################################
+    # DMR
+    #######################################################
+
+    # load IPA results from raw data and combine into a single export file
+    # format: Excel, wideform
+    dm_res = ipa.load_raw_reports(
+        dm_indir,
+        'dmr_s2_{0}_{1}.txt',
+        pids,
+        comps
+    )
+    for k, v in dm_res.items():
+        rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
+        dm_res['_'.join(k)] = v.loc[rele_ix]
+        dm_res.pop(k)
+
+    # wideform version of this (i.e. 30 blocks)
+    dm_res_wide = ipa_results_to_wideform(dm_res, plogalpha)
+    dm_res_wide.to_excel(os.path.join(outdir, "full_dmr_ipa_results.xlsx"))
+
+    # get a list of significant pathways (in at least one comparison)
+    dm_pathways_significant = set()
+    for k, v in dm_res.items():
+        dm_pathways_significant.update(v.index[v['-logp'] > plogalpha])
+
+    # export significant results to an Excel file with separate tabs
+    dm_res_sign = dict([
+        (k, v.loc[v['-logp'] > plogalpha]) for k, v in dm_res.items()
+    ])
+    excel.pandas_to_excel(dm_res_sign, os.path.join(outdir, "full_dmr_ipa_results_significant_separated.xlsx"))
+
+    # export wideform, reduced to include only significant pathways
+    dm_res_wide.loc[sorted(dm_pathways_significant)].to_excel(
+        os.path.join(outdir, "full_dmr_ipa_results_significant.xlsx")
+    )
+
+    # useful structures for plots
+    dd = generate_plotting_structures(dm_res, dm_pathways_significant, plogalpha)
+    dm_all_p = dd['p']
+    dm_all_z = dd['z']
+    dm_all_in = dd['in']
+
+    # at-a-glance export
+    dm_n_set, at_a_glance = generate_summary_df(dm_all_in, ref_names)
+    at_a_glance.to_excel(os.path.join(outdir, "dmr_ipa_results_patients_by_s2_category.xlsx"))
+
+    # plot 1) P values, ordered by sum of -log(P)
+    p_order = dm_all_p.sum(axis=1).sort_values(ascending=False).index
+    plot_dict = pathway_involvement_heatmap_by_p(
+        dm_all_p,
+        dm_n_set,
+        p_order,
+        pids,
+        comparison_names,
+        count_cmap='Greens',
+    )
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.pdf"), dpi=200)
+
+    # plot 2) P values, ordered by sum of -log(P)
+    p_order = dm_all_p.mean(axis=1).sort_values(ascending=False).index
+    plot_dict = pathway_involvement_heatmap_by_p(
+        dm_all_p,
+        dm_n_set,
+        p_order,
+        pids,
+        comparison_names,
+        count_cmap='Greens',
+    )
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.pdf"), dpi=200)
+
+    # Test relative enrichment of pathway detection by syngeneic and references
+    # 1a) Combined references, number of detections
+
+    nn = dm_n_set.iloc[:, :2].add(dm_n_set.iloc[:, -1], axis=0)
+    nn.columns = ['syn', 'ref']
+    print "DMR. COMBINED references. Number showing enrichment in a given pathway."
+    wsrt_res = compute_enrichment_combined_references(nn)
+
+    ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
+    ax.figure.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons_references_together.png"), dpi=200)
+
+    # 1b) Combined references, sum of plogp
+
+    pp = pd.DataFrame(index=dm_pathways_significant, columns=['syn', 'ref'])
+    pp.loc[:, 'syn'] = dm_all_p[dm_all_p.columns[dm_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
+    pp.loc[:, 'ref'] = dm_all_p[dm_all_p.columns[~dm_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
+    print "DMR. COMBINED references. Sum of plogp showing enrichment in a given pathway."
+    wsrt_res = compute_enrichment_combined_references(pp)
+
+    ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
+    ax.figure.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
+
+    # 2a) Consider references separately, number of detections
+    nn = {}
+    for c in comps:
+        this = dm_all_in.loc[:, dm_all_in.columns.str.contains(c)]
+        nn[c] = this.sum(axis=1)
+    nn = pd.DataFrame(nn)
+    print "DMR. SEPARATE references. Number showing enrichment in a given pathway"
+    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
+
+    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
+    i = 0
+    for c in ref_names:
+        plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+        i += 1
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons.png"), dpi=200)
+
+    # plot ECDF (ish)
+    p_order = dm_all_in.sum(axis=1).sort_values(ascending=False).index
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comps:
+        ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative number of patients with enrichment')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_number_comparisons_ranked_cumul_sum.png"), dpi=200)
+
+    # 2b) Consider references separately, sum of -logp
+    pp = {}
+    for c in comps:
+        this = dm_all_p.loc[:, dm_all_p.columns.str.contains(c)]
+        pp[c] = this.sum(axis=1)
+    pp = pd.DataFrame(pp)
+    print "DMR. SEPARATE references. Sum of -logp for each given pathway"
+    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
+
+    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
+    i = 0
+    for c in ref_names:
+        plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i], summary_metric='mean')
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+        i += 1
+
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_pvalues.png"), dpi=200)
+
+    # plot ECDF (ish)
+    p_order = dm_all_p.sum(axis=1).sort_values(ascending=False).index
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comps:
+        ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative sum of -log10(p)')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)

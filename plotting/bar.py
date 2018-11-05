@@ -116,7 +116,7 @@ def multi_grouped_bar_chart(dict_of_series_lists, width=0.8, figsize=None, equal
     return fig, axs
 
 
-def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True):
+def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None, lw=None):
     """
     Plot a stacked bar chart. Each group is a row in the matrix y. The number of columns in y is equal to the length
     of x.
@@ -151,6 +151,11 @@ def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True):
         # ax.bar(x - 0.5 * width, row, bottom=bottom, width=width, color=colours[lbl], label=lbl, edgecolor='none')
         ax.bar(x, row, bottom=bottom, width=width, color=colours[lbl], label=lbl, edgecolor='none')
         bottom += row.values
+
+    if ec is not None:
+        # plot over the top to get edge
+        tot = y.sum(axis=0)
+        ax.bar(x, tot, width=width, color='none', edgecolor=ec, linewidth=lw, zorder=10)
 
     if legend:
         ax.legend()

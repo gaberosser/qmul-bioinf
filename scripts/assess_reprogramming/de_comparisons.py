@@ -209,8 +209,6 @@ if __name__ == '__main__':
 
     # our data (everything)
     obj = loader.load_by_patient(pids, source='star')
-    # ix = obj.meta.type.isin(['iPSC', 'FB'])
-    # obj.filter_samples(ix)
 
     # HipSci data
     hip_obj = loader.hipsci_ipsc(aggregate_to_gene=True)
@@ -377,8 +375,8 @@ if __name__ == '__main__':
         df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
         ax.set_ylabel('Number DE genes')
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "number_de_residual_denovo.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "number_de_residual_denovo.tiff"), dpi=200)
 
     # check in DMRs
     dmrs_classified = {}

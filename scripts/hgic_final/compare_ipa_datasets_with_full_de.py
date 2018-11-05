@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import numpy as np
+from settings import HGIC_LOCAL_DIR
 
 
 def compare(curr_df, ipa_df):
@@ -64,11 +65,7 @@ if __name__ == '__main__':
 
     # patient specific (S1):
     ipa_indir = os.path.join(
-        os.path.expanduser('~'),
-        'Dropbox',
-        'research',
-        'qmul',
-        'hGIC_project',
+        HGIC_LOCAL_DIR,
         'current',
         'core_pipeline',
         'rnaseq',
@@ -78,11 +75,7 @@ if __name__ == '__main__':
     )
     # path to most current S1 patient specific results:
     curr_fn = os.path.join(
-        os.path.expanduser('~'),
-        'Dropbox',
-        'research',
-        'qmul',
-        'hGIC_project',
+        HGIC_LOCAL_DIR,
         'current',
         'core_pipeline',
         'rnaseq',

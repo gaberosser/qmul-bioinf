@@ -3,6 +3,7 @@ import os
 import csv
 import itertools
 import pandas as pd
+import collections
 
 
 def results_to_ipa_format(
@@ -49,11 +50,13 @@ def load_raw_reports(indir, file_pattern, *args):
     :param args: One or more arrays containing variables that will be substituted into filename_format using .format().
     :return: Flat dictionary, keys given as tuples matching the input *args.
     """
-    res = {}
+    res = collections.OrderedDict()
     for tup in itertools.product(*args):
         fn = os.path.join(indir, file_pattern.format(*tup))
         this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
         this.columns = ['-logp', 'ratio', 'z', 'genes']
+        # add ngenes column
+        this.insert(3, 'n_gene', this.genes.str.split(',').apply(len))
         this.index = [x.decode('utf-8') for x in this.index]
         res[tup] = this
     return res
