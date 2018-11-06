@@ -1159,8 +1159,6 @@ if __name__ == "__main__":
         ax.set_ylabel('%s DMRs' % ('Hypomethylated' if typ == 'hypo' else 'Hypermethylated'))
         plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
 
-        # df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
-        # ax.set_ylabel('Number DMRs')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "number_dmr_residual_denovo.tiff"), dpi=200)

@@ -30,7 +30,7 @@ def conversion_table(type='protein_coding', tax_id=9606):
         elif type == 'all':
             # in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2017.09.tsv')
             # in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.03.tsv')
-            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.10.tsv')
+            in_file = os.path.join(GIT_LFS_DATA_DIR, 'genenames', 'all', 'genenames.org.2018.11.tsv')
         else:
             raise ValueError("Unsupported type option '%s'" % type)
         # in_file = os.path.join(DATA_DIR, 'genenames', 'genenames.org.tsv')

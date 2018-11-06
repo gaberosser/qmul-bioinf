@@ -1,5 +1,5 @@
 from rnaseq import loader, differential_expression, filter, general
-from plotting import common, venn
+from plotting import common, venn, bar
 import pandas as pd
 import numpy as np
 import os
@@ -142,6 +142,43 @@ def classify_de_residual_denovo(core_tbl, parental, exclude=None):
         res[k1].insert(2, 'classification', clas)
 
     return res
+
+
+def get_dm_associated_de(
+        dmr_ids,
+        de_res_full,
+        dmr_res_full,
+        dmr_id_to_ens,
+        ens_to_dmr_id,
+        ref_labels
+):
+    all_genes = setops.reduce_union(*[dmr_id_to_ens[i].values for i in dmr_ids])
+    this_de_full = {}
+    for r in ref_labels:
+        tt = de_res_full[r]
+        tt = tt.loc[tt['Gene Symbol'].isin(all_genes)]
+        this_de_full[r] = tt
+
+    common_ix = sorted(setops.reduce_intersection(*[t.index for t in this_de_full.values()]))
+    common_gs = this_de_full.values()[0].loc[common_ix, 'Gene Symbol']
+
+    dmr_median_delta = {}
+    for e in common_ix:
+        dmr_median_delta[e] = {}
+        for r in ref_labels:
+            dmr_median_delta[e][r] = np.mean([dmr_res_full[r][i]['median_change'] for i in ens_to_dmr_id[e]])
+    dmr_median_delta = pd.DataFrame(dmr_median_delta).transpose().sort_index()
+
+    this_logfc = pd.concat(
+        (this_de_full[r].loc[common_ix, 'logFC'] for r in ref_labels),
+        axis=1
+    )
+    this_logfc.columns = ref_labels
+    this_logfc.index = common_gs
+
+    de_logfc = this_logfc.sort_index()
+
+    return {'de': de_logfc, 'dmr': dmr_median_delta}
 
 
 if __name__ == '__main__':
@@ -369,11 +406,15 @@ if __name__ == '__main__':
 
     df = core_de_classified_count.transpose()
 
-    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(6.5, 5.5))
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(4.5, 5.))
     for i, typ in enumerate(['hyper', 'hypo']):
         ax = axs[i]
-        df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
-        ax.set_ylabel('Number DE genes')
+        this = df.loc[:, df.columns.str.contains(typ)].transpose()
+        this.index = ['De novo', 'Residual']
+        bar.stacked_bar_chart(this, colours=plot_colours[typ], ax=ax, width=0.8, ec='k', lw=1.0)
+        # df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
+        ax.set_ylabel('%s DE genes' % ('Downregulated' if typ == 'hypo' else 'Upregulated'))
+        plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_de_residual_denovo.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "number_de_residual_denovo.tiff"), dpi=200)
@@ -398,27 +439,122 @@ if __name__ == '__main__':
 
                 print "Patient %s: %d in DE and DMR." % (pid, len(both_genes[pid]))
 
-    # Not many results. We may need a more nuanced approach?
-    # Try starting with the methylation targets and performing a lookup
-    # could do this with Salmon TPM too
+    # more nuanced approach: check the correlation between DMRs and corresponding genes at the level of median delta M
+    # and logFC.
 
-    cpm = the_dat.divide(the_dat.sum(axis=0), axis=1) * 1e6
+    # to speed things up, we need a one-off link between DMRs and genes
+    # dmr_id_to_ens = {}
+    #
+    # from methylation import dmr, loader as methylation_loader
+    # import references
+    #
+    # anno = methylation_loader.load_illumina_methylationepic_annotation()
+    # cat = references.conversion_table(type='all').set_index('Approved Symbol')
+    # fn = os.path.join(dmr_indir, 'our_ipsc_vs_esc.pkl')
+    #
+    # dmr_res = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
+    # for cl_id, pc in dmr_res.clusters.items():
+    #     if len(pc.genes) > 0:
+    #         try:
+    #             dmr_id_to_ens[cl_id] = cat.loc[pc.genes, 'Ensembl Gene ID'].dropna()
+    #         except KeyError:
+    #             pass
+    #
+    # ens_to_dmr_id = {}
+    # for cl_id, s in dmr_id_to_ens.items():
+    #     for e in s.values:
+    #         ens_to_dmr_id.setdefault(e, []).append(cl_id)
 
-    de_lookup = {}
+    de_logfc = {}
+    dmr_median_delta = {}
 
-    esc_1_cpm = cpm.loc[:, the_groups == 'ESC_encode'].mean(axis=1)
-    esc_2_cpm = cpm.loc[:, the_groups == 'ESC_cacchiarelli'].mean(axis=1)
-
-    for pid in dmrs_classified:
-        if "iPSC_%s_ours" % pid in ipsc_esc_fb:
-            fb_cpm = cpm.loc[:, the_groups.str.contains('FB') & the_groups.str.contains(pid)].mean(axis=1)
-            ipsc_cpm = cpm.loc[:, the_groups.str.contains('iPSC') & the_groups.str.contains(pid)].mean(axis=1)
-            de_lookup[pid] = {}
+    for pid in pids:
+        fn = os.path.join(dmr_indir, "iPSC%s_classified_dmrs.csv" % pid)
+        if (pid in dmrs_classified) and ("iPSC_%s_ours" % pid in ipsc_esc_fb):
+            this_dmr = dmrs_classified[pid]
+            dmr_genes = this_dmr.loc[:, 'genes'].values
+            dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
+            this_de_sign = ipsc_esc_fb["iPSC_%s_ours" % pid]
+            this_de_full = {}
             for r in ref_labels:
-                esc_cpm = cpm.loc[:, the_groups == 'ESC_%s' % r].mean(axis=1)
-                de_lookup[pid][r] = {
-                    'x': np.log2(fb_cpm + 1.) - np.log2(esc_cpm + 1.),
-                    'y': np.log2(ipsc_cpm + 1.) - np.log2(esc_cpm + 1.)
-                }
+                tt = de_res_full[("iPSC_%s_ours" % pid, "ESC_%s" % r)]
+                tt = tt.loc[tt['Gene Symbol'].isin(dmr_genes)]
+                this_de_full[r] = tt
+
+            common_ix = sorted(setops.reduce_intersection(*[t.index for t in this_de_full.values()]))
+            common_gs = this_de_full.values()[0].loc[common_ix, 'Gene Symbol']
+
+            this_dmr_dm = {}
+
+            for g in common_gs:
+                this_ix = this_dmr.index[this_dmr.genes.apply(lambda x: g in x)]
+                this_dmr_dm[g] = this_dmr.loc[this_ix, this_dmr.columns.str.contains('median_delta')].mean(axis=0)
+            dmr_median_delta[pid] = pd.DataFrame(this_dmr_dm).transpose().sort_index()
+
+            this_logfc = pd.concat(
+                (this_de_full[r].loc[common_ix, 'logFC'] for r in ref_labels),
+                axis=1
+            )
+            this_logfc.columns = ref_labels
+            this_logfc.index = common_gs
+
+            de_logfc[pid] = this_logfc.sort_index()
+
+    # scatterplot (one per patient)
+    import statsmodels.formula.api as sm
+
+    for pid in pids:
+        if pid in de_logfc:
+            fig = plt.figure(figsize=(5, 4))
+            ax = fig.add_subplot(111)
+            this_de = de_logfc[pid].mean(axis=1)
+            this_dm = dmr_median_delta[pid].mean(axis=1)
+            ax.scatter(this_dm, this_de, edgecolor='k', facecolor='royalblue', zorder=2)
+            ax.errorbar(
+                this_dm,
+                this_de,
+                xerr=dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values / 2.,
+                yerr=de_logfc[pid].diff(axis=1).dropna(axis=1).values / 2.,
+                ls='none',
+                color='royalblue',
+                zorder=1
+            )
+            ws = pd.DataFrame({'x': this_dm, 'y': this_de})
+            xerr = dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values
+            yerr = de_logfc[pid].diff(axis=1).dropna(axis=1).values
+            weights = pd.Series(((xerr ** 2 + yerr ** 2) ** -.5).flatten(), index=ws.index)
+            wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
+            print "Patient %s" % pid
+            print wls_fit.summary()
+            ax.plot(ws.x, wls_fit.predict(), color='darkgray', linewidth=1.5)
+            ax.axhline(0, linestyle='--', color='k', linewidth=1.)
+            ax.axvline(0, linestyle='--', color='k', linewidth=1.)
+            ax.set_xlabel(r'Methylation median $\Delta M$')
+            ax.set_ylabel(r'Gene expression $\log_2$ fold change')
+            fig.tight_layout()
+            fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.png" % pid), dpi=200)
+            fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.tiff" % pid), dpi=200)
+
+
+    # test: are these DMRs significantly more concordant with DE than randomly chosen ones??
+    # statistic to use: rsq of weighted linear regression
+    # This will replace the statistics reported by WLS (to some extent)
+    ## TODO!
+
+    n_perm = 1000
+    rsq_true = {}
+    rsq_permute = {}
+
+    for pid in de_logfc:
+        this_de = de_logfc[pid].mean(axis=1)
+        this_dm = dmr_median_delta[pid].mean(axis=1)
+        ws = pd.DataFrame({'x': this_dm, 'y': this_de})
+        xerr = dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values
+        yerr = de_logfc[pid].diff(axis=1).dropna(axis=1).values
+        weights = pd.Series(((xerr ** 2 + yerr ** 2) ** -.5).flatten(), index=ws.index)
+        wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
+        rsq_true[pid] = rsq_true
+
+        # now repeat for randomly-selected genes
 
 
