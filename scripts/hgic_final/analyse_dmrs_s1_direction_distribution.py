@@ -247,6 +247,32 @@ def dmr_to_dmp_specific(dmr_res, clusters, me_data):
 
 
 
+def direction_kde(dat, xi=None, separated=True):
+    """
+    Generate a KDE of the supplied DMR direction data.
+    :param dat:
+    :param xi: If supplied, this is a 1D array containing lookup points at which to evaluate the density.
+    :param separated: If requested, generate a separate KDE for positive and negative results.
+    :return: Array of KDE evaluated results
+    """
+    if xi is None:
+        xi = np.linspace(
+            np.floor(dat.min()),
+            np.ceil(dat.max()),
+            128
+        )
+    if separated:
+        k_minus = stats.gaussian_kde(dat[dat <= 0])
+        y_minus = k_minus.evaluate(xi[xi <= 0])
+        k_plus = stats.gaussian_kde(dat[dat > 0])
+        y_plus = k_plus.evaluate(xi[xi > 0])
+        y = np.concatenate((y_minus, y_plus))
+    else:
+        k = stats.gaussian_kde(dat)
+        y = k.evaluate(xi)
+    return xi, y
+
+
 def dm_probe_direction_panel_plot(
         dmr_res,
         dmp_res,
@@ -768,14 +794,25 @@ if __name__ == "__main__":
                 bed_file_from_probes(anno, ps, bed_fn)
 
     # repeat the whole thing with S2 data
+    # we may only use the Gibco line here, to avoid issues associated with changing the array type / probe selection
+    s2_850_only = True
 
-    norm_method_s2 = 'pbc'
-    external_ref_names_dm = ['gse38216']
-    external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
-    external_refs_dm = [
-        ('GIBCO', 'NSC'),
-        ('H9', 'NSC'),
-    ]
+    if s2_850_only:
+        norm_method_s2 = 'swan'
+        external_ref_names_dm = None
+        external_ref_samples_dm = None
+        external_refs_dm = [
+            ('GIBCO', 'NSC'),
+        ]
+    else:
+        norm_method_s2 = 'pbc'
+        external_ref_names_dm = ['gse38216']
+        external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
+        external_refs_dm = [
+            ('GIBCO', 'NSC'),
+            ('H9', 'NSC'),
+        ]
+
     external_refs_dm_labels = [t[0] for t in external_refs_dm]
 
     # load methylation with external references
@@ -784,7 +821,7 @@ if __name__ == "__main__":
         ref_names=external_ref_names_dm,
         ref_name_filter=external_ref_samples_dm,
         norm_method=norm_method_s2,
-        patient_samples=consts.ALL_METHYL_SAMPLES  # technically contains H9 too, but these will be ignored
+        patient_samples=consts.ALL_METHYL_SAMPLES  # any samples not found in patient data will be ignored (H9 NSC)
     )
 
     # use a hash on the PIDs and parameters to ensure we're looking for the right results
