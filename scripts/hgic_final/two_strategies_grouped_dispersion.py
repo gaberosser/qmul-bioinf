@@ -385,6 +385,8 @@ if __name__ == "__main__":
 
     external_ref_names_de = ['GSE61794']
     external_ref_strandedness_de = ['u']
+
+    ## TODO Update this to exclude the 450K samples.
     external_ref_names_dm = ['gse38216']
     external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
 

@@ -219,36 +219,6 @@ def compute_cell_type_pathway_overlap(
     return pct_shared
 
 
-def compute_pathway_signature_overlap(
-    pids,
-    comparisons,
-    cell_types,
-    xcell_signature_fn=XCELL_SIGNATURE_FN,
-    ipa_pathway_dir=IPA_PATHWAY_DIR,
-    ipa_pathway_fn=IPA_PATHWAY_FN,
-):
-    xcell_s = pd.read_excel(xcell_signature_fn, header=0, index_row=0)
-    xcell_signatures = {}
-    for i, row in xcell_s.iterrows():
-        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
-
-    # load IPA pathway genes
-    ipa_res = pd.read_excel(ipa_pathway_fn)
-    ipa_signatures = load_ipa_pathway_genes(
-        ipa_pathway_dir,
-        pids,
-        comparisons,
-        ipa_res.index
-    )
-
-    # compute overlap between cell type signatures and IPA signatures
-    return compute_cell_type_pathway_overlap(
-        ipa_signatures,
-        xcell_signatures,
-        cell_types=cell_types
-    )
-
-
 def plot_heatmap_with_quantification(
         corr_df,
         corr_pval_df,
@@ -536,7 +506,7 @@ if __name__ == '__main__':
 
     # 1. Start with syngeneic pathways
     # Although we extract all pathways, in the correlation computation we lose any that don't have at least 2 results
-    # Therefore we end up with those that are at least a few syngeneic cases
+    # Therefore we end up with those that are in at least a few syngeneic cases
 
     p = ipa_res.loc[:, ipa_res.columns.str.contains('_syngeneic_-logp')]
     p.columns = p.columns.str.replace('_syngeneic_-logp', '')
