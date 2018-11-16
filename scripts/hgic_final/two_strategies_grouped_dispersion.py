@@ -361,6 +361,9 @@ if __name__ == "__main__":
         os.makedirs(outdir_s2_ipa)
 
     min_cpm = 1.
+    # Set this to True to include reference methylation data
+    # This will limit the number of available probes (to 450K)
+    include_external_dm_refs = False
 
     de_params = consts.DE_PARAMS
     dmr_params = consts.DMR_PARAMS
@@ -386,9 +389,12 @@ if __name__ == "__main__":
     external_ref_names_de = ['GSE61794']
     external_ref_strandedness_de = ['u']
 
-    ## TODO Update this to exclude the 450K samples.
-    external_ref_names_dm = ['gse38216']
-    external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
+    if include_external_dm_refs:
+        external_ref_names_dm = ['gse38216']
+        external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
+    else:
+        external_ref_names_dm = None
+        external_ref_samples_dm = None
 
     external_refs_de = [
         ('GIBCO', 'NSC'),
@@ -396,10 +402,16 @@ if __name__ == "__main__":
     ]
     external_refs_de_labels = [t[0] for t in external_refs_de]
 
-    external_refs_dm = [
-        ('GIBCO', 'NSC'),
-        ('H9', 'NSC'),
-    ]
+    if include_external_dm_refs:
+        external_refs_dm = [
+            ('GIBCO', 'NSC'),
+            ('H9', 'NSC'),
+        ]
+    else:
+        external_refs_dm = [
+            ('GIBCO', 'NSC'),
+        ]
+
     external_refs_dm_labels = [t[0] for t in external_refs_dm]
 
     # plotting parameters
@@ -469,6 +481,7 @@ if __name__ == "__main__":
     fn = os.path.join(DMR_LOAD_DIR, filename)
 
     if os.path.isfile(fn):
+        logger.info("Reading S1 DMR results from %s", fn)
         dmr_res_s1 = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
     else:
         dmr_res_s1 = paired_dmr(me_data, me_meta, anno, pids, dmr_params)
