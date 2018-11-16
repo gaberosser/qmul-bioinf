@@ -383,17 +383,39 @@ if __name__ == '__main__':
     outdir = output.unique_output_dir()
 
     # keys are the term used in the filename, values are those used in the columns
-    ref_names = ['h9', 'gibco']
-    comps = {
+    de_ref_names = ['h9', 'gibco']
+    de_comps = {
         'syngeneic': 'syngeneic',
         'h9': 'H9',
         'gibco': 'GIBCO'
     }
-    comparison_names = {
+    de_comp_names = {
         'syngeneic': 'Syngen.',
         'h9': 'H9',
         'gibco': 'Gibco'
     }
+
+    dm_ref_names = ['gibco']
+    dm_comps = {
+        'syngeneic': 'syngeneic',
+        'gibco': 'GIBCO'
+    }
+    dm_comp_names = {
+        'syngeneic': 'Syngen.',
+        'gibco': 'Gibco'
+    }
+
+    # comps = {
+    #     'syngeneic': 'syngeneic',
+    #     'h9': 'H9',
+    #     'gibco': 'GIBCO'
+    # }
+    # comparison_names = {
+    #     'syngeneic': 'Syngen.',
+    #     'h9': 'H9',
+    #     'gibco': 'Gibco'
+    # }
+
     pids = consts.PIDS
 
     #######################################################
@@ -406,7 +428,7 @@ if __name__ == '__main__':
         de_indir,
         'de_s2_{0}_{1}.txt',
         pids,
-        comps
+        de_comps
     )
     for k, v in de_res.items():
         rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
@@ -440,7 +462,7 @@ if __name__ == '__main__':
     de_all_in = dd['in']
     
     # at-a-glance export
-    de_n_set, at_a_glance = generate_summary_df(de_all_in, ref_names)
+    de_n_set, at_a_glance = generate_summary_df(de_all_in, de_ref_names)
     at_a_glance.to_excel(os.path.join(outdir, "de_ipa_results_patients_by_s2_category.xlsx"))
 
     # plot 1) P values, ordered by sum of -log(P)
@@ -450,7 +472,7 @@ if __name__ == '__main__':
         de_n_set,
         p_order,
         pids,
-        comparison_names
+        de_comp_names
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.tiff"), dpi=200)
@@ -463,7 +485,7 @@ if __name__ == '__main__':
         de_n_set,
         p_order,
         pids,
-        comparison_names
+        de_comp_names
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.tiff"), dpi=200)
@@ -493,16 +515,16 @@ if __name__ == '__main__':
 
     # 2a) Consider references separately, number of detections
     nn = {}
-    for c in comps:
+    for c in de_comps:
         this = de_all_in.loc[:, de_all_in.columns.str.contains(c)]
         nn[c] = this.sum(axis=1)
     nn = pd.DataFrame(nn)
     print "DE. SEPARATE references. Number showing enrichment in a given pathway"
-    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
+    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + de_ref_names)
 
     fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
     i = 0
-    for c in ref_names:
+    for c in de_ref_names:
         plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
         axs[i].set_xlabel("# syngeneic - # %s" % c.title())
         i += 1
@@ -514,7 +536,7 @@ if __name__ == '__main__':
     p_order = de_all_in.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for c in comps:
+    for c in de_comps:
         ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative number of patients with enrichment')
@@ -524,16 +546,16 @@ if __name__ == '__main__':
 
     # 2b) Consider references separately, sum of -logp
     pp = {}
-    for c in comps:
+    for c in de_comps:
         this = de_all_p.loc[:, de_all_p.columns.str.contains(c)]
         pp[c] = this.sum(axis=1)
     pp = pd.DataFrame(pp)
     print "DE. SEPARATE references. Sum of -logp for each given pathway"
-    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
+    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + de_ref_names)
 
     fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
     i = 0
-    for c in ref_names:
+    for c in de_ref_names:
         plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i])
         axs[i].set_xlabel("# syngeneic - # %s" % c.title())
         i += 1
@@ -546,7 +568,7 @@ if __name__ == '__main__':
     p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for c in comps:
+    for c in de_comps:
         ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative sum of -log10(p)')
@@ -564,7 +586,7 @@ if __name__ == '__main__':
         dm_indir,
         'dmr_s2_{0}_{1}.txt',
         pids,
-        comps
+        dm_comps
     )
     for k, v in dm_res.items():
         rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
@@ -598,7 +620,7 @@ if __name__ == '__main__':
     dm_all_in = dd['in']
 
     # at-a-glance export
-    dm_n_set, at_a_glance = generate_summary_df(dm_all_in, ref_names)
+    dm_n_set, at_a_glance = generate_summary_df(dm_all_in, dm_ref_names)
     at_a_glance.to_excel(os.path.join(outdir, "dmr_ipa_results_patients_by_s2_category.xlsx"))
 
     # plot 1) P values, ordered by sum of -log(P)
@@ -608,7 +630,7 @@ if __name__ == '__main__':
         dm_n_set,
         p_order,
         pids,
-        comparison_names,
+        dm_comp_names,
         count_cmap='Greens',
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.png"), dpi=200)
@@ -622,7 +644,7 @@ if __name__ == '__main__':
         dm_n_set,
         p_order,
         pids,
-        comparison_names,
+        dm_comp_names,
         count_cmap='Greens',
     )
     plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.png"), dpi=200)
@@ -653,28 +675,29 @@ if __name__ == '__main__':
 
     # 2a) Consider references separately, number of detections
     nn = {}
-    for c in comps:
+    for c in dm_comps:
         this = dm_all_in.loc[:, dm_all_in.columns.str.contains(c)]
         nn[c] = this.sum(axis=1)
     nn = pd.DataFrame(nn)
     print "DMR. SEPARATE references. Number showing enrichment in a given pathway"
-    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
+    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + dm_ref_names)
 
-    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
-    i = 0
-    for c in ref_names:
-        plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
-        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-        i += 1
-    axs[-1].legend(loc='upper left')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons.png"), dpi=200)
+    if len(dm_ref_names) > 1:
+        fig, axs = plt.subplots(ncols=len(dm_ref_names), sharex=True, sharey=True)
+        i = 0
+        for c in dm_ref_names:
+            plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
+            axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+            i += 1
+        axs[-1].legend(loc='upper left')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons.png"), dpi=200)
 
     # plot ECDF (ish)
     p_order = dm_all_in.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for c in comps:
+    for c in dm_comps:
         ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative number of patients with enrichment')
@@ -684,29 +707,30 @@ if __name__ == '__main__':
 
     # 2b) Consider references separately, sum of -logp
     pp = {}
-    for c in comps:
+    for c in dm_comps:
         this = dm_all_p.loc[:, dm_all_p.columns.str.contains(c)]
         pp[c] = this.sum(axis=1)
     pp = pd.DataFrame(pp)
     print "DMR. SEPARATE references. Sum of -logp for each given pathway"
-    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
+    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + dm_ref_names)
 
-    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
-    i = 0
-    for c in ref_names:
-        plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i], summary_metric='mean')
-        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-        i += 1
+    if len(dm_ref_names) > 1:
+        fig, axs = plt.subplots(ncols=len(dm_ref_names), sharex=True, sharey=True)
+        i = 0
+        for c in dm_ref_names:
+            plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i], summary_metric='mean')
+            axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+            i += 1
 
-    axs[-1].legend(loc='upper left')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_pvalues.png"), dpi=200)
+        axs[-1].legend(loc='upper left')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_pvalues.png"), dpi=200)
 
     # plot ECDF (ish)
     p_order = dm_all_p.sum(axis=1).sort_values(ascending=False).index
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    for c in comps:
+    for c in dm_comps:
         ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
     ax.set_xlabel('Ranked pathway')
     ax.set_ylabel('Cumulative sum of -log10(p)')

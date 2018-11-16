@@ -11,7 +11,7 @@ import re
 from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
 from matplotlib import pyplot as plt
 import seaborn as sns
-from plotting import clustering
+from plotting import clustering, common
 from utils import output
 from scipy import stats
 from scipy.cluster import hierarchy as hc
@@ -584,6 +584,55 @@ if __name__ == '__main__':
         ),
         dpi=200
     )
+
+    # Generate cut-down plot with only pathways correlated with Tregs
+    ix = co_p.columns[(co_p.loc['Tregs'] < alpha)]
+    plot_dict = plot_heatmap_with_quantification(co.loc[:, ix], co_p.loc[:, ix], alpha=alpha, figsize=(7., 5.5))
+    gs = plot_dict['gs']
+    gs.update(left=0.3, bottom=0.35, top=0.99, right=0.9, wspace=0.03)
+    fig = plot_dict['fig']
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.png" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.tiff" % corr_metric), dpi=200)
+    fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.pdf" % corr_metric), dpi=200)
+
+    # generate scatterplots for each pathway
+    all_cts = co_p.index[(co_p.loc[:, ix] < alpha).any(axis=1)]
+    colour_by_cell_type = dict(zip(all_cts, common.get_best_cmap(len(all_cts))))
+
+    for pw in ix:
+        cts = co_p.index[(co_p[pw] < alpha)]
+        fig = plt.figure(figsize=(6, 5))
+        ax = fig.add_subplot(111)
+        xmax = 0.
+        ymax = 0.
+        for ct in cts:
+            this_p = p.loc[pw].sort_index()
+            this_df = df.loc[ct, this_p.index].sort_index()
+            this_comb = pd.concat((this_df, this_p), axis=1).dropna(axis=0).astype(float)
+            this_comb = this_comb.sort_values(by=[ct, pw], axis=0)
+            x = this_comb.iloc[:, 0]
+            y = this_comb.iloc[:, 1]
+            xmax = max(xmax, x.max())
+            ymax = max(ymax, y.max())
+            ax.scatter(
+                x,
+                y,
+                c=colour_by_cell_type[ct],
+                edgecolor='k',
+                linewidths=1.,
+                label=ct
+            )
+            [ax.text(x[i], y[i], x.index[i], color=colour_by_cell_type[ct], fontsize=12) for i in range(len(x))]
+        ax.set_xlim([-0.005, xmax * 1.02])
+        ax.set_ylim([-0.005, ymax * 1.1])
+        ax.legend(frameon=True, framealpha=0.6, facecolor='w', edgecolor='k')
+        ax.set_xlabel('Proportion of cell type')
+        ax.set_ylabel('%s enrichment -log10(p)' % pw)
+        fig.tight_layout()
+        pw_for_fn = pw.replace(' ', '_').lower()
+        fig.savefig(os.path.join(outdir, "%s_scatterplot_annotated.png" % (pw_for_fn)), dpi=200)
+        fig.savefig(os.path.join(outdir, "%s_scatterplot_annotated.tiff" % (pw_for_fn)), dpi=200)
+        fig.savefig(os.path.join(outdir, "%s_scatterplot_annotated.pdf" % (pw_for_fn)), dpi=200)
 
     # 2. Extend to reference pathways
     # Start with those pathways that are present in at least one reference comparison.

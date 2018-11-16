@@ -425,6 +425,64 @@ def mht_correction(test_results, alpha=0.05, method='fdr_bh'):
     # we've done all the modifying in-place, so no return value
 
 
+def expand_dmr_results_table_by_gene_and_cluster(
+        tbl,
+        gene_col='genes',
+        drop_geneless=False,
+):
+    """
+    Given the output of DmrResults.to_table(), expand the DataFrame so that each row corresponds to a single
+    (cluster, gene) pair
+    :param tbl:
+    :param gene_col:
+    :param drop_geneless:
+    :return:
+    """
+    df = tbl.copy()
+    df.insert(0, 'cluster_id', df.index)
+
+    if not drop_geneless:
+        # we need to protect the geneless results by adding dummy values
+        g_count = df[gene_col].apply(len)
+        df.loc[g_count == 0, 'genes'] = [(('!', '!'),)] * (g_count == 0).sum()
+
+    # open out the the (gene, relation) lists contained in the `genes` column
+    g = pd.DataFrame(
+        df[gene_col].apply(pd.Series).stack().reset_index(level=-1, drop=True),
+        columns=['gene_relation']
+    )
+    g.insert(0, 'relation', g.gene_relation.apply(lambda x: x[1]))
+    g.insert(0, 'gene', g.gene_relation.apply(lambda x: x[0]))
+    g = g.drop('gene_relation', axis=1).reset_index()
+
+    # pivot table around the relation
+    tbl = g.pivot_table(index=['cluster_id', 'gene'], columns='relation', fill_value=0, aggfunc='size').reset_index()
+
+    # extract other attributes from original dataframe
+    attrs = df.drop(['cluster_id', gene_col], axis=1).loc[tbl.cluster_id]
+
+    # combine them
+    res = pd.concat((tbl.set_index('cluster_id'), attrs), axis=1).reset_index()
+
+    # if maintaining geneless results, deprotect these now
+    if not drop_geneless:
+        new_gene_col = res.loc[:, 'gene'].replace('!', np.nan)  # don't use None as the replacement variable!
+        res.loc[:, 'gene'] = new_gene_col
+        # drop the pivot column, but only if it actually exists
+        if '!' in res.columns:
+            res.drop('!', axis=1, inplace=True)
+        # quick sanity check
+        cols = sorted(set(g.relation.unique()).difference(['!']))
+        ix = res.gene.isnull()
+        if not (res.loc[ix, cols].sum(axis=1) == 0).all():
+            logger.error("Some 'geneless' clusters still have gene relations defined.")
+            raise ValueError("Some 'geneless' clusters still have gene relations defined.")
+
+    res.index = zip(res.cluster_id, res.gene)
+    return res
+
+
+
 class ProbeCluster(object):
     def __init__(
             self,
@@ -646,11 +704,12 @@ class DmrResults(object):
         self._results_relevant = None
         self._results_significant = None
 
-    def to_table(self, include='all', skip_geneless=True):
+    def to_table(self, include='all', skip_geneless=True, expand=False):
         """
         Convert results and cluster attributes to a flat table
         :param include: Controls which clusters are used {'all', 'relevant', 'significant'}
         :param skip_geneless: If True (default), do not include probe clusters that have no associated genes
+        :param expand: If True, expand by gene so taht each row corresponds to just one gene
         :return:
         """
         # convert classes to a list to ensure reproducible iteration order
@@ -684,6 +743,9 @@ class DmrResults(object):
         tbl = pd.DataFrame(rows, columns=cols).astype(dict(zip(cols, dtypes))).set_index('cluster_id')
         if tbl.duplicated().any():
             raise BasicLogicException("Duplicate rows found.")
+
+        if expand:
+            tbl = expand_dmr_results_table_by_gene_and_cluster(tbl, drop_geneless=skip_geneless)
 
         return tbl
 
