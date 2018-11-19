@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import numpy as np
 import pickle
+import re
+from scipy import stats
 from utils import output, setops, excel, log
 from methylation import dmr, process, loader as methylation_loader, annotation_gene_to_ensembl
 from rnaseq import loader as rnaseq_loader, differential_expression, general, filter
@@ -98,6 +100,66 @@ def dmr_results_hash(pids, dmr_params):
 def de_results_hash(pids, de_params):
     hash_elements = tuple(sorted(pids)) + tuple([de_params[k] for k in sorted(de_params.keys())])
     return hash(hash_elements)
+
+
+def annotate_de_dmr_wide_form(data):
+    """
+    Annotate (in-place) wideform DataFrame containing combined DE/DMR results.
+    :param data:
+    :return:
+    """
+    # find any single significant result for each row and retain only a single copy of the chromosome
+    chr_arr = data.loc[:, data.columns.str.contains('_chr')]
+    chr_series = chr_arr.apply(lambda row: row.dropna()[0], axis=1)
+    data.insert(0, 'dmr_chromosome', chr_series)
+    data.drop(
+        [t for t in data.columns[data.columns.str.contains('_chr$')]],
+        axis=1,
+        inplace=True
+    )
+    data.insert(0, 'dmr_cluster_id', [t[0] for t in data.index])
+    data.insert(0, 'gene', [t[1] for t in data.index])
+
+
+
+def fisher_test_concordance(de_dmr_dat, de_col='de_logFC', dmr_col='dmr_median_delta'):
+    x = de_dmr_dat[de_col]
+    y = de_dmr_dat[dmr_col]
+    cont = np.array([
+        [((x < 0) & (y < 0)).sum(), ((x < 0) & (y > 0)).sum()],
+        [((x > 0) & (y < 0)).sum(), ((x > 0) & (y > 0)).sum()],
+    ])
+    prior_odds, pval = stats.fisher_exact(cont)
+    return cont, prior_odds, pval
+
+
+def export_to_ipa(
+        data_wideform,
+        pids,
+        effect_size_col='{pid}_de_logFC',
+        pval_col='{pid}_de_FDR'
+):
+    cols = []
+    for p in pids:
+        cols.append("%s logFC" % p)
+        cols.append("%s FDR" % p)
+    ipa_export = pd.DataFrame(index=data_wideform['gene'].dropna().unique(), columns=cols)
+    for pid in pids:
+        ix = data_wideform.loc[:, pid] == 'Y'
+        g_ix = data_wideform.loc[ix, 'gene'].dropna().unique()
+        # grab effect size and pval columns
+        z = data_wideform.loc[ix, effect_size_col.format(pid=pid)].astype(float)
+        p = data_wideform.loc[ix, pval_col.format(pid=pid)].astype(float)
+        # reduce to unique gene list by a mean groupby() aggregation
+        # in practice, values for identical genes are also identical, so the mean operation is purely for convenience
+        # check this first, just to be sure
+        if not (z.groupby(data_wideform.loc[ix, 'gene']).apply(lambda x: len(set(x))) == 1).all():
+            raise ValueError("Expected effect size for DE/DMR results to be identical for all matching genes, but this was contravened.")
+        if not (p.groupby(data_wideform.loc[ix, 'gene']).apply(lambda x: len(set(x))) == 1).all():
+            raise ValueError("Expected pval for DE/DMR results to be identical for all matching genes, but this was contravened.")
+        ipa_export.loc[g_ix, "%s logFC" % pid] = z.groupby(data_wideform.loc[ix, 'gene']).mean()
+        ipa_export.loc[g_ix, "%s FDR" % pid] = p.groupby(data_wideform.loc[ix, 'gene']).mean()
+    return ipa_export
 
 
 if __name__ == "__main__":
@@ -247,15 +309,6 @@ if __name__ == "__main__":
     # get the joint table
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
 
-    ## TODO: update from here
-
-    # filter - only DMRs with TSS or island class
-    # for pid in pids:
-    #     idx = joint_de_dmr_s1[pid].dmr_class_island | joint_de_dmr_s1[pid].dmr_class_tss
-    #     joint_de_dmr_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
-    #     joint_de_dmr_s1[pid].index = de_dmr_hash(joint_de_dmr_s1[pid])
-    #     print "Patient %s. %d DE & DMR rows, %d are gene only, keeping %d." % (pid, idx.size, (~idx).sum(), idx.sum())
-
     de_dmr_by_member = [joint_de_dmr_s1[pid].index for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member)
 
@@ -263,99 +316,111 @@ if __name__ == "__main__":
 
     # generate wide-form lists and save to Excel file
     # first, export everything (concordant and discordant)
-    data = setops.venn_set_to_wide_dataframe(
+    col_include = [t for t in joint_de_dmr_s1[pids[0]].columns if re.match('(de|dmr)_', t)]
+    data_s1 = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_s1,
         venn_set,
         pids,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
+        cols_to_include=col_include,
+        consistency_check_col='de_logFC',
         consistency_check_method='sign'
     )
     # add gene symbol and cluster ID back in
-    annotate_de_dmr_wide_form(data)
-    data.to_excel(os.path.join(outdir_s1, 'full_de_dmr.xlsx'), index=False)
+    annotate_de_dmr_wide_form(data_s1)
+    data_s1.to_excel(os.path.join(outdir_s1, 'de_dmr_significant.xlsx'), index=False)
 
     # now filter by concordance and recompute venn sets
     joint_de_dmr_concordant_s1 = {}
     for pid in pids:
         a = joint_de_dmr_s1[pid].de_direction
         b = joint_de_dmr_s1[pid].dmr_direction
-        idx = (a != b)
+        idx = ((a == 'U') & (b == 'Hypo')) | ((a == 'D') & (b == 'Hyper'))
         joint_de_dmr_concordant_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
-        print "Patient %s has %d combined DE / DMR results, of which %d are concordant" % (
-            pid, idx.size, idx.sum()
+        print "Patient %s has %d combined DE / DMR results, of which %d are concordant (%.2f %%)" % (
+            pid, idx.size, idx.sum(), 100. * idx.sum() / float(idx.size)
         )
     de_dmr_by_member_concordant = [joint_de_dmr_concordant_s1[pid].index for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member_concordant)
 
     # export only concordant results
-    data = setops.venn_set_to_wide_dataframe(
+    data_concordant_s1 = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
+        cols_to_include=col_include,
+        consistency_check_col='de_logFC',
         consistency_check_method='sign'
     )
     # add gene symbol and cluster ID back in
-    annotate_de_dmr_wide_form(data)
-    data.to_excel(os.path.join(outdir_s1, 'full_de_dmr_concordant.xlsx'), index=False)
+    annotate_de_dmr_wide_form(data_concordant_s1)
+    data_concordant_s1.to_excel(os.path.join(outdir_s1, 'de_dmr_significant_concordant.xlsx'), index=False)
 
     # expanded core
-    data_ec = setops.venn_set_to_wide_dataframe(
-        joint_de_dmr_concordant_s1,
-        venn_set,
-        pids,
-        include_sets=ec_sets,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
-        consistency_check_method='sign'
-    )
-    annotate_de_dmr_wide_form(data_ec)
-    data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr_concordant.xlsx'), index=False)
+    # data_ec = setops.venn_set_to_wide_dataframe(
+    #     joint_de_dmr_concordant_s1,
+    #     venn_set,
+    #     pids,
+    #     include_sets=ec_sets,
+    #     cols_to_include=col_include,
+    #     consistency_check_col='de_logFC',
+    #     consistency_check_method='sign'
+    # )
+    # annotate_de_dmr_wide_form(data_ec)
+    # data_ec.to_excel(os.path.join(outdir_s1, 'expanded_core_de_dmr_concordant.xlsx'), index=False)
 
     # subgroup-specific
-    data_ss = setops.venn_set_to_wide_dataframe(
-        joint_de_dmr_concordant_s1,
-        venn_set,
-        pids,
-        include_sets=ss_sets,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
-        consistency_check_method='sign'
-    )
-    annotate_de_dmr_wide_form(data_ss)
-    data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr_concordant.xlsx'), index=False)
+    # data_ss = setops.venn_set_to_wide_dataframe(
+    #     joint_de_dmr_concordant_s1,
+    #     venn_set,
+    #     pids,
+    #     include_sets=ss_sets,
+    #     cols_to_include=col_include,
+    #     consistency_check_col='de_logFC',
+    #     consistency_check_method='sign'
+    # )
+    # annotate_de_dmr_wide_form(data_ss)
+    # data_ss.to_excel(os.path.join(outdir_s1, 'subgroup_specific_de_dmr_concordant.xlsx'), index=False)
 
     # patient unique
-    data_pu = setops.venn_set_to_wide_dataframe(
-        joint_de_dmr_concordant_s1,
-        venn_set,
-        pids,
-        include_sets=pu_sets,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
-        consistency_check_method='sign'
-    )
-    annotate_de_dmr_wide_form(data_pu)
-    data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
+    # data_pu = setops.venn_set_to_wide_dataframe(
+    #     joint_de_dmr_concordant_s1,
+    #     venn_set,
+    #     pids,
+    #     include_sets=pu_sets,
+    #     cols_to_include=col_include,
+    #     consistency_check_col='de_logFC',
+    #     consistency_check_method='sign'
+    # )
+    # annotate_de_dmr_wide_form(data_pu)
+    # data_pu.to_excel(os.path.join(outdir_s1, 'patient_unique_de_dmr_concordant.xlsx'), index=False)
 
     # patient and subgroup-specific
-    data_pss = {}
-    for pid in pids:
-        this_tbl =  setops.venn_set_to_wide_dataframe(
-            joint_de_dmr_concordant_s1,
-            venn_set,
-            pids,
-            include_sets=pss_sets[pid],
-            cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-            consistency_check_col='de_logfc',
-            consistency_check_method='sign'
-        )
-        annotate_de_dmr_wide_form(this_tbl)
-        data_pss[pid] = this_tbl
+    # data_pss = {}
+    # for pid in pids:
+    #     this_tbl =  setops.venn_set_to_wide_dataframe(
+    #         joint_de_dmr_concordant_s1,
+    #         venn_set,
+    #         pids,
+    #         include_sets=pss_sets[pid],
+    #         cols_to_include=col_include,
+    #         consistency_check_col='de_logFC',
+    #         consistency_check_method='sign'
+    #     )
+    #     annotate_de_dmr_wide_form(this_tbl)
+    #     data_pss[pid] = this_tbl
+    #
+    # excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de_dmr_concordant.xlsx'))
 
-    excel.pandas_to_excel(data_pss, os.path.join(outdir_s1, 'patient_and_subgroup_specific_de_dmr_concordant.xlsx'))
+    subgroup_set_colours = {
+        'RTK I full': '#0d680f',
+        'RTK II full': '#820505',
+        'MES full': '#7900ad',
+        'RTK I partial': '#6ecc70',
+        'RTK II partial': '#d67373',
+        'MES partial': '#cc88ea',
+        'Expanded core': '#4C72B0',
+        'Specific': '#f4e842',
+    }
 
     upset = venn.upset_plot_with_groups(
         de_dmr_by_member_concordant,
@@ -370,5 +435,148 @@ if __name__ == "__main__":
     upset['axes']['set_size'].set_xlabel('Number of DM-concordant DE genes\nin single comparison')
     upset['gs'].update(bottom=0.11)
 
-    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.png"), dpi=200)
-    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr.tiff"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr_concordant.png"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir_s1, "upset_de_dmr_concordant.tiff"), dpi=200)
+
+    # export to IPA for pathway analysis
+    export_to_ipa(data_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "de_dmr_significant_for_ipa.xlsx"))
+    export_to_ipa(data_concordant_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "concordant_de_dmr_significant_for_ipa.xlsx"))
+
+    ##################
+    ### STRATEGY 2 ###
+    ##################
+
+    norm_method_s2 = 'pbc'
+
+    # load methylation with external references
+    me_obj_with_ref, anno = load_methylation(
+        pids,
+        ref_names=external_ref_names_dm,
+        ref_name_filter=external_ref_samples_dm,
+        norm_method=norm_method_s2,
+        patient_samples=consts.ALL_METHYL_SAMPLES  # technically contains H9 too, but these will be ignored
+    )
+    me_data_with_ref = me_obj_with_ref.data
+
+    dat_s2 = rnaseq_obj.data
+    meta_s2 = rnaseq_obj.meta
+
+    the_hash = de_results_hash(meta_s2.index.tolist(), de_params)
+    filename = 'de_results_cross_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DE_LOAD_DIR, filename)
+
+    if os.path.isfile(fn):
+        logger.info("Reading S2 DE results from %s", fn)
+        with open(fn, 'rb') as f:
+            de_res_full_s2 = pickle.load(f)
+    else:
+        raise AttributeError("Unable to load pre-computed DE results, expected at %s" % fn)
+
+    de_res_s2 = {}
+    for pid in pids:
+        t = de_res_full_s2[(pid, pid)]
+        de_res_s2.setdefault('syngeneic', {})[pid] = t.loc[t.FDR < de_params['fdr']]
+        for k in external_refs_de_labels:
+            t = de_res_full_s2[(pid, k)]
+            de_res_s2.setdefault(k, {})[pid] = t.loc[t.FDR < de_params['fdr']]
+
+    # Load DMR cross-comparison
+
+    # We load pre-computed results if a file with the correct filename is found
+    # Otherwise this is written after computing the results
+
+    # use a hash on the PIDs and parameters to ensure we're looking for the right results
+    dmr_hash_dict = dict(dmr_params)
+    dmr_hash_dict['norm_method'] = norm_method_s2
+
+    the_hash = dmr_results_hash(me_obj_with_ref.meta.index.tolist(), dmr_hash_dict)
+    filename = 'dmr_results_cross_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DMR_LOAD_DIR, filename)
+
+    if os.path.isfile(fn):
+        logger.info("Reading S2 DMR results from %s", fn)
+        dmr_res_s2 = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
+    else:
+        raise AttributeError("Unable to load pre-computed DMR results, expected at %s" % fn)
+
+    dmr_res_full_s2 = {}
+    dmr_res_sign_s2 = {}
+
+    for k1 in dmr_res_s2.keys():
+        dmr_res_full_s2.setdefault('syngeneic', {})[k1] = dmr_res_s2[k1][k1]
+        dmr_res_sign_s2.setdefault('syngeneic', {})[k1] = dmr_res_s2[k1][k1]
+        for k2 in external_refs_dm_labels:
+            dmr_res_full_s2.setdefault(k2, {})[k1] = dmr_res_s2[k1][k2]
+            dmr_res_sign_s2.setdefault(k2, {})[k1] = dmr_res_s2[k1][k2]
+
+    # get the joint table (full)
+    joint_de_dmr_s2 = {}
+    for k in ['syngeneic'] + list(setops.reduce_intersection(external_refs_dm_labels, external_refs_de_labels)):
+        this_joint = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_sign_s2[k], de_res_s2[k])
+        for k2, v in this_joint.items():
+            joint_de_dmr_s2["%s_%s" % (k2, k)] = v
+
+    # generate wide-form lists and save to Excel file
+    # first, export everything (concordant and discordant)
+    col_include = [t for t in joint_de_dmr_s2.values()[0].columns if re.match(r'(de|dmr)_', t)]
+
+    # we can't use the Venn approach here, but we don't need to
+    ix = sorted(setops.reduce_union(*[t.index for t in joint_de_dmr_s2.values()]))
+    blocks_for_export = []
+    for k, v in joint_de_dmr_s2.items():
+        this_yn = pd.Series('N', index=ix)
+        this_yn.loc[v.index] = 'Y'
+        this_block = v.reindex(ix)[col_include]
+        this_block.columns = ["%s_%s" % (k, t) for t in this_block.columns]
+        this_block.insert(0, k, this_yn)
+        blocks_for_export.append(this_block)
+    data_s2 = pd.concat(blocks_for_export, axis=1)
+    annotate_de_dmr_wide_form(data_s2)
+
+    data_s2.to_excel(os.path.join(outdir_s2, "de_dmr_significant.xlsx"))
+
+    # get the joint table (concordant only)
+
+    joint_de_dmr_concordant_s2 = {}
+    for k, v in joint_de_dmr_s2.items():
+        a = v.de_direction
+        b = v.dmr_direction
+        idx = ((a == 'U') & (b == 'Hypo')) | ((a == 'D') & (b == 'Hyper'))
+        joint_de_dmr_concordant_s2[k] = v.loc[idx]
+        print "Comparison %s has %d combined DE / DMR results, of which %d are concordant (%.2f %%)" % (
+            k, idx.size, idx.sum(), 100. * idx.sum() / float(idx.size)
+        )
+
+    # generate wide-form lists and save to Excel file
+    # now, export only concordant results
+    # we can't use the Venn approach here, but we don't need to
+    ix = sorted(setops.reduce_union(*[t.index for t in joint_de_dmr_concordant_s2.values()]))
+    blocks_for_export = []
+    for k, v in joint_de_dmr_concordant_s2.items():
+        this_yn = pd.Series('N', index=ix)
+        this_yn.loc[v.index] = 'Y'
+        this_block = v.reindex(ix)[col_include]
+        this_block.columns = ["%s_%s" % (k, t) for t in this_block.columns]
+        this_block.insert(0, k, this_yn)
+        blocks_for_export.append(this_block)
+    data_concordant_s2 = pd.concat(blocks_for_export, axis=1)
+    annotate_de_dmr_wide_form(data_concordant_s2)
+
+    data_concordant_s2.to_excel(os.path.join(outdir_s2, "de_dmr_significant_concordant.xlsx"))
+
+    # export to IPA for pathway analysis
+    # do this in separate blocks (by comparator) to fit in batch upload size restriction
+    for k in ['syngeneic'] + list(setops.reduce_intersection(external_refs_dm_labels, external_refs_de_labels)):
+        cols = data_s2.columns[data_s2.columns.str.contains(k)]
+        for_export = data_s2[cols]
+        for_export.columns = [t.replace("_%s" % k, "") for t in cols]
+        annotate_de_dmr_wide_form(for_export)
+        export_to_ipa(for_export, pids).to_excel(os.path.join(outdir_s2_ipa, "de_dmr_significant_for_ipa_%s.xlsx" % k))
+
+        for_export = data_concordant_s2[cols]
+        for_export.columns = [t.replace("_%s" % k, "") for t in cols]
+        annotate_de_dmr_wide_form(for_export)
+        export_to_ipa(for_export, pids).to_excel(os.path.join(outdir_s2_ipa, "de_dmr_significant_concordant_for_ipa_%s.xlsx" % k))
+
+
+    export_to_ipa(data_concordant_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "concordant_de_dmr_significant_for_ipa.xlsx"))
