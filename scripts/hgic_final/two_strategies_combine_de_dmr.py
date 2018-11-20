@@ -108,15 +108,6 @@ def annotate_de_dmr_wide_form(data):
     :param data:
     :return:
     """
-    # find any single significant result for each row and retain only a single copy of the chromosome
-    chr_arr = data.loc[:, data.columns.str.contains('_chr')]
-    chr_series = chr_arr.apply(lambda row: row.dropna()[0], axis=1)
-    data.insert(0, 'dmr_chromosome', chr_series)
-    data.drop(
-        [t for t in data.columns[data.columns.str.contains('_chr$')]],
-        axis=1,
-        inplace=True
-    )
     data.insert(0, 'dmr_cluster_id', [t[0] for t in data.index])
     data.insert(0, 'gene', [t[1] for t in data.index])
 
@@ -232,6 +223,9 @@ if __name__ == "__main__":
 
     external_refs_dm_labels = [t[0] for t in external_refs_dm]
 
+    external_refs_de_dm_labels = list(setops.reduce_intersection(external_refs_dm_labels, external_refs_de_labels))
+
+
     # plotting parameters
     cmap = 'RdYlGn_r'
 
@@ -316,12 +310,15 @@ if __name__ == "__main__":
 
     # generate wide-form lists and save to Excel file
     # first, export everything (concordant and discordant)
-    col_include = [t for t in joint_de_dmr_s1[pids[0]].columns if re.match('(de|dmr)_', t)]
+    dyn_col_include = ['de_logFC', 'de_FDR', 'de_direction', 'dmr_median_delta', 'dmr_padj', 'dmr_direction']
+    static_col_include = [t for t in joint_de_dmr_s1[pids[0]].columns if re.match('(de|dmr)_', t) and t not in dyn_col_include]
+
     data_s1 = setops.venn_set_to_wide_dataframe(
         joint_de_dmr_s1,
         venn_set,
         pids,
-        cols_to_include=col_include,
+        cols_to_include=dyn_col_include,
+        static_cols_to_include=static_col_include,
         consistency_check_col='de_logFC',
         consistency_check_method='sign'
     )
@@ -347,7 +344,8 @@ if __name__ == "__main__":
         joint_de_dmr_concordant_s1,
         venn_set,
         pids,
-        cols_to_include=col_include,
+        cols_to_include=dyn_col_include,
+        static_cols_to_include=static_col_include,
         consistency_check_col='de_logFC',
         consistency_check_method='sign'
     )
@@ -511,25 +509,32 @@ if __name__ == "__main__":
 
     # get the joint table (full)
     joint_de_dmr_s2 = {}
-    for k in ['syngeneic'] + list(setops.reduce_intersection(external_refs_dm_labels, external_refs_de_labels)):
+    for k in ['syngeneic'] + external_refs_de_dm_labels:
         this_joint = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_sign_s2[k], de_res_s2[k])
         for k2, v in this_joint.items():
             joint_de_dmr_s2["%s_%s" % (k2, k)] = v
 
     # generate wide-form lists and save to Excel file
     # first, export everything (concordant and discordant)
-    col_include = [t for t in joint_de_dmr_s2.values()[0].columns if re.match(r'(de|dmr)_', t)]
 
     # we can't use the Venn approach here, but we don't need to
     ix = sorted(setops.reduce_union(*[t.index for t in joint_de_dmr_s2.values()]))
     blocks_for_export = []
+    static_block = pd.DataFrame(index=ix, columns=static_col_include)
+
     for k, v in joint_de_dmr_s2.items():
         this_yn = pd.Series('N', index=ix)
         this_yn.loc[v.index] = 'Y'
-        this_block = v.reindex(ix)[col_include]
+        this_block = v.reindex(ix)[dyn_col_include]
         this_block.columns = ["%s_%s" % (k, t) for t in this_block.columns]
         this_block.insert(0, k, this_yn)
         blocks_for_export.append(this_block)
+
+        # fill in static attributes where found
+        static_block.loc[v.index] = v[static_col_include]
+
+    blocks_for_export = [static_block] + blocks_for_export
+
     data_s2 = pd.concat(blocks_for_export, axis=1)
     annotate_de_dmr_wide_form(data_s2)
 
@@ -552,13 +557,20 @@ if __name__ == "__main__":
     # we can't use the Venn approach here, but we don't need to
     ix = sorted(setops.reduce_union(*[t.index for t in joint_de_dmr_concordant_s2.values()]))
     blocks_for_export = []
+    static_block = pd.DataFrame(index=ix, columns=static_col_include)
+
     for k, v in joint_de_dmr_concordant_s2.items():
         this_yn = pd.Series('N', index=ix)
         this_yn.loc[v.index] = 'Y'
-        this_block = v.reindex(ix)[col_include]
+        this_block = v.reindex(ix)[dyn_col_include]
         this_block.columns = ["%s_%s" % (k, t) for t in this_block.columns]
         this_block.insert(0, k, this_yn)
         blocks_for_export.append(this_block)
+
+        # fill in static attributes where found
+        static_block.loc[v.index] = v[static_col_include]
+
+    blocks_for_export = [static_block] + blocks_for_export
     data_concordant_s2 = pd.concat(blocks_for_export, axis=1)
     annotate_de_dmr_wide_form(data_concordant_s2)
 
@@ -566,17 +578,57 @@ if __name__ == "__main__":
 
     # export to IPA for pathway analysis
     # do this in separate blocks (by comparator) to fit in batch upload size restriction
-    for k in ['syngeneic'] + list(setops.reduce_intersection(external_refs_dm_labels, external_refs_de_labels)):
-        cols = data_s2.columns[data_s2.columns.str.contains(k)]
-        for_export = data_s2[cols]
-        for_export.columns = [t.replace("_%s" % k, "") for t in cols]
-        annotate_de_dmr_wide_form(for_export)
+    for k in ['syngeneic'] + external_refs_de_dm_labels:
+        cols = data_s2.columns[data_s2.columns.str.contains(k)
+        ]
+        for_export = data_s2[['gene', 'dmr_cluster_id', 'dmr_chr'] + cols.tolist()]
+        for_export.columns = [t.replace("_%s" % k, "") for t in for_export.columns]
         export_to_ipa(for_export, pids).to_excel(os.path.join(outdir_s2_ipa, "de_dmr_significant_for_ipa_%s.xlsx" % k))
 
-        for_export = data_concordant_s2[cols]
-        for_export.columns = [t.replace("_%s" % k, "") for t in cols]
-        annotate_de_dmr_wide_form(for_export)
+        for_export = data_concordant_s2[['gene', 'dmr_cluster_id', 'dmr_chr'] + cols.tolist()]
+        for_export.columns = [t.replace("_%s" % k, "") for t in for_export.columns]
         export_to_ipa(for_export, pids).to_excel(os.path.join(outdir_s2_ipa, "de_dmr_significant_concordant_for_ipa_%s.xlsx" % k))
 
+    # Venn diagram array to quantify numbers
+    # for this purpose, reduce to the number of genes (as one gene can appear more than once)
+    # array of Venn plots: GBM vs X (# DE+DM genes)
+    # only possible if number of references <= 3 (otherwise too many sets)
+    if len(external_refs_de_dm_labels) < 4:
+        nrows = len(subgroups)
+        ncols = max([len(t) for t in subgroups.values()])
+        set_labels = ['Syngeneic iNSC'] + external_refs_de_dm_labels
+        set_colours = ['r', 'g', 'b']
+        fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+        # assume we'll have one axis leftover!
+        # TODO: if not, we'll need to add one or move the legend outside the main figure?
+        cax = axs[-1, -1]
+        ax_set = set(axs.flat)
+        for pid in pids:
+            sg = subgroups_lookup[pid]
+            sg_members = subgroups[sg]
+            i = subgroups.keys().index(sg)
+            j = sg_members.index(pid)
+            the_lists = [
+                data_concordant_s2['gene'].loc[data_concordant_s2["%s_%s" % (pid, k)] == 'Y']
+                for k in ['syngeneic'] + external_refs_de_dm_labels
+            ]
+            venn_sets, cts = setops.venn_from_arrays(*the_lists)
+            venn.venn_diagram(*the_lists, set_labels=None, ax=axs[i, j])
+            axs[i, j].set_title("GBM%s" % pid, y=0.95)
+            ax_set.remove(axs[i, j])
+            # resize text
+            h_txt = [t for t in axs[i, j].get_children() if isinstance(t, text.Text)]
+            plt.setp(h_txt, fontsize=12)
+        for ax in ax_set:
+            ax.axis('off')
 
-    export_to_ipa(data_concordant_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "concordant_de_dmr_significant_for_ipa.xlsx"))
+        # legend
+        leg_objs = [
+            patches.Rectangle([0, 0], 1, 1, color=c, alpha=0.4, label=l) for c, l in zip(set_colours, set_labels)
+        ]
+        cax.legend(handles=leg_objs, loc='center')
+
+        fig.subplots_adjust(left=0., right=1., bottom=0., top=.93, wspace=0., hspace=0.05)
+
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_de_dmr_all_nsc.png'), dpi=200)
+        fig.savefig(os.path.join(outdir_s2, 'venn_number_de_dmr_all_nsc.tiff'), dpi=200)

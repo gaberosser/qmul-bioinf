@@ -370,6 +370,170 @@ def plot_delta_histogram(
     return ax
 
 
+def load_and_prepare_data(indir, file_patt, comparisons, pids=consts.PIDS, alpha=0.005, alpha_relevant=0.05, outdir=None):
+    """
+    Load IPA pathway data from the raw exported files, preparing several representations.
+    If requested, save some of these to the specified output directory.
+    :param indir:
+    :param file_patt:
+    :param comparisons:
+    :param pids:
+    :param alpha:
+    :param alpha_relevant:
+    :param outdir:
+    :return:
+    """
+    plogalpha = -np.log10(alpha)
+    plogalpha_relevant = -np.log10(alpha_relevant)
+
+    res = ipa.load_raw_reports(
+        indir,
+        file_patt,
+        pids,
+        comparisons
+    )
+    for k, v in res.items():
+        rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
+        res['_'.join(k)] = v.loc[rele_ix]
+        res.pop(k)
+
+    # wideform version of this (i.e. 30 blocks)
+    res_wide = ipa_results_to_wideform(res, plogalpha)
+
+    # get a list of significant pathways (in at least one comparison)
+    pathways_significant = set()
+    for k, v in res.items():
+        pathways_significant.update(v.index[v['-logp'] > plogalpha])
+
+    if outdir is not None:
+        # export full wideform results
+        res_wide.to_excel(os.path.join(outdir, "ipa_results_full.xlsx"))
+
+        # export significant results to an Excel file with separate tabs
+        res_sign = dict([
+            (k, v.loc[v['-logp'] > plogalpha]) for k, v in res.items()
+        ])
+        excel.pandas_to_excel(res_sign, os.path.join(outdir, "ipa_results_significant_separated.xlsx"))
+
+        # export wideform, reduced to include only significant pathways
+        res_wide.loc[sorted(pathways_significant)].to_excel(
+            os.path.join(outdir, "ipa_results_significant.xlsx")
+        )
+
+    return res, res_wide, pathways_significant
+
+
+def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
+    out = {}
+    n_ref = len(ref_names)
+    # Test relative enrichment of pathway detection by syngeneic and references
+
+    if n_ref > 1:
+        # 1a) Combined references, number of detections
+
+        nn = n_set.iloc[:, :2].add(n_set.iloc[:, -1], axis=0)
+        nn.columns = ['syn', 'ref']
+        print "COMBINED references. Number showing enrichment in a given pathway."
+        out['combined_ref_number'] = compute_enrichment_combined_references(nn)
+
+        ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
+        if outdir is not None:
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.png"), dpi=200)
+        out['combined_ref_number_hist_ax'] = ax
+
+        # 1b) Combined references, sum of plogp
+
+        pp = pd.DataFrame(index=p.index, columns=['syn', 'ref'])
+        pp.loc[:, 'syn'] = p[p.columns[p.columns.str.contains('syngeneic')]].sum(axis=1)
+        pp.loc[:, 'ref'] = p[p.columns[~p.columns.str.contains('syngeneic')]].sum(axis=1)
+        print "COMBINED references. Sum of plogp showing enrichment in a given pathway."
+        out['combined_ref_sum_logp'] = compute_enrichment_combined_references(pp)
+
+        ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
+        if outdir is not None:
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
+        out['combined_ref_sum_logp_hist_ax'] = ax
+
+    # 2a) Consider references separately, number of detections
+    all_in = ~p.isnull()
+
+    nn = {}
+    for c in comparisons:
+        this = all_in.loc[:, all_in.columns.str.contains(c)]
+        nn[c] = this.sum(axis=1)
+    nn = pd.DataFrame(nn)
+    print "SEPARATE references. Number showing enrichment in a given pathway"
+    out['separate_ref_number'] = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
+
+    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True)
+    if n_ref == 1:
+        axs = [axs]
+    i = 0
+    for c in ref_names:
+        plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+        i += 1
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.png"), dpi=200)
+    out['separate_ref_number_hist_axs'] = axs
+
+    # plot ECDF (ish)
+    p_order = all_in.sum(axis=1).sort_values(ascending=False).index
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comparisons:
+        ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative number of patients with enrichment')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.png"), dpi=200)
+    out['separate_ref_number_ecdf_ax'] = ax
+
+    # 2b) Consider references separately, sum of -logp
+    pp = {}
+    for c in comparisons:
+        this = p.loc[:, p.columns.str.contains(c)]
+        pp[c] = this.sum(axis=1)
+    pp = pd.DataFrame(pp)
+    print "SEPARATE references. Sum of -logp for each given pathway"
+    out['separate_ref_sum_logp'] = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
+
+    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True)
+    if n_ref == 1:
+        axs = [axs]
+    i = 0
+    for c in ref_names:
+        plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i])
+        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
+        i += 1
+
+    axs[-1].legend(loc='upper left')
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.png"), dpi=200)
+    out['separate_ref_sum_logp_hist_axs'] = axs
+
+    # plot ECDF (ish)
+    p_order = p.sum(axis=1).sort_values(ascending=False).index
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for c in comparisons:
+        ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
+    ax.set_xlabel('Ranked pathway')
+    ax.set_ylabel('Cumulative sum of -log10(p)')
+    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
+    fig.tight_layout()
+    if outdir is not None:
+        fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+    out['separate_ref_sum_logp_ecdf_ax'] = ax
+
+    return out
+
+
 if __name__ == '__main__':
     # set a minimum pval for pathways to be used
     alpha = 0.005
@@ -380,7 +544,17 @@ if __name__ == '__main__':
 
     de_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq/merged_s1_s2/ipa/pathways')
     dm_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/methylation/merged_s1_s2/ipa/pathways')
+    dedm_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq_methylation_combined/merged_s1_s2/ipa/pathways')
+
     outdir = output.unique_output_dir()
+
+    outdir_de = os.path.join(outdir, 'de')
+    outdir_dm = os.path.join(outdir, 'dm')
+    outdir_dedm = os.path.join(outdir, 'dedm')
+
+    for p in [outdir_de, outdir_dm, outdir_dedm]:
+        if not os.path.exists(p):
+            os.makedirs(p)
 
     # keys are the term used in the filename, values are those used in the columns
     de_ref_names = ['h9', 'gibco']
@@ -405,16 +579,9 @@ if __name__ == '__main__':
         'gibco': 'Gibco'
     }
 
-    # comps = {
-    #     'syngeneic': 'syngeneic',
-    #     'h9': 'H9',
-    #     'gibco': 'GIBCO'
-    # }
-    # comparison_names = {
-    #     'syngeneic': 'Syngen.',
-    #     'h9': 'H9',
-    #     'gibco': 'Gibco'
-    # }
+    dedm_ref_names = dm_ref_names
+    dedm_comps = dm_comps
+    dedm_comp_names = dm_comp_names
 
     pids = consts.PIDS
 
@@ -422,37 +589,14 @@ if __name__ == '__main__':
     # DE
     #######################################################
 
-    # load IPA results from raw data and combine into a single export file
-    # format: Excel, wideform
-    de_res = ipa.load_raw_reports(
+    de_res, de_res_wide, de_pathways_significant = load_and_prepare_data(
         de_indir,
         'de_s2_{0}_{1}.txt',
-        pids,
-        de_comps
-    )
-    for k, v in de_res.items():
-        rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
-        de_res['_'.join(k)] = v.loc[rele_ix]
-        de_res.pop(k)
-
-    # wideform version of this (i.e. 30 blocks)
-    de_res_wide = ipa_results_to_wideform(de_res, plogalpha)
-    de_res_wide.to_excel(os.path.join(outdir, "full_de_ipa_results.xlsx"))
-
-    # get a list of significant pathways (in at least one comparison)
-    de_pathways_significant = set()
-    for k, v in de_res.items():
-        de_pathways_significant.update(v.index[v['-logp'] > plogalpha])
-
-    # export significant results to an Excel file with separate tabs
-    de_res_sign = dict([
-        (k, v.loc[v['-logp'] > plogalpha]) for k, v in de_res.items()
-    ])
-    excel.pandas_to_excel(de_res_sign, os.path.join(outdir, "full_de_ipa_results_significant_separated.xlsx"))
-
-    # export wideform, reduced to include only significant pathways
-    de_res_wide.loc[sorted(de_pathways_significant)].to_excel(
-        os.path.join(outdir, "full_de_ipa_results_significant.xlsx")
+        de_comps,
+        alpha=alpha,
+        alpha_relevant=alpha_relevant,
+        pids=pids,
+        outdir=outdir_de
     )
 
     # useful structures for plots
@@ -463,7 +607,7 @@ if __name__ == '__main__':
     
     # at-a-glance export
     de_n_set, at_a_glance = generate_summary_df(de_all_in, de_ref_names)
-    at_a_glance.to_excel(os.path.join(outdir, "de_ipa_results_patients_by_s2_category.xlsx"))
+    at_a_glance.to_excel(os.path.join(outdir_de, "ipa_results_patients_by_s2_category.xlsx"))
 
     # plot 1) P values, ordered by sum of -log(P)
     p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
@@ -474,9 +618,9 @@ if __name__ == '__main__':
         pids,
         de_comp_names
     )
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.png"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.tiff"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_de.pdf"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_sum_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_sum_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_sum_logp.pdf"), dpi=200)
 
     # plot 2) P values, ordered by mean of -log(P)
     p_order = de_all_p.mean(axis=1).sort_values(ascending=False).index
@@ -487,130 +631,32 @@ if __name__ == '__main__':
         pids,
         de_comp_names
     )
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.png"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.tiff"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_de.pdf"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_mean_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_mean_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_de, "heatmap_all_pathways_order_mean_logp.pdf"), dpi=200)
 
     # Test relative enrichment of pathway detection by syngeneic and references
-    # 1a) Combined references, number of detections
-
-    nn = de_n_set.iloc[:, :2].add(de_n_set.iloc[:, -1], axis=0)
-    nn.columns = ['syn', 'ref']
-    print "DE. COMBINED references. Number showing enrichment in a given pathway."
-    wsrt_res = compute_enrichment_combined_references(nn)
-
-    ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
-    ax.figure.savefig(os.path.join(outdir, "de_histogram_delta_number_comparisons_references_together.png"), dpi=200)
-
-    # 1b) Combined references, sum of plogp
-
-    pp = pd.DataFrame(index=de_pathways_significant, columns=['syn', 'ref'])
-    pp.loc[:, 'syn'] = de_all_p[de_all_p.columns[de_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
-    pp.loc[:, 'ref'] = de_all_p[de_all_p.columns[~de_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
-    print "DE. COMBINED references. Sum of plogp showing enrichment in a given pathway."
-    wsrt_res = compute_enrichment_combined_references(pp)
-
-    ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
-    ax.figure.savefig(os.path.join(outdir, "de_histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
-
-    # 2a) Consider references separately, number of detections
-    nn = {}
-    for c in de_comps:
-        this = de_all_in.loc[:, de_all_in.columns.str.contains(c)]
-        nn[c] = this.sum(axis=1)
-    nn = pd.DataFrame(nn)
-    print "DE. SEPARATE references. Number showing enrichment in a given pathway"
-    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + de_ref_names)
-
-    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
-    i = 0
-    for c in de_ref_names:
-        plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
-        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-        i += 1
-    axs[-1].legend(loc='upper left')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "de_histogram_delta_number_comparisons.png"), dpi=200)
-
-    # plot ECDF (ish)
-    p_order = de_all_in.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for c in de_comps:
-        ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
-    ax.set_xlabel('Ranked pathway')
-    ax.set_ylabel('Cumulative number of patients with enrichment')
-    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "de_number_comparisons_ranked_cumul_sum.png"), dpi=200)
-
-    # 2b) Consider references separately, sum of -logp
-    pp = {}
-    for c in de_comps:
-        this = de_all_p.loc[:, de_all_p.columns.str.contains(c)]
-        pp[c] = this.sum(axis=1)
-    pp = pd.DataFrame(pp)
-    print "DE. SEPARATE references. Sum of -logp for each given pathway"
-    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + de_ref_names)
-
-    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True)
-    i = 0
-    for c in de_ref_names:
-        plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i])
-        axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-        i += 1
-
-    axs[-1].legend(loc='upper left')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "de_histogram_delta_sum_pvalues.png"), dpi=200)
-
-    # plot ECDF (ish)
-    p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for c in de_comps:
-        ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
-    ax.set_xlabel('Ranked pathway')
-    ax.set_ylabel('Cumulative sum of -log10(p)')
-    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "de_sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+    print "*** DE results ***"
+    de_test_res = test_relative_enrichment(
+        de_n_set,
+        de_all_p,
+        de_comps,
+        de_ref_names,
+        outdir=outdir_de
+    )
 
     #######################################################
     # DMR
     #######################################################
 
-    # load IPA results from raw data and combine into a single export file
-    # format: Excel, wideform
-    dm_res = ipa.load_raw_reports(
+    dm_res, dm_res_wide, dm_pathways_significant = load_and_prepare_data(
         dm_indir,
         'dmr_s2_{0}_{1}.txt',
-        pids,
-        dm_comps
-    )
-    for k, v in dm_res.items():
-        rele_ix = v.index[v['-logp'] >= plogalpha_relevant]
-        dm_res['_'.join(k)] = v.loc[rele_ix]
-        dm_res.pop(k)
-
-    # wideform version of this (i.e. 30 blocks)
-    dm_res_wide = ipa_results_to_wideform(dm_res, plogalpha)
-    dm_res_wide.to_excel(os.path.join(outdir, "full_dmr_ipa_results.xlsx"))
-
-    # get a list of significant pathways (in at least one comparison)
-    dm_pathways_significant = set()
-    for k, v in dm_res.items():
-        dm_pathways_significant.update(v.index[v['-logp'] > plogalpha])
-
-    # export significant results to an Excel file with separate tabs
-    dm_res_sign = dict([
-        (k, v.loc[v['-logp'] > plogalpha]) for k, v in dm_res.items()
-    ])
-    excel.pandas_to_excel(dm_res_sign, os.path.join(outdir, "full_dmr_ipa_results_significant_separated.xlsx"))
-
-    # export wideform, reduced to include only significant pathways
-    dm_res_wide.loc[sorted(dm_pathways_significant)].to_excel(
-        os.path.join(outdir, "full_dmr_ipa_results_significant.xlsx")
+        dm_comps,
+        alpha=alpha,
+        alpha_relevant=alpha_relevant,
+        pids=pids,
+        outdir=outdir_dm
     )
 
     # useful structures for plots
@@ -621,7 +667,7 @@ if __name__ == '__main__':
 
     # at-a-glance export
     dm_n_set, at_a_glance = generate_summary_df(dm_all_in, dm_ref_names)
-    at_a_glance.to_excel(os.path.join(outdir, "dmr_ipa_results_patients_by_s2_category.xlsx"))
+    at_a_glance.to_excel(os.path.join(outdir_dm, "ipa_results_patients_by_s2_category.xlsx"))
 
     # plot 1) P values, ordered by sum of -log(P)
     p_order = dm_all_p.sum(axis=1).sort_values(ascending=False).index
@@ -633,9 +679,9 @@ if __name__ == '__main__':
         dm_comp_names,
         count_cmap='Greens',
     )
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.png"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.tiff"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_sum_logp_dmr.pdf"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_sum_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_sum_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_sum_logp.pdf"), dpi=200)
 
     # plot 2) P values, ordered by sum of -log(P)
     p_order = dm_all_p.mean(axis=1).sort_values(ascending=False).index
@@ -647,93 +693,78 @@ if __name__ == '__main__':
         dm_comp_names,
         count_cmap='Greens',
     )
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.png"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.tiff"), dpi=200)
-    plot_dict['figure'].savefig(os.path.join(outdir, "heatmap_all_pathways_order_mean_logp_dmr.pdf"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_mean_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_mean_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dm, "heatmap_all_pathways_order_mean_logp.pdf"), dpi=200)
 
     # Test relative enrichment of pathway detection by syngeneic and references
-    # 1a) Combined references, number of detections
+    print "*** DM results ***"
+    dm_test_res = test_relative_enrichment(
+        dm_n_set,
+        dm_all_p,
+        dm_comps,
+        dm_ref_names,
+        outdir=outdir_dm
+    )
 
-    nn = dm_n_set.iloc[:, :2].add(dm_n_set.iloc[:, -1], axis=0)
-    nn.columns = ['syn', 'ref']
-    print "DMR. COMBINED references. Number showing enrichment in a given pathway."
-    wsrt_res = compute_enrichment_combined_references(nn)
+    #######################################################
+    # DE + DMR
+    #######################################################
 
-    ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
-    ax.figure.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons_references_together.png"), dpi=200)
+    dedm_res, dedm_res_wide, dedm_pathways_significant = load_and_prepare_data(
+        dedm_indir,
+        's2_{0}_{1}.txt',
+        dedm_comps,
+        alpha=alpha,
+        alpha_relevant=alpha_relevant,
+        pids=pids,
+        outdir=outdir_dedm
+    )
 
-    # 1b) Combined references, sum of plogp
+    # useful structures for plots
+    dd = generate_plotting_structures(dedm_res, dedm_pathways_significant, plogalpha)
+    dedm_all_p = dd['p']
+    dedm_all_z = dd['z']
+    dedm_all_in = dd['in']
 
-    pp = pd.DataFrame(index=dm_pathways_significant, columns=['syn', 'ref'])
-    pp.loc[:, 'syn'] = dm_all_p[dm_all_p.columns[dm_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
-    pp.loc[:, 'ref'] = dm_all_p[dm_all_p.columns[~dm_all_p.columns.str.contains('syngeneic')]].sum(axis=1)
-    print "DMR. COMBINED references. Sum of plogp showing enrichment in a given pathway."
-    wsrt_res = compute_enrichment_combined_references(pp)
+    # at-a-glance export
+    dedm_n_set, at_a_glance = generate_summary_df(dedm_all_in, dedm_ref_names)
+    at_a_glance.to_excel(os.path.join(outdir_dedm, "ipa_results_patients_by_s2_category.xlsx"))
 
-    ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
-    ax.figure.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
+    # plot 1) P values, ordered by sum of -log(P)
+    p_order = dedm_all_p.sum(axis=1).sort_values(ascending=False).index
+    plot_dict = pathway_involvement_heatmap_by_p(
+        dedm_all_p,
+        dedm_n_set,
+        p_order,
+        pids,
+        dedm_comp_names,
+        count_cmap='Purples',
+    )
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.pdf"), dpi=200)
 
-    # 2a) Consider references separately, number of detections
-    nn = {}
-    for c in dm_comps:
-        this = dm_all_in.loc[:, dm_all_in.columns.str.contains(c)]
-        nn[c] = this.sum(axis=1)
-    nn = pd.DataFrame(nn)
-    print "DMR. SEPARATE references. Number showing enrichment in a given pathway"
-    wsrt_res = compute_enrichment_separate_references(nn, ['syngeneic'] + dm_ref_names)
+    # plot 2) P values, ordered by sum of -log(P)
+    p_order = dedm_all_p.mean(axis=1).sort_values(ascending=False).index
+    plot_dict = pathway_involvement_heatmap_by_p(
+        dedm_all_p,
+        dedm_n_set,
+        p_order,
+        pids,
+        dedm_comp_names,
+        count_cmap='Purples',
+    )
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.tiff"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.pdf"), dpi=200)
 
-    if len(dm_ref_names) > 1:
-        fig, axs = plt.subplots(ncols=len(dm_ref_names), sharex=True, sharey=True)
-        i = 0
-        for c in dm_ref_names:
-            plot_delta_histogram(nn['syngeneic'], nn[c], nbin=10, ax=axs[i], summary_metric='mean')
-            axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-            i += 1
-        axs[-1].legend(loc='upper left')
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "dmr_histogram_delta_number_comparisons.png"), dpi=200)
-
-    # plot ECDF (ish)
-    p_order = dm_all_in.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for c in dm_comps:
-        ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
-    ax.set_xlabel('Ranked pathway')
-    ax.set_ylabel('Cumulative number of patients with enrichment')
-    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_number_comparisons_ranked_cumul_sum.png"), dpi=200)
-
-    # 2b) Consider references separately, sum of -logp
-    pp = {}
-    for c in dm_comps:
-        this = dm_all_p.loc[:, dm_all_p.columns.str.contains(c)]
-        pp[c] = this.sum(axis=1)
-    pp = pd.DataFrame(pp)
-    print "DMR. SEPARATE references. Sum of -logp for each given pathway"
-    wsrt_res = compute_enrichment_separate_references(pp, ['syngeneic'] + dm_ref_names)
-
-    if len(dm_ref_names) > 1:
-        fig, axs = plt.subplots(ncols=len(dm_ref_names), sharex=True, sharey=True)
-        i = 0
-        for c in dm_ref_names:
-            plot_delta_histogram(pp['syngeneic'], pp[c], nbin=20, ax=axs[i], summary_metric='mean')
-            axs[i].set_xlabel("# syngeneic - # %s" % c.title())
-            i += 1
-
-        axs[-1].legend(loc='upper left')
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "dmr_histogram_delta_sum_pvalues.png"), dpi=200)
-
-    # plot ECDF (ish)
-    p_order = dm_all_p.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    for c in dm_comps:
-        ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
-    ax.set_xlabel('Ranked pathway')
-    ax.set_ylabel('Cumulative sum of -log10(p)')
-    ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "dmr_sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+    # Test relative enrichment of pathway detection by syngeneic and references
+    print "*** DE + DM results ***"
+    dedm_test_res = test_relative_enrichment(
+        dedm_n_set,
+        dedm_all_p,
+        dedm_comps,
+        dedm_ref_names,
+        outdir=outdir_dedm
+    )
