@@ -1,8 +1,9 @@
 import numpy as np
 from stats import basic
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, patches
 import matplotlib.colors as colors
 from matplotlib import cm
+import copy
 
 
 COLOUR_BREWERS = {
@@ -24,6 +25,88 @@ COLOUR_BREWERS = {
 _FILLED_MARKERS = ['o', 'v', 's', 'd', 'p', 'X', '*', 'D', 'P', '^', '<', '>', 'h', 'H', '8']
 
 FILLED_MARKERS = dict([(i, _FILLED_MARKERS[:i]) for i in range(2, len(_FILLED_MARKERS))])
+
+
+def add_custom_legend(
+        ax,
+        legend_dict,
+        loc=None,
+        loc_outside=False,
+        loc_outside_horiz=None,
+        loc_outside_vert=None,
+        **kwargs
+):
+    """
+    Add a custom legend to the supplied axes.
+    :param ax:
+    :param legend_dict: Nested dictionary. First level gives 'section titles'. Second level gives actual legend labels.
+    Use an OrderedDict if order is important.
+    Second level entries are dictionaries containing two keys:
+    - kwargs, containing all kwarg sneeded to create that element (facecolor, marker, etc).
+    - class, string indicating which type of artist is required. Supported: 'line', 'patch'. TODO: add more?
+    :param loc: If supplied, this is used to place the legend. Not for outside locations. If absent, 'best' option
+    is applied.
+    :param loc_outside: If True, place the legend outside the axes, using `legend_outside_axes()`.
+    :param loc_outside_horiz: If loc_outside is True, can use this to specify the positioning.
+    :param loc_outside_vert: If loc_outside is True, can use this to specify the positioning.
+    :param kwargs: Passed to `ax.legend()`
+    :return:
+    """
+
+    # checks
+    if loc_outside and loc is not None:
+        raise AttributeError("If loc_outside is True, cannot specify loc. Use loc_outside_{horiz,vert} instead.")
+
+    if not loc_outside and (loc_outside_horiz is not None or loc_outside_vert is not None):
+        raise AttributeError("If loc_outside is False, cannot specify loc_outside_{horiz,vert}.")
+
+
+
+    # copy legend dict so we can modify in-place
+    legend_dict = copy.copy(legend_dict)
+
+    # array keeps track of the legend entries (in order)
+    for_legend = []
+
+    for k1, v1 in legend_dict.items():
+
+        the_spacer = patches.Patch(
+            edgecolor='none',
+            facecolor='none',
+            label=k1
+        )
+        for_legend.append(the_spacer)
+
+        for lbl, v2 in v1.items():
+            if 'class' not in v2:
+                raise KeyError("Must supply a class with each legend entry")
+
+            args = []
+            cls_str = v2.pop('class')
+            if cls_str == 'line':
+                cls = plt.Line2D
+                # need to provide x and y data
+                args = [[0], [0]]
+            elif cls_str == 'patch':
+                cls = patches.Patch
+            else:
+                raise NotImplementedError("Class not currently supported: %s" % v2['class'])
+
+            v2['label'] = lbl
+            for_legend.append(
+                cls(*args, **v2)
+            )
+
+    if loc_outside:
+        if loc_outside_horiz:
+            kwargs['horiz_loc'] = loc_outside_horiz
+        if loc_outside_vert:
+            kwargs['vert_loc'] = loc_outside_vert
+        legend_outside_axes(ax, handles=for_legend, **kwargs)
+    else:
+        ax.legend(handles=for_legend, loc=loc, **kwargs)
+
+    return for_legend
 
 
 def legend_outside_axes(ax, horiz_loc='right', vert_loc='centre', **kwargs):
