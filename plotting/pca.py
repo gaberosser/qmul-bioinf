@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib import animation, cm
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from plotting.threed import plot_ellipsoid
@@ -298,3 +299,168 @@ def pca_plot_by_group_3d(
     plt.tight_layout()
 
     return ax
+
+
+def highlight_biplot_features(
+    feat_x,
+    feat_y,
+    radius,
+    ax
+):
+    """
+    Highlight all features that are outside of the specified radius on the biplot
+    :param feat_x:
+    :param feat_y:
+    :param radius:
+    :param ax:
+    :return:
+    """
+    selected = (feat_x ** 2 + feat_y ** 2) ** .5 > radius
+    ax.scatter(
+        feat_x[selected],
+        feat_y[selected],
+        facecolor='none',
+        edgecolor='b',
+        linewidths=1.,
+        s=12.
+    )
+    return selected
+
+
+
+def biplot(
+    data,
+    feat_axis=0,
+    scale=1.,
+    plot_dims=(0, 1),
+    preserve_distance='samples',
+    include_weighting=True,
+    sample_colours=None,
+    sample_markers=None,
+    highlight_feature_radius=None
+):
+    """
+
+    :param data:
+    :param feat_axis:
+    :param scale:
+    :param include_weighting:
+    :param sample_colours:
+    :param sample_markers:
+    :param highlight_feature_radius:
+    :return:
+    """
+    if preserve_distance not in ('samples', 'features'):
+        raise ValueError("preserve_distance parameter must be 'samples' or 'features'.")
+    if feat_axis not in (0, 1):
+        raise ValueError("Input data must be a 2D matrix, and feat_axis must be 0 or 1.")
+
+    data = pd.DataFrame(data, copy=False)
+    if feat_axis == 1:
+        data = data.transpose()
+
+    if sample_markers is None:
+        sample_markers = dict([(t, 'o') for t in data.columns])
+
+    # group sample markers, so we can run the minimum number of calls to plt.scatter()
+    sample_markers_grouped = dict()
+    sample_markers_grouped_ix = dict()
+    for k, v in sample_markers.items():
+        sample_markers_grouped.setdefault(v, []).append(k)
+        sample_markers_grouped_ix.setdefault(v, []).append(np.where(data.columns == k)[0][0])
+
+    # no need for the colours, because they can be passed in as a vector
+    if sample_colours is None:
+        sample_colours = dict([(t, 'k') for t in data.columns])
+
+    n = float(data.shape[1])
+    p = float(data.shape[0])
+
+    # standardise: mean centred data required for sensible decomposition
+    # standardisation occurs along the FEATURES axis, which is dim 1
+    scaler = StandardScaler(with_std=False)
+
+    # features on the ROWS, mean centre by gene
+    scaler = scaler.fit(data.transpose())
+    X = scaler.transform(data.transpose()).transpose()
+
+    # SVD
+    u, s, vh = np.linalg.svd(X, full_matrices=False)
+
+    # checked this against the sklearn PCA code
+    explained_variance = (s ** 2) / n
+    explained_variance_ratio = explained_variance / explained_variance.sum()
+
+    if preserve_distance == 'samples':
+        # preserve inter-sample distances
+
+        # project gene data into PCA
+        # this matches the output of pca.transform() (except for possible sign switch)
+        if include_weighting:
+            # scaling by s: components scale by their relative explanatory power (not linearly)
+            # the plot may appear 'squashed', depending on the weighting
+            us = u.dot(np.diag(s))
+            feat_x = scale * us[:, plot_dims[0]]
+            feat_y = scale * us[:, plot_dims[1]]
+        else:
+            # alternatively, just plot the unscaled feature components (plot becomes more circular)
+            feat_x = scale * u[:, plot_dims[0]]
+            feat_y = scale * u[:, plot_dims[1]]
+
+        sample_x = vh[plot_dims[0]]
+        sample_y = vh[plot_dims[1]]
+    else:
+        # preserve inter-feature distances
+        ## TODO: check this
+
+        if include_weighting:
+            # scaling by s: components scale by their relative explanatory power (not linearly)
+            # the plot may appear 'squashed', depending on the weighting
+            vs = vh.dot(np.diag(s))
+            sample_x = vs[plot_dims[0]]
+            sample_y = vs[plot_dims[1]]
+        else:
+            # alternatively, just plot the unscaled feature components (plot becomes more circular)
+            sample_x = vh[plot_dims[0]]
+            sample_y = vh[plot_dims[1]]
+
+        feat_x = scale * u[:, plot_dims]
+        feat_y = scale * u[:, plot_dims]
+
+    # track legend entries to avoid double labelling
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    # scatter features
+    ax.scatter(feat_x, feat_y, c='gray', s=10, edgecolor='none', alpha=0.7)
+
+    # scatter samples
+    for mrk, arr in sample_markers_grouped.items():
+        cs = [sample_colours[k] for k in arr]
+        ax.scatter(
+            sample_x[sample_markers_grouped_ix[mrk]],
+            sample_y[sample_markers_grouped_ix[mrk]],
+            c=cs,
+            marker=mrk,
+            edgecolor='k',
+            linewidth=1.,
+            zorder=10.
+        )
+
+    if highlight_feature_radius is not None:
+        selected = highlight_biplot_features(feat_x, feat_y, highlight_feature_radius, ax=ax)
+
+    ax.set_xlabel('PC%d (%.2f %%)' % (plot_dims[0] + 1, explained_variance_ratio[plot_dims[0]] * 100.))
+    ax.set_ylabel('PC%d (%.2f %%)' % (plot_dims[1] + 1, explained_variance_ratio[plot_dims[1]] * 100.))
+
+    return {
+        'u': u,
+        's': s,
+        'vh': vh,
+        'fig': fig,
+        'ax': ax,
+        'explained_variance': explained_variance,
+        'explained_variance_ratio': explained_variance_ratio,
+        'sample_data': (sample_x, sample_y),
+        'feature_data': (feat_x, feat_y)
+    }
