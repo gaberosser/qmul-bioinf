@@ -7,11 +7,71 @@ import itertools
 import collections
 import os
 
-from rnaseq import loader, filter
+from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
-from plotting import common, pca
+from plotting import common, pca, _plotly
 from utils import output
 import references
+
+import plotly.plotly as py
+from plotly import graph_objs as go
+
+
+def generate_plotly_plot(
+        res,
+        filename,
+        feature_size_scaling,
+        feature_text,
+        sample_text,
+        sample_colours,
+        sample_markers,
+        sample_marker_size=12.,
+        auto_open=False
+):
+    x, y = res['feature_data']
+
+    msize_in = (x ** 2 + y ** 2) ** .5
+
+    tmp = (msize_in - feature_size_scaling[0][0]) / (feature_size_scaling[0][1] - feature_size_scaling[0][0])
+    tmp[tmp < 0] = 0
+    tmp[tmp > 1] = 1
+    msize = tmp * (feature_size_scaling[1][1] - feature_size_scaling[1][0]) + feature_size_scaling[1][0]
+
+    feat_trace = go.Scatter(
+        x=x,
+        y=y,
+        mode='markers',
+        text=feature_text,
+        marker={
+            'size': msize,
+            'color': 'rgb(155, 155, 155, .7)'
+        }
+    )
+
+    plotly_markers = np.array([_plotly.MATPLOTLIB_TO_PLOTLY_MARKERS[sample_markers[t]] for t in sample_text])
+
+    sample_trace = go.Scatter(
+        x=res['sample_data'][0],
+        y=res['sample_data'][1],
+        mode='markers+text',
+        text=dat.columns,
+        textposition='bottom center',
+        textfont={
+            'color': [sample_colours[t] for t in sample_text]
+        },
+        marker={
+            'size': sample_marker_size,
+            'color': [sample_colours[t] for t in sample_text],
+            'symbol': plotly_markers,
+            'line': {'color': 'black', 'width': 2.}
+        }
+    )
+
+    layout = go.Layout(showlegend=False)
+    fig = go.Figure(data=[feat_trace, sample_trace], layout=layout)
+    p = py.plot(fig, filename=filename, auto_open=auto_open)
+
+    return p
 
 
 def plot_biplot(
@@ -146,6 +206,11 @@ if __name__ == "__main__":
     dat = filter.filter_by_cpm(obj.data, min_n_samples=2)
     # TODO: include VST or similar here
     dat = np.log(dat + eps)
+    # copy of dat with gene symbols
+    dat_with_gs = dat.copy()
+    general.add_gene_symbols_to_ensembl_data(dat_with_gs)
+    # fill back in with ENS where no gene symbol is available
+    dat_with_gs.loc[dat_with_gs['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs.index[dat_with_gs['Gene Symbol'].isnull()]
 
     dims = (0, 1)
 
@@ -184,6 +249,22 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
+    size_scaling = [
+        [0.1, 0.6],
+        [2., 10.]
+    ]
+    feature_text = dat_with_gs['Gene Symbol']
+    sample_text = dat.columns
+    p1 = generate_plotly_plot(
+        res,
+        filename="pca_biplot_dims_%d-%d" % dims,
+        feature_size_scaling=size_scaling,
+        feature_text=feature_text,
+        sample_text=sample_text,
+        sample_colours=sample_colours,
+        sample_markers=sample_markers,
+    )
+
     dims = (1, 2)
 
     fig, ax, res = plot_biplot(
@@ -206,6 +287,20 @@ if __name__ == "__main__":
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+
+    size_scaling = [
+        [0.1, 0.3],
+        [2., 10.]
+    ]
+    p2 = generate_plotly_plot(
+        res,
+        filename="pca_biplot_dims_%d-%d" % dims,
+        feature_size_scaling=size_scaling,
+        feature_text=feature_text,
+        sample_text=sample_text,
+        sample_colours=sample_colours,
+        sample_markers=sample_markers,
+    )
 
     dims = (2, 3)
 
@@ -230,6 +325,20 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
+    size_scaling = [
+        [0.1, 0.3],
+        [2., 10.]
+    ]
+    p3 = generate_plotly_plot(
+        res,
+        filename="pca_biplot_dims_%d-%d" % dims,
+        feature_size_scaling=size_scaling,
+        feature_text=feature_text,
+        sample_text=sample_text,
+        sample_colours=sample_colours,
+        sample_markers=sample_markers,
+    )
+
     # bar chart showing the explained variance
     fig = plt.figure(figsize=(5.6, 3.))
     ax = fig.add_subplot(111)
@@ -239,3 +348,5 @@ if __name__ == "__main__":
     ax.set_ylabel('% variance explained')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "explained_variance_bar_chart.png"), dpi=200)
+
+    ###### experimental: plotting with Plotly ######
