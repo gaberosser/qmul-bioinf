@@ -63,7 +63,7 @@ def add_custom_legend(
 
 
     # copy legend dict so we can modify in-place
-    legend_dict = copy.copy(legend_dict)
+    legend_dict = copy.deepcopy(legend_dict)
 
     # array keeps track of the legend entries (in order)
     for_legend = []

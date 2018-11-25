@@ -9,7 +9,7 @@ import os
 
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
-from plotting import common, pca, _plotly
+from plotting import common, pca, _plotly, scatter
 from utils import output
 import references
 
@@ -151,6 +151,8 @@ def plot_biplot(
         pp['marker'] = scatter_markers[t]
         legend_dict['Cell type'][t] = pp
 
+    res['legend_dict'] = legend_dict
+
     common.add_custom_legend(ax, legend_dict, loc_outside=True)
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
@@ -190,7 +192,6 @@ if __name__ == "__main__":
     obj = loader.load_by_patient(consts.PIDS, source='salmon')
     obj.filter_by_sample_name(consts.S1_RNASEQ_SAMPLES_GIC + consts.S1_RNASEQ_SAMPLES_INSC)
     obj.meta.insert(0, 'patient_id', obj.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
-
 
     cmap = common.get_best_cmap(len(consts.PIDS))
     scatter_colours = dict(zip(consts.PIDS, cmap))
@@ -349,4 +350,45 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "explained_variance_bar_chart.png"), dpi=200)
 
-    ###### experimental: plotting with Plotly ######
+    # test out a few distinguishing genes
+    goi = ['VGF', 'CDKN2A', 'STMN2', 'TMEFF2']
+    aa = dat_with_gs.loc[dat_with_gs['Gene Symbol'].isin(goi)].set_index('Gene Symbol')
+
+
+    def compare_two_gene_levels(
+        dat_two_cols,
+        meta,
+        legend_dict,
+        colour_map=scatter_colours,
+        marker_map=scatter_markers,
+    ):
+
+        ax = scatter.scatter_with_colour_and_markers(
+            dat_two_cols,
+            colour_subgroups=meta.patient_id,
+            colour_map=colour_map,
+            marker_subgroups=meta.type,
+            marker_map=marker_map
+        )
+        common.add_custom_legend(ax, legend_dict, loc_outside=True)
+        ax.set_xlabel('%s (logTPM)' % dat_two_cols.columns[0])
+        ax.set_ylabel('%s (logTPM)' % dat_two_cols.columns[1])
+        fig = ax.figure
+        fig.tight_layout()
+        fig.subplots_adjust(right=0.8)
+
+        return fig, ax
+
+    fig, ax = compare_two_gene_levels(
+        aa.transpose()[['VGF', 'CDKN2A']],
+        obj.meta,
+        res['legend_dict']
+    )
+    fig.savefig(os.path.join(outdir, "VGF_CDKN2A.png"), dpi=200)
+
+    fig, ax = compare_two_gene_levels(
+        aa.transpose()[['VGF', 'TMEFF2']],
+        obj.meta,
+        res['legend_dict']
+    )
+    fig.savefig(os.path.join(outdir, "VGF_TMEFF2.png"), dpi=200)
