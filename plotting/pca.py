@@ -462,5 +462,6 @@ def biplot(
         'explained_variance': explained_variance,
         'explained_variance_ratio': explained_variance_ratio,
         'sample_data': (sample_x, sample_y),
-        'feature_data': (feat_x, feat_y)
+        'feature_data': (feat_x, feat_y),
+        'components': plot_dims
     }

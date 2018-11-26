@@ -29,7 +29,7 @@ IPA_PATHWAY_DIR = os.path.join(
 )
 IPA_PATHWAY_FN = os.path.join(
     IPA_PATHWAY_DIR,
-    'full_de_ipa_results_significant.xlsx'
+    'ipa_results_significant.xlsx'
 )
 
 

@@ -67,7 +67,18 @@ def generate_plotly_plot(
         }
     )
 
-    layout = go.Layout(showlegend=False)
+    pcs = res['components']
+    ev_pct = res['explained_variance_ratio'] * 100.
+
+    layout = go.Layout(
+        showlegend=False,
+        hovermode='closest',
+        width=800,
+        height=600,
+        xaxis=go.layout.XAxis(title='PC %d (%.2f %%)' % (pcs[0] + 1, ev_pct[pcs[0]])),
+        yaxis=go.layout.YAxis(title='PC %d (%.2f %%)' % (pcs[1] + 1, ev_pct[pcs[1]])),
+        dragmode='pan'
+    )
     fig = go.Figure(data=[feat_trace, sample_trace], layout=layout)
     p = py.plot(fig, filename=filename, auto_open=auto_open)
 
