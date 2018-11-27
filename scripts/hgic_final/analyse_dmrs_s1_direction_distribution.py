@@ -498,6 +498,72 @@ def plot_panel_cpg_status(
     }
 
 
+def dual_kde_probe_beta(m_dat, cell_type, ax=None, cell_type_colours=None, **kwargs):
+    ix, ct = pd.Index(cell_type).factorize()
+    if len(ct) != 2:
+        raise ValueError("Expecting two cell types, found %d." % len(ct))
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    if cell_type_colours is None:
+        cell_type_colours = {
+            ct[0]: 'r',
+            ct[1]: 'b'
+        }
+
+    b_dat = dmr.beta_from_m(m_dat)
+
+    for i, c in enumerate(ct):
+        sns.kdeplot(
+            b_dat.loc[:, ix == i].mean(axis=1),
+            color=cell_type_colours[c],
+            ax=ax,
+            label=c,
+            **kwargs
+        )
+
+    ax.legend(frameon=True, framealpha=0.6, facecolor='w')
+    ax.set_xlabel(r'$\beta$ value')
+    ax.set_ylabel('Density')
+
+    return ax
+
+
+def quantify_dual_probe_beta_plot(m_dat, cell_type, ax=None, nbin=200, **kwargs):
+    ix, ct = pd.Index(cell_type).factorize()
+    if len(ct) != 2:
+        raise ValueError("Expecting two cell types, found %d." % len(ct))
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    b_dat = dmr.beta_from_m(m_dat)
+    b_dat = b_dat.groupby(by=cell_type, axis=1).mean()
+    b_diff = b_dat[ct[0]] - b_dat[ct[1]]
+
+    if 'linewidth' not in kwargs:
+        kwargs['linewidth'] = 1.
+    if 'edgecolor' not in kwargs:
+        kwargs['edgecolor'] = 'k'
+    kwargs['facecolor'] = 'none'
+
+    counts, bins, patches = ax.hist(b_diff, nbin, **kwargs)
+    for i in range(nbin):
+        if bins[i + 1] <= 0.:
+            patches[i].set_facecolor(consts.METHYLATION_DIRECTION_COLOURS['hypo'])
+        else:
+            patches[i].set_facecolor(consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+
+    ## TODO: add inset pie chart
+    return ax
+
+
+
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
@@ -509,6 +575,7 @@ if __name__ == "__main__":
     me_obj, anno = tsgd.load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
     me_data = me_obj.data
     me_meta = me_obj.meta
+    me_meta.insert(0, 'patient_id', me_meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results

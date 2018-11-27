@@ -19,6 +19,11 @@ SUBGROUP_SET_COLOURS = {
     'Specific': '#f4e842',
     }
 
+METHYLATION_DIRECTION_COLOURS = {
+    'hypo': '#89CD61',
+    'hyper': '#FF381F',
+}
+
 S1_RNASEQ_SAMPLES_GIC = [
     'GBM018_P12',
     'GBM018_P10',
