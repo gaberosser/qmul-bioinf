@@ -24,7 +24,8 @@ def load_ipa_signatures(fn):
     with open(fn, 'rb') as f:
         c = csv.reader(f)
         for row in c:
-            res[row[0]] = row[1:]
+            ix = row[0].decode('utf-8')
+            res[ix] = row[1:]
     return res
 
 
@@ -172,7 +173,7 @@ if __name__ == "__main__":
     ssgsea = pd.read_csv(ssgsea_norm_fn, skiprows=2, header=0, index_col=0, sep='\t').drop('Description', axis=1)
 
     # load true names for IPA pathways
-    ssgsea_pathway_names = pd.read_csv(ssgsea_pathways_fn, index_col=0, header=None).squeeze()
+    ssgsea_pathway_names = pd.read_csv(ssgsea_pathways_fn, index_col=0, header=None).squeeze().str.decode('utf-8')
     ssgsea.index = ssgsea_pathway_names.reindex(ssgsea.index.str.replace('_', ' '))
 
     # heatmap: proportions for each patient
@@ -267,11 +268,11 @@ if __name__ == "__main__":
         co_p,
         alpha=corr_alpha,
         hatch_df=hatch_df,
-        figsize=(9., 7.6)
+        figsize=(8., 9.)
     )
     plt.setp(plot_dict['main_ax'].yaxis.get_ticklabels(), fontsize=8)
     gs = plot_dict['gs']
-    gs.update(left=0.45, bottom=0.25, top=0.99, right=0.93, wspace=0.03)
+    gs.update(left=0.45, bottom=0.2, top=0.99, right=0.93, wspace=0.03)
     fig = plot_dict['fig']
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_ssgsea_%s_clustering.png" % corr_metric), dpi=200)
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_ssgsea_%s_clustering.tiff" % corr_metric), dpi=200)
