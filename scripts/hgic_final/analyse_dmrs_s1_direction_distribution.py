@@ -6,7 +6,8 @@ import multiprocessing as mp
 import os
 import numpy as np
 from scipy import stats
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, colors
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 
@@ -71,6 +72,7 @@ def count_dm_by_direction(dmr_res, pids=consts.PIDS):
 def direction_of_dm_bar_plot(
         dmr_res,
         pids=consts.PIDS,
+        stacked=True,
         as_pct=True,
         legend=True,
         legend_loc='outside',
@@ -92,10 +94,23 @@ def direction_of_dm_bar_plot(
 
     if as_pct:
         for_plot = for_plot.divide(for_plot.sum(), axis=1) * 100.
-    colours = pd.Series({'Hyper': '#FF381F', 'Hypo': '#89CD61'})
+    colours = pd.Series(
+        {
+            'Hyper': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+            'Hypo': consts.METHYLATION_DIRECTION_COLOURS['hypo']
+        }
+    )
 
     with sns.axes_style('whitegrid'):
-        fig, ax = bar.stacked_bar_chart(for_plot, colours=colours, width=0.8, legend=legend, **kwargs)
+        if stacked:
+            fig, ax = bar.stacked_bar_chart(for_plot, colours=colours, width=0.8, legend=legend, **kwargs)
+        else:
+            ax = for_plot.transpose().plot.bar(
+                color=[colours[t] for t in for_plot.index],
+                legend=legend,
+                **kwargs
+            )
+            fig = ax.figure
     if as_pct:
         ax.set_ylim([0, 100])
     ax.set_xlim(np.array([0, len(pids)]) - 0.5)
@@ -246,7 +261,6 @@ def dmr_to_dmp_specific(dmr_res, clusters, me_data):
     }
 
 
-
 def direction_kde(dat, xi=None, separated=True):
     """
     Generate a KDE of the supplied DMR direction data.
@@ -276,12 +290,16 @@ def direction_kde(dat, xi=None, separated=True):
 def dm_probe_direction_panel_plot(
         dmr_res,
         dmp_res,
+        me_data,
+        cell_type,
+        patient_id,
         pids=consts.PIDS,
+        stacked_bar=False
 ):
     colours = {
         'dmr': '#689bed',
-        'hypo': '#89CD61',
-        'hyper': '#FF381F',
+        'hypo': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+        'hyper': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
     }
 
     dmr_pct = {}
@@ -314,20 +332,48 @@ def dm_probe_direction_panel_plot(
         }
     probe_pct = pd.DataFrame(probe_pct)[pids]
 
-    gs = plt.GridSpec(nrows=4, ncols=len(pids), height_ratios=[1, 1, 2, 1])
+    gs = plt.GridSpec(
+        nrows=6,
+        ncols=len(pids),
+        # height_ratios=[1, 1, 1, 2, 1]
+    )
+
     fig = plt.figure(figsize=(10, 5))
     fig, ax = direction_of_dm_bar_plot(
         dmr_res,
         as_pct=False,
-        ax=fig.add_subplot(gs[2, :]),
-        legend=False
+        ax=fig.add_subplot(gs[4, :]),
+        legend=False,
+        stacked=stacked_bar
     )
     ax.set_ylabel("Number DMRs")
     ax.set_xticklabels([])
 
     for i, pid in enumerate(pids):
+        ax_diff_hist = fig.add_subplot(gs[0, i])
+        ax_diff_pie = fig.add_subplot(gs[1, i])
 
-        ax_kde = fig.add_subplot(gs[0, i])
+        this_dat = me_data.loc[:, patient_id == pid]
+        this_ct = cell_type.loc[this_dat.columns]
+
+        ## TODO: would a trace plot (or violin plot?!) be more useful here than the histogram??
+        ## See beta_difference_trace()
+
+        quantify_dual_probe_beta_plot(
+            this_dat,
+            this_ct,
+            hist_ax=ax_diff_hist,
+            pie_ax=ax_diff_pie,
+            edgecolor='none',
+            nbin=40
+        )
+        ax_diff_hist.set_xlim([-1, 1])
+        ax_diff_hist.xaxis.set_visible(False)
+        ax_diff_hist.yaxis.set_visible(False)
+
+        ax_diff_hist.set_title(pid)
+
+        ax_kde = fig.add_subplot(gs[2, i])
         sns.kdeplot(
             probe_values[pid],
             ax=ax_kde,
@@ -343,9 +389,8 @@ def dm_probe_direction_panel_plot(
             ax_kde.set_ylabel('Probe density')
         ax_kde.xaxis.set_visible(False)
         ax_kde.set_xlim([-8, 12])
-        ax_kde.set_title(pid)
 
-        ax_pie = fig.add_subplot(gs[1, i])
+        ax_pie = fig.add_subplot(gs[3, i])
         ax_pie.pie(
             probe_pct[pid].values,
             colors=[colours[t] for t in probe_pct.index],
@@ -355,7 +400,7 @@ def dm_probe_direction_panel_plot(
         )
         ax_pie.set_aspect('equal')
 
-        ax_pie_dmr = fig.add_subplot(gs[3, i])
+        ax_pie_dmr = fig.add_subplot(gs[5, i])
         ax_pie_dmr.pie(
             dmr_pct[pid].values,
             colors=[colours[t] for t in dmr_pct.index],
@@ -365,20 +410,14 @@ def dm_probe_direction_panel_plot(
         )
         ax_pie_dmr.set_aspect('equal')
 
-        # if i == 0:
-        #     ax_pie.set_ylabel('Probe direction')
-        #     ax_pie_dmr.set_ylabel('DMR direction')
-        #     ax_kde.set_ylabel('Probe density')
-
     fig.tight_layout()
     gs.update(wspace=0.02, hspace=0.05)
 
     return {
         'fig': fig,
         'gs': gs,
-        'ax_main': ax
+        'ax_main': ax,
     }
-
 
 def plot_panel_cpg_status(
         df,
@@ -498,69 +537,154 @@ def plot_panel_cpg_status(
     }
 
 
-def dual_kde_probe_beta(m_dat, cell_type, ax=None, cell_type_colours=None, **kwargs):
-    ix, ct = pd.Index(cell_type).factorize()
-    if len(ct) != 2:
-        raise ValueError("Expecting two cell types, found %d." % len(ct))
-
+def shaded_pie_chart_direction(
+    dat,
+    edges,
+    ax=None,
+    cmap_offset=0.2
+):
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111)
 
-    if cell_type_colours is None:
-        cell_type_colours = {
-            ct[0]: 'r',
-            ct[1]: 'b'
-        }
+    props = [(dat < 0).sum(), (dat > 0).sum()]
 
-    b_dat = dmr.beta_from_m(m_dat)
+    centres = edges[:-1] + 0.5 * (edges[1] - edges[0])
+    counts, bins= np.histogram(dat, edges)
 
-    for i, c in enumerate(ct):
-        sns.kdeplot(
-            b_dat.loc[:, ix == i].mean(axis=1),
-            color=cell_type_colours[c],
-            ax=ax,
-            label=c,
-            **kwargs
-        )
+    # inner pie: 2 categories
+    ax.pie(
+        props,
+        colors=[consts.METHYLATION_DIRECTION_COLOURS[t] for t in ['hypo', 'hyper']],
+        radius=.5,
+        wedgeprops={'edgecolor': 'k'},
+        startangle=90,
+    )
 
-    ax.legend(frameon=True, framealpha=0.6, facecolor='w')
-    ax.set_xlabel(r'$\beta$ value')
-    ax.set_ylabel('Density')
+    hypo_cmap = plt.get_cmap('Greens')
+    hyper_cmap = plt.get_cmap('Reds')
+
+    # only use a portion of the full cmap range, to avoid having entirely transparent (white) regions
+    grad_colours = [hypo_cmap(-x + cmap_offset) if x < 0 else hyper_cmap(x + cmap_offset) for x in centres]
+
+    ax.pie(
+        counts,
+        colors=grad_colours,
+        radius=1.,
+        wedgeprops={'edgecolor': 'none', 'width': 0.5},
+        startangle=90
+    )
+    circ = plt.Circle([0, 0], radius=1., edgecolor='k', linewidth=1., facecolor='none')
+    ax.add_patch(circ)
+
+    ax.set_aspect('equal')
 
     return ax
 
 
-def quantify_dual_probe_beta_plot(m_dat, cell_type, ax=None, nbin=200, **kwargs):
-    ix, ct = pd.Index(cell_type).factorize()
-    if len(ct) != 2:
-        raise ValueError("Expecting two cell types, found %d." % len(ct))
+def shaded_histogram_direction(dat, ax=None, nbin=100, **kwargs):
+    # define some defaults, which will be applied where they have not been otherwise specified
+    default_kwargs = {
+        'linewidth': 1.,
+        'edgecolor': 'k',
+        'normed': True,
+        'facecolor': 'none'
+    }
+
+    # shaded colours to indicate extent of beta difference
+    cmap_offset = 0.2
+    hypo_cmap = plt.get_cmap('Greens')
+    hyper_cmap = plt.get_cmap('Reds')
 
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111)
+
+    for k, v in default_kwargs.items():
+        if k not in kwargs:
+            kwargs[k] = v
+
+    edges = np.linspace(-1, 1, num=nbin + (1 - nbin % 2))  # need to ensure an EVEN number of edges (so zero is an edge)
+    centres = edges[:-1] + 0.5 * (edges[1] - edges[0])
+    counts, bins, patches = ax.hist(dat, edges, **kwargs)
+
+    for ptch, bd in zip(patches, centres):
+        if bd < 0:
+            ptch.set_facecolor(hypo_cmap(-bd + cmap_offset))
+        else:
+            ptch.set_facecolor(hyper_cmap(bd + cmap_offset))
+
+    return {
+        'ax': ax,
+        'edges': edges,
+        'centres': centres,
+        'counts': counts
+    }
+
+
+def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, nbin=100, **kwargs):
+    """
+
+    :param m_dat:
+    :param cell_type:
+    :param hist_ax:
+    :param pie_ax: Axes to use for the shaded pie chart. If not supplied, add an inset axis (oooooh!).
+    :param nbin:
+    :param kwargs:
+    :return:
+    """
+    ix, ct = pd.Index(cell_type).factorize()
+    if len(ct) != 2:
+        raise ValueError("Expecting two cell types, found %d." % len(ct))
 
     b_dat = dmr.beta_from_m(m_dat)
     b_dat = b_dat.groupby(by=cell_type, axis=1).mean()
     b_diff = b_dat[ct[0]] - b_dat[ct[1]]
 
-    if 'linewidth' not in kwargs:
-        kwargs['linewidth'] = 1.
-    if 'edgecolor' not in kwargs:
-        kwargs['edgecolor'] = 'k'
-    kwargs['facecolor'] = 'none'
+    res = shaded_histogram_direction(b_diff, ax=hist_ax, nbin=nbin, **kwargs)
+    hist_ax = res['ax']
+    edges = res['edges']
 
-    counts, bins, patches = ax.hist(b_diff, nbin, **kwargs)
-    for i in range(nbin):
-        if bins[i + 1] <= 0.:
-            patches[i].set_facecolor(consts.METHYLATION_DIRECTION_COLOURS['hypo'])
-        else:
-            patches[i].set_facecolor(consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+    # inset pie chart
+    if pie_ax is None:
+        pie_ax = inset_axes(hist_ax, width="50%", height="70%", loc=2)
 
-    ## TODO: add inset pie chart
+    shaded_pie_chart_direction(b_diff, edges, ax=pie_ax)
+
+    return hist_ax, pie_ax
+
+
+def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None):
+    ix, ct = pd.Index(cell_type).factorize()
+    if len(ct) != 2:
+        raise ValueError("Expecting two cell types, found %d." % len(ct))
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    edges = np.linspace(0, 1, nbin + 1)
+
+    b_dat = dmr.beta_from_m(m_dat)
+    b_dat = b_dat.groupby(by=cell_type, axis=1).mean()
+    b_diff = b_dat[ct[0]] - b_dat[ct[1]]
+    b_diff_abs = b_diff.abs()
+
+    residuals = []
+    for i in range(len(edges) - 1):
+        ix = (edges[i] <= b_diff_abs) & (b_diff_abs < edges[i + 1])
+        residuals.append(np.sign(b_diff[ix]).sum())
+
+    cs = [
+        consts.METHYLATION_DIRECTION_COLOURS['hyper'] if t > 0
+        else consts.METHYLATION_DIRECTION_COLOURS['hypo']
+        for t in residuals
+    ]
+
+    ax.scatter(edges[1:], residuals, color=cs, edgecolor='k', linewidth=1.)
+    ax.axhline(0, color='k', linestyle='--', linewidth=1.)
+
     return ax
-
-
 
 
 
@@ -568,6 +692,8 @@ if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
+    # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
+    write_bed_files = False
 
     outdir = output.unique_output_dir()
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
@@ -800,65 +926,65 @@ if __name__ == "__main__":
                 bg
             )
 
+    if write_bed_files:
+        # export the probe regions for each patient to a BED file for motif enrichment
+        # probes are CpG +/- 60 bp: https://support.illumina.com/content/dam/illumina-marketing/documents/products/technotes/technote_cpg_loci_identification.pdf
 
-    # export the probe regions for each patient to a BED file for motif enrichment
-    # probes are CpG +/- 60 bp: https://support.illumina.com/content/dam/illumina-marketing/documents/products/technotes/technote_cpg_loci_identification.pdf
-
-    island_status_map = {
-        'N_Shore': 'shore',
-        'S_Shore': 'shore',
-        'Island': 'island',
-        'N_Shelf': 'shelf',
-        'S_Shelf': 'shelf',
-        'open_sea': 'open_sea',
-    }
-    probe_half_len = 61
-
-    # 1) All probes
-    out_subdir = os.path.join(outdir, "bedfiles_all")
-    if not os.path.isdir(out_subdir):
-        os.makedirs(out_subdir)
-    for pid in pids:
-        this_mc = dmp_res_all[pid]
-        this_ps_dict = {
-            'all': this_mc.keys(),
-            'hypo': [k for k, v in this_mc.items() if v['median_change'] < 0],
-            'hyper': [k for k, v in this_mc.items() if v['median_change'] > 0],
+        island_status_map = {
+            'N_Shore': 'shore',
+            'S_Shore': 'shore',
+            'Island': 'island',
+            'N_Shelf': 'shelf',
+            'S_Shelf': 'shelf',
+            'open_sea': 'open_sea',
         }
-        for typ, ps in this_ps_dict.items():
-            bed_fn = os.path.join(out_subdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
-            bed_file_from_probes(anno, ps, bed_fn, probe_half_len=probe_half_len)
+        probe_half_len = 61
 
-            # repeat with even more granularity: include probe types
-            island_statuses = anno.loc[ps, 'Relation_to_UCSC_CpG_Island'].fillna('open_sea')
-            island_statuses = island_statuses.apply(island_status_map.get)
-            for cs in ['island', 'shore', 'shelf', 'open_sea']:
-                ps_subtype = island_statuses.index[island_statuses == cs]
-                bed_fn = os.path.join(out_subdir, "%s_%s_%s_oligo_mappings.bed" % (pid, typ, cs))
-                bed_file_from_probes(anno, ps, bed_fn)
+        # 1) All probes
+        out_subdir = os.path.join(outdir, "bedfiles_all")
+        if not os.path.isdir(out_subdir):
+            os.makedirs(out_subdir)
+        for pid in pids:
+            this_mc = dmp_res_all[pid]
+            this_ps_dict = {
+                'all': this_mc.keys(),
+                'hypo': [k for k, v in this_mc.items() if v['median_change'] < 0],
+                'hyper': [k for k, v in this_mc.items() if v['median_change'] > 0],
+            }
+            for typ, ps in this_ps_dict.items():
+                bed_fn = os.path.join(out_subdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
+                bed_file_from_probes(anno, ps, bed_fn, probe_half_len=probe_half_len)
 
-    # 2) Patient-specific probes
-    out_subdir = os.path.join(outdir, "bedfiles_patient_specific")
-    if not os.path.isdir(out_subdir):
-        os.makedirs(out_subdir)
-    for pid in pids:
-        this_mc = dmp_res_specific[pid]
-        this_ps_dict = {
-            'all': this_mc.keys(),
-            'hypo': [k for k, v in this_mc.items() if v['median_change'] < 0],
-            'hyper': [k for k, v in this_mc.items() if v['median_change'] > 0],
-        }
-        for typ, ps in this_ps_dict.items():
-            bed_fn = os.path.join(out_subdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
-            bed_file_from_probes(anno, ps, bed_fn, probe_half_len=probe_half_len)
+                # repeat with even more granularity: include probe types
+                island_statuses = anno.loc[ps, 'Relation_to_UCSC_CpG_Island'].fillna('open_sea')
+                island_statuses = island_statuses.apply(island_status_map.get)
+                for cs in ['island', 'shore', 'shelf', 'open_sea']:
+                    ps_subtype = island_statuses.index[island_statuses == cs]
+                    bed_fn = os.path.join(out_subdir, "%s_%s_%s_oligo_mappings.bed" % (pid, typ, cs))
+                    bed_file_from_probes(anno, ps, bed_fn)
 
-            # repeat with even more granularity: include probe types
-            island_statuses = anno.loc[ps, 'Relation_to_UCSC_CpG_Island'].fillna('open_sea')
-            island_statuses = island_statuses.apply(island_status_map.get)
-            for cs in ['island', 'shore', 'shelf', 'open_sea']:
-                ps_subtype = island_statuses.index[island_statuses == cs]
-                bed_fn = os.path.join(out_subdir, "%s_%s_%s_oligo_mappings.bed" % (pid, typ, cs))
-                bed_file_from_probes(anno, ps, bed_fn)
+        # 2) Patient-specific probes
+        out_subdir = os.path.join(outdir, "bedfiles_patient_specific")
+        if not os.path.isdir(out_subdir):
+            os.makedirs(out_subdir)
+        for pid in pids:
+            this_mc = dmp_res_specific[pid]
+            this_ps_dict = {
+                'all': this_mc.keys(),
+                'hypo': [k for k, v in this_mc.items() if v['median_change'] < 0],
+                'hyper': [k for k, v in this_mc.items() if v['median_change'] > 0],
+            }
+            for typ, ps in this_ps_dict.items():
+                bed_fn = os.path.join(out_subdir, "%s_%s_oligo_mappings.bed" % (pid, typ))
+                bed_file_from_probes(anno, ps, bed_fn, probe_half_len=probe_half_len)
+
+                # repeat with even more granularity: include probe types
+                island_statuses = anno.loc[ps, 'Relation_to_UCSC_CpG_Island'].fillna('open_sea')
+                island_statuses = island_statuses.apply(island_status_map.get)
+                for cs in ['island', 'shore', 'shelf', 'open_sea']:
+                    ps_subtype = island_statuses.index[island_statuses == cs]
+                    bed_fn = os.path.join(out_subdir, "%s_%s_%s_oligo_mappings.bed" % (pid, typ, cs))
+                    bed_file_from_probes(anno, ps, bed_fn)
 
     # repeat the whole thing with S2 data
     # we may only use the Gibco line here, to avoid issues associated with changing the array type / probe selection
