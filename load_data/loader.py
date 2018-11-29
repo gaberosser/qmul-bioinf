@@ -229,7 +229,8 @@ class DatasetLoader(object):
             raise ValueError("new_order must have the same entries as existing samples")
         self.meta = self.meta.loc[new_order]
         self.data = self.data.loc[:, new_order]
-        self.input_files = self.input_files.loc[new_order]
+        if isinstance(self.input_files, pd.DataFrame):
+            self.input_files = self.input_files.loc[new_order]
 
     def aggregate_by_pattern(self, search_patt, new_name, how='mean'):
         _aggregate_by_regex(self, search_patt, new_name, how=how)

@@ -356,9 +356,6 @@ def dm_probe_direction_panel_plot(
         this_dat = me_data.loc[:, patient_id == pid]
         this_ct = cell_type.loc[this_dat.columns]
 
-        ## TODO: would a trace plot (or violin plot?!) be more useful here than the histogram??
-        ## See beta_difference_trace()
-
         quantify_dual_probe_beta_plot(
             this_dat,
             this_ct,
@@ -367,7 +364,7 @@ def dm_probe_direction_panel_plot(
             edgecolor='none',
             nbin=40
         )
-        ax_diff_hist.set_xlim([-1, 1])
+        # ax_diff_hist.set_xlim([-1, 1])
         ax_diff_hist.xaxis.set_visible(False)
         ax_diff_hist.yaxis.set_visible(False)
 
@@ -418,6 +415,7 @@ def dm_probe_direction_panel_plot(
         'gs': gs,
         'ax_main': ax,
     }
+
 
 def plot_panel_cpg_status(
         df,
@@ -641,9 +639,13 @@ def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, n
     b_dat = b_dat.groupby(by=cell_type, axis=1).mean()
     b_diff = b_dat[ct[0]] - b_dat[ct[1]]
 
-    res = shaded_histogram_direction(b_diff, ax=hist_ax, nbin=nbin, **kwargs)
+    # res = shaded_histogram_direction(b_diff, ax=hist_ax, nbin=nbin, **kwargs)
+    res = beta_difference_trace(m_dat, cell_type, ax=hist_ax, nbin=nbin)
+
     hist_ax = res['ax']
-    edges = res['edges']
+
+    # need to ensure an EVEN number of edges (so zero is an edge)
+    edges = np.linspace(-1, 1, num=nbin + (1 - nbin % 2))
 
     # inset pie chart
     if pie_ax is None:
@@ -654,7 +656,7 @@ def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, n
     return hist_ax, pie_ax
 
 
-def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None):
+def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None, cmap_offset=0.2):
     ix, ct = pd.Index(cell_type).factorize()
     if len(ct) != 2:
         raise ValueError("Expecting two cell types, found %d." % len(ct))
@@ -664,6 +666,8 @@ def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None):
         ax = fig.add_subplot(111)
 
     edges = np.linspace(0, 1, nbin + 1)
+    de = edges[1] - edges[0]
+    centres = edges[:-1] + 0.5 * de
 
     b_dat = dmr.beta_from_m(m_dat)
     b_dat = b_dat.groupby(by=cell_type, axis=1).mean()
@@ -675,16 +679,27 @@ def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None):
         ix = (edges[i] <= b_diff_abs) & (b_diff_abs < edges[i + 1])
         residuals.append(np.sign(b_diff[ix]).sum())
 
+    cmap_offset = 0.2
+    hypo_cmap = plt.get_cmap('Greens')
+    hyper_cmap = plt.get_cmap('Reds')
+
     cs = [
-        consts.METHYLATION_DIRECTION_COLOURS['hyper'] if t > 0
-        else consts.METHYLATION_DIRECTION_COLOURS['hypo']
-        for t in residuals
+        hyper_cmap(ctr + cmap_offset) if t > 0 else hypo_cmap(ctr + cmap_offset)
+        # consts.METHYLATION_DIRECTION_COLOURS['hyper'] if t > 0
+        # else consts.METHYLATION_DIRECTION_COLOURS['hypo']
+        for t, ctr in zip(residuals, centres)
     ]
 
-    ax.scatter(edges[1:], residuals, color=cs, edgecolor='k', linewidth=1.)
+    # ax.scatter(edges[1:], residuals, color=cs, edgecolor='k', linewidth=1.)
+    ax.bar(edges[:-1], residuals, color=cs, width=de, align='edge')
     ax.axhline(0, color='k', linestyle='--', linewidth=1.)
+    ax.set_xlim([0, 1])
 
-    return ax
+    return {
+        'ax': ax,
+        'edges': edges,
+        'residuals': residuals
+    }
 
 
 
@@ -692,6 +707,8 @@ if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
+    dmr_params['n_jobs'] = mp.cpu_count()
+
     # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
     write_bed_files = False
 
@@ -760,6 +777,44 @@ if __name__ == "__main__":
     dmp_ids_specific = dd['dmp_ids']
     dmp_res_specific = dd['dmp_res']
 
+    # Example plots, useful for presentation slides
+    cell_type_colours = {
+        'GBM': 'r',
+        'iNSC': 'k'
+    }
+    pid = '031'
+    patient_id = me_meta.patient_id
+    cell_type = me_meta.type
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    b_dat = process.beta_from_m(me_data.loc[:, patient_id == pid])
+    ix, ct = cell_type.loc[b_dat.columns].factorize()
+    for ii, jj in enumerate(ix):
+        c = ct[jj]
+        col = b_dat.columns[ii]
+        sns.kdeplot(b_dat[col], color=cell_type_colours[c], ax=ax)
+    ax.set_xlabel(r'$\beta$')
+    ax.set_ylabel('Density')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "patient_%s_beta_kde.png" % pid), dpi=200)
+
+    b_diff = b_dat.groupby(me_meta.type, axis=1).mean()
+    b_diff = b_diff[ct[0]] - b_diff[ct[1]]
+    res = shaded_histogram_direction(b_diff)
+    ax = res['ax']
+    fig = ax.figure
+    ax.set_xlabel(r'$\Delta\beta$')
+    ax.set_ylabel('Frequency')
+    fig.tight_layout()
+
+    iax = inset_axes(ax, width="50%", height="70%", loc=2)
+
+    shaded_pie_chart_direction(b_diff, res['edges'], ax=iax)
+    fig.savefig(os.path.join(outdir, "patient_%s_delta_beta_quantification.png" % pid), dpi=200)
+
+
+
     # 1) direction of methylation change for all DMRs
     # a) clusters: absolute and relative values
     gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
@@ -804,7 +859,10 @@ if __name__ == "__main__":
     # c) probes with KDE and pie chart
     plot_dict = dm_probe_direction_panel_plot(
         dmr_res_all,
-        dmp_res_all
+        dmp_res_all,
+        me_data,
+        me_meta.type,
+        me_meta.patient_id
     )
 
     plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel.png"), dpi=200)
@@ -854,7 +912,10 @@ if __name__ == "__main__":
     # c) probes with KDE and pie chart
     plot_dict = dm_probe_direction_panel_plot(
         dmr_res_specific,
-        dmp_res_specific
+        dmp_res_specific,
+        me_data,
+        me_meta.type,
+        me_meta.patient_id
     )
 
     plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel.png"), dpi=200)
@@ -871,8 +932,8 @@ if __name__ == "__main__":
     )
     dist_as_pct = cpg_island_counts.divide(cpg_island_counts.sum(axis=1), axis=0) * 100.
     probe_values_all = dict([
-                                (pid, np.array([v['median_change'] for v in dmp_res_all[pid].values()])) for pid in pids
-                                ])
+        (pid, np.array([v['median_change'] for v in dmp_res_all[pid].values()])) for pid in pids
+    ])
 
     plot_dict = plot_panel_cpg_status(
         dist_as_pct,
@@ -896,8 +957,8 @@ if __name__ == "__main__":
 
     # 2) Patient-specific DMRs
     probe_values_specific = dict([
-                                     (pid, np.array([v['median_change'] for v in dmp_res_specific[pid].values()])) for pid in pids
-                                     ])
+        (pid, np.array([v['median_change'] for v in dmp_res_specific[pid].values()])) for pid in pids
+    ])
     cpg_island_counts = cpg_island_status(
         dmr_res_specific,
         anno,
@@ -1016,6 +1077,11 @@ if __name__ == "__main__":
         norm_method=norm_method_s2,
         patient_samples=consts.ALL_METHYL_SAMPLES  # any samples not found in patient data will be ignored (H9 NSC)
     )
+    me_obj_with_ref.meta.insert(
+        0,
+        'patient_id',
+        me_obj_with_ref.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>')
+    )
 
     # use a hash on the PIDs and parameters to ensure we're looking for the right results
     dmr_hash_dict = dict(dmr_params)
@@ -1075,14 +1141,20 @@ if __name__ == "__main__":
 
     plot_dict = dm_probe_direction_panel_plot(
         dmr_res_s2_syn,
-        dmp_res_s2_syn
+        dmp_res_s2_syn,
+        me_obj_with_ref.data,
+        me_obj_with_ref.meta.type,
+        me_obj_with_ref.meta.patient_id,
     )
     plot_dict['fig'].savefig(os.path.join(outdir, "s2_syngeneic_all_dmp_direction_panel.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "s2_syngeneic_all_dmp_direction_panel.tiff"), dpi=200)
 
     plot_dict = dm_probe_direction_panel_plot(
         dmr_res_s2_syn_specific,
-        dmp_res_s2_syn_specific
+        dmp_res_s2_syn_specific,
+        me_obj_with_ref.data,
+        me_obj_with_ref.meta.type,
+        me_obj_with_ref.meta.patient_id,
     )
 
     plot_dict['fig'].savefig(os.path.join(outdir, "s2_syngeneic_specific_dmp_direction_panel.png"), dpi=200)

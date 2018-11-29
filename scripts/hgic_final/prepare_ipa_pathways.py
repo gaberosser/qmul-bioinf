@@ -9,7 +9,7 @@ import os
 import pandas as pd
 from utils import output
 import references
-import csv
+import unicodecsv as csv
 from settings import HGIC_LOCAL_DIR
 
 
@@ -32,17 +32,24 @@ def smart_title(s):
 if __name__ == '__main__':
     outdir = output.unique_output_dir()
     indir = os.path.join(HGIC_LOCAL_DIR, 'current/input_data/ipa_pathways/exported')
-    flist = os.listdir(indir)
+    path_fn = os.path.join(indir, 'ipa_pathway_numbering.xlsx')
 
-    processed = {}
+    output_gene_symbols = {}
+    output_ens_id = {}
 
-    for fn in flist:
-        name = fn.replace('.txt', '')
-        name = TO_RENAME.get(name, smart_title(name.replace('_', ' ')))
-        ff = os.path.join(indir, fn)
-        this = pd.read_csv(ff, sep='\t', skiprows=1, header=0, index_col=0, usecols=range(9))
+    pathways = pd.read_excel(path_fn, index_col=0, header=0)
+    for path_id, row in pathways.iterrows():
+        # get the export txt filename
+        ff = os.path.join(indir, row.filename)
+        this = pd.read_csv(ff, sep='\t', skiprows=1, header=0, index_col=None, usecols=range(9))
 
-        lookup = this['Entrez Gene ID for Human'].dropna()
+        # filter out non-genes
+        this = this.loc[~this['Entrez Gene ID for Human'].isnull()]
+
+        # The exports contain symbols and Entrez IDs
+
+        # Entrez -> Ensembl
+        lookup = this['Entrez Gene ID for Human']
         if lookup.dtype != 'float':
             # this occurs when multiple Entrez IDs are given in one
             the_lookup = []
@@ -52,13 +59,32 @@ if __name__ == '__main__':
         else:
             lookup = lookup.tolist()
 
-
         ens = references.entrez_to_ensembl(lookup)
+        output_ens_id[row['name']] = [path_id] + ens.dropna().values.tolist()
 
-        processed[name] = ens.dropna().values
+        # Entrez -> gene symbol
+        gs = references.entrez_to_gene_symbol(lookup)
+        output_gene_symbols[row['name']] = [path_id] + gs.dropna().values.tolist()
 
-    fout = os.path.join(outdir, 'ipa_exported_pathways.csv')
+    # output to (UTF-8 encoded) CSV files
+
+    fout = os.path.join(outdir, 'ipa_exported_pathways_symbols.csv')
     with open(fout, 'wb') as f:
-        c = csv.writer(f, lineterminator='\n')
-        for k, v in processed.items():
-            c.writerow([k] + v.tolist())
+        c = csv.writer(f, lineterminator='\n', encoding='utf-8')
+        for k, v in output_gene_symbols.items():
+            c.writerow([k] + v)
+
+    fout = os.path.join(outdir, 'ipa_exported_pathways_ensembl_ids.csv')
+    with open(fout, 'wb') as f:
+        c = csv.writer(f, lineterminator='\n', encoding='utf-8')
+        for k, v in output_ens_id.items():
+            c.writerow([k] + v)
+
+    # output to .rds file for import into R
+    # this is for sharing with Erik Sulman's team
+    from rpy2 import robjects
+    to_r = [
+        (v[0], robjects.StrVector(v[1:])) for v in output_gene_symbols.values()
+    ]
+    r_list = robjects.ListVector(to_r)
+    robjects.r("saveRDS")(r_list, os.path.join(outdir, "signatures_for_ssgsea.rds"))
