@@ -294,7 +294,8 @@ def dm_probe_direction_panel_plot(
         cell_type,
         patient_id,
         pids=consts.PIDS,
-        stacked_bar=False
+        stacked_bar=False,
+        log_residual=True
 ):
     colours = {
         'dmr': '#689bed',
@@ -362,7 +363,8 @@ def dm_probe_direction_panel_plot(
             hist_ax=ax_diff_hist,
             pie_ax=ax_diff_pie,
             edgecolor='none',
-            nbin=40
+            nbin=40,
+            log_scale=log_residual
         )
         # ax_diff_hist.set_xlim([-1, 1])
         ax_diff_hist.xaxis.set_visible(False)
@@ -620,7 +622,7 @@ def shaded_histogram_direction(dat, ax=None, nbin=100, **kwargs):
     }
 
 
-def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, nbin=100, **kwargs):
+def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, nbin=100, log_scale=False, **kwargs):
     """
 
     :param m_dat:
@@ -640,7 +642,7 @@ def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, n
     b_diff = b_dat[ct[0]] - b_dat[ct[1]]
 
     # res = shaded_histogram_direction(b_diff, ax=hist_ax, nbin=nbin, **kwargs)
-    res = beta_difference_trace(m_dat, cell_type, ax=hist_ax, nbin=nbin)
+    res = beta_difference_trace(m_dat, cell_type, ax=hist_ax, nbin=nbin, log_scale=log_scale)
 
     hist_ax = res['ax']
 
@@ -656,7 +658,14 @@ def quantify_dual_probe_beta_plot(m_dat, cell_type, hist_ax=None, pie_ax=None, n
     return hist_ax, pie_ax
 
 
-def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None, cmap_offset=0.2):
+def beta_difference_trace(
+    m_dat,
+    cell_type,
+    nbin=50,
+    ax=None,
+    cmap_offset=0.2,
+    log_scale=False
+):
     ix, ct = pd.Index(cell_type).factorize()
     if len(ct) != 2:
         raise ValueError("Expecting two cell types, found %d." % len(ct))
@@ -679,7 +688,6 @@ def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None, cmap_offset=0.2):
         ix = (edges[i] <= b_diff_abs) & (b_diff_abs < edges[i + 1])
         residuals.append(np.sign(b_diff[ix]).sum())
 
-    cmap_offset = 0.2
     hypo_cmap = plt.get_cmap('Greens')
     hyper_cmap = plt.get_cmap('Reds')
 
@@ -690,8 +698,22 @@ def beta_difference_trace(m_dat, cell_type, nbin=50, ax=None, cmap_offset=0.2):
         for t, ctr in zip(residuals, centres)
     ]
 
-    # ax.scatter(edges[1:], residuals, color=cs, edgecolor='k', linewidth=1.)
-    ax.bar(edges[:-1], residuals, color=cs, width=de, align='edge')
+    if log_scale:
+        # split into positive and negative components
+        residuals = np.array(residuals)
+
+        pos_res = np.log10(residuals[residuals > 0])
+        pos_c = np.array(cs)[residuals > 0]
+        pos_e = edges[:-1][residuals > 0]
+
+        neg_res = -np.log10(-residuals[residuals < 0])
+        neg_c = np.array(cs)[residuals < 0]
+        neg_e = edges[:-1][residuals < 0]
+
+        ax.bar(pos_e, pos_res, color=pos_c, width=de, align='edge')
+        ax.bar(neg_e, neg_res, color=neg_c, width=de, align='edge')
+    else:
+        ax.bar(edges[:-1], residuals, color=cs, width=de, align='edge')
     ax.axhline(0, color='k', linestyle='--', linewidth=1.)
     ax.set_xlim([0, 1])
 
@@ -782,7 +804,7 @@ if __name__ == "__main__":
         'GBM': 'r',
         'iNSC': 'k'
     }
-    pid = '031'
+    pid = '018'
     patient_id = me_meta.patient_id
     cell_type = me_meta.type
 
@@ -812,6 +834,29 @@ if __name__ == "__main__":
 
     shaded_pie_chart_direction(b_diff, res['edges'], ax=iax)
     fig.savefig(os.path.join(outdir, "patient_%s_delta_beta_quantification.png" % pid), dpi=200)
+
+    res = beta_difference_trace(
+        me_data.loc[:, patient_id == pid],
+        cell_type.loc[patient_id == pid],
+        log_scale=False
+    )
+    ax = res['ax']
+    ax.set_ylabel(r'Residual $\Delta\beta$')
+    fig = ax.figure
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "patient_%s_residual_delta_beta_quantification.png" % pid), dpi=200)
+
+    res = beta_difference_trace(
+        me_data.loc[:, patient_id == pid],
+        cell_type.loc[patient_id == pid],
+        log_scale=True
+    )
+    ax = res['ax']
+    ax.set_ylabel(r'$\log_{10}$ residual $\Delta\beta$')
+    ax.set_yticks([])
+    fig = ax.figure
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "patient_%s_log10_residual_delta_beta_quantification.png" % pid), dpi=200)
 
 
 
@@ -862,7 +907,8 @@ if __name__ == "__main__":
         dmp_res_all,
         me_data,
         me_meta.type,
-        me_meta.patient_id
+        me_meta.patient_id,
+        log_residual=True
     )
 
     plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel.png"), dpi=200)
