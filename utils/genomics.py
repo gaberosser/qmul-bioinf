@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import os
 import warnings
 import glob
@@ -8,6 +9,7 @@ import gzip
 import csv
 import random
 import subprocess
+import re
 from settings import LOCAL_DATA_DIR
 
 
@@ -279,23 +281,52 @@ def estimate_number_of_bam_reads(fn, bytes=10000000):
 
 
 def write_bed_file(region_data, fn):
-        """
-        :param region_data: Dict with values defining regions as an iterable of (chrom., start coord, end coord, strand)
-        Keys are the unique names for each region
-        :param fn: Filename to write BED file to
-        """
-        with open(fn, 'wb') as f:
-            c = csv.writer(f, delimiter='\t')
-            for name, row in region_data.items():
-                if not isinstance(name, str):
-                    name = ';'.join(name)
-                c.writerow(
-                    [
-                        row[0],
-                        row[1],
-                        row[2],
-                        name,
-                        '.',  # empty score field
-                        row[3]
-                    ]
-                )
+    """
+    :param region_data: Dict with values defining regions as an iterable of (chrom., start coord, end coord, strand)
+    Keys are the unique names for each region
+    :param fn: Filename to write BED file to
+    """
+    with open(fn, 'wb') as f:
+        c = csv.writer(f, delimiter='\t')
+        for name, row in region_data.items():
+            if not isinstance(name, str):
+                name = ';'.join(name)
+            c.writerow(
+                [
+                    row[0],
+                    row[1],
+                    row[2],
+                    name,
+                    '.',  # empty score field
+                    row[3]
+                ]
+            )
+
+
+def cg_content_windowed(fa_file, motif='CG', window_size=20000):
+    """
+    Summarise the CpG (or some other motif) content in the supplied fasta sequence
+    :param fa_file:
+    :param motif: This is used to search for the motif. Can contain regex characters. NB case sensitive!
+    :param window_size: The window used to summarise
+    :return: Dictionary, keyed by feature ID (e.g. chromosome). Values are pd.Series, index is start coord, value is
+    CpG count.
+    """
+    from Bio import SeqIO
+    res = {}
+    feat_lens = {}
+
+    with open(fa_file, 'rb') as f:
+        fa_reader = SeqIO.parse(f, 'fasta')
+        for feat in fa_reader:
+            the_id = feat.id
+            the_seq = str(feat.seq)
+            it = re.finditer(motif, the_seq)
+            start_coords = np.array([t.start() for t in it])
+            edges = range(1, len(the_seq) + 1, window_size)
+            if edges[-1] != len(the_seq):
+                edges.append(len(the_seq))
+            counts, _ = np.histogram(start_coords, edges)
+            res[the_id] = pd.Series(counts, index=edges[:-1])
+            feat_lens[the_id] = len(the_seq)
+    return res, feat_lens

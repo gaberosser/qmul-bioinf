@@ -295,7 +295,8 @@ def dm_probe_direction_panel_plot(
         patient_id,
         pids=consts.PIDS,
         stacked_bar=False,
-        log_residual=True
+        log_residual=True,
+        ref_name=None
 ):
     colours = {
         'dmr': '#689bed',
@@ -354,7 +355,10 @@ def dm_probe_direction_panel_plot(
         ax_diff_hist = fig.add_subplot(gs[0, i])
         ax_diff_pie = fig.add_subplot(gs[1, i])
 
-        this_dat = me_data.loc[:, patient_id == pid]
+        if ref_name is None:
+            this_dat = me_data.loc[:, patient_id == pid]
+        else:
+            this_dat = me_data.loc[:, (patient_id == pid) | (me_data.columns.str.contains(ref_name))]
         this_ct = cell_type.loc[this_dat.columns]
 
         quantify_dual_probe_beta_plot(
@@ -967,6 +971,10 @@ if __name__ == "__main__":
     plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel.tiff"), dpi=200)
 
+    # investigate (genomic) distribution of DMRs
+    # 1) All DMRs
+
+
     # plot showing differing CpG distributions
     # 1) All DMRs
 
@@ -1214,7 +1222,6 @@ if __name__ == "__main__":
         for pid in pids:
             dmr_res_s2_ref[r][pid] = dmr_res_s2[pid][r].results_significant
 
-    for r in external_refs_dm_labels:
         this_dmr_res = dmr_res_s2_ref[r]
         dd = dmr_to_dmp(
             this_dmr_res,
@@ -1241,16 +1248,29 @@ if __name__ == "__main__":
         )
         this_dmp_res_specific = dd['dmp_res']
 
+        # remove iNSC samples before plotting panel
+        me_dat_for_plot = me_obj_with_ref.data.loc[:,
+            (me_obj_with_ref.meta.type == 'GBM') | me_obj_with_ref.data.columns.str.contains(r)
+        ]
+        me_meta_for_plot = me_obj_with_ref.meta.loc[me_dat_for_plot.columns]
+
         plot_dict = dm_probe_direction_panel_plot(
             this_dmr_res,
-            this_dmp_res
+            this_dmp_res,
+            me_dat_for_plot,
+            me_meta_for_plot.type,
+            me_meta_for_plot.patient_id,
+            ref_name=r
         )
         plot_dict['fig'].savefig(os.path.join(outdir, "s2_%s_all_dmp_direction_panel.png" % r), dpi=200)
         plot_dict['fig'].savefig(os.path.join(outdir, "s2_%s_all_dmp_direction_panel.tiff" % r), dpi=200)
 
         plot_dict = dm_probe_direction_panel_plot(
             this_dmr_res_specific,
-            this_dmp_res_specific
+            this_dmp_res_specific,
+            me_obj_with_ref.data,
+            me_obj_with_ref.meta.type,
+            me_obj_with_ref.meta.patient_id,
         )
         plot_dict['fig'].savefig(os.path.join(outdir, "s2_%s_specific_dmp_direction_panel.png" % r), dpi=200)
         plot_dict['fig'].savefig(os.path.join(outdir, "s2_%s_specific_dmp_direction_panel.tiff" % r), dpi=200)
