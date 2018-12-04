@@ -303,7 +303,7 @@ def write_bed_file(region_data, fn):
             )
 
 
-def cg_content_windowed(fa_file, motif='CG', window_size=20000):
+def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
     """
     Summarise the CpG (or some other motif) content in the supplied fasta sequence
     :param fa_file:
@@ -320,6 +320,8 @@ def cg_content_windowed(fa_file, motif='CG', window_size=20000):
         fa_reader = SeqIO.parse(f, 'fasta')
         for feat in fa_reader:
             the_id = feat.id
+            if features is not None and the_id not in features:
+                continue
             the_seq = str(feat.seq)
             it = re.finditer(motif, the_seq)
             start_coords = np.array([t.start() for t in it])
