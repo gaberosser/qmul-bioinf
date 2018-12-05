@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
+from adjustText import adjust_text
 import pandas as pd
 import itertools
 import collections
@@ -95,12 +96,13 @@ def plot_biplot(
         **kwargs
 ):
     """
-
     :param dat:
     :param meta: pd.DataFrame, must have columns entitled `type` and `patient_id`
     :param dims:
     :param scatter_colours:
     :param scatter_markers:
+    :param annotate_features_radius: If supplied, this is the biplot radius outside of which we annotate genes (by
+    symbol).
     :param **kwargs: Passed to pca.biplot()
     :return:
     """
@@ -168,6 +170,12 @@ def plot_biplot(
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
 
+    arrowprops = {
+        'color': 'black',
+        'linewidth': 1.,
+        'arrowstyle': '-',
+    }
+
     if annotate_features_radius is not None:
         # annotate most influential genes
         selected = pca.highlight_biplot_features(feat_x, feat_y, annotate_features_radius, ax)
@@ -175,9 +183,18 @@ def plot_biplot(
         symbols_selected = references.ensembl_to_gene_symbol(genes_selected)
 
         # add gene symbol annotations
+        text_handles = []
         for ix, gs in zip(np.where(selected)[0], symbols_selected):
             if not pd.isnull(gs):
-                ax.text(feat_x[ix], feat_y[ix], gs)
+                text_handles.append(ax.text(feat_x[ix], feat_y[ix], gs))
+        # rearrange them to avoid overlaps
+        adjust_text(
+            text_handles,
+            arrowprops=arrowprops,
+            text_from_points=False,
+            draggable=False,
+            ax=ax
+        )
 
     return fig, ax, res
 
@@ -196,6 +213,7 @@ if __name__ == "__main__":
     https://stackoverflow.com/questions/39216897/plot-pca-loadings-and-loading-in-biplot-in-sklearn-like-rs-autoplot
     """
     outdir = output.unique_output_dir()
+    publish_plotly = False
 
     eps = 1.  # offset applied during log transform
 
@@ -261,21 +279,22 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
-    size_scaling = [
-        [0.1, 0.6],
-        [2., 10.]
-    ]
-    feature_text = dat_with_gs['Gene Symbol']
-    sample_text = dat.columns
-    p1 = generate_plotly_plot(
-        res,
-        filename="pca_biplot_dims_%d-%d" % dims,
-        feature_size_scaling=size_scaling,
-        feature_text=feature_text,
-        sample_text=sample_text,
-        sample_colours=sample_colours,
-        sample_markers=sample_markers,
-    )
+    if publish_plotly:
+        size_scaling = [
+            [0.1, 0.6],
+            [2., 10.]
+        ]
+        feature_text = dat_with_gs['Gene Symbol']
+        sample_text = dat.columns
+        p1 = generate_plotly_plot(
+            res,
+            filename="pca_biplot_dims_%d-%d" % dims,
+            feature_size_scaling=size_scaling,
+            feature_text=feature_text,
+            sample_text=sample_text,
+            sample_colours=sample_colours,
+            sample_markers=sample_markers,
+        )
 
     dims = (1, 2)
 
@@ -300,19 +319,20 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
-    size_scaling = [
-        [0.1, 0.3],
-        [2., 10.]
-    ]
-    p2 = generate_plotly_plot(
-        res,
-        filename="pca_biplot_dims_%d-%d" % dims,
-        feature_size_scaling=size_scaling,
-        feature_text=feature_text,
-        sample_text=sample_text,
-        sample_colours=sample_colours,
-        sample_markers=sample_markers,
-    )
+    if publish_plotly:
+        size_scaling = [
+            [0.1, 0.3],
+            [2., 10.]
+        ]
+        p2 = generate_plotly_plot(
+            res,
+            filename="pca_biplot_dims_%d-%d" % dims,
+            feature_size_scaling=size_scaling,
+            feature_text=feature_text,
+            sample_text=sample_text,
+            sample_colours=sample_colours,
+            sample_markers=sample_markers,
+        )
 
     dims = (2, 3)
 
@@ -337,19 +357,20 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
-    size_scaling = [
-        [0.1, 0.3],
-        [2., 10.]
-    ]
-    p3 = generate_plotly_plot(
-        res,
-        filename="pca_biplot_dims_%d-%d" % dims,
-        feature_size_scaling=size_scaling,
-        feature_text=feature_text,
-        sample_text=sample_text,
-        sample_colours=sample_colours,
-        sample_markers=sample_markers,
-    )
+    if publish_plotly:
+        size_scaling = [
+            [0.1, 0.3],
+            [2., 10.]
+        ]
+        p3 = generate_plotly_plot(
+            res,
+            filename="pca_biplot_dims_%d-%d" % dims,
+            feature_size_scaling=size_scaling,
+            feature_text=feature_text,
+            sample_text=sample_text,
+            sample_colours=sample_colours,
+            sample_markers=sample_markers,
+        )
 
     # bar chart showing the explained variance
     fig = plt.figure(figsize=(5.6, 3.))
@@ -403,3 +424,16 @@ if __name__ == "__main__":
         res['legend_dict']
     )
     fig.savefig(os.path.join(outdir, "VGF_TMEFF2.png"), dpi=200)
+
+
+
+    # TODO
+#     tt = ax.text(
+#         for_scatter[0].loc[e],
+#         for_scatter[1].loc[e],
+#         txt,
+#         color=c,
+#         weight=weight
+#     )
+#     texts.append(tt)
+# adjust_text(texts, arrowprops=dict(arrowstyle='->', color='black'), ax=ax)
