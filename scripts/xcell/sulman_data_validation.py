@@ -95,18 +95,23 @@ if __name__ == "__main__":
 
     # filter based on this
     keep_ix = detected.sum(axis=1) >= min_n_samples
-    logger.info(
-        "The following %d cell types do not meet the requirement for detection in %d or more samples: \n%s",
-        (~keep_ix).sum(),
-        min_n_samples,
-        ', '.join(keep_ix.index[keep_ix])
-    )
+    if not keep_ix.all():
+        logger.info(
+            "The following %d cell types do not meet the requirement for detection in %d or more samples: \n%s",
+            (~keep_ix).sum(),
+            min_n_samples,
+            ', '.join(keep_ix.index[~keep_ix])
+        )
 
-    xcell_prop = xcell_prop.loc[keep_ix]
-    xcell_pval = xcell_pval.loc[keep_ix]
-    detected = detected.loc[keep_ix]
+        xcell_prop = xcell_prop.loc[keep_ix]
+        xcell_pval = xcell_pval.loc[keep_ix]
+        detected = detected.loc[keep_ix]
 
-    logger.info("%d cell types remain." % keep_ix.sum())
+        logger.info(
+            "%d cell types remain: %s.",
+            keep_ix.sum(),
+            ', '.join(keep_ix.index[keep_ix])
+        )
 
     fig = plt.figure(figsize=(6, 9))
     ax = fig.add_subplot(111)
