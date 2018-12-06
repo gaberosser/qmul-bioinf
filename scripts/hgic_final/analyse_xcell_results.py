@@ -16,7 +16,7 @@ from utils import output
 from scipy import stats
 from scipy.cluster import hierarchy as hc
 import numpy as np
-from utils import setops
+from utils import setops, excel
 import consts
 from stats import nht
 import multiprocessing as mp
@@ -540,6 +540,11 @@ if __name__ == '__main__':
     co = co.iloc[col_ix, row_ix]
     co_p = co_p.iloc[col_ix, row_ix]
 
+    excel.pandas_to_excel(
+        {corr_metric: co, 'pval': co_p},
+        os.path.join(outdir, "correlation_%s_syngeneic.xlsx" % corr_metric)
+    )
+
     # quantify the number of patients involved in each of the pathways for follow up
     follow_up_pathways = quantify_follow_up_pathways(
         ipa_res,
@@ -663,6 +668,11 @@ if __name__ == '__main__':
     # reorder the data based on the clustering
     co = co.iloc[col_ix, row_ix]
     co_p = co_p.iloc[col_ix, row_ix]
+
+    excel.pandas_to_excel(
+        {corr_metric: co, 'pval': co_p},
+        os.path.join(outdir, "correlation_%s_reference.xlsx" % corr_metric)
+    )
 
     follow_up_pathways = quantify_follow_up_pathways(
         ipa_res,
