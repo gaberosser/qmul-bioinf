@@ -17,6 +17,10 @@ logger = log.get_console_logger()
 
 
 XCELL_SIGNATURE_FN = os.path.join(GIT_LFS_DATA_DIR, 'xcell', 'ESM3_signatures.xlsx')
+SYN_INDIR = os.path.join(
+    HGIC_LOCAL_DIR,
+    'current/core_pipeline/rnaseq/merged_s1_s2/ipa/xcell'
+)
 
 
 def load_ipa_signatures(fn):
@@ -76,6 +80,7 @@ if __name__ == "__main__":
         HGIC_LOCAL_DIR,
         'current/input_data/verhaak_sulman/ssgsea/ipa_pathway_numbering.csv'
     )
+    syngeneic_correlation_fn = os.path.join(SYN_INDIR, 'correlation_%s_syngeneic.xlsx' % corr_metric)
 
     outdir = output.unique_output_dir()
 
@@ -207,13 +212,18 @@ if __name__ == "__main__":
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.pdf"), dpi=200)
 
     # load IPA signatures
-    ipa_sign_fn = os.path.join(HGIC_LOCAL_DIR, 'current', 'input_data', 'ipa_pathways', 'ipa_exported_pathways.csv')
-    ipa_signatures = load_ipa_signatures(ipa_sign_fn)
+    ipa_sign_fn = os.path.join(HGIC_LOCAL_DIR, 'current', 'input_data', 'ipa_pathways', 'ipa_exported_pathways_symbols.csv')
+    ipa_signatures_symb = load_ipa_signatures(ipa_sign_fn)
 
     # carry out correlation analysis
     # reduce ssGSEA results down to GIC only, then match column names (even though this means they're labelled as bulk)
     ssgsea_matched = ssgsea.drop(xcell_prop.columns, axis=1)
     ssgsea_matched.columns = ssgsea_matched.columns.str.replace('PC', 'TU')
+
+    # reduce ssGSEA results to include only pathways identified in the syngeneic comparisons
+    # load syngeneic IPA results
+    res_syn = pd.read_excel(syngeneic_correlation_fn, sheet_name=None)
+    ssgsea_matched = ssgsea_matched.reindex(res_syn[corr_metric].columns).dropna()
 
     co, co_p = analyse_xcell_results.pathway_cell_type_composition_correlation_analysis(
         ssgsea_matched,
@@ -225,32 +235,21 @@ if __name__ == "__main__":
 
     # precursor: check for cases where there is a substantial overlap in genes in pathways and cell type signatures
     # load xCell signatures
-    ## FIXME: this only works for the pathways we have exported (20) -> skip for now
 
-    pct_shared_aggr = None
-    if False:
-        xcell_s = pd.read_excel(XCELL_SIGNATURE_FN, header=0, index_row=0)
-        xcell_signatures = {}
-        for i, row in xcell_s.iterrows():
-            xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
+    xcell_s = pd.read_excel(XCELL_SIGNATURE_FN, header=0, index_row=0)
+    xcell_signatures = {}
+    for i, row in xcell_s.iterrows():
+        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
 
-        # convert IPA pathway Ensembl IDs to symbols for compatibility
-        ipa_signatures_symb = {}
-        for k, v in ipa_signatures.items():
-            ipa_signatures_symb[k] = references.ensembl_to_gene_symbol(v).dropna()
+    # compute overlap between cell type signatures and IPA signatures
+    pct_shared = analyse_xcell_results.compute_cell_type_pathway_overlap(
+        ipa_signatures_symb,
+        xcell_signatures,
+    )
 
-        # compute overlap between cell type signatures and IPA signatures
-        pct_shared = analyse_xcell_results.compute_cell_type_pathway_overlap(
-            ipa_signatures_symb,
-            xcell_signatures,
-        )
-
-        # aggregate taking max over pathways
-        cc = pct_shared.columns.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>')
-        pct_shared_aggr = pct_shared.groupby(cc, axis=1).max()
-
-        # set of pathways with any significance
-        logger.info("%d pathways enriched in at least one patient and retained after correlation analysis" % co.shape[1])
+    # aggregate taking max over pathways
+    cc = pct_shared.columns.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>')
+    pct_shared_aggr = pct_shared.groupby(cc, axis=1).max()
 
     # run clustering to order the rows/cols nicely
     rl = hc.linkage(co.fillna(0.).transpose(), method='average', metric='euclidean')
@@ -273,11 +272,11 @@ if __name__ == "__main__":
         co_p,
         alpha=corr_alpha,
         hatch_df=hatch_df,
-        figsize=(8., 9.)
+        figsize=(8., 11.)
     )
     plt.setp(plot_dict['main_ax'].yaxis.get_ticklabels(), fontsize=8)
     gs = plot_dict['gs']
-    gs.update(left=0.45, bottom=0.2, top=0.99, right=0.93, wspace=0.03)
+    gs.update(left=0.45, bottom=0.17, top=0.99, right=0.93, wspace=0.03)
     fig = plot_dict['fig']
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_ssgsea_%s_clustering.png" % corr_metric), dpi=200)
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_ssgsea_%s_clustering.tiff" % corr_metric), dpi=200)
