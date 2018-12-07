@@ -88,3 +88,11 @@ if __name__ == '__main__':
     ]
     r_list = robjects.ListVector(to_r)
     robjects.r("saveRDS")(r_list, os.path.join(outdir, "signatures_for_ssgsea.rds"))
+
+    # similar but maintain Ensembl IDS
+    # this is for a similar comparison with our own data
+    to_r = [
+        (v[0], robjects.StrVector(v[1:])) for v in output_ens_id.values()
+        ]
+    r_list = robjects.ListVector(to_r)
+    robjects.r("saveRDS")(r_list, os.path.join(outdir, "signatures_for_ssgsea_ensembl.rds"))
