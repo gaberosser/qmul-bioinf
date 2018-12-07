@@ -274,32 +274,29 @@ if __name__ == "__main__":
 
     # precursor: check for cases where there is a substantial overlap in genes in pathways and cell type signatures
     # load xCell signatures
-    ## FIXME: this only works for the pathways we have exported (20) -> skip for now
 
-    pct_shared_aggr = None
-    if False:
-        xcell_s = pd.read_excel(XCELL_SIGNATURE_FN, header=0, index_row=0)
-        xcell_signatures = {}
-        for i, row in xcell_s.iterrows():
-            xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
+    xcell_s = pd.read_excel(XCELL_SIGNATURE_FN, header=0, index_row=0)
+    xcell_signatures = {}
+    for i, row in xcell_s.iterrows():
+        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
 
-        # convert IPA pathway Ensembl IDs to symbols for compatibility
-        ipa_signatures_symb = {}
-        for k, v in ipa_signatures.items():
-            ipa_signatures_symb[k] = references.ensembl_to_gene_symbol(v).dropna()
+    # convert IPA pathway Ensembl IDs to symbols for compatibility
+    ipa_signatures_symb = {}
+    for k, v in ipa_signatures.items():
+        ipa_signatures_symb[k] = references.ensembl_to_gene_symbol(v).dropna()
 
-        # compute overlap between cell type signatures and IPA signatures
-        pct_shared = analyse_xcell_results.compute_cell_type_pathway_overlap(
-            ipa_signatures_symb,
-            xcell_signatures,
-        )
+    # compute overlap between cell type signatures and IPA signatures
+    pct_shared = analyse_xcell_results.compute_cell_type_pathway_overlap(
+        ipa_signatures_symb,
+        xcell_signatures,
+    )
 
-        # aggregate taking max over pathways
-        cc = pct_shared.columns.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>')
-        pct_shared_aggr = pct_shared.groupby(cc, axis=1).max()
+    # aggregate taking max over pathways
+    cc = pct_shared.columns.str.replace(r'(?P<ct>[^_]*)_.*', r'\g<ct>')
+    pct_shared_aggr = pct_shared.groupby(cc, axis=1).max()
 
-        # set of pathways with any significance
-        logger.info("%d pathways enriched in at least one patient and retained after correlation analysis" % co.shape[1])
+    # set of pathways with any significance
+    logger.info("%d pathways enriched in at least one patient and retained after correlation analysis" % co.shape[1])
 
     # run clustering to order the rows/cols nicely
     rl = hc.linkage(co.fillna(0.).transpose(), method='average', metric='euclidean')
