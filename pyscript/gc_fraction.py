@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="Estimate GC fraction (mean and stdev). Results returned to stdout.")
 
     parser.add_argument("bam_fn", help="Path to BAM file")
-    parser.add_argument("-q","--min-qual", help="Minimum mapping quality", action="append", default=None)
+    parser.add_argument("-q","--min-qual", help="Minimum mapping quality", default=None, type=int)
     parser.add_argument("-p", "--frac-reads", help="Fraction of reads to use", default=0.001, type=float)
     parser.add_argument("-n", "--num-reads", help="Maximum number of reads to use", default=None, type=float)
     parser.add_argument("--proper-pair", help="Only include proper pairs", action="store_true", default=False)
