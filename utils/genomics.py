@@ -332,3 +332,32 @@ def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
             res[the_id] = pd.Series(counts, index=edges[:-1])
             feat_lens[the_id] = len(the_seq)
     return res, feat_lens
+
+
+def estimate_gc_content_from_bam(
+    bam_fn,
+    frac_reads=0.01,
+    proper_pair=True,
+    min_qual=None,
+    n_reads=None
+):
+    """
+    Estimate the GC content in a BAM file by sampling randomly
+    :param bam_fn:
+    :param frac_reads: The fraction of reads to use when estimating
+    :param proper_pair:
+    :param min_qual:
+    :return:
+    """
+    i = 0
+    gc_frac = []
+    it = random_sampling_alignments(bam_fn=bam_fn, p=frac_reads, proper_pair=proper_pair, min_qual=min_qual)
+    for rd in it:
+        gc_frac.append(
+            len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
+        )
+        if n_reads is not None:
+            i += 1
+            if i == n_reads:
+                return gc_frac
+    return gc_frac
