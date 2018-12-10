@@ -18,6 +18,7 @@ def main():
     parser.add_argument("-p", "--frac-reads", help="Fraction of reads to use", default=0.001, type=float)
     parser.add_argument("-n", "--num-reads", help="Maximum number of reads to use", default=None, type=float)
     parser.add_argument("--proper-pair-only", help="Only include proper pairs", action="store_true", default=True)
+    parser.add_argument("--include-unmapped", help="Include unmapped reads", action="store_true", default=False)
 
     args, extra = parser.parse_known_args()
 
@@ -27,7 +28,8 @@ def main():
             frac_reads=args.frac_reads,
             proper_pair=args.proper_pair_only,
             min_qual=args.min_qual,
-            n_reads=args.num_reads
+            n_reads=args.num_reads,
+            include_unmapped=args.include_unmapped
         )
         for r in res:
             sys.stdout.write("%.3f\n" % r)

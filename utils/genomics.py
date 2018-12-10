@@ -187,7 +187,8 @@ def random_sampling_alignments(
         bam_fn,
         p=0.1,
         proper_pair=False,
-        min_qual=None
+        min_qual=None,
+        include_unmapped=False
 ):
     """
     Iterate over reads at random intervals from the supplied file
@@ -197,7 +198,7 @@ def random_sampling_alignments(
     """
     s = pysam.AlignmentFile(bam_fn, 'rb')
     for rd in s:
-        if rd.is_unmapped:
+        if rd.is_unmapped and not include_unmapped:
             continue
         if proper_pair and not rd.is_proper_pair:
             continue
@@ -339,7 +340,8 @@ def estimate_gc_content_from_bam(
     frac_reads=0.01,
     proper_pair=True,
     min_qual=None,
-    n_reads=None
+    n_reads=None,
+    include_unmapped=False
 ):
     """
     Estimate the GC content in a BAM file by sampling randomly
@@ -351,7 +353,13 @@ def estimate_gc_content_from_bam(
     """
     i = 0
     gc_frac = []
-    it = random_sampling_alignments(bam_fn=bam_fn, p=frac_reads, proper_pair=proper_pair, min_qual=min_qual)
+    it = random_sampling_alignments(
+        bam_fn=bam_fn,
+        p=frac_reads,
+        proper_pair=proper_pair,
+        min_qual=min_qual,
+        include_unmapped=include_unmapped
+    )
     for rd in it:
         gc_frac.append(
             len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
