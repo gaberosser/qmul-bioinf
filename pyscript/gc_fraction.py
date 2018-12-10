@@ -17,7 +17,7 @@ def main():
     parser.add_argument("-q","--min-qual", help="Minimum mapping quality", action="append", default=None)
     parser.add_argument("-p", "--frac-reads", help="Fraction of reads to use", default=0.001, type=float)
     parser.add_argument("-n", "--num-reads", help="Maximum number of reads to use", default=None, type=float)
-    parser.add_argument("--proper-pair-only", help="Only include proper pairs", action="store_true", default=True)
+    parser.add_argument("--proper-pair", help="Only include proper pairs", action="store_true", default=False)
     parser.add_argument("--include-unmapped", help="Include unmapped reads", action="store_true", default=False)
 
     args, extra = parser.parse_known_args()
@@ -26,7 +26,7 @@ def main():
         res = genomics.estimate_gc_content_from_bam(
             args.bam_fn,
             frac_reads=args.frac_reads,
-            proper_pair=args.proper_pair_only,
+            proper_pair=args.proper_pair,
             min_qual=args.min_qual,
             n_reads=args.num_reads,
             include_unmapped=args.include_unmapped
