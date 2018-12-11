@@ -103,7 +103,7 @@ if __name__ == "__main__":
         for the_dir in arr:
             the_batch = os.path.basename(the_dir)
             # check whether the gc dir and files are there
-            indir_un = os.path.join(the_dir, 'human', 'bt2_alignment', 'gc_frac_unmapped')
+            indir_un = os.path.join(the_dir, 'human', 'bt2_alignment', 'gc_frac_all')
             indir_q10 = os.path.join(the_dir, 'human', 'bt2_alignment', 'gc_frac_q10')
             if os.path.isdir(indir_un):
                 for fn in os.listdir(indir_un):
@@ -136,6 +136,19 @@ if __name__ == "__main__":
 
     pct_gc_q10_combined = pd.concat(pct_gc_q10.values(), axis=0)
     pct_gc_unmapped_combined = pd.concat(pct_gc_unmapped.values(), axis=0)
+
+    # hist of GC values
+    read_length = 75.
+    edges = np.arange(0, read_length + 2) / read_length - 0.5 / read_length
+
+    the_batch = 'P180649'
+    the_samples = ['201191', '264112']
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    for s in the_samples:
+        ax.hist(pct_gc_full_unmapped[the_batch][s], edges)
 
 
     fig = plt.figure()

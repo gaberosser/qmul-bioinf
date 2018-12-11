@@ -208,6 +208,53 @@ def random_sampling_alignments(
             yield rd
 
 
+def samtools_random_sampling_bam(
+    bam_fn,
+    frac_reads=None,
+    est_n_reads=None,
+    seed=1,
+    *samtools_args
+):
+    """
+    Iterate over reads at random intervals from the supplied file
+    :param bam_fn: BAM, SAM or similar alignment file
+    :param frac_reads: The fraction of reads to sample
+    :param est_n_reads: The (approx) number of reads to sample. Returning the exact number is *not* guaranteed.
+    :param seed: The random seed to use
+    :param samtools_args: Passed directly to samtools, for example:
+    ['-q', 10] to include only alignments with quality >= 10
+    :return: Read generator
+    """
+    if frac_reads is not None and est_n_reads is not None:
+        raise ValueError("Must specify one of frace_reads OR est_n_reads, but not both.")
+
+    if frac_reads is None and est_n_reads is None:
+        raise ValueError("Must specify one of frace_reads OR est_n_reads, but not both.")
+
+    if est_n_reads is not None:
+        est_total = estimate_number_of_bam_reads(bam_fn)
+        print "Estimated line count in bam file is %d" % est_total
+        frac_reads = est_n_reads / float(est_total)
+
+    frac_as_pct = frac_reads * 100.
+    if frac_as_pct < 1e-6:
+        frac_as_pct = 1e-6
+    pct_as_str = '{:09.6f}'.format(frac_as_pct).replace('.', '')
+
+    cmd = (
+        "samtools", "view",
+        "-s", "%d.%s" % (seed, pct_as_str)
+      ) + samtools_args + (bam_fn,)
+    print ' '.join(cmd)
+    p = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+    )
+
+    for line in p.stdout:
+        yield line
+
+
 def get_mean_insert_size_pe_subsample(
         bam_fn,
         p=None,
