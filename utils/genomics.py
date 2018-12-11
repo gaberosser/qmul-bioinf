@@ -349,10 +349,10 @@ def estimate_gc_content_from_bam(
     :param frac_reads: The fraction of reads to use when estimating
     :param proper_pair:
     :param min_qual:
-    :return:
+    :return: Generator that outputs %GC for reads as they are encountered
     """
     i = 0
-    gc_frac = []
+    # gc_frac = []
     it = random_sampling_alignments(
         bam_fn=bam_fn,
         p=frac_reads,
@@ -361,11 +361,13 @@ def estimate_gc_content_from_bam(
         include_unmapped=include_unmapped
     )
     for rd in it:
-        gc_frac.append(
-            len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
-        )
+        # gc_frac.append(
+        #     len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
+        # )
+        yield len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
         if n_reads is not None:
             i += 1
             if i == n_reads:
-                return gc_frac
-    return gc_frac
+                # return gc_frac
+                break
+    # return gc_frac
