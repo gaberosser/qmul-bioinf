@@ -29,14 +29,20 @@ class BamMetricsBase(jobs.ArrayJob):
 
     core_cmd = """
     outfile="${{OUTFILE}}.bam_metrics"
-    samtools view -b {extra} $BAM | samtools flagstat - > $outfile
-    plus_counts=$(samtools view -F16 {extra} $BAM | cut -f3-4 | sort -u | wc -l)
-    minus_counts=$(samtools view -f16 {extra} $BAM | cut -f3-4 | sort -u | wc -l)
-    echo "Forward strand unique reads: $plus_counts" >> $outfile
-    echo "Reverse strand unique reads: $minus_counts" >> $outfile
+    echo "bam_metrics called with the following flags:" >> $outfile
+    echo "{extra}" >> $outfile
+    samtools view -b {extra} $BAM | samtools flagstat - >> $outfile
+    plus_counts=$(samtools view -F16 {extra} $BAM | cut -f3-4 | uniq | wc -l)
+    minus_counts=$(samtools view -f16 {extra} $BAM | cut -f3-4 | uniq | wc -l)
+    echo "Forward strand unique (by sequence) reads: $plus_counts" >> $outfile
+    echo "Reverse strand unique (by sequence) reads: $minus_counts" >> $outfile
     total_counts=$(cat $outfile | grep 'in total (QC-passed' | cut -d ' ' -f1)
     NRF=`echo "($plus_counts + $minus_counts)/$total_counts" | bc -l`
     echo "NRF = $NRF" >> $outfile
+    plus_counts=$(samtools view -F16 {extra} $BAM | cut -f1 | uniq | wc -l)
+    minus_counts=$(samtools view -f16 {extra} $BAM | cut -f1 | uniq | wc -l)
+    echo "Forward strand unique (by ID) reads: $plus_counts" >> $outfile
+    echo "Reverse strand unique (by ID) reads: $minus_counts" >> $outfile
     samtools stats {extra} $BAM >> $outfile
     """
 

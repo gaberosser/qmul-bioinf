@@ -29,7 +29,7 @@ class Bowtie2SEBase(jobs.ArrayJob):
         ('$OUTFILE', None),
     ]
     param_delim = ':'
-    core_cmd = 'bowtie2 -p {threads} -x {index} -U $READS {extra} | samtools view -b > ${{OUTFILE}}.bam\n'
+    core_cmd = 'bowtie2 -p {threads} -x {index} -U $READS {extra} | samtools view -b > ${{OUTFILE}}.bam 1> ${{OUTFILE}}.log\n'
     core_cmd += 'samtools sort -@ {threads} "${{OUTFILE}}.bam" > "${{OUTFILE}}.sorted.bam"\n'
     core_cmd += 'rm "${{OUTFILE}}.bam"\n'
 
