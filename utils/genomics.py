@@ -11,7 +11,8 @@ import random
 import subprocess
 import re
 from settings import LOCAL_DATA_DIR
-
+from utils import log
+logger = log.get_console_logger()
 
 GTF_SOURCES = ('ensembl', 'havana', 'ensembl_havana')
 
@@ -212,28 +213,30 @@ def samtools_random_sampling_bam(
     bam_fn,
     frac_reads=None,
     est_n_reads=None,
+    max_n_reads=None,
     seed=1,
-    *samtools_args
+    samtools_args=tuple()
 ):
     """
     Iterate over reads at random intervals from the supplied file
     :param bam_fn: BAM, SAM or similar alignment file
     :param frac_reads: The fraction of reads to sample
     :param est_n_reads: The (approx) number of reads to sample. Returning the exact number is *not* guaranteed.
+    :param max_n_reads: If supplied, stop the output as soon as this number is reached.
     :param seed: The random seed to use
     :param samtools_args: Passed directly to samtools, for example:
     ['-q', 10] to include only alignments with quality >= 10
     :return: Read generator
     """
     if frac_reads is not None and est_n_reads is not None:
-        raise ValueError("Must specify one of frace_reads OR est_n_reads, but not both.")
+        raise ValueError("Must specify one of frac_reads OR est_n_reads, but not both.")
 
     if frac_reads is None and est_n_reads is None:
-        raise ValueError("Must specify one of frace_reads OR est_n_reads, but not both.")
+        raise ValueError("Must specify one of frac_reads OR est_n_reads, but not both.")
 
     if est_n_reads is not None:
         est_total = estimate_number_of_bam_reads(bam_fn)
-        print "Estimated line count in bam file is %d" % est_total
+        logger.info("Estimated line count in bam file is %d" % est_total)
         frac_reads = est_n_reads / float(est_total)
 
     frac_as_pct = frac_reads * 100.
@@ -244,14 +247,16 @@ def samtools_random_sampling_bam(
     cmd = (
         "samtools", "view",
         "-s", "%d.%s" % (seed, pct_as_str)
-      ) + samtools_args + (bam_fn,)
-    print ' '.join(cmd)
+      ) + tuple([str(t) for t in samtools_args]) + (bam_fn,)
+    logger.info(' '.join(cmd))
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
     )
 
-    for line in p.stdout:
+    for i, line in enumerate(p.stdout):
+        if max_n_reads is not None and (i + 1) > max_n_reads:
+            raise StopIteration
         yield line
 
 
@@ -382,13 +387,20 @@ def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
     return res, feat_lens
 
 
+def gc_fraction_from_sequence(seq):
+    return len(re.findall(r'[GC]', seq)) / float(len(seq))
+
+
 def estimate_gc_content_from_bam(
     bam_fn,
-    frac_reads=0.01,
+    frac_reads=0.001,
+    est_n_reads=None,
     proper_pair=True,
     min_qual=None,
-    n_reads=None,
-    include_unmapped=False
+    n_reads_max=None,
+    include_unmapped=False,
+    paired_end=True,
+    extra_args=tuple()
 ):
     """
     Estimate the GC content in a BAM file by sampling randomly
@@ -398,23 +410,31 @@ def estimate_gc_content_from_bam(
     :param min_qual:
     :return: Generator that outputs %GC for reads as they are encountered
     """
-    i = 0
-    # gc_frac = []
-    it = random_sampling_alignments(
-        bam_fn=bam_fn,
-        p=frac_reads,
-        proper_pair=proper_pair,
-        min_qual=min_qual,
-        include_unmapped=include_unmapped
+    # setup flags where required
+    gc_frac_args = []
+
+    if paired_end:
+        if include_unmapped:
+            gc_frac_args.extend(['-f', 1]) # paired read
+        elif proper_pair:
+            gc_frac_args.extend(['-f', 3])  # paired read, mapped in proper pair
+        else:
+            gc_frac_args.extend(['-f', 3, '-F', 4])  # paired read, NOT unmapped
+
+    else:
+        if not include_unmapped:
+            gc_frac_args.extend(['-F', 4])  # this read is NOT unmapped
+
+    if min_qual is not None:
+        gc_frac_args.extend(['-q', min_qual])
+
+    it = samtools_random_sampling_bam(
+        bam_fn,
+        frac_reads=frac_reads,
+        est_n_reads=est_n_reads,
+        max_n_reads=n_reads_max,
+        samtools_args=tuple(gc_frac_args) + extra_args
     )
     for rd in it:
-        # gc_frac.append(
-        #     len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
-        # )
-        yield len(re.findall(r'[GC]', rd.seq)) / float(rd.query_length)
-        if n_reads is not None:
-            i += 1
-            if i == n_reads:
-                # return gc_frac
-                break
-    # return gc_frac
+        seq = rd.split('\t')[9]
+        yield gc_fraction_from_sequence(seq)
