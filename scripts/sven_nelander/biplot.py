@@ -10,7 +10,7 @@ import os
 
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
-from plotting import common, pca, _plotly, scatter
+from plotting import common, pca, _plotly, scatter, adjuster
 from utils import output
 import references
 
@@ -27,8 +27,25 @@ def generate_plotly_plot(
         sample_colours,
         sample_markers,
         sample_marker_size=12.,
-        auto_open=False
+        auto_open=False,
+        feature_text_mask=None
 ):
+    """
+
+    :param res:
+    :param filename:
+    :param feature_size_scaling:
+    :param feature_text:
+    :param sample_text:
+    :param sample_colours:
+    :param sample_markers:
+    :param sample_marker_size:
+    :param auto_open:
+    :param feature_text_mask: If supplied, this should be a boolean array the same length as feature_text. Where it is
+     True, the corresponding text will _not_ be drawn (but is still available on hover).
+     If absent, all text is hidden and only available on hover.
+    :return:
+    """
     x, y = res['feature_data']
 
     msize_in = (x ** 2 + y ** 2) ** .5
@@ -38,13 +55,28 @@ def generate_plotly_plot(
     tmp[tmp > 1] = 1
     msize = tmp * (feature_size_scaling[1][1] - feature_size_scaling[1][0]) + feature_size_scaling[1][0]
 
+    if feature_text_mask is None:
+        feature_text_mask = np.ones(len(x), dtype=bool)
+
+    # plot into two groups: text shown permanently and text hidden
     feat_trace = go.Scatter(
-        x=x,
-        y=y,
+        x=x[feature_text_mask],
+        y=y[feature_text_mask],
         mode='markers',
-        text=feature_text,
+        text=feature_text[feature_text_mask],
         marker={
-            'size': msize,
+            'size': msize[feature_text_mask],
+            'color': 'rgb(155, 155, 155, .7)'
+        }
+    )
+
+    feat_trace_text_shown = go.Scatter(
+        x=x[~feature_text_mask],
+        y=y[~feature_text_mask],
+        mode='markers+text',
+        text=feature_text[~feature_text_mask],
+        marker={
+            'size': msize[~feature_text_mask],
             'color': 'rgb(155, 155, 155, .7)'
         }
     )
@@ -80,7 +112,7 @@ def generate_plotly_plot(
         yaxis=go.layout.YAxis(title='PC %d (%.2f %%)' % (pcs[1] + 1, ev_pct[pcs[1]])),
         dragmode='pan'
     )
-    fig = go.Figure(data=[feat_trace, sample_trace], layout=layout)
+    fig = go.Figure(data=[feat_trace, feat_trace_text_shown, sample_trace], layout=layout)
     p = py.plot(fig, filename=filename, auto_open=auto_open)
 
     return p
@@ -93,6 +125,8 @@ def plot_biplot(
         scatter_colours,
         scatter_markers,
         annotate_features_radius=None,
+        adjust_annotation=True,
+        adjust_annotation_kwargs=None,
         **kwargs
 ):
     """
@@ -106,6 +140,9 @@ def plot_biplot(
     :param **kwargs: Passed to pca.biplot()
     :return:
     """
+    if adjust_annotation_kwargs is None:
+        adjust_annotation_kwargs = {}
+
     sample_colours = meta.patient_id.map(scatter_colours.get).to_dict()
     sample_markers = meta.type.map(scatter_markers.get).to_dict()
 
@@ -170,11 +207,11 @@ def plot_biplot(
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
 
-    arrowprops = {
-        'color': 'black',
-        'linewidth': 1.,
-        'arrowstyle': '-',
-    }
+    # arrowprops = {
+    #     'color': 'black',
+    #     'linewidth': 1.,
+    #     'arrowstyle': '-',
+    # }
 
     if annotate_features_radius is not None:
         # annotate most influential genes
@@ -186,15 +223,17 @@ def plot_biplot(
         text_handles = []
         for ix, gs in zip(np.where(selected)[0], symbols_selected):
             if not pd.isnull(gs):
-                text_handles.append(ax.text(feat_x[ix], feat_y[ix], gs))
+                text_handles.append(ax.text(feat_x[ix], feat_y[ix], gs, zorder=10))
         # rearrange them to avoid overlaps
-        adjust_text(
-            text_handles,
-            arrowprops=arrowprops,
-            text_from_points=False,
-            draggable=False,
-            ax=ax
-        )
+        if adjust_annotation:
+            # adjust_text(
+            #     text_handles,
+            #     arrowprops=arrowprops,
+            #     text_from_points=False,
+            #     draggable=False,
+            #     ax=ax
+            # )
+            adjuster.adjust_text_radial_plus_repulsion(text_handles, **adjust_annotation_kwargs)
 
     return fig, ax, res
 
@@ -243,6 +282,7 @@ if __name__ == "__main__":
     dat_with_gs.loc[dat_with_gs['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs.index[dat_with_gs['Gene Symbol'].isnull()]
 
     dims = (0, 1)
+    selection_radius = 0.6
 
     # recreate Sven's original (unweighted) plot
     fig, ax, _ = plot_biplot(
@@ -274,18 +314,21 @@ if __name__ == "__main__":
         dims,
         scatter_colours,
         scatter_markers,
-        annotate_features_radius=0.6,
+        annotate_features_radius=selection_radius,
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
     if publish_plotly:
+        selection_radius = 0.6
         size_scaling = [
             [0.1, 0.6],
             [2., 10.]
         ]
         feature_text = dat_with_gs['Gene Symbol']
         sample_text = dat.columns
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        to_annotate = rad > selection_radius
         p1 = generate_plotly_plot(
             res,
             filename="pca_biplot_dims_%d-%d" % dims,
@@ -294,9 +337,11 @@ if __name__ == "__main__":
             sample_text=sample_text,
             sample_colours=sample_colours,
             sample_markers=sample_markers,
+            feature_text_mask=~to_annotate
         )
 
     dims = (1, 2)
+    selection_radius = 0.3
 
     fig, ax, res = plot_biplot(
         dat,
@@ -314,16 +359,19 @@ if __name__ == "__main__":
         dims,
         scatter_colours,
         scatter_markers,
-        annotate_features_radius=0.3,
+        annotate_features_radius=selection_radius,
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
     if publish_plotly:
+        selection_radius = 0.3
         size_scaling = [
             [0.1, 0.3],
             [2., 10.]
         ]
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        to_annotate = rad > selection_radius
         p2 = generate_plotly_plot(
             res,
             filename="pca_biplot_dims_%d-%d" % dims,
@@ -332,9 +380,11 @@ if __name__ == "__main__":
             sample_text=sample_text,
             sample_colours=sample_colours,
             sample_markers=sample_markers,
+            feature_text_mask=~to_annotate
         )
 
     dims = (2, 3)
+    selection_radius = 0.25
 
     fig, ax, res = plot_biplot(
         dat,
@@ -352,16 +402,19 @@ if __name__ == "__main__":
         dims,
         scatter_colours,
         scatter_markers,
-        annotate_features_radius=0.3,
+        annotate_features_radius=selection_radius,
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
 
     if publish_plotly:
+        selection_radius = 0.25
         size_scaling = [
             [0.1, 0.3],
             [2., 10.]
         ]
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        to_annotate = rad > selection_radius
         p3 = generate_plotly_plot(
             res,
             filename="pca_biplot_dims_%d-%d" % dims,
@@ -370,6 +423,7 @@ if __name__ == "__main__":
             sample_text=sample_text,
             sample_colours=sample_colours,
             sample_markers=sample_markers,
+            feature_text_mask=~to_annotate
         )
 
     # bar chart showing the explained variance
