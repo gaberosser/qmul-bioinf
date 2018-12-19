@@ -807,6 +807,20 @@ def get_binned_dmr_locations(
         }
 
 
+from matplotlib.colors import Normalize
+
+class MidpointNormalize(Normalize):
+    def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
+        self.midpoint = midpoint
+        Normalize.__init__(self, vmin, vmax, clip)
+
+    def __call__(self, value, clip=None):
+        # I'm ignoring masked values and all kinds of edge cases to make a
+        # simple example...
+        x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
+        return np.ma.masked_array(np.interp(value, x, y))
+
+
 def dmr_location_plot(
         dmr_loci,
         chrom_length,
@@ -820,6 +834,15 @@ def dmr_location_plot(
     dmr_loci_hyper, dmr_loci_hypo = dmr_loci
 
     xmax = max(chrom_length.values())
+
+    if cg_density is not None:
+        # get the mean CG density so that we can centre the colour scale there
+        all_cg_densities = []
+        for chrom in chroms:
+            this_cg = cg_density[chrom]
+            this_cg_pct = this_cg / float(window_size) * 100.
+            all_cg_densities.extend(this_cg_pct.values)
+        cg_pct_mean = np.mean(all_cg_densities)
 
     fig = plt.figure(figsize=(10, 8))
     ncols = int(np.ceil(len(chrom_length) / float(max_n_per_row)))
@@ -868,7 +891,10 @@ def dmr_location_plot(
             yy = np.zeros_like(xx); yy[1] = 1.
             cc = np.array([this_cg_pct.values])
 
-            ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
+            norm = MidpointNormalize(midpoint=cg_pct_mean, vmin=0, vmax=5.)
+
+            # ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
+            ax_gc.pcolor(xx, yy, cc, cmap='PuOr', norm=norm)
             ax_gc.set_xlim([0, xmax])
 
         if unmapped_density is not None:
@@ -878,7 +904,8 @@ def dmr_location_plot(
 
             uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmapped_threshold_pct)
             # since we don't care about the extent of unmapping, replace all values with a single one
-            uu[~uu.mask] = 0.3
+            # uu[~uu.mask] = 0.3
+            uu[~uu.mask] = 0.8
 
             ax_gc.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
             ax_gc.set_xlim([0, xmax])
@@ -1189,6 +1216,8 @@ if __name__ == "__main__":
     )
     window_size = int(2e5)
     cg_density, chrom_length = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size)
+    # reorder
+    chrom_length = collections.OrderedDict([(k, chrom_length[k]) for k in chroms])
 
     dmr_s1_clusters = dmr_res_s1[pids[0]].clusters
 
@@ -1212,11 +1241,97 @@ if __name__ == "__main__":
         [dmr_loci_hyper[pid], dmr_loci_hypo[pid]],
         chrom_length,
         cg_density=cg_density,
-        unmapped_density=unmapped_density
+        unmapped_density=unmapped_density,
+        window_size=window_size
     )
 
     unmap_threshold_pct = 10. # unmapped % above this value will be masked
     xmax = max(chrom_length.values())
+
+    # ongoing work on a polar plot
+    all_cg_densities = []
+    for chrom in chroms:
+        this_cg = cg_density[chrom]
+        this_cg_pct = this_cg / float(window_size) * 100.
+        all_cg_densities.extend(this_cg_pct.values)
+    cg_pct_mean = np.mean(all_cg_densities)
+
+    gap_radians = 2 * np.pi / 200.
+    sum_chrom_length = float(sum(chrom_length.values()))
+    radians_per_bp = (2 * np.pi - gap_radians * len(chroms)) / sum_chrom_length
+    inner_r = 1.
+    r_width = 0.1
+    outer_r = 1.1
+    kde_width = 0.3
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='polar')
+
+    curr_theta = 0
+    for chrom in chroms:
+        this_cg = cg_density[chrom]
+        this_cg_pct = this_cg / float(window_size) * 100.
+
+        xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
+        th = curr_theta + np.array(this_cg.index.tolist() + [chrom_length[chrom]]) * radians_per_bp
+        tt = np.array([th, th])
+        rr = np.zeros_like(tt) + inner_r; rr[1] = inner_r * (1 + r_width)
+
+        cc = np.array([this_cg_pct.values])
+
+        norm = MidpointNormalize(midpoint=cg_pct_mean, vmin=0, vmax=5.)
+        ax.pcolor(tt, rr, cc, cmap='PuOr')
+
+        this_unmapped = unmapped_density[chrom]
+        this_unmapped_pct = this_unmapped / float(window_size) * 100.
+
+        uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmap_threshold_pct)
+        # since we don't care about the extent of unmapping, replace all values with a single one
+        uu[~uu.mask] = 0.8
+        ax.pcolor(tt, rr, uu, cmap='Greys', vmax=1., vmin=0.)
+
+        this_hypo = dmr_loci_hypo[pid][chrom]
+        this_hyper = dmr_loci_hyper[pid][chrom]
+
+        # KDE estimation gives us a nice representation of the DMR location distribution
+        # NB this library expects a 2D array and complains otherwise!
+        k_hypo = KernelDensity(bandwidth=window_size, kernel='gaussian')
+        k_hypo.fit(np.array(this_hypo)[:, None])  # this increases the dim of the 1D array
+        logd_hypo = k_hypo.score_samples(xx[0, None].transpose())
+
+        # blank out baseline (for plotting purposes)
+        logd_hypo[logd_hypo < -100] = -np.inf
+
+        d_hypo = np.ma.masked_equal(np.exp(logd_hypo), 0.)
+        hypo_max = d_hypo.max()
+
+        k_hyper = KernelDensity(bandwidth=window_size, kernel='gaussian')
+        k_hyper.fit(np.array(this_hyper)[:, None])  # this increases the dim of the 1D array
+        logd_hyper = k_hyper.score_samples(xx[0, None].transpose())
+
+        # blank out baseline (for plotting purposes)
+        logd_hyper[logd_hyper < -100] = -np.inf
+
+        d_hyper = np.ma.masked_equal(np.exp(logd_hyper), 0.)
+        hyper_max = d_hyper.max()
+
+        # now we need to rescale the KDEs, since we are plotting in an arbitrary radial space
+        target_height = kde_width * inner_r
+        d_hypo = d_hypo / hypo_max * target_height
+        d_hyper = d_hyper / hyper_max * target_height
+
+        # plot the KDEs
+        ax.fill_between(th, y1=d_hyper + outer_r, y2=outer_r, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+        ax.fill_between(th, y1=inner_r, y2=inner_r - d_hypo, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hypo'])
+
+        ax.set_facecolor('w')
+
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+
+        print "Chrom %s started at angle %.2f and ended at %.2f" % (chrom, curr_theta, th[-1] + gap_radians)
+        curr_theta = th[-1] + gap_radians
+
 
     fig = plt.figure(figsize=(10, 8))
     nrows = 11

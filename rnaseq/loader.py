@@ -132,13 +132,18 @@ wtchg_p180199 = RnaSeqFileLocations(
     alignment_subdir='human',
 )
 
-wtchg_p180347= RnaSeqFileLocations(
+wtchg_p180347 = RnaSeqFileLocations(
     root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p180347'),
     alignment_subdir='human',
 )
 
-wtchg_p180349= RnaSeqFileLocations(
+wtchg_p180349 = RnaSeqFileLocations(
     root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p180349'),
+    alignment_subdir='human',
+)
+
+wtchg_p180648 = RnaSeqFileLocations(
+    root_dir=os.path.join(RNASEQ_DIR, 'wtchg_p180648'),
     alignment_subdir='human',
 )
 
