@@ -807,6 +807,134 @@ def get_binned_dmr_locations(
         }
 
 
+def dmr_location_plot(
+        dmr_loci,
+        chrom_length,
+        cg_density=None,
+        unmapped_density=None,
+        window_size=20000,
+        unmapped_threshold_pct=10,
+        max_n_per_row=15
+):
+    chroms = chrom_length.keys()
+    dmr_loci_hyper, dmr_loci_hypo = dmr_loci
+
+    xmax = max(chrom_length.values())
+
+    fig = plt.figure(figsize=(10, 8))
+    ncols = int(np.ceil(len(chrom_length) / float(max_n_per_row)))
+    nrows = len(chrom_length) / ncols + len(chrom_length) % ncols
+    ncols = 2
+    gs_main = plt.GridSpec(
+        nrows=nrows,
+        ncols=ncols,
+        left=0.01,
+        right=.99,
+        bottom=0.01,
+        top=.99,
+        hspace=0.03,
+        wspace=0.03,
+    )
+
+    # we want to traverse by row then column, so create an array of axes beforehand
+    # order='C' would give us traversal by column then row
+    main_ax_arr = np.array([gs_main[i] for i in range(len(chroms))]).reshape((nrows, ncols)).flatten(order='F')
+    ax_gc_dict = {}
+    ax_hypo_dict = {}
+    ax_hyper_dict = {}
+
+    for i, chrom in enumerate(chroms):
+        gs = gridspec.GridSpecFromSubplotSpec(
+            3,
+            1,
+            main_ax_arr[i],
+            height_ratios=[5, 1, 5],
+            hspace=0.
+        )
+
+        ax_gc = fig.add_subplot(gs[1])
+        ax_hyper = fig.add_subplot(gs[0], sharex=ax_gc)
+        ax_hypo = fig.add_subplot(gs[2], sharex=ax_gc)
+
+        ax_gc_dict[chrom] = ax_gc
+        ax_hyper_dict[chrom] = ax_hyper
+        ax_hypo_dict[chrom] = ax_hypo
+
+        if cg_density is not None:
+            this_cg = cg_density[chrom]
+            this_cg_pct = this_cg / float(window_size) * 100.
+
+            xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
+            yy = np.zeros_like(xx); yy[1] = 1.
+            cc = np.array([this_cg_pct.values])
+
+            ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
+            ax_gc.set_xlim([0, xmax])
+
+        if unmapped_density is not None:
+
+            this_unmapped = unmapped_density[chrom]
+            this_unmapped_pct = this_unmapped / float(window_size) * 100.
+
+            uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmapped_threshold_pct)
+            # since we don't care about the extent of unmapping, replace all values with a single one
+            uu[~uu.mask] = 0.3
+
+            ax_gc.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
+            ax_gc.set_xlim([0, xmax])
+
+        this_hypo = dmr_loci_hypo[chrom]
+        this_hyper = dmr_loci_hyper[chrom]
+
+        # KDE estimation gives us a nice representation of the DMR location distribution
+        # NB this library expects a 2D array and complains otherwise!
+        k_hypo = KernelDensity(bandwidth=window_size, kernel='gaussian')
+        k_hypo.fit(np.array(this_hypo)[:, None])  # this increases the dim of the 1D array
+        logd_hypo = k_hypo.score_samples(xx[0, None].transpose())
+
+        # blank out baseline (for plotting purposes)
+        logd_hypo[logd_hypo < -100] = -np.inf
+
+        d_hypo = np.ma.masked_equal(np.exp(logd_hypo), 0.)
+        hypo_max = d_hypo.max()
+
+        k_hyper = KernelDensity(bandwidth=window_size, kernel='gaussian')
+        k_hyper.fit(np.array(this_hyper)[:, None])  # this increases the dim of the 1D array
+        logd_hyper = k_hyper.score_samples(xx[0, None].transpose())
+
+        # blank out baseline (for plotting purposes)
+        logd_hyper[logd_hyper < -100] = -np.inf
+
+        d_hyper = np.ma.masked_equal(np.exp(logd_hyper), 0.)
+        hyper_max = d_hyper.max()
+
+        # plot the KDEs
+        ax_hyper.fill_between(xx[0], d_hyper, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+        ax_hyper.set_ylim([0, hyper_max * 1.02])
+
+        # hypo: needs to be plotted upside down
+        ax_hypo.invert_yaxis()
+        ax_hypo.fill_between(xx[0], d_hypo, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hypo'])
+        ax_hypo.set_ylim([hypo_max * 1.02, 0.])
+
+        # plotting tick marks is a nice idea, but in practice gets messy - may work for smaller datasets?
+        # ax_hyper.plot(xx[0], np.full_like(xx[0], -0.1 * d_hyper.max()), '|k', markeredgewidth=1)
+
+        for ax in [ax_gc, ax_hypo, ax_hyper]:
+            ax.set_facecolor('w')
+            ax.xaxis.set_visible(False)
+            ax.yaxis.set_visible(False)
+
+    gs_main.update(right=1.2)
+
+    return {
+        'gs_main': gs_main,
+        'main_ax_arr': main_ax_arr,
+        'ax_gc_dict': ax_gc_dict,
+        'ax_hyper_dict': ax_hyper_dict,
+        'ax_hypo_dict': ax_hypo_dict,
+    }
+
 
 if __name__ == "__main__":
     pids = consts.PIDS
@@ -1079,9 +1207,16 @@ if __name__ == "__main__":
     dmr_binned_hyper = tmp['dmr_binned_hyper']
     dmr_binned_hypo = tmp['dmr_binned_hypo']
 
+    pid = pids[0]
+    tmp = dmr_location_plot(
+        [dmr_loci_hyper[pid], dmr_loci_hypo[pid]],
+        chrom_length,
+        cg_density=cg_density,
+        unmapped_density=unmapped_density
+    )
+
     unmap_threshold_pct = 10. # unmapped % above this value will be masked
     xmax = max(chrom_length.values())
-    pid = pids[0]
 
     fig = plt.figure(figsize=(10, 8))
     nrows = 11

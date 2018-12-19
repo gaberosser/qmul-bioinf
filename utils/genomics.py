@@ -366,8 +366,8 @@ def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
     CpG count.
     """
     from Bio import SeqIO
-    res = {}
-    feat_lens = {}
+    res = collections.OrderedDict()
+    feat_lens = collections.OrderedDict()
 
     with open(fa_file, 'rb') as f:
         fa_reader = SeqIO.parse(f, 'fasta')
