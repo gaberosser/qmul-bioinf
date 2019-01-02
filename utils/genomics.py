@@ -356,14 +356,13 @@ def write_bed_file(region_data, fn):
             )
 
 
-def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
+def motif_locations(fa_file, motif='CG', features=None):
     """
-    Summarise the CpG (or some other motif) content in the supplied fasta sequence
+    Find the locations of all occurrences of the supplied motif (default: CpG sites).
     :param fa_file:
     :param motif: This is used to search for the motif. Can contain regex characters. NB case sensitive!
-    :param window_size: The window used to summarise
-    :return: Dictionary, keyed by feature ID (e.g. chromosome). Values are pd.Series, index is start coord, value is
-    CpG count.
+    :param features: If supplied, this is an iterable containing the names of features to include
+    :return:
     """
     from Bio import SeqIO
     res = collections.OrderedDict()
@@ -378,13 +377,31 @@ def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
             the_seq = str(feat.seq)
             it = re.finditer(motif, the_seq)
             start_coords = np.array([t.start() for t in it])
-            edges = range(1, len(the_seq) + 1, window_size)
-            if edges[-1] != len(the_seq):
-                edges.append(len(the_seq))
-            counts, _ = np.histogram(start_coords, edges)
-            res[the_id] = pd.Series(counts, index=edges[:-1])
+            res[the_id] = start_coords
             feat_lens[the_id] = len(the_seq)
     return res, feat_lens
+
+
+def cg_content_windowed(fa_file, motif='CG', window_size=20000, features=None):
+    """
+    Summarise the CpG (or some other motif) content in the supplied fasta sequence
+    :param fa_file:
+    :param motif: This is used to search for the motif. Can contain regex characters. NB case sensitive!
+    :param window_size: The window used to summarise
+    :param features: If supplied, this is an iterable containing the names of features to include
+    :return: Dictionary, keyed by feature ID (e.g. chromosome). Values are pd.Series, index is start coord, value is
+    CpG count.
+    """
+    start_coords, feat_lens = motif_locations(fa_file, motif=motif, features=features)
+    binned_counts = collections.OrderedDict()
+    for feat in start_coords.keys():
+        edges = range(1, feat_lens[feat] + 1, window_size)
+        if edges[-1] != feat_lens[feat]:
+            edges.append(feat_lens[feat])
+        counts, _ = np.histogram(start_coords[feat], edges)
+        binned_counts[feat] = pd.Series(counts, index=edges[:-1])
+
+    return binned_counts, feat_lens
 
 
 def gc_fraction_from_sequence(seq):
