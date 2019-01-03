@@ -333,6 +333,21 @@ def estimate_number_of_bam_reads(fn, bytes=10000000):
     return int((reads_in_subsample / float(bytes)) * total_size)
 
 
+def get_feature_sequence_lengths(fa_file, features=None):
+    from Bio import SeqIO
+    feat_lens = collections.OrderedDict()
+
+    with open(fa_file, 'rb') as f:
+        fa_reader = SeqIO.parse(f, 'fasta')
+        for feat in fa_reader:
+            the_id = feat.id
+            if features is not None and the_id not in features:
+                continue
+            feat_lens[the_id] = len(feat.seq)
+
+    return feat_lens
+
+
 def write_bed_file(region_data, fn):
     """
     :param region_data: Dict with values defining regions as an iterable of (chrom., start coord, end coord, strand)

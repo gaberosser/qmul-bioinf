@@ -8,10 +8,13 @@ import os
 import collections
 import numpy as np
 from scipy import stats
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, patches
 from matplotlib.colors import Normalize
+from sklearn.neighbors import KernelDensity
+
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
+from plotting import common
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
 logger = log.get_console_logger()
@@ -121,16 +124,272 @@ def get_binned_dmr_locations(
         }
 
 
-class MidpointNormalize(Normalize):
-    def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
-        self.midpoint = midpoint
-        Normalize.__init__(self, vmin, vmax, clip)
+def ks_test_dmr_locations(
+        dmr_locs,
+        null_locs,
+        mht_method='fdr_bh',
+):
+    """
+    Run the 2 sample KS test on DMR locations, using the supplied null locations as the reference sample.
+    :param dmr_locs: Nested dictionary keyed by PID then feature (chromosome name)
+    :param null_locs: Dictionary keyed by feature (chromosome name)
+    :param mht_method: The method to use for MHT correction. Passed to multicomp.multipletests.
+    If None, skip MHT and use the unadjusted pvalues.
+    :return:
+    """
+    ks_pval_flat = []
+    ks_stat_flat = []
+    ks_flat_map = []
+    for pid, val in dmr_locs.items():
+        for feat in val:
+            tmp = stats.ks_2samp(dmr_locs[pid][feat], null_locs[feat])
+            ks_stat_flat.append(tmp[0])
+            ks_pval_flat.append(tmp[1])
+            ks_flat_map.append((pid, feat))
 
-    def __call__(self, value, clip=None):
-        # I'm ignoring masked values and all kinds of edge cases to make a
-        # simple example...
-        x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
-        return np.ma.masked_array(np.interp(value, x, y))
+    # correct for MHT
+    if mht_method is None:
+        padj = ks_pval_flat
+    else:
+        _, padj, _, _ = multicomp.multipletests(ks_pval_flat, alpha=0.05, method=mht_method)
+
+    res_fdr = dict([(pid, {}) for pid in dmr_locs.keys()])
+    res_stat = dict([(pid, {}) for pid in dmr_locs.keys()])
+
+    i = 0
+    for pid, feat in ks_flat_map:
+        res_fdr[pid][feat] = padj[i]
+        res_stat[pid][feat] = ks_stat_flat[i]
+        i += 1
+
+    return res_fdr, res_stat
+
+
+def fit_kde_dmr_location(locs, xi, bandwidth, normed=True):
+    # the KDE library expects a 2D array, even if data are not multidimensional
+    locs = np.array(locs)
+    if len(locs.shape) == 1:
+        locs = locs[:, None]
+    elif len(locs.shape) == 2:
+        if locs.shape[0] == 1 and locs.shape[1] > 1:
+            locs = locs.transpose()
+        elif locs.shape[1] == 1 and locs.shape[0] > 1:
+            pass
+        else:
+            raise ValueError("locations array must be 1D or (quasi-)2D")
+    else:
+        raise ValueError("locations array must be 1D or (quasi-)2D")
+
+    xi = np.array(xi)
+    if len(xi.shape) == 1:
+        xi = xi[:, None]
+    elif len(xi.shape) == 2:
+        if xi.shape[0] == 1 and xi.shape[1] > 1:
+            xi = xi.transpose()
+        elif xi.shape[1] == 1 and xi.shape[0] > 1:
+            pass
+        else:
+            raise ValueError("xi array must be 1D or (quasi-)2D")
+    else:
+        raise ValueError("xi array must be 1D or (quasi-)2D")
+
+    k = KernelDensity(bandwidth=bandwidth, kernel='gaussian')
+    k.fit(locs)  # this increases the dim of the 1D array
+    logd_score = k.score_samples(xi)
+    # blank out baseline (for plotting purposes)
+    logd_score[logd_score < -100] = -np.inf
+    score = np.ma.masked_equal(np.exp(logd_score), 0.)
+    if not normed:
+        # convert to unnormalised density
+        score *= locs.size
+    return score
+
+
+def polar_distribution_plot(
+    dmr_loci_hyper,
+    dmr_loci_hypo,
+    chrom_length,
+    bg_density=None,
+    unmapped_density=None,
+    window_size=2e5,
+    inner_r=3.,
+    central_width = 0.25,
+    gap_radians = 2 * np.pi / 200.,
+    kde_width = 0.5,
+    bg_fmin=0.,
+    bg_fmax=0.99,
+    bg_vmin=None,
+    bg_vmax=None,
+    hyper_colour=consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+    hypo_colour = consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+    unmap_threshold_pct=10.,
+    plot_border = True,
+    bg_cmap=plt.cm.get_cmap('RdYlBu_r'),
+):
+    chroms = chrom_length.keys()
+
+    if bg_vmin is None and bg_fmin is None:
+        bg_vmin = 0.
+    if bg_vmax is None and bg_fmax is None:
+        raise ValueError("Must supply one of bg_vmax or bg_fmax.")
+
+    if bg_density is not None:
+        all_bg = []
+        for chrom in chroms:
+            this_bg = bg_density[chrom]
+            all_bg.extend(this_bg.values)
+        all_bg = sorted(all_bg)
+        bg_mean = np.mean(all_bg)
+        if bg_vmin is None:
+            bg_vmin = all_bg[int(bg_fmin * len(all_bg))]
+        if bg_vmax is None:
+            bg_vmax = all_bg[int(bg_fmax * len(all_bg))]
+        if bg_vmin > bg_mean:
+            raise ValueError("The vmin value calculated for the background density is greater than the mean.")
+        if bg_vmax < bg_mean:
+            raise ValueError("The vmax value calculated for the background density is less than the mean.")
+
+    sum_chrom_length = float(sum(chrom_length.values()))
+    radians_per_bp = (2 * np.pi - gap_radians * len(chroms)) / sum_chrom_length
+
+    outer_r = inner_r + central_width
+
+    # generate all KDEs first, so we can rescale them correctly at plot time
+    hypo_kdes = {}
+    hyper_kdes = {}
+    kde_th = {}
+
+    curr_theta = 0.
+    for chrom in chroms:
+        xx = np.arange(1, chrom_length[chrom], window_size)
+        if xx[-1] != chrom_length[chrom]:
+            xx = np.concatenate((xx, [chrom_length[chrom]]))
+        # this_bg = bg_density[chrom]
+        # xx = np.array(this_bg.index.tolist() + [chrom_length[chrom]])
+        dummy_res = np.ma.masked_all(xx.shape)
+        this_hypo = dmr_loci_hypo[chrom]
+        this_hyper = dmr_loci_hyper[chrom]
+
+        if len(this_hypo):
+            hypo_kdes[chrom] = fit_kde_dmr_location(this_hypo, xx, window_size, normed=False)
+        else:
+            hypo_kdes[chrom] = dummy_res
+
+        if len(this_hyper):
+            hyper_kdes[chrom] = fit_kde_dmr_location(this_hyper, xx, window_size, normed=False)
+        else:
+            hyper_kdes[chrom] = dummy_res
+
+        th = curr_theta + xx * radians_per_bp
+        kde_th[chrom] = th
+        curr_theta = th[-1] + gap_radians
+
+
+    # rescale KDEs
+    # we want the density to reflect the number of DMRs
+
+    hypo_kdes_rescaled = {}
+    hyper_kdes_rescaled = {}
+
+    hypo_max = max([t.max() for t in hypo_kdes.values()])
+    hyper_max = max([t.max() for t in hyper_kdes.values()])
+
+    for chrom in chroms:
+        d_hypo = hypo_kdes[chrom]
+        hypo_kdes_rescaled[chrom] = d_hypo / hypo_max * kde_width
+
+        d_hyper = hyper_kdes[chrom]
+        hyper_kdes_rescaled[chrom] = d_hyper / hyper_max * kde_width
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='polar')
+    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')
+    # hack required to convert patches correctly to polar coords
+    # https://github.com/matplotlib/matplotlib/issues/8521
+    ax.bar(0, 1).remove()
+
+    text_handles = {}
+    border_patches = {}
+    bg_handles = {}
+    unmapped_handles = {}
+
+    curr_theta = 0
+    for chrom in chroms:
+        if bg_density is not None:
+            this_bg = bg_density[chrom]
+
+            d_hypo = hypo_kdes_rescaled[chrom]
+            d_hyper = hyper_kdes_rescaled[chrom]
+
+            th = curr_theta + np.array(this_bg.index.tolist() + [chrom_length[chrom]]) * radians_per_bp
+            tt = np.array([th, th])
+            rr = np.zeros_like(tt) + inner_r
+            rr[1] = outer_r
+
+            cc = np.array([this_bg.values])
+
+            norm = common.MidpointNormalize(midpoint=bg_mean, vmin=bg_vmin, vmax=bg_vmax)
+            h_bg = ax.pcolor(tt, rr, cc, cmap=bg_cmap, norm=norm, vmin=bg_vmin, vmax=bg_vmax)
+            bg_handles[chrom] = h_bg
+
+        if unmapped_density is not None:
+            this_unmapped = unmapped_density[chrom]
+            this_unmapped_pct = this_unmapped / float(window_size) * 100.
+            th = curr_theta + np.array(this_unmapped.index.tolist() + [chrom_length[chrom]]) * radians_per_bp
+
+            uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmap_threshold_pct)
+            # since we don't care about the extent of unmapping, replace all values with a single one
+            uu[~uu.mask] = 0.5
+            h_unmapped = ax.pcolor(tt, rr, uu, cmap='Greys', vmax=1., vmin=0.)
+            unmapped_handles[chrom] = h_unmapped
+
+        if plot_border:
+            this_patch = plt.Rectangle(
+                [curr_theta, inner_r],
+                width=chrom_length[chrom] * radians_per_bp,
+                height=central_width,
+                edgecolor='k',
+                facecolor='none',
+                linewidth=1.,
+                zorder=999,
+            )
+            ax.add_artist(this_patch)
+            border_patches[chrom] = this_patch
+
+        # add chromosome name
+        th_midpoint = (curr_theta + chrom_length[chrom] * radians_per_bp / 2.)
+        h_text = ax.text(
+            th_midpoint,
+            outer_r + kde_width / 2.,
+            chrom,
+            horizontalalignment='center',
+            verticalalignment='center'
+        )
+        text_handles[chrom] = h_text
+
+        # plot the KDEs
+        th = kde_th[chrom]
+        ax.fill_between(th, y1=d_hyper + outer_r, y2=outer_r, alpha=0.9, color=hyper_colour)
+        ax.fill_between(th, y1=inner_r, y2=inner_r - d_hypo, alpha=0.9, color=hypo_colour)
+
+        ax.set_facecolor('w')
+
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+
+        curr_theta = th[-1] + gap_radians
+
+    fig.tight_layout()
+
+    return {
+        'fig': fig,
+        'ax': ax,
+        'border_patches': border_patches,
+        'text_handles': text_handles,
+        'unmapped_handles': unmapped_handles,
+        'bg_handles': bg_handles
+    }
 
 
 if __name__ == "__main__":
@@ -214,6 +473,7 @@ if __name__ == "__main__":
         coord_summary_method=coord_summary_method
     )
     dmr_loci_all = tmp['dmr_loci'][pids[0]]
+    dmr_binned_all = tmp['dmr_binned'][pids[0]]
 
     #1 ) All DMRs
     tmp = get_binned_dmr_locations(
@@ -228,47 +488,6 @@ if __name__ == "__main__":
     dmr_loci_hypo = tmp['dmr_loci_hypo']
 
 
-    def ks_test_dmr_locations(
-        dmr_locs,
-        null_locs,
-        mht_method='fdr_bh',
-    ):
-        """
-        Run the 2 sample KS test on DMR locations, using the supplied null locations as the reference sample.
-        :param dmr_locs: Nested dictionary keyed by PID then feature (chromosome name)
-        :param null_locs: Dictionary keyed by feature (chromosome name)
-        :param mht_method: The method to use for MHT correction. Passed to multicomp.multipletests.
-        If None, skip MHT and use the unadjusted pvalues.
-        :return:
-        """
-        ks_pval_flat = []
-        ks_stat_flat = []
-        ks_flat_map = []
-        for pid, val in dmr_locs.items():
-            for feat in val:
-                tmp = stats.ks_2samp(dmr_locs[pid][feat], null_locs[feat])
-                ks_stat_flat.append(tmp[0])
-                ks_pval_flat.append(tmp[1])
-                ks_flat_map.append((pid, feat))
-
-        # correct for MHT
-        if mht_method is None:
-            padj = ks_pval_flat
-        else:
-            _, padj, _, _ = multicomp.multipletests(ks_pval_flat, alpha=0.05, method=mht_method)
-
-
-        res_fdr = dict([(pid, {}) for pid in dmr_locs.keys()])
-        res_stat = dict([(pid, {}) for pid in dmr_locs.keys()])
-
-        i = 0
-        for pid, feat in ks_flat_map:
-            res_fdr[pid][feat] = padj[i]
-            res_stat[pid][feat] = ks_stat_flat[i]
-            i += 1
-
-        return res_fdr, res_stat
-
     hyper_all_fdr, hyper_all_stat = ks_test_dmr_locations(
         dmr_loci_hyper,
         dmr_loci_all
@@ -281,15 +500,40 @@ if __name__ == "__main__":
     )
     hypo_all_fdr = pd.DataFrame(hypo_all_fdr).loc[chroms, pids]
 
-    norm = MidpointNormalize(midpoint=1., vmin=0, vmax=3.)
+    vmin = .5
+    vmax = 3.
+    alpha = 0.1
     gs = plt.GridSpec(1, 3, width_ratios=[9, 9, 1])
     fig = plt.figure(figsize=(9.5, 5.5))
     ax_hyper = fig.add_subplot(gs[0])
     ax_hypo = fig.add_subplot(gs[1], sharex=ax_hyper, sharey=ax_hyper)
     ax_cbar = fig.add_subplot(gs[2])
 
-    sns.heatmap(-np.log10(hyper_all_fdr), cmap='RdBu_r', norm=norm, vmin=0., vmax=3., ax=ax_hyper, cbar=False)
-    sns.heatmap(-np.log10(hypo_all_fdr), cmap='RdBu_r', norm=norm, vmin=0., vmax=3., ax=ax_hypo, cbar_ax=ax_cbar)
+    hyper_to_plot = -np.log10(hyper_all_fdr)
+    hyper_to_plot = hyper_to_plot[hyper_to_plot > -np.log10(alpha)]
+    hypo_to_plot = -np.log10(hypo_all_fdr)
+    hypo_to_plot = hypo_to_plot[hypo_to_plot > -np.log10(alpha)]
+
+    sns.heatmap(
+        hyper_to_plot,
+        cmap='Reds',
+        vmin=vmin,
+        vmax=vmax,
+        ax=ax_hyper,
+        cbar=False,
+        linewidths=1.,
+        linecolor='w'
+    )
+    sns.heatmap(
+        hypo_to_plot,
+        cmap='Reds',
+        vmin=vmin,
+        vmax=vmax,
+        ax=ax_hypo,
+        linewidths=1.,
+        linecolor='w',
+        cbar_ax=ax_cbar
+    )
     plt.setp(ax_hypo.yaxis.get_ticklabels(), visible=False)
     ax_hyper.set_ylabel('Chromosome')
     ax_hyper.set_xlabel('Patient')
@@ -300,6 +544,8 @@ if __name__ == "__main__":
     plt.setp(ax_hyper.yaxis.get_ticklabels(), rotation=0)
 
     gs.update(left=0.06, right=0.94, top=0.95, wspace=0.1)
+    fig.savefig(os.path.join(outdir, "ks_fdr_all_dmr_location.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "ks_fdr_all_dmr_location.tiff"), dpi=200)
 
     # repeat for patient-specific DMRs
 
@@ -327,15 +573,40 @@ if __name__ == "__main__":
     )
     hypo_specific_fdr = pd.DataFrame(hypo_specific_fdr).loc[chroms, pids]
 
-    norm = MidpointNormalize(midpoint=1., vmin=0, vmax=3.)
+    vmin = .5
+    vmax = 3.
+    alpha = 0.1
     gs = plt.GridSpec(1, 3, width_ratios=[9, 9, 1])
     fig = plt.figure(figsize=(9.5, 5.5))
     ax_hyper = fig.add_subplot(gs[0])
     ax_hypo = fig.add_subplot(gs[1], sharex=ax_hyper, sharey=ax_hyper)
     ax_cbar = fig.add_subplot(gs[2])
 
-    sns.heatmap(-np.log10(hyper_specific_fdr), cmap='RdBu_r', norm=norm, vmin=0., vmax=3., ax=ax_hyper, cbar=False)
-    sns.heatmap(-np.log10(hypo_specific_fdr), cmap='RdBu_r', norm=norm, vmin=0., vmax=3., ax=ax_hypo, cbar_ax=ax_cbar)
+    hyper_to_plot_specific = -np.log10(hyper_specific_fdr)
+    hyper_to_plot_specific = hyper_to_plot_specific[hyper_to_plot_specific > -np.log10(alpha)]
+    hypo_to_plot_specific = -np.log10(hypo_specific_fdr)
+    hypo_to_plot_specific = hypo_to_plot_specific[hypo_to_plot_specific > -np.log10(alpha)]
+
+    sns.heatmap(
+        hyper_to_plot_specific,
+        cmap='Reds',
+        vmin=vmin,
+        vmax=vmax,
+        ax=ax_hyper,
+        cbar=False,
+        linewidths=1.,
+        linecolor='w'
+    )
+    sns.heatmap(
+        hypo_to_plot_specific,
+        cmap='Reds',
+        vmin=vmin,
+        vmax=vmax,
+        ax=ax_hypo,
+        linewidths=1.,
+        linecolor='w',
+        cbar_ax=ax_cbar
+    )
     plt.setp(ax_hypo.yaxis.get_ticklabels(), visible=False)
     ax_hyper.set_ylabel('Chromosome')
     ax_hyper.set_xlabel('Patient')
@@ -346,3 +617,214 @@ if __name__ == "__main__":
     plt.setp(ax_hyper.yaxis.get_ticklabels(), rotation=0)
 
     gs.update(left=0.06, right=0.94, top=0.95, wspace=0.1)
+    fig.savefig(os.path.join(outdir, "ks_fdr_specific_dmr_location.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "ks_fdr_specific_dmr_location.tiff"), dpi=200)
+
+    # generate a polar plot illustrating DMR locations
+
+    unmap_threshold_pct = 10.  # unmapped % above this value will be masked
+    xmax = max(chrom_length.values())
+
+    # TODO: ongoing work on a polar plot
+    kde_width = 0.5
+    bg_fmin = 0.
+    bg_vmin = -2.
+    bg_vmax = 50
+    bg_fmax = 0.95
+    bg_vmax = None
+    bg_density = dmr_binned_all
+    inner_r = 3.
+    central_width = 0.25
+    gap_radians = 2 * np.pi / 200.
+    plot_border = True
+
+    cmap = plt.cm.get_cmap('RdYlBu_r')
+    new_cmap_list = [cmap(t) for t in np.linspace(0.15, 0.85, 256)]
+    new_cmap = cmap.from_list('RdYlBu_r_truncated', new_cmap_list)
+
+    plt_dict = polar_distribution_plot(
+        dmr_loci_hyper[pid],
+        dmr_loci_hypo[pid],
+        chrom_length,
+        bg_density=bg_density,
+        unmapped_density=unmapped_density,
+        window_size=5e5,
+        bg_cmap=new_cmap
+    )
+    # TODO: go through significant KS results and highlight the text label
+    # plt.setp(plt_dict['text_handles']['1'], weight='bold', color='b')
+
+
+    if bg_vmin is None and bg_fmin is None:
+        bg_vmin = 0.
+    if bg_vmax is None and bg_fmax is None:
+        raise ValueError("Must supply one of bg_vmax or bg_fmax.")
+
+    if bg_density is not None:
+        all_bg = []
+        for chrom in chroms:
+            this_bg = bg_density[chrom]
+            all_bg.extend(this_bg.values)
+        all_bg = sorted(all_bg)
+        bg_mean = np.mean(all_bg)
+        if bg_vmin is None:
+            bg_vmin = all_bg[int(bg_fmin * len(all_bg))]
+        if bg_vmax is None:
+            bg_vmax = all_bg[int(bg_fmax * len(all_bg))]
+        if bg_vmin > bg_mean:
+            raise ValueError("The vmin value calculated for the background density is greater than the mean.")
+        if bg_vmax < bg_mean:
+            raise ValueError("The vmax value calculated for the background density is less than the mean.")
+
+    sum_chrom_length = float(sum(chrom_length.values()))
+    radians_per_bp = (2 * np.pi - gap_radians * len(chroms)) / sum_chrom_length
+
+    outer_r = inner_r + central_width
+
+    # generate all KDEs first, so we can rescale them correctly at plot time
+    hypo_kdes = {}
+    hyper_kdes = {}
+
+    hypo_kdes_specific = {}
+    hyper_kdes_specific = {}
+
+    for chrom in chroms:
+        this_cg = bg_density[chrom]
+        xx = np.array(this_cg.index.tolist() + [chrom_length[chrom]])
+        dummy_res = np.ma.masked_all(xx.shape)
+        this_hypo = dmr_loci_hypo[pid][chrom]
+        this_hyper = dmr_loci_hyper[pid][chrom]
+        this_hypo_specific = dmr_loci_hypo_specific[pid][chrom]
+        this_hyper_specific = dmr_loci_hyper_specific[pid][chrom]
+
+        if len(this_hypo):
+            hypo_kdes[chrom] = fit_kde_dmr_location(this_hypo, xx, window_size, normed=False)
+        else:
+            hypo_kdes[chrom] = dummy_res
+
+        if len(this_hyper):
+            hyper_kdes[chrom] = fit_kde_dmr_location(this_hyper, xx, window_size, normed=False)
+        else:
+            hyper_kdes[chrom] = dummy_res
+
+        if len(this_hypo_specific):
+            hypo_kdes_specific[chrom] = fit_kde_dmr_location(this_hypo_specific, xx, window_size, normed=False)
+        else:
+            hypo_kdes_specific[chrom] = dummy_res
+
+        if len(this_hyper_specific):
+            hyper_kdes_specific[chrom] = fit_kde_dmr_location(this_hyper_specific, xx, window_size, normed=False)
+        else:
+            hyper_kdes_specific[chrom] = dummy_res
+
+    # rescale KDEs
+    # we want the density to reflect the number of DMRs
+
+    hypo_kdes_rescaled = {}
+    hyper_kdes_rescaled = {}
+    hypo_kdes_specific_rescaled = {}
+    hyper_kdes_specific_rescaled = {}
+
+    hypo_max = max([t.max() for t in hypo_kdes.values()])
+    hyper_max = max([t.max() for t in hyper_kdes.values()])
+
+    for chrom in chroms:
+        d_hypo = hypo_kdes[chrom]
+        hypo_kdes_rescaled[chrom] = d_hypo / hypo_max * kde_width
+
+        d_hyper = hyper_kdes[chrom]
+        hyper_kdes_rescaled[chrom] = d_hyper / hyper_max * kde_width
+
+        d_hypo_specific = hypo_kdes_specific[chrom]
+        hypo_kdes_specific_rescaled[chrom] = d_hypo_specific / hypo_max * kde_width
+
+        d_hyper_specific = hyper_kdes_specific[chrom]
+        hyper_kdes_specific_rescaled[chrom] = d_hyper_specific / hyper_max * kde_width
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='polar')
+    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')
+    # hack required to convert patches correctly to polar coords
+    # https://github.com/matplotlib/matplotlib/issues/8521
+    ax.bar(0, 1).remove()
+
+    text_handles = {}
+    border_patches = {}
+    bg_handles = {}
+    unmapped_handles = {}
+
+    curr_theta = 0
+    for chrom in chroms:
+        if bg_density is not None:
+            this_bg = bg_density[chrom]
+
+            d_hypo = hypo_kdes_rescaled[chrom]
+            d_hyper = hyper_kdes_rescaled[chrom]
+            d_hypo_specific = hypo_kdes_specific_rescaled[chrom]
+            d_hyper_specific = hyper_kdes_specific_rescaled[chrom]
+
+            xx = np.array([this_bg.index.tolist() + [chrom_length[chrom]]] * 2)
+            th = curr_theta + np.array(this_bg.index.tolist() + [chrom_length[chrom]]) * radians_per_bp
+            tt = np.array([th, th])
+            rr = np.zeros_like(tt) + inner_r
+            rr[1] = outer_r
+
+            cc = np.array([this_bg.values])
+
+            norm = common.MidpointNormalize(midpoint=bg_mean, vmin=bg_vmin, vmax=bg_vmax)
+            h_bg = ax.pcolor(tt, rr, cc, cmap='RdYlBu_r', vmin=bg_vmin, vmax=bg_vmax)
+            bg_handles[chrom] = h_bg
+
+        if unmapped_density is not None:
+            this_unmapped = unmapped_density[chrom]
+            this_unmapped_pct = this_unmapped / float(window_size) * 100.
+
+            uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmap_threshold_pct)
+            # since we don't care about the extent of unmapping, replace all values with a single one
+            uu[~uu.mask] = 0.5
+            h_unmapped = ax.pcolor(tt, rr, uu, cmap='Greys', vmax=1., vmin=0.)
+            unmapped_handles[chrom] = h_unmapped
+
+        if plot_border:
+            this_patch = plt.Rectangle(
+                [th[0], inner_r],
+                width=th[-1]-th[0],
+                height=central_width,
+                edgecolor='k',
+                facecolor='none',
+                linewidth=1.,
+                zorder=999,
+                # transform=ax.transAxes
+            )
+            ax.add_artist(this_patch)
+            border_patches[chrom] = this_patch
+
+        # add chromosome name
+        th_midpoint = np.mean(th)
+        h_text = ax.text(
+            th_midpoint,
+            outer_r + kde_width / 2.,
+            chrom,
+            horizontalalignment='center',
+            verticalalignment='center'
+        )
+        text_handles[chrom] = h_text
+
+        # plot the KDEs
+        ax.fill_between(th, y1=d_hyper + outer_r, y2=outer_r, alpha=0.9,
+                        color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+        ax.fill_between(th, y1=inner_r, y2=inner_r - d_hypo, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hypo'])
+
+        ax.set_facecolor('w')
+
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+
+        print "Chrom %s started at angle %.2f and ended at %.2f" % (chrom, curr_theta, th[-1] + gap_radians)
+        curr_theta = th[-1] + gap_radians
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot.pdf"), dpi=200)

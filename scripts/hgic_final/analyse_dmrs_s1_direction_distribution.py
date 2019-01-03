@@ -735,8 +735,20 @@ def get_binned_dmr_locations(
     clusters,
     chrom_lengths,
     window_size=20000,
-    split_by_direction=False
+    split_by_direction=False,
+    coord_summary_method='first'
 ):
+    """
+
+    :param dmr_res:
+    :param clusters:
+    :param chrom_lengths:
+    :param window_size:
+    :param split_by_direction:
+    :param coord_summary_method: Method used to reduce the list of CpG coordinates to a single one.
+    Default is 'first', meaning take the 5'-most coordinate (first in the list). Other options: 'last', 'median', 'mean'
+    :return:
+    """
     if split_by_direction:
         dmr_loci_hypo = {}
         dmr_loci_binned_hypo = {}
@@ -759,14 +771,25 @@ def get_binned_dmr_locations(
         for cluster_id, cl in dmr_res[pid].items():
             # get the chrom and locus
             pc = clusters[cluster_id]
-            # just for speed, let's use the first (min) genomic coordinate (shouldn't affect results)
+            # use the requested method to get a representative coordinate from the list
+            if coord_summary_method == 'first':
+                the_coord = pc.coord_list[0]
+            elif coord_summary_method == 'last':
+                the_coord = pc.coord_list[-1]
+            elif coord_summary_method == 'median':
+                the_coord = np.median(pc.coord_list)
+            elif coord_summary_method == 'mean':
+                the_coord = np.mean(pc.coord_list)
+            else:
+                raise ValueError("Unsupported coordinate summary method '%s'." % coord_summary_method)
+
             if split_by_direction:
                 if cl['median_change'] > 0:
-                    this_loci_hyper[pc.chr].append(pc.coord_list[0])
+                    this_loci_hyper[pc.chr].append(the_coord)
                 else:
-                    this_loci_hypo[pc.chr].append(pc.coord_list[0])
+                    this_loci_hypo[pc.chr].append(the_coord)
             else:
-                this_loci[pc.chr].append(pc.coord_list[0])
+                this_loci[pc.chr].append(the_coord)
         if split_by_direction:
             dmr_loci_hyper[pid] = this_loci_hyper
             dmr_loci_hypo[pid] = this_loci_hypo
@@ -828,7 +851,10 @@ def dmr_location_plot(
         unmapped_density=None,
         window_size=20000,
         unmapped_threshold_pct=10,
-        max_n_per_row=15
+        max_n_per_row=15,
+        cg_fmax=0.95,
+        cg_fmin=0.,
+        plot_border=True
 ):
     chroms = chrom_length.keys()
     dmr_loci_hyper, dmr_loci_hypo = dmr_loci
@@ -842,7 +868,14 @@ def dmr_location_plot(
             this_cg = cg_density[chrom]
             this_cg_pct = this_cg / float(window_size) * 100.
             all_cg_densities.extend(this_cg_pct.values)
-        cg_pct_mean = np.mean(all_cg_densities)
+        all_cg_densities = sorted(all_cg_densities)
+        cg_mean = np.mean(all_cg_densities)
+        cg_vmin = all_cg_densities[int(cg_fmin * len(all_cg_densities))]
+        cg_vmax = all_cg_densities[int(cg_fmax * len(all_cg_densities))]
+        if cg_vmin > cg_mean:
+            raise ValueError("The vmin value calculated for the background density is greater than the mean.")
+        if cg_vmax < cg_mean:
+            raise ValueError("The vmax value calculated for the background density is less than the mean.")
 
     fig = plt.figure(figsize=(10, 8))
     ncols = int(np.ceil(len(chrom_length) / float(max_n_per_row)))
@@ -889,11 +922,10 @@ def dmr_location_plot(
 
             xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
             yy = np.zeros_like(xx); yy[1] = 1.
-            cc = np.array([this_cg_pct.values])
+            cc = np.ma.masked_less([this_cg_pct.values], cg_vmin)
+            # cc = np.array([this_cg_pct.values])
 
-            norm = MidpointNormalize(midpoint=cg_pct_mean, vmin=0, vmax=5.)
-
-            # ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
+            norm = MidpointNormalize(midpoint=cg_mean, vmin=cg_vmin, vmax=cg_vmax)
             ax_gc.pcolor(xx, yy, cc, cmap='PuOr', norm=norm)
             ax_gc.set_xlim([0, xmax])
 
@@ -909,6 +941,19 @@ def dmr_location_plot(
 
             ax_gc.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
             ax_gc.set_xlim([0, xmax])
+
+        if plot_border:
+            # draw a border around the extent of the chromosome
+            border = plt.Rectangle(
+                [0, 0.01],
+                chrom_length[chrom],
+                .98,
+                edgecolor='k',
+                facecolor='none',
+                linewidth=1.,
+                zorder=100.
+            )
+            ax_gc.add_patch(border)
 
         this_hypo = dmr_loci_hypo[chrom]
         this_hyper = dmr_loci_hyper[chrom]
@@ -1273,21 +1318,38 @@ if __name__ == "__main__":
 
     # investigate (genomic) distribution of DMRs
 
+    # extract cluster attributes
+    dmr_s1_clusters = dmr_res_s1[pids[0]].clusters
+
     # Get the distribution of CpGs in bins across the entire genome
+    window_size = int(2e5)
     chroms = [str(t) for t in range(1, 23)]
     fa_fn = os.path.join(
         LOCAL_DATA_DIR,
         'reference_genomes',
         'human/ensembl/GRCh38.release87/fa/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
     )
-    window_size = int(2e5)
     cg_density, chrom_length = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size)
     # reorder
     chrom_length = collections.OrderedDict([(k, chrom_length[k]) for k in chroms])
 
-    dmr_s1_clusters = dmr_res_s1[pids[0]].clusters
-
+    # find unmapped regions so we can mask them on the plot
     unmapped_density, _ = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size, motif='N')
+
+    # get all DMRs (whether significant or not) to use as a null hypothesis
+    # the maximum DMR size is 7203 bp (mean ~ 1000), i.e. much smaller than the window size
+    # TODO: think this justifies binning by the number of DMRs within a window (?)
+    coord_summary_method = 'first'
+    tmp = get_binned_dmr_locations(
+        dmr_res_s1.results,
+        dmr_s1_clusters,
+        chrom_length,
+        window_size=window_size,
+        split_by_direction=False,
+        coord_summary_method=coord_summary_method
+    )
+    dmr_loci_all = tmp['dmr_loci'][pids[0]]
+    dmr_all_binned = tmp['dmr_binned'][pids[0]]
 
     #1 ) All DMRs
     tmp = get_binned_dmr_locations(
@@ -1295,7 +1357,8 @@ if __name__ == "__main__":
         dmr_s1_clusters,
         chrom_length,
         window_size=window_size,
-        split_by_direction=True
+        split_by_direction=True,
+        coord_summary_method=coord_summary_method
     )
     dmr_loci_hyper = tmp['dmr_loci_hyper']
     dmr_loci_hypo = tmp['dmr_loci_hypo']
@@ -1305,7 +1368,8 @@ if __name__ == "__main__":
         dmr_s1_clusters,
         chrom_length,
         window_size=window_size,
-        split_by_direction=True
+        split_by_direction=True,
+        coord_summary_method=coord_summary_method
     )
 
     specific_dmr_loci_hyper = tmp['dmr_loci_hyper']
@@ -1315,15 +1379,18 @@ if __name__ == "__main__":
     tmp = dmr_location_plot(
         [dmr_loci_hyper[pid], dmr_loci_hypo[pid]],
         chrom_length,
-        cg_density=cg_density,
-        unmapped_density=unmapped_density,
+        # cg_density=cg_density,
+        cg_density=dmr_all_binned,
+        # unmapped_density=unmapped_density,
+        unmapped_density=None,
         window_size=window_size
     )
 
     unmap_threshold_pct = 10. # unmapped % above this value will be masked
     xmax = max(chrom_length.values())
 
-    # ongoing work on a polar plot
+    # TODO: ongoing work on a polar plot
+
     all_cg_densities = []
     for chrom in chroms:
         this_cg = cg_density[chrom]
