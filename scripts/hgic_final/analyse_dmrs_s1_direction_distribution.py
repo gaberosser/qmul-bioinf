@@ -963,11 +963,64 @@ def dmr_location_plot(
     }
 
 
+def fit_kde_dmr_location(locs, xi, bandwidth, normed=True):
+    # the KDE library expects a 2D array, even if data are not multidimensional
+    locs = np.array(locs)
+    if len(locs.shape) == 1:
+        locs = locs[:, None]
+    elif len(locs.shape) == 2:
+        if locs.shape[0] == 1 and locs.shape[1] > 1:
+            locs = locs.transpose()
+        elif locs.shape[1] == 1 and locs.shape[0] > 1:
+            pass
+        else:
+            raise ValueError("locations array must be 1D or (quasi-)2D")
+    else:
+        raise ValueError("locations array must be 1D or (quasi-)2D")
+
+    xi = np.array(xi)
+    if len(xi.shape) == 1:
+        xi = xi[:, None]
+    elif len(xi.shape) == 2:
+        if xi.shape[0] == 1 and xi.shape[1] > 1:
+            xi = xi.transpose()
+        elif xi.shape[1] == 1 and xi.shape[0] > 1:
+            pass
+        else:
+            raise ValueError("xi array must be 1D or (quasi-)2D")
+    else:
+        raise ValueError("xi array must be 1D or (quasi-)2D")
+
+    k = KernelDensity(bandwidth=bandwidth, kernel='gaussian')
+    k.fit(locs)  # this increases the dim of the 1D array
+    logd_score = k.score_samples(xi)
+    # blank out baseline (for plotting purposes)
+    logd_score[logd_score < -100] = -np.inf
+    score = np.ma.masked_equal(np.exp(logd_score), 0.)
+    if not normed:
+        # convert to unnormalised density
+        score *= locs.size
+    return score
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
+
+    subgroups = consts.SUBGROUPS
+
+    subgroups_lookup = {}
+    for grp, arr in subgroups.items():
+        subgroups_lookup.update(dict([
+            (t, grp) for t in arr
+        ]))
+
+    # indicator showing which groups the PIDs belong to
+    subgroup_ind = dict([
+        (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
+    ])
 
     # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
     write_bed_files = False
@@ -1006,16 +1059,29 @@ if __name__ == "__main__":
 
     # patient-specific DMRs
     pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
+    ss_sets = {}
+    for grp in subgroup_ind:
+        k = ''.join(subgroup_ind[grp].astype(int).astype(str))
+        ss_sets[grp] = k
+    ss_part_sets = tsgd.partial_subgroup_specific(pids, subgroup_ind)
+
     venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_all[pid] for pid in pids])
     vs = dict([
-                  (p, venn_set[q]) for p, q in zip(pids, pu_sets)
-                  ])
+        (p, venn_set[q]) for p, q in zip(pids, pu_sets)
+    ])
+
+    # patient specific DMRs
     dmr_res_specific = dict([
-                                (
-                                    pid,
-                                    dict([(t, dmr_res_all[pid][t]) for t in vs[pid]])
-                                ) for pid in pids
-                                ])
+        (
+            pid,
+            dict([(t, dmr_res_all[pid][t]) for t in vs[pid]])
+        ) for pid in pids
+    ])
+
+    # (full) subgroup specific DMRs
+    dmr_res_subgroup_specific_full = dict([(k, venn_set[v]) for k, v in ss_sets.items()])
+
+
 
     # full DMPs
     dd = dmr_to_dmp(
@@ -1233,8 +1299,17 @@ if __name__ == "__main__":
     )
     dmr_loci_hyper = tmp['dmr_loci_hyper']
     dmr_loci_hypo = tmp['dmr_loci_hypo']
-    dmr_binned_hyper = tmp['dmr_binned_hyper']
-    dmr_binned_hypo = tmp['dmr_binned_hypo']
+
+    tmp = get_binned_dmr_locations(
+        dmr_res_specific,
+        dmr_s1_clusters,
+        chrom_length,
+        window_size=window_size,
+        split_by_direction=True
+    )
+
+    specific_dmr_loci_hyper = tmp['dmr_loci_hyper']
+    specific_dmr_loci_hypo = tmp['dmr_loci_hypo']
 
     pid = pids[0]
     tmp = dmr_location_plot(
@@ -1259,28 +1334,97 @@ if __name__ == "__main__":
     gap_radians = 2 * np.pi / 200.
     sum_chrom_length = float(sum(chrom_length.values()))
     radians_per_bp = (2 * np.pi - gap_radians * len(chroms)) / sum_chrom_length
-    inner_r = 1.
-    r_width = 0.1
-    outer_r = 1.1
-    kde_width = 0.3
+    inner_r = 2.
+    outer_r = 2.1
+    kde_width = 0.5
+
+    # generate all KDEs first, so we can rescale them correctly at plot time
+    hypo_kdes = {}
+    hyper_kdes = {}
+
+    hypo_kdes_specific = {}
+    hyper_kdes_specific = {}
+
+
+
+    for chrom in chroms:
+        this_cg = cg_density[chrom]
+        xx = np.array(this_cg.index.tolist() + [chrom_length[chrom]])
+        dummy_res = np.ma.masked_all(xx.shape)
+        this_hypo = dmr_loci_hypo[pid][chrom]
+        this_hyper = dmr_loci_hyper[pid][chrom]
+        this_hypo_specific = specific_dmr_loci_hypo[pid][chrom]
+        this_hyper_specific = specific_dmr_loci_hyper[pid][chrom]
+
+        if len(this_hypo):
+            hypo_kdes[chrom] = fit_kde_dmr_location(this_hypo, xx, window_size, normed=False)
+        else:
+            hypo_kdes[chrom] = dummy_res
+
+        if len(this_hyper):
+            hyper_kdes[chrom] = fit_kde_dmr_location(this_hyper, xx, window_size, normed=False)
+        else:
+            hyper_kdes[chrom] = dummy_res
+
+        if len(this_hypo_specific):
+            hypo_kdes_specific[chrom] = fit_kde_dmr_location(this_hypo_specific, xx, window_size, normed=False)
+        else:
+            hypo_kdes_specific[chrom] = dummy_res
+
+        if len(this_hyper_specific):
+            hyper_kdes_specific[chrom] = fit_kde_dmr_location(this_hyper_specific, xx, window_size, normed=False)
+        else:
+            hyper_kdes_specific[chrom] = dummy_res
+
+    # rescale KDEs
+    # we want the density to reflect the number of DMRs
+
+    hypo_kdes_rescaled = {}
+    hyper_kdes_rescaled = {}
+    hypo_kdes_specific_rescaled = {}
+    hyper_kdes_specific_rescaled = {}
+
+    hypo_max = max([t.max() for t in hypo_kdes.values()])
+    hyper_max = max([t.max() for t in hyper_kdes.values()])
+
+    for chrom in chroms:
+
+        d_hypo = hypo_kdes[chrom]
+        hypo_kdes_rescaled[chrom] = d_hypo / hypo_max * kde_width
+
+        d_hyper = hyper_kdes[chrom]
+        hyper_kdes_rescaled[chrom] = d_hyper / hyper_max * kde_width
+
+        d_hypo_specific = hypo_kdes_specific[chrom]
+        hypo_kdes_specific_rescaled[chrom] = d_hypo_specific / hypo_max * kde_width
+
+        d_hyper_specific = hyper_kdes_specific[chrom]
+        hyper_kdes_specific_rescaled[chrom] = d_hyper_specific / hyper_max * kde_width
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='polar')
+    ax.set_theta_direction(-1)
+    ax.set_theta_zero_location('N')
 
     curr_theta = 0
     for chrom in chroms:
         this_cg = cg_density[chrom]
         this_cg_pct = this_cg / float(window_size) * 100.
 
+        d_hypo = hypo_kdes_rescaled[chrom]
+        d_hyper = hyper_kdes_rescaled[chrom]
+        d_hypo_specific = hypo_kdes_specific_rescaled[chrom]
+        d_hyper_specific = hyper_kdes_specific_rescaled[chrom]
+
         xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
         th = curr_theta + np.array(this_cg.index.tolist() + [chrom_length[chrom]]) * radians_per_bp
         tt = np.array([th, th])
-        rr = np.zeros_like(tt) + inner_r; rr[1] = inner_r * (1 + r_width)
+        rr = np.zeros_like(tt) + inner_r; rr[1] = outer_r
 
         cc = np.array([this_cg_pct.values])
 
-        norm = MidpointNormalize(midpoint=cg_pct_mean, vmin=0, vmax=5.)
-        ax.pcolor(tt, rr, cc, cmap='PuOr')
+        norm = MidpointNormalize(midpoint=cg_pct_mean, vmin=0, vmax=3.)
+        ax.pcolor(tt, rr, cc, cmap='RdYlBu_r')
 
         this_unmapped = unmapped_density[chrom]
         this_unmapped_pct = this_unmapped / float(window_size) * 100.
@@ -1289,36 +1433,6 @@ if __name__ == "__main__":
         # since we don't care about the extent of unmapping, replace all values with a single one
         uu[~uu.mask] = 0.8
         ax.pcolor(tt, rr, uu, cmap='Greys', vmax=1., vmin=0.)
-
-        this_hypo = dmr_loci_hypo[pid][chrom]
-        this_hyper = dmr_loci_hyper[pid][chrom]
-
-        # KDE estimation gives us a nice representation of the DMR location distribution
-        # NB this library expects a 2D array and complains otherwise!
-        k_hypo = KernelDensity(bandwidth=window_size, kernel='gaussian')
-        k_hypo.fit(np.array(this_hypo)[:, None])  # this increases the dim of the 1D array
-        logd_hypo = k_hypo.score_samples(xx[0, None].transpose())
-
-        # blank out baseline (for plotting purposes)
-        logd_hypo[logd_hypo < -100] = -np.inf
-
-        d_hypo = np.ma.masked_equal(np.exp(logd_hypo), 0.)
-        hypo_max = d_hypo.max()
-
-        k_hyper = KernelDensity(bandwidth=window_size, kernel='gaussian')
-        k_hyper.fit(np.array(this_hyper)[:, None])  # this increases the dim of the 1D array
-        logd_hyper = k_hyper.score_samples(xx[0, None].transpose())
-
-        # blank out baseline (for plotting purposes)
-        logd_hyper[logd_hyper < -100] = -np.inf
-
-        d_hyper = np.ma.masked_equal(np.exp(logd_hyper), 0.)
-        hyper_max = d_hyper.max()
-
-        # now we need to rescale the KDEs, since we are plotting in an arbitrary radial space
-        target_height = kde_width * inner_r
-        d_hypo = d_hypo / hypo_max * target_height
-        d_hyper = d_hyper / hyper_max * target_height
 
         # plot the KDEs
         ax.fill_between(th, y1=d_hyper + outer_r, y2=outer_r, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
@@ -1331,104 +1445,108 @@ if __name__ == "__main__":
 
         print "Chrom %s started at angle %.2f and ended at %.2f" % (chrom, curr_theta, th[-1] + gap_radians)
         curr_theta = th[-1] + gap_radians
+        
+    import ipdb; ipdb.set_trace()
 
+    # the old code (for reference)
+    if False:
 
-    fig = plt.figure(figsize=(10, 8))
-    nrows = 11
-    ncols = 2
-    gs_main = plt.GridSpec(
-        nrows=nrows,
-        ncols=ncols,
-        left=0.01,
-        right=.99,
-        bottom=0.01,
-        top=.99,
-        hspace=0.03,
-        wspace=0.03,
-    )
-
-    # we want to traverse by row then column, so create an array of axes beforehand
-    # order='C' would give us traversal by column then row
-    main_ax_arr = np.array([gs_main[i] for i in range(len(chroms))]).reshape((nrows, ncols)).flatten(order='F')
-
-    # TODO: this will be in a loop once it's finalised
-    for i, chrom in enumerate(chroms):
-        gs = gridspec.GridSpecFromSubplotSpec(
-            3,
-            1,
-            main_ax_arr[i],
-            height_ratios=[5, 1, 5],
-            hspace=0.
+        fig = plt.figure(figsize=(10, 8))
+        nrows = 11
+        ncols = 2
+        gs_main = plt.GridSpec(
+            nrows=nrows,
+            ncols=ncols,
+            left=0.01,
+            right=.99,
+            bottom=0.01,
+            top=.99,
+            hspace=0.03,
+            wspace=0.03,
         )
 
-        # gs = plt.GridSpec(nrows=3, ncols=1, height_ratios=[5, 1, 5])
-        ax_gc = fig.add_subplot(gs[1])
-        ax_hyper = fig.add_subplot(gs[0], sharex=ax_gc)
-        ax_hypo = fig.add_subplot(gs[2], sharex=ax_gc)
+        # we want to traverse by row then column, so create an array of axes beforehand
+        # order='C' would give us traversal by column then row
+        main_ax_arr = np.array([gs_main[i] for i in range(len(chroms))]).reshape((nrows, ncols)).flatten(order='F')
 
-        this_cg = cg_density[chrom]
-        this_cg_pct = this_cg / float(window_size) * 100.
+        # TODO: this will be in a loop once it's finalised
+        for i, chrom in enumerate(chroms):
+            gs = gridspec.GridSpecFromSubplotSpec(
+                3,
+                1,
+                main_ax_arr[i],
+                height_ratios=[5, 1, 5],
+                hspace=0.
+            )
 
-        xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
-        yy = np.zeros_like(xx); yy[1] = 1.
-        cc = np.array([this_cg_pct.values])
+            # gs = plt.GridSpec(nrows=3, ncols=1, height_ratios=[5, 1, 5])
+            ax_gc = fig.add_subplot(gs[1])
+            ax_hyper = fig.add_subplot(gs[0], sharex=ax_gc)
+            ax_hypo = fig.add_subplot(gs[2], sharex=ax_gc)
 
-        this_unmapped = unmapped_density[chrom]
-        this_unmapped_pct = this_unmapped / float(window_size) * 100.
+            this_cg = cg_density[chrom]
+            this_cg_pct = this_cg / float(window_size) * 100.
 
-        uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmap_threshold_pct)
-        # since we don't care about the extent of unmapping, replace all values with a single one
-        uu[~uu.mask] = 0.3
+            xx = np.array([this_cg.index.tolist() + [chrom_length[chrom]]] * 2)
+            yy = np.zeros_like(xx); yy[1] = 1.
+            cc = np.array([this_cg_pct.values])
 
-        ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
-        ax_gc.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
-        ax_gc.set_xlim([0, xmax])
+            this_unmapped = unmapped_density[chrom]
+            this_unmapped_pct = this_unmapped / float(window_size) * 100.
 
-        this_hypo = dmr_loci_hypo[pid][chrom]
-        this_hyper = dmr_loci_hyper[pid][chrom]
+            uu = np.ma.masked_less(np.array([this_unmapped_pct.values]), unmap_threshold_pct)
+            # since we don't care about the extent of unmapping, replace all values with a single one
+            uu[~uu.mask] = 0.3
 
-        # KDE estimation gives us a nice representation of the DMR location distribution
-        # NB this library expects a 2D array and complains otherwise!
-        k_hypo = KernelDensity(bandwidth=window_size, kernel='gaussian')
-        k_hypo.fit(np.array(this_hypo)[:, None])  # this increases the dim of the 1D array
-        logd_hypo = k_hypo.score_samples(xx[0, None].transpose())
+            ax_gc.pcolor(xx, yy, cc, cmap='copper_r', vmax=5., vmin=0.)
+            ax_gc.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
+            ax_gc.set_xlim([0, xmax])
 
-        # blank out baseline (for plotting purposes)
-        logd_hypo[logd_hypo < -100] = -np.inf
+            this_hypo = dmr_loci_hypo[pid][chrom]
+            this_hyper = dmr_loci_hyper[pid][chrom]
 
-        d_hypo = np.ma.masked_equal(np.exp(logd_hypo), 0.)
-        hypo_max = d_hypo.max()
+            # KDE estimation gives us a nice representation of the DMR location distribution
+            # NB this library expects a 2D array and complains otherwise!
+            k_hypo = KernelDensity(bandwidth=window_size, kernel='gaussian')
+            k_hypo.fit(np.array(this_hypo)[:, None])  # this increases the dim of the 1D array
+            logd_hypo = k_hypo.score_samples(xx[0, None].transpose())
 
-        k_hyper = KernelDensity(bandwidth=window_size, kernel='gaussian')
-        k_hyper.fit(np.array(this_hyper)[:, None])  # this increases the dim of the 1D array
-        logd_hyper = k_hyper.score_samples(xx[0, None].transpose())
+            # blank out baseline (for plotting purposes)
+            logd_hypo[logd_hypo < -100] = -np.inf
 
-        # blank out baseline (for plotting purposes)
-        logd_hyper[logd_hyper < -100] = -np.inf
+            d_hypo = np.ma.masked_equal(np.exp(logd_hypo), 0.)
+            hypo_max = d_hypo.max()
 
-        d_hyper = np.ma.masked_equal(np.exp(logd_hyper), 0.)
-        hyper_max = d_hyper.max()
+            k_hyper = KernelDensity(bandwidth=window_size, kernel='gaussian')
+            k_hyper.fit(np.array(this_hyper)[:, None])  # this increases the dim of the 1D array
+            logd_hyper = k_hyper.score_samples(xx[0, None].transpose())
 
-        # plot the KDEs
-        ax_hyper.fill_between(xx[0], d_hyper, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
-        ax_hyper.set_ylim([0, hyper_max * 1.02])
+            # blank out baseline (for plotting purposes)
+            logd_hyper[logd_hyper < -100] = -np.inf
 
-        # hypo: needs to be plotted upside down
-        ax_hypo.invert_yaxis()
-        ax_hypo.fill_between(xx[0], d_hypo, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hypo'])
-        ax_hypo.set_ylim([hypo_max * 1.02, 0.])
+            d_hyper = np.ma.masked_equal(np.exp(logd_hyper), 0.)
+            hyper_max = d_hyper.max()
 
-        # plotting tick marks is a nice idea, but in practice gets messy - may work for smaller datasets?
-        # ax_hyper.plot(xx[0], np.full_like(xx[0], -0.1 * d_hyper.max()), '|k', markeredgewidth=1)
+            # plot the KDEs
+            ax_hyper.fill_between(xx[0], d_hyper, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hyper'])
+            ax_hyper.set_ylim([0, hyper_max * 1.02])
 
-        for ax in [ax_gc, ax_hypo, ax_hyper]:
-            ax.set_facecolor('w')
-            ax.xaxis.set_visible(False)
-            ax.yaxis.set_visible(False)
+            # hypo: needs to be plotted upside down
+            ax_hypo.invert_yaxis()
+            ax_hypo.fill_between(xx[0], d_hypo, alpha=0.9, color=consts.METHYLATION_DIRECTION_COLOURS['hypo'])
+            ax_hypo.set_ylim([hypo_max * 1.02, 0.])
 
-    gs_main.update(right=1.2)
-    fig.savefig(os.path.join(outdir, "full_dmr_location_plot_%s.png" % pid), dpi=200)
+            # plotting tick marks is a nice idea, but in practice gets messy - may work for smaller datasets?
+            # ax_hyper.plot(xx[0], np.full_like(xx[0], -0.1 * d_hyper.max()), '|k', markeredgewidth=1)
 
+            for ax in [ax_gc, ax_hypo, ax_hyper]:
+                ax.set_facecolor('w')
+                ax.xaxis.set_visible(False)
+                ax.yaxis.set_visible(False)
+
+        gs_main.update(right=1.2)
+        fig.savefig(os.path.join(outdir, "full_dmr_location_plot_%s.png" % pid), dpi=200)
+        
 
     # 2) Patient-specific DMRs
     tmp = get_binned_dmr_locations(
