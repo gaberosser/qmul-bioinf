@@ -5,6 +5,7 @@ import warnings
 import glob
 import collections
 import pysam
+import gffutils
 import gzip
 import csv
 import random
@@ -15,6 +16,34 @@ from utils import log
 logger = log.get_console_logger()
 
 GTF_SOURCES = ('ensembl', 'havana', 'ensembl_havana')
+
+
+class GtfAnnotation(gffutils.FeatureDB):
+    def __init__(self, gtf_fn, db_fn=None, **kwargs):
+        if not os.path.isfile(gtf_fn):
+            raise ValueError("Unable to find the specified GTF file %s." % gtf_fn)
+        if db_fn is None:
+            # place DB file in same location as GTF
+            fstem, ext = os.path.splitext(gtf_fn)
+            if ext.lower() == 'gz':
+                fstem, ext = os.path.splitext(fstem)
+            db_fn = "%s.gffutils_db" % fstem
+
+        self.gtf_fn = gtf_fn
+        self.db_fn = db_fn
+
+        # # if not supplied, keep the order of the GTF file
+        # if 'keep_order' not in kwargs:
+        #     kwargs['keep_order'] = True
+
+        if os.path.isfile(db_fn):
+            logger.info("Using existing DB file %s", db_fn)
+            # self.db = gffutils.FeatureDB(db_fn, keep_order=True)
+        else:
+            logger.info("Creating new DB file %s", db_fn)
+            gffutils.create_db(gtf_fn, db_fn, disable_infer_genes=True, disable_infer_transcripts=True)
+
+        super(GtfAnnotation, self).__init__(self.db_fn, **kwargs)
 
 
 def get_reference_genome_directory(tax_id, version):

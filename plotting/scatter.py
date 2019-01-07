@@ -161,3 +161,45 @@ def scatter_with_colour_and_markers(
 
     return ax
 
+
+def qqplot_two_samples(x, y, ax=None, add_loe=True):
+    """
+    Produce a QQ plot given two arrays of data
+    :param x:
+    :param y:
+    :return:
+    """
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+    x = sorted(x)
+    y = sorted(y)
+
+    # one quartile for every sample in the smaller of the two arrays
+    if len(x) >= len(y):
+        n_quantile = len(y)
+        x_is_idx = False
+    else:
+        n_quantile = len(x)
+        x_is_idx = True
+
+    quantiles = np.linspace(0, 1, n_quantile)
+
+    qq = []
+    for i, q in enumerate(quantiles):
+        if x_is_idx:
+            this = [x[i], y[int(np.round((len(y) - 1) * q))]]
+        else:
+            this = [x[int(np.round((len(x) - 1) * q))], y[i]]
+        qq.append(this)
+
+    qq = np.array(qq)
+    ax.scatter(qq[:, 0], qq[:, 1])
+    if add_loe:
+
+        zmin = min(min(x), min(y))
+        zmax = max(max(x), max(y))
+        ax.plot([zmin, zmax], [zmin, zmax], 'k--')
+
+    return qq, ax

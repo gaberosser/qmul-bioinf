@@ -396,6 +396,105 @@ def polar_distribution_plot(
     }
 
 
+# plot just one chromosome from one patient at a time for more detailed inspection
+def plot_one_chrom_location(
+        hyper_dmr_loci,
+        hypo_dmr_loci,
+        bg_density,
+        chrom_len,
+        unmapped_density=None,
+        unmapped_threshold=10,
+        window_size=5e5,
+        bg_vmin=1,
+        bg_vmax=10,
+        cmap=plt.cm.get_cmap('RdYlBu_r'),
+        plot_border=True,
+):
+    gs = plt.GridSpec(ncols=1, nrows=3, height_ratios=[6, 1, 6])
+    fig = plt.figure(figsize=(6, 3.5))
+    ax_hyper = fig.add_subplot(gs[0])
+    ax_bg = fig.add_subplot(gs[1], sharex=ax_hyper)
+    ax_hypo = fig.add_subplot(gs[2], sharex=ax_hyper)
+
+    # plot bg density
+    xx = np.array([bg_density.index.tolist() + [chrom_len]] * 2)
+    yy = np.zeros_like(xx);
+    yy[1] = 1.
+    cc = np.ma.masked_less([bg_density.values], bg_vmin)
+
+    norm = common.MidpointNormalize(midpoint=bg_density.mean(), vmin=bg_vmin, vmax=bg_vmax)
+    ax_bg.pcolor(xx, yy, cc, cmap=cmap, norm=norm)
+    ax_bg.set_xlim([-10, xx[0, -1] + 10])
+
+    if unmapped_density is not None:
+        uu = np.ma.masked_less(np.array([unmapped_density.values]), unmapped_threshold)
+        # since we don't care about the extent of unmapping, replace all values with a single one
+        uu[~uu.mask] = 0.8
+        ax_bg.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
+
+    if plot_border:
+        # draw a border around the extent of the chromosome
+        border = plt.Rectangle(
+            [0, 0.01],
+            chrom_len,
+            .98,
+            edgecolor='k',
+            facecolor='none',
+            linewidth=1.,
+            zorder=100.
+        )
+        ax_bg.add_patch(border)
+
+    # plot the histograms
+    edges = np.arange(1, chrom_len, window_size)
+    if edges[-1] != chrom_len:
+        edges = np.concatenate((edges, [chrom_len]))
+    hyper_to_plot, _ = np.histogram(hyper_dmr_loci, edges)
+    ax_hyper.bar(
+        edges[:-1],
+        hyper_to_plot,
+        width=edges[1:] - edges[:-1],
+        color=consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+        edgecolor='none'
+    )
+
+    hypo_to_plot, _ = np.histogram(hypo_dmr_loci, edges)
+    ax_hypo.bar(
+        edges[:-1],
+        hypo_to_plot,
+        width=edges[1:] - edges[:-1],
+        color=consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+        edgecolor='none'
+    )
+
+    ymax = max(hyper_to_plot.max(), hypo_to_plot.max())
+
+    ax_bg.set_ylim([-.02, 1.02])
+    ax_hypo.set_ylim([0, ymax * 1.02])
+    ax_hyper.set_ylim([0, ymax * 1.02])
+    plt.setp([ax_hypo, ax_hyper, ax_bg], facecolor='w')
+    ax_hyper.set_ylabel('# Hyper DMRs')
+    ax_hypo.set_ylabel('# Hypo DMRs')
+
+    ax_bg.yaxis.set_visible(False)
+    ax_bg.xaxis.set_visible(False)
+    ax_hypo.xaxis.set_visible(False)
+    ax_hyper.xaxis.set_visible(False)
+
+    # hypo: needs to be plotted upside down
+    ax_hypo.invert_yaxis()
+
+    gs.update(hspace=0.02, right=0.99)
+
+    return {
+        'fig': fig,
+        'gs': gs,
+        'ax_bg': ax_bg,
+        'ax_hyper': ax_hyper,
+        'ax_hypo': ax_hypo,
+    }
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
@@ -703,103 +802,70 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.tiff" % pid), dpi=200)
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.pdf" % pid), dpi=200)
 
+    # for each chromosome / patient of interest, try to determine whether there are any 'hotspots' causing significant
+    # non-randomness
+    subwindow_size = int(5e6)
+    # rolling window shift
+    roll_dw = 5e5
+    ks_subwindows_hyper = {}
+    ks_subwindows_hypo = {}
 
-    # plot just one chromosome from one patient at a time for more detailed inspection
-    def plot_one_chrom_location(
-        hyper_dmr_loci,
-        hypo_dmr_loci,
-        bg_density,
-        chrom_len,
-        unmapped_density=None,
-        unmapped_threshold=10,
-        window_size=5e5,
-        bg_vmin=1,
-        bg_vmax=10,
-        cmap=plt.cm.get_cmap('RdYlBu_r'),
-        plot_border=True,
-    ):
-        gs = plt.GridSpec(ncols=1, nrows=3, height_ratios=[6, 1, 6])
-        fig = plt.figure(figsize=(6, 3.5))
-        ax_hyper = fig.add_subplot(gs[0])
-        ax_bg = fig.add_subplot(gs[1], sharex=ax_hyper)
-        ax_hypo = fig.add_subplot(gs[2], sharex=ax_hyper)
+    pool = mp.Pool()
+    jobs = {}
 
-        # plot bg density
-        xx = np.array([bg_density.index.tolist() + [chrom_len]] * 2)
-        yy = np.zeros_like(xx); yy[1] = 1.
-        cc = np.ma.masked_less([bg_density.values], bg_vmin)
+    for pid in pids:
+        ks_subwindows_hyper[pid] = {}
+        ks_subwindows_hypo[pid] = {}
+        for chrom in chroms:
+            ks_subwindows_hyper[pid][chrom] = {}
+            ks_subwindows_hypo[pid][chrom] = {}
+            this_all = np.array(dmr_loci_all[chrom])
+            this_hyper = np.array(dmr_loci_hyper[pid][chrom])
+            this_hypo = np.array(dmr_loci_hypo[pid][chrom])
 
-        norm = common.MidpointNormalize(midpoint=bg_density.mean(), vmin=bg_vmin, vmax=bg_vmax)
-        ax_bg.pcolor(xx, yy, cc, cmap=cmap, norm=norm)
-        ax_bg.set_xlim([-10, xx[0, -1] + 10])
+            this_res_hyper = {}
+            this_res_hypo = {}
 
-        if unmapped_density is not None:
-            uu = np.ma.masked_less(np.array([unmapped_density.values]), unmapped_threshold)
-            # since we don't care about the extent of unmapping, replace all values with a single one
-            uu[~uu.mask] = 0.8
-            ax_bg.pcolor(xx, yy, uu, cmap='Greys', vmax=1., vmin=0.)
+            # rolling window approach
+            s = 0
+            e = s + subwindow_size
+            while e < chrom_length[chrom]:
+                sub_all = this_all[(this_all >= s) & (this_all < e)]
+                sub_hyper = this_hyper[(this_hyper >= s) & (this_hyper < e)]
+                sub_hypo = this_hypo[(this_hypo >= s) & (this_hypo < e)]
+                if len(sub_hypo) > 0:
+                    jobs[(pid, chrom, (s, e), 'hypo')] = pool.apply_async(stats.ks_2samp, args=(sub_hypo, sub_all))
+                    # this_res_hypo[(s, e)] = stats.ks_2samp(sub_hypo, sub_all)[1]
+                if len(sub_hyper) > 0:
+                    jobs[(pid, chrom, (s, e), 'hyper')] = pool.apply_async(stats.ks_2samp, args=(sub_hyper, sub_all))
+                    # this_res_hyper[(s, e)] = stats.ks_2samp(sub_hyper, sub_all)[1]
+                s += roll_dw
+                e = s + subwindow_size
 
-        if plot_border:
-            # draw a border around the extent of the chromosome
-            border = plt.Rectangle(
-                [0, 0.01],
-                chrom_len,
-                .98,
-                edgecolor='k',
-                facecolor='none',
-                linewidth=1.,
-                zorder=100.
-            )
-            ax_bg.add_patch(border)
+            # ks_subwindows_hyper[pid][chrom] = pd.Series(this_res_hyper)
+            # ks_subwindows_hypo[pid][chrom] = pd.Series(this_res_hypo)
+    pool.close()
+    pool.join()
 
-        # plot the histograms
-        edges = np.arange(1, chrom_len, window_size)
-        if edges[-1] != chrom_len:
-            edges = np.concatenate((edges, [chrom_len]))
-        hyper_to_plot, _ = np.histogram(hyper_dmr_loci, edges)
-        ax_hyper.bar(
-            edges[:-1],
-            hyper_to_plot,
-            width=edges[1:] - edges[:-1],
-            color=consts.METHYLATION_DIRECTION_COLOURS['hyper'],
-            edgecolor='none'
-        )
+    for k, v in jobs.iteritems():
+        if k[-1] == 'hyper':
+            ks_subwindows_hyper[k[0]][k[1]][k[2]] = v.get()[1]
+        elif k[-1] == 'hypo':
+            ks_subwindows_hypo[k[0]][k[1]][k[2]] = v.get()[1]
+        else:
+            raise KeyError("Unrecognised final key %s." % str(k[-1]))
 
-        hypo_to_plot, _ = np.histogram(hypo_dmr_loci, edges)
-        ax_hypo.bar(
-            edges[:-1],
-            hypo_to_plot,
-            width=edges[1:] - edges[:-1],
-            color=consts.METHYLATION_DIRECTION_COLOURS['hypo'],
-            edgecolor='none'
-        )
+    for pid in pids:
+        for chrom in chroms:
+            ks_subwindows_hyper[pid][chrom] = pd.Series(ks_subwindows_hyper[pid][chrom])
+            ks_subwindows_hypo[pid][chrom] = pd.Series(ks_subwindows_hypo[pid][chrom])
 
-        ymax = max(hyper_to_plot.max(), hypo_to_plot.max())
+    # overlay DMRs with features?
+    # use utils.genomics.GtfAnnotation (.region method)
+    # or just lookup in the annotation file?
 
-        ax_bg.set_ylim([-.02, 1.02])
-        ax_hypo.set_ylim([0, ymax * 1.02])
-        ax_hyper.set_ylim([0, ymax * 1.02])
-        plt.setp([ax_hypo, ax_hyper, ax_bg], facecolor='w')
-        ax_hyper.set_ylabel('# Hyper DMRs')
-        ax_hypo.set_ylabel('# Hypo DMRs')
 
-        ax_bg.yaxis.set_visible(False)
-        ax_bg.xaxis.set_visible(False)
-        ax_hypo.xaxis.set_visible(False)
-        ax_hyper.xaxis.set_visible(False)
-
-        # hypo: needs to be plotted upside down
-        ax_hypo.invert_yaxis()
-
-        gs.update(hspace=0.02, right=0.99)
-
-        return {
-            'fig': fig,
-            'gs': gs,
-            'ax_bg': ax_bg,
-            'ax_hyper': ax_hyper,
-            'ax_hypo': ax_hypo,
-        }
+    # plot single chromosomes in individual patients to illustrate examples of interest.
 
     pid = '018'
     chrom = '14'
@@ -821,3 +887,24 @@ if __name__ == "__main__":
         )
         fig = plt_dict['fig']
         fig.savefig(os.path.join(outdir, "patient_%s_chrom_%s_locations.png" % (pid, chrom)), dpi=200)
+
+        # second plot showing the KS 'substatistic'
+        fig, axs = plt.subplots(nrows=2, figsize=(8, 4), sharex=True)
+        x_hyper = [np.mean(t) for t in ks_subwindows_hyper[pid][chrom].index]
+        y_hyper = -np.log10(ks_subwindows_hyper[pid][chrom].values)
+        x_hypo = [np.mean(t) for t in ks_subwindows_hypo[pid][chrom].index]
+        y_hypo = -np.log10(ks_subwindows_hypo[pid][chrom].values)
+
+        axs[0].plot(x_hyper, y_hyper, color='0.7', zorder=11)
+        axs[0].scatter(x_hyper, y_hyper, marker='o', c=y_hyper, edgecolor='none', cmap='copper_r', zorder=12)
+        axs[1].plot(x_hypo, y_hypo, color='0.7', zorder=11)
+        axs[1].scatter(x_hypo, y_hypo, marker='o', c=y_hypo, edgecolor='none', cmap='copper_r', zorder=12)
+        # set same ylims
+        ymax = max(y_hyper.max(), y_hypo.max())
+        plt.setp(axs, ylim=[-.5, 1.1 * ymax])
+        axs[1].invert_yaxis()
+
+        axs[0].set_xlim([0, 1.02 * max(max(x_hyper), max(x_hypo))])
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "patient_%s_chrom_%s_sub_ks.png" % (pid, chrom)), dpi=200)
