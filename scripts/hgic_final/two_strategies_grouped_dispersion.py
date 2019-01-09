@@ -124,7 +124,7 @@ def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
     return dmr.DmrResultCollection(**dmr_res)
 
 
-def dmr_results_hash(pids, dmr_params):
+def dmr_results_hash(pids, dmr_params, **other_kwargs):
     hash_elements = tuple(sorted(pids)) + (
         dmr_params['d_max'],
         dmr_params['n_min'],
@@ -133,6 +133,8 @@ def dmr_results_hash(pids, dmr_params):
         dmr_params['alpha'],
         dmr_params['norm_method']
     ) + tuple(dmr_params['test_kwargs'].items())
+    if len(other_kwargs) > 0:
+        hash_elements += tuple(other_kwargs.items())
     return hash(hash_elements)
 
 

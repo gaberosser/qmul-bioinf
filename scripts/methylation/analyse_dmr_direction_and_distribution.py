@@ -6,6 +6,7 @@ from utils import output, setops, genomics, log
 import multiprocessing as mp
 import os
 import collections
+import pickle
 import numpy as np
 from scipy import stats
 from matplotlib import pyplot as plt, patches
@@ -48,9 +49,13 @@ def get_binned_dmr_locations(
         dmr_loci_binned_hypo = {}
         dmr_loci_hyper = {}
         dmr_loci_binned_hyper = {}
+
+        dmr_regions_hypo = {}
+        dmr_regions_hyper = {}
     else:
         dmr_loci = {}
         dmr_loci_binned = {}
+        dmr_regions = {}
 
     for pid in dmr_res:
         if split_by_direction:
@@ -58,9 +63,14 @@ def get_binned_dmr_locations(
             this_loci_hypo = collections.defaultdict(list)
             dmr_loci_binned_hyper[pid] = {}
             this_loci_hyper = collections.defaultdict(list)
+
+            this_regions_hypo = collections.defaultdict(list)
+            this_regions_hyper = collections.defaultdict(list)
         else:
             dmr_loci_binned[pid] = {}
             this_loci = collections.defaultdict(list)
+            this_regions = collections.defaultdict(list)
+
         # this_loci = dict([(chrom, []) for chrom in chroms])
         for cluster_id, cl in dmr_res[pid].items():
             # get the chrom and locus
@@ -80,15 +90,22 @@ def get_binned_dmr_locations(
             if split_by_direction:
                 if cl['median_change'] > 0:
                     this_loci_hyper[pc.chr].append(the_coord)
+                    this_regions_hyper[pc.chr].append((min(pc.coord_list), max(pc.coord_list)))
                 else:
                     this_loci_hypo[pc.chr].append(the_coord)
+                    this_regions_hypo[pc.chr].append((min(pc.coord_list), max(pc.coord_list)))
             else:
                 this_loci[pc.chr].append(the_coord)
+                this_regions[pc.chr].append((min(pc.coord_list), max(pc.coord_list)))
         if split_by_direction:
             dmr_loci_hyper[pid] = this_loci_hyper
             dmr_loci_hypo[pid] = this_loci_hypo
+            dmr_regions_hyper[pid] = this_regions_hyper
+            dmr_regions_hypo[pid] = this_regions_hypo
         else:
             dmr_loci[pid] = this_loci
+            dmr_regions[pid] = this_regions
+
         # run the histogram process on each chrom
         if split_by_direction:
             for chrom, arr in this_loci_hyper.items():
@@ -116,11 +133,14 @@ def get_binned_dmr_locations(
             'dmr_loci_hypo': dmr_loci_hypo,
             'dmr_binned_hyper': dmr_loci_binned_hyper,
             'dmr_binned_hypo': dmr_loci_binned_hypo,
+            'dmr_regions_hyper': dmr_regions_hyper,
+            'dmr_regions_hypo': dmr_regions_hypo,
         }
     else:
         return {
             'dmr_loci': dmr_loci,
-            'dmr_binned': dmr_loci_binned
+            'dmr_binned': dmr_loci_binned,
+            'dmr_regions': dmr_regions,
         }
 
 
@@ -403,6 +423,8 @@ def plot_one_chrom_location(
         bg_density,
         chrom_len,
         unmapped_density=None,
+        pval_hyper=None,
+        pval_hypo=None,
         unmapped_threshold=10,
         window_size=5e5,
         bg_vmin=1,
@@ -410,11 +432,37 @@ def plot_one_chrom_location(
         cmap=plt.cm.get_cmap('RdYlBu_r'),
         plot_border=True,
 ):
+    """
+
+    :param hyper_dmr_loci:
+    :param hypo_dmr_loci:
+    :param bg_density:
+    :param chrom_len:
+    :param unmapped_density:
+    :param pval_hyper, pval_hypo: If supplied, these are plotted on the same axes as the DMR density histogram (with a
+    2nd y axis).
+    :param unmapped_threshold:
+    :param window_size:
+    :param bg_vmin:
+    :param bg_vmax:
+    :param cmap:
+    :param plot_border:
+    :return:
+    """
     gs = plt.GridSpec(ncols=1, nrows=3, height_ratios=[6, 1, 6])
     fig = plt.figure(figsize=(6, 3.5))
     ax_hyper = fig.add_subplot(gs[0])
     ax_bg = fig.add_subplot(gs[1], sharex=ax_hyper)
     ax_hypo = fig.add_subplot(gs[2], sharex=ax_hyper)
+
+    twin_axes = False
+    out = {
+        'ax_bg': ax_bg,
+        'ax_hyper': ax_hyper,
+        'ax_hypo': ax_hypo,
+        'fig': fig,
+        'gs': gs,
+    }
 
     # plot bg density
     xx = np.array([bg_density.index.tolist() + [chrom_len]] * 2)
@@ -424,7 +472,7 @@ def plot_one_chrom_location(
 
     norm = common.MidpointNormalize(midpoint=bg_density.mean(), vmin=bg_vmin, vmax=bg_vmax)
     ax_bg.pcolor(xx, yy, cc, cmap=cmap, norm=norm)
-    ax_bg.set_xlim([-10, xx[0, -1] + 10])
+    ax_bg.set_xlim([-10, chrom_len + 10])
 
     if unmapped_density is not None:
         uu = np.ma.masked_less(np.array([unmapped_density.values]), unmapped_threshold)
@@ -458,6 +506,38 @@ def plot_one_chrom_location(
         edgecolor='none'
     )
 
+    pval_ymax = None
+    if pval_hyper is not None and pval_hypo is not None:
+        # unify the colour map and scale
+        y_hyper = -np.log10(pval_hyper.values)
+        y_hypo = -np.log10(pval_hypo.values)
+        pval_ymax = max(np.nanmax(y_hyper), np.nanmax(y_hypo))
+
+    if pval_hyper is not None:
+        twin_axes = True
+        ax_p_hyper = ax_hyper.twinx()
+        out['ax_p_hyper'] = ax_p_hyper
+        # turn off gridlines
+        ax_p_hyper.grid(False)
+        x_hyper = [np.mean(t) for t in pval_hyper.index]
+        y_hyper = -np.log10(pval_hyper.values)
+        ax_p_hyper.plot(x_hyper, y_hyper, color='k', alpha=0.35, linewidth=1.)
+        vmax = None
+        if pval_ymax is not None:
+            vmax = pval_ymax
+        ax_p_hyper.scatter(
+            x_hyper,
+            y_hyper,
+            c=y_hyper,
+            alpha=0.5,
+            edgecolor='none',
+            s=10,
+            cmap='copper_r',
+            vmin=0,
+            vmax=vmax
+        )
+        ax_p_hyper.set_ylabel("$-\log_{10}(p_{\mathrm{local}})$")
+
     hypo_to_plot, _ = np.histogram(hypo_dmr_loci, edges)
     ax_hypo.bar(
         edges[:-1],
@@ -466,6 +546,31 @@ def plot_one_chrom_location(
         color=consts.METHYLATION_DIRECTION_COLOURS['hypo'],
         edgecolor='none'
     )
+
+    if pval_hypo is not None:
+        twin_axes = True
+        ax_p_hypo = ax_hypo.twinx()
+        out['ax_p_hypo'] = ax_p_hypo
+        # turn off gridlines
+        ax_p_hypo.grid(False)
+        x_hypo = [np.mean(t) for t in pval_hypo.index]
+        y_hypo = -np.log10(pval_hypo.values)
+        ax_p_hypo.plot(x_hypo, y_hypo, color='k', alpha=0.35, linewidth=1.)
+        vmax = None
+        if pval_ymax is not None:
+            vmax = pval_ymax
+        ax_p_hypo.scatter(
+            x_hypo,
+            y_hypo,
+            c=y_hypo,
+            alpha=0.5,
+            edgecolor='none',
+            s=10,
+            cmap='copper_r',
+            vmin=0,
+            vmax=vmax
+        )
+        ax_p_hypo.set_ylabel("$-\log_{10}(p_{\mathrm{local}})$")
 
     ymax = max(hyper_to_plot.max(), hypo_to_plot.max())
 
@@ -481,18 +586,71 @@ def plot_one_chrom_location(
     ax_hypo.xaxis.set_visible(False)
     ax_hyper.xaxis.set_visible(False)
 
+    if pval_ymax is not None:
+        # maintain symmetric y axis limits
+        ax_p_hyper.set_ylim([0, pval_ymax * 1.02])
+        ax_p_hypo.set_ylim([0, pval_ymax * 1.02])
+
     # hypo: needs to be plotted upside down
     ax_hypo.invert_yaxis()
+    if pval_hypo is not None:
+        ax_p_hypo.invert_yaxis()
 
-    gs.update(hspace=0.02, right=0.99)
+    # set x limits
+    ax_bg.set_xlim([-10, chrom_len + 10])
 
-    return {
-        'fig': fig,
-        'gs': gs,
-        'ax_bg': ax_bg,
-        'ax_hyper': ax_hyper,
-        'ax_hypo': ax_hypo,
-    }
+    if twin_axes:
+        gs.update(hspace=0.02, right=0.9)
+    else:
+        gs.update(hspace=0.02, right=0.99)
+
+    return out
+
+
+def classify_dmr_regions(
+        gtf_db,
+        clusters,
+        gene_biotypes=('protein_coding',),
+        features=tuple([str(t) for t in range(1, 23)]),
+        njobs=None
+):
+    gene_biotypes = set(gene_biotypes)
+    features = set(features)
+
+    region_to_cluster_id = {}
+    regions = []
+
+    for i, pc in clusters.items():
+        if pc.chr in features:
+            t = (pc.chr,) + pc.coord_range
+            regions.append(t)
+            region_to_cluster_id[t] = i
+
+    cluster_id_to_region = dict([x[::-1] for x in region_to_cluster_id.items()])
+
+    lookup_result = genomics.multiple_region_lookup(regions, gtf_db, njobs=njobs)
+
+    # reindex
+    lookup_result = dict([
+        (region_to_cluster_id[reg], val) for reg, val in lookup_result.items()
+    ])
+
+    classification = {}
+    for cid, ftr_arr in lookup_result.items():
+        ftr_arr = [t for t in ftr_arr if t['gene_biotype'][0] in gene_biotypes]
+        if len(ftr_arr) == 0:
+            classification[cid] = 'intergenic'
+        else:
+            typs = np.array([t.featuretype for t in ftr_arr])
+            if (typs == 'exon').any():
+                for i in np.where(typs == 'exon')[0]:
+                    if ftr_arr[i]['exon_number'][0] == '1':
+                        classification[cid] = 'first_exon'
+                        continue
+                    classification[cid] = 'exon'
+            elif (typs == 'gene').any():
+                classification[cid] = 'intron'
+    return lookup_result, classification, cluster_id_to_region
 
 
 if __name__ == "__main__":
@@ -579,6 +737,7 @@ if __name__ == "__main__":
     # these are the same for all patients, so just take the first
     dmr_loci_all = tmp['dmr_loci'][pids[0]]
     dmr_binned_all = tmp['dmr_binned'][pids[0]]
+    dmr_regions_all = tmp['dmr_regions'][pids[0]]
 
     #1 ) All DMRs
     tmp = get_binned_dmr_locations(
@@ -591,6 +750,8 @@ if __name__ == "__main__":
     )
     dmr_loci_hyper = tmp['dmr_loci_hyper']
     dmr_loci_hypo = tmp['dmr_loci_hypo']
+    dmr_regions_hyper = tmp['dmr_regions_hyper']
+    dmr_regions_hypo = tmp['dmr_regions_hypo']
 
 
     hyper_all_fdr, hyper_all_stat = ks_test_dmr_locations(
@@ -665,6 +826,8 @@ if __name__ == "__main__":
 
     dmr_loci_hyper_specific = tmp['dmr_loci_hyper']
     dmr_loci_hypo_specific = tmp['dmr_loci_hypo']
+    dmr_regions_hyper_specific = tmp['dmr_regions_hyper']
+    dmr_regions_hypo_specific = tmp['dmr_regions_hypo']
 
     hyper_specific_fdr, hyper_specific_stat = ks_test_dmr_locations(
         dmr_loci_hyper_specific,
@@ -802,6 +965,8 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.tiff" % pid), dpi=200)
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.pdf" % pid), dpi=200)
 
+    plt.close('all')
+
     # for each chromosome / patient of interest, try to determine whether there are any 'hotspots' causing significant
     # non-randomness
     subwindow_size = int(5e6)
@@ -830,20 +995,19 @@ if __name__ == "__main__":
             s = 0
             e = s + subwindow_size
             while e < chrom_length[chrom]:
+                ks_subwindows_hyper[pid][chrom][(s, e)] = None
+                ks_subwindows_hypo[pid][chrom][(s, e)] = None
+
                 sub_all = this_all[(this_all >= s) & (this_all < e)]
                 sub_hyper = this_hyper[(this_hyper >= s) & (this_hyper < e)]
                 sub_hypo = this_hypo[(this_hypo >= s) & (this_hypo < e)]
                 if len(sub_hypo) > 0:
                     jobs[(pid, chrom, (s, e), 'hypo')] = pool.apply_async(stats.ks_2samp, args=(sub_hypo, sub_all))
-                    # this_res_hypo[(s, e)] = stats.ks_2samp(sub_hypo, sub_all)[1]
                 if len(sub_hyper) > 0:
                     jobs[(pid, chrom, (s, e), 'hyper')] = pool.apply_async(stats.ks_2samp, args=(sub_hyper, sub_all))
-                    # this_res_hyper[(s, e)] = stats.ks_2samp(sub_hyper, sub_all)[1]
                 s += roll_dw
                 e = s + subwindow_size
 
-            # ks_subwindows_hyper[pid][chrom] = pd.Series(this_res_hyper)
-            # ks_subwindows_hypo[pid][chrom] = pd.Series(this_res_hypo)
     pool.close()
     pool.join()
 
@@ -857,8 +1021,8 @@ if __name__ == "__main__":
 
     for pid in pids:
         for chrom in chroms:
-            ks_subwindows_hyper[pid][chrom] = pd.Series(ks_subwindows_hyper[pid][chrom])
-            ks_subwindows_hypo[pid][chrom] = pd.Series(ks_subwindows_hypo[pid][chrom])
+            ks_subwindows_hyper[pid][chrom] = pd.Series(ks_subwindows_hyper[pid][chrom], dtype=float)
+            ks_subwindows_hypo[pid][chrom] = pd.Series(ks_subwindows_hypo[pid][chrom], dtype=float)
 
     # overlay DMRs with features?
     # use utils.genomics.GtfAnnotation (.region method)
@@ -866,13 +1030,17 @@ if __name__ == "__main__":
 
 
     # plot single chromosomes in individual patients to illustrate examples of interest.
-
-    pid = '018'
-    chrom = '14'
-
     pid_chroms = [
+        ('018', '2'),
+        ('018', '5'),
         ('018', '6'),
         ('018', '14'),
+        ('019', '2'),
+        ('019', '5'),
+        ('019', '6'),
+        ('019', '14'),
+        ('018', '3'),
+        ('017', '3'),
     ]
 
     for pid, chrom in pid_chroms:
@@ -882,29 +1050,185 @@ if __name__ == "__main__":
             dmr_loci_hypo[pid][chrom],
             dmr_binned_all[chrom],
             chrom_length[chrom],
+            pval_hyper=ks_subwindows_hyper[pid][chrom],
+            pval_hypo=ks_subwindows_hypo[pid][chrom],
             unmapped_density=unmapped_density[chrom] / window_size * 100.,
             cmap=new_cmap
         )
         fig = plt_dict['fig']
         fig.savefig(os.path.join(outdir, "patient_%s_chrom_%s_locations.png" % (pid, chrom)), dpi=200)
 
-        # second plot showing the KS 'substatistic'
-        fig, axs = plt.subplots(nrows=2, figsize=(8, 4), sharex=True)
-        x_hyper = [np.mean(t) for t in ks_subwindows_hyper[pid][chrom].index]
-        y_hyper = -np.log10(ks_subwindows_hyper[pid][chrom].values)
-        x_hypo = [np.mean(t) for t in ks_subwindows_hypo[pid][chrom].index]
-        y_hypo = -np.log10(ks_subwindows_hypo[pid][chrom].values)
+    plt.close('all')
 
-        axs[0].plot(x_hyper, y_hyper, color='0.7', zorder=11)
-        axs[0].scatter(x_hyper, y_hyper, marker='o', c=y_hyper, edgecolor='none', cmap='copper_r', zorder=12)
-        axs[1].plot(x_hypo, y_hypo, color='0.7', zorder=11)
-        axs[1].scatter(x_hypo, y_hypo, marker='o', c=y_hypo, edgecolor='none', cmap='copper_r', zorder=12)
-        # set same ylims
-        ymax = max(y_hyper.max(), y_hypo.max())
-        plt.setp(axs, ylim=[-.5, 1.1 * ymax])
-        axs[1].invert_yaxis()
+    # lookup intersecting features in selected DMRs (and the background - all clusters)
+    gtf_fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh37', 'gtf', 'Homo_sapiens.GRCh37.87.gtf.gz')
 
-        axs[0].set_xlim([0, 1.02 * max(max(x_hyper), max(x_hypo))])
+    gene_biotypes = {'protein_coding'}
 
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "patient_%s_chrom_%s_sub_ks.png" % (pid, chrom)), dpi=200)
+    hash_dict = {}
+    hash_dict.update(dmr_hash_dict)
+    hash_dict['gene_biotypes'] = tuple(sorted(gene_biotypes))
+    hash_dict['gtf_fn'] = gtf_fn.replace(LOCAL_DATA_DIR, '')
+    the_hash = tsgd.dmr_results_hash(
+        me_obj.meta.index.tolist(),
+        dmr_hash_dict,
+        gene_biotypes=tuple(sorted(gene_biotypes)),
+        gtf_fn=gtf_fn.replace(LOCAL_DATA_DIR, '')
+    )
+
+    lookup_fn = os.path.join(DMR_LOAD_DIR, 'dmr_gtf_lookup.%s.pkl' % the_hash)
+    if os.path.isfile(lookup_fn):
+        logger.info("Loading pre-computed DMR / GTF lookup data from file %s.", lookup_fn)
+        with open(lookup_fn, 'rb') as f:
+            tmp = pickle.load(f)
+            lookup_all = tmp['region']
+            class_all = tmp['classification']
+            cluster_id_to_region = tmp['cluster_id_to_region']
+            gtf_fn = os.path.join(LOCAL_DATA_DIR, tmp['gtf_fn'])
+            db = genomics.GtfAnnotation(gtf_fn)
+    else:
+        logger.info("No pre-computed DMR / GTF lookup found. Generating results now (this can take a long time).")
+        db = genomics.GtfAnnotation(gtf_fn, logger=None)
+        lookup_all, class_all, cluster_id_to_region = classify_dmr_regions(db, dmr_res_s1.clusters, gene_biotypes=gene_biotypes)
+        # dump to pickle
+        logger.info("Dumping pre-computed DMR / GTF lookup data to file %s.", lookup_fn)
+        with open(lookup_fn, 'wb') as f:
+            pickle.dump(
+                {
+                    'region': lookup_all,
+                    'classification': class_all,
+                    'gtf_fn': gtf_fn.replace(LOCAL_DATA_DIR, ''),
+                    'cluster_id_to_region': cluster_id_to_region
+                },
+                f
+            )
+
+    region_to_cluster_id = dict([x[::-1] for x in cluster_id_to_region.items()])
+
+    # split into chromosomes for easier access
+    tmp_class_all = collections.defaultdict(dict)
+    tmp_lookup_all = collections.defaultdict(dict)
+    for cid in class_all.keys():
+        reg = cluster_id_to_region[cid]
+        tmp_class_all[reg[0]][cid] = class_all[cid]
+        tmp_lookup_all[reg[0]][cid] = lookup_all[cid]
+
+    class_all = tmp_class_all
+    lookup_all = tmp_lookup_all
+
+    # now use this long list to populate the short lists
+    class_hyper = {}
+    class_hypo = {}
+
+    for pid in pids:
+        class_hyper[pid] = {}
+        class_hypo[pid] = {}
+        for chrom in chroms:
+            class_hyper[pid][chrom] = {}
+            class_hypo[pid][chrom] = {}
+            for reg in dmr_regions_hyper[pid][chrom]:
+                k = (chrom,) + reg
+                cid = region_to_cluster_id[k]
+                class_hyper[pid][chrom][cid] = class_all[chrom][cid]
+            for reg in dmr_regions_hypo[pid][chrom]:
+                k = (chrom,) + reg
+                cid = region_to_cluster_id[k]
+                class_hypo[pid][chrom][cid] = class_all[chrom][cid]
+
+    # analyse the distributions
+    lookup_cats = ['intergenic', 'intron', 'exon', 'first_exon']
+    cat_labels = dict([
+        (cat, cat.capitalize().replace('_', ' ')) for cat in lookup_cats
+    ])
+    # colours_by_lookup = dict(zip(lookup_cats, common.get_best_cmap(len(lookup_cats))))
+    colours_by_lookup = {
+        'intergenic': '#abdda4',
+        'intron': '#2b83ba',
+        'exon': '#fdae61',
+        'first_exon': '#d7191c',
+    }
+
+
+    def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup, cat_labels, chroms, pids):
+        fig = plt.figure(figsize=(5.5, 6.8))
+        gs = plt.GridSpec(nrows=len(chroms), ncols=len(pids) + 1)
+        axs = []
+        for j, chrom in enumerate(chroms):
+            axs.append([])
+            ax = fig.add_subplot(gs[j, 0])
+            axs[j].append(ax)
+            ax.set_ylabel(chrom, rotation=0, verticalalignment='center', horizontalalignment='right')
+            if j == 0:
+                ax.set_title('BG')
+            ax.pie(
+                pd.Series(class_bg[chrom]).value_counts().reindex(lookup_cats).fillna(0.),
+                colors=[colours_by_lookup[t] for t in lookup_cats],
+                radius=1.,
+                wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                startangle=90,
+            )
+            ax.set_aspect('equal')
+            for i, pid in enumerate(pids):
+                ax = fig.add_subplot(gs[j, i + 1])
+                axs[j].append(ax)
+                if j == 0:
+                    ax.set_title(pid)
+                ax.pie(
+                    pd.Series(class_patients[pid][chrom]).value_counts().reindex(lookup_cats).fillna(0.),
+                    colors=[colours_by_lookup[t] for t in lookup_cats],
+                    radius=1.,
+                    wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                    startangle=90,
+                )
+                ax.set_aspect('equal')
+
+        gs.update(hspace=0, wspace=0, bottom=0.01, left=0.06, top=0.95, right=0.78)
+        # custom legend
+        legend_dict = {
+            '': collections.OrderedDict(
+                [(
+                     cat_labels[cat],
+                     {
+                        'class': 'patch',
+                        'facecolor': colours_by_lookup[cat],
+                        'edgecolor': 'k',
+                        'linewidth': 0.5
+                     }
+                 ) for cat in lookup_cats
+                 ])
+        }
+        common.add_custom_legend(
+            axs[0][-1],
+            legend_dict,
+            loc_outside=True,
+        )
+        return fig, axs
+
+    fig, axs = pie_chart_location(
+        class_all,
+        class_hyper,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+        chroms,
+        pids
+    )
+
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper.pdf'), dpi=200)
+
+    fig, axs = pie_chart_location(
+        class_all,
+        class_hypo,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+        chroms,
+        pids
+    )
+
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo.pdf'), dpi=200)
+
+
+

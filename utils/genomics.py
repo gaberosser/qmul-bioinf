@@ -11,15 +11,38 @@ import csv
 import random
 import subprocess
 import re
+import multiprocessing as mp
 from settings import LOCAL_DATA_DIR
 from utils import log
-logger = log.get_console_logger()
+_logger = log.get_console_logger()
 
 GTF_SOURCES = ('ensembl', 'havana', 'ensembl_havana')
 
 
+def _single_lookup(region, gtf_fn):
+    db = GtfAnnotation(gtf_fn=gtf_fn, logger=None)
+    return list(db.region(region=region))
+
+
+def multiple_region_lookup(regions, db, njobs=None):
+    res = {}
+    if njobs != 1:
+        pool = mp.Pool(processes=njobs)
+        jobs = {}
+        for reg in regions:
+            jobs[reg] = pool.apply_async(_single_lookup, args=(reg, db.gtf_fn))
+        pool.close()
+        pool.join()
+        for k, v in jobs.items():
+            res[k] = v.get()
+    else:
+        for reg in regions:
+            res[reg] = _single_lookup(reg, db.gtf_fn)
+    return res
+
+
 class GtfAnnotation(gffutils.FeatureDB):
-    def __init__(self, gtf_fn, db_fn=None, **kwargs):
+    def __init__(self, gtf_fn, db_fn=None, logger=_logger, **kwargs):
         if not os.path.isfile(gtf_fn):
             raise ValueError("Unable to find the specified GTF file %s." % gtf_fn)
         if db_fn is None:
@@ -31,19 +54,21 @@ class GtfAnnotation(gffutils.FeatureDB):
 
         self.gtf_fn = gtf_fn
         self.db_fn = db_fn
-
-        # # if not supplied, keep the order of the GTF file
-        # if 'keep_order' not in kwargs:
-        #     kwargs['keep_order'] = True
+        self.logger = logger
 
         if os.path.isfile(db_fn):
-            logger.info("Using existing DB file %s", db_fn)
-            # self.db = gffutils.FeatureDB(db_fn, keep_order=True)
+            self.log_info("Using existing DB file %s", db_fn)
+            # logger.info("Using existing DB file %s", db_fn)
         else:
-            logger.info("Creating new DB file %s", db_fn)
+            # logger.info("Creating new DB file %s", db_fn)
+            self.log_info("Creating new DB file %s", db_fn)
             gffutils.create_db(gtf_fn, db_fn, disable_infer_genes=True, disable_infer_transcripts=True)
 
         super(GtfAnnotation, self).__init__(self.db_fn, **kwargs)
+
+    def log_info(self, *args):
+        if self.logger is not None:
+            self.logger.info(*args)
 
 
 def get_reference_genome_directory(tax_id, version):
@@ -265,7 +290,7 @@ def samtools_random_sampling_bam(
 
     if est_n_reads is not None:
         est_total = estimate_number_of_bam_reads(bam_fn)
-        logger.info("Estimated line count in bam file is %d" % est_total)
+        _logger.info("Estimated line count in bam file is %d" % est_total)
         frac_reads = est_n_reads / float(est_total)
 
     frac_as_pct = frac_reads * 100.
@@ -277,7 +302,7 @@ def samtools_random_sampling_bam(
         "samtools", "view",
         "-s", "%d.%s" % (seed, pct_as_str)
       ) + tuple([str(t) for t in samtools_args]) + (bam_fn,)
-    logger.info(' '.join(cmd))
+    _logger.info(' '.join(cmd))
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
