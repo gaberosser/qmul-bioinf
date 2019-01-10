@@ -1,4 +1,5 @@
 import copy
+import collections
 
 
 def dict_iterator(d, parents=None, level=1, n_level=None):
@@ -56,12 +57,13 @@ def filter_dictionary(d, filt, n_level=None, copy=False):
     return res
 
 
-def nested_dict_to_flat(x):
+def nested_dict_to_flat(x, ordered=False):
     """
     From the supplied nested dictionary, generate a flat dictionary in which the keys are tuples showing the
     original structure. Any object that is *not* a dictionary is considered an end node.
     """
-    res = {}
+    ## FIXME: this doesn't preserve ordering
+    res = collections.OrderedDict() if ordered else {}
     stack = [(None, None)] + x.items()
     key = []
     while True:
@@ -86,8 +88,8 @@ def nested_dict_to_flat(x):
     return res
 
 
-def flat_dict_to_nested(x):
-    res = {}
+def flat_dict_to_nested(x, ordered=False):
+    res = collections.OrderedDict() if ordered else {}
     for k, v in x.items():
         # create nesting structure
         parent = res

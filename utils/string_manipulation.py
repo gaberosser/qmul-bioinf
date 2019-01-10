@@ -1,3 +1,5 @@
+import random
+import string
 import re
 from ast import literal_eval as make_tuple
 
@@ -27,3 +29,14 @@ def construct_multiple_or_regex(arr, flags=0):
         ),
         flags=flags
     )
+
+
+def random_string_generator(size=6, chars=string.ascii_uppercase + string.digits):
+    """
+    Generate a random string
+    Copied from https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits-in-python
+    :param size: Length of string
+    :param chars: Selection of characters
+    :return:
+    """
+    return ''.join(random.choice(chars) for _ in range(size))

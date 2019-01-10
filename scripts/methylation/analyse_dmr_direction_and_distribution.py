@@ -1,4 +1,4 @@
-from plotting import bar, common
+from plotting import bar, common, pie
 from methylation import loader, dmr, process
 import pandas as pd
 from statsmodels.sandbox.stats import multicomp
@@ -11,6 +11,7 @@ import numpy as np
 from scipy import stats
 from matplotlib import pyplot as plt, patches
 from matplotlib.colors import Normalize
+from matplotlib import cm
 from sklearn.neighbors import KernelDensity
 
 import seaborn as sns
@@ -24,6 +25,23 @@ logger = log.get_console_logger()
 Here we analyse the direction and genomic locations of DMRs in the individual patients.
 We note a bias in the direction, which is amplified considerably when we consider patient-specific DMRs.
 """
+
+
+def dmr_median_delta_by_chromosome(
+        dmr_res,
+        clusters,
+        pids=consts.PIDS,
+):
+    median_deltas = {}
+    for pid in pids:
+        median_deltas[pid] = collections.defaultdict(list)
+        this_dmrs = dmr_res[pid]
+        for cid, attr in dmr_res[pid].items():
+            ftr = clusters[cid].chr
+            median_deltas[pid][ftr].append(attr['median_change'])
+
+    return median_deltas
+
 
 def get_binned_dmr_locations(
     dmr_res,
@@ -694,6 +712,8 @@ if __name__ == "__main__":
     # extract full (all significant) results
     dmr_res_all = dmr_res_s1.results_significant
 
+    clusters = dmr_res_s1[pids[0]].clusters
+
     # patient-specific DMRs
     pu_sets = list(setops.binary_combinations_sum_eq(len(pids), 1))[::-1]  # reverse order to get same order as pids
     venn_set, venn_ct = setops.venn_from_arrays(*[dmr_res_all[pid] for pid in pids])
@@ -720,14 +740,121 @@ if __name__ == "__main__":
     # reorder
     chrom_length = collections.OrderedDict([(k, chrom_length[k]) for k in chroms])
 
-    dmr_s1_clusters = dmr_res_s1[pids[0]].clusters
+    # look at the distribution of DMR directions by chromosome
+    median_delta_all_by_chrom = dmr_median_delta_by_chromosome(dmr_res_all, clusters)
+    median_delta_specific_by_chrom = dmr_median_delta_by_chromosome(dmr_res_specific, clusters)
+
+    # integrate over chromosomes for overall picture
+    median_delta_all = dict([
+        (pid, reduce(lambda x, y: x + y, median_delta_all_by_chrom[pid].values())) for pid in pids
+    ])
+    median_delta_specific = dict([
+        (pid, reduce(lambda x, y: x + y, median_delta_specific_by_chrom[pid].values())) for pid in pids
+    ])
+
+    edges = np.array([-1e3, -5., -4., -3., -2., -1., 0., 1., 2., 3., 4., 5., 1e3])
+    colours = {
+        'Hypermethylated': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+        'Hypomethylated': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+    }
+    hypo_cmap = plt.get_cmap('Greens_r')
+    hyper_cmap = plt.get_cmap('Reds')
+    hypo_norm = Normalize(vmin=-6, vmax=0)
+    hyper_norm = Normalize(vmin=0, vmax=6)
+    hypo_sm = cm.ScalarMappable(norm=hypo_norm, cmap=hypo_cmap)
+    hyper_sm = cm.ScalarMappable(norm=hyper_norm, cmap=hyper_cmap)
+
+    for e0, e1 in zip(edges[:-1], edges[1:]):
+        if e0 < 0:
+            sm = hypo_sm
+        else:
+            sm = hyper_sm
+        if e0 == edges[0]:
+            lbl = r"$\Delta M < %d$" % e1
+        elif e1 == edges[-1]:
+            lbl = r"$\Delta M > %d$" % e0
+        else:
+            lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+        colours[lbl] = sm.to_rgba(np.sign(e0) * np.abs([e0, e1]).min())
+
+    # plot pie charts
+    def bin_one(vals, edges):
+        binned, _ = np.histogram(vals, edges)
+        to_plot = collections.OrderedDict()
+        to_plot['Hypermethylated'] = collections.OrderedDict()
+        to_plot['Hypomethylated'] = collections.OrderedDict()
+        for e0, e1, b in zip(edges[:-1], edges[1:], binned):
+            if e0 == edges[0]:
+                lbl = r"$\Delta M < %d$" % e1
+            elif e1 == edges[-1]:
+                lbl = r"$\Delta M > %d$" % e0
+            else:
+                lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+
+            if e0 > 0:
+                dest = to_plot['Hypermethylated']
+            elif e1 < 0:
+                dest = to_plot['Hypomethylated']
+            else:
+                continue
+            dest[lbl] = b
+        return to_plot
+
+    inner_radius = 0.5
+    width = 0.5
+    wedgeprops = {
+        'edgecolor': 'k',
+        'linewidth': 1.5
+    }
+
+    gs = plt.GridSpec(
+        nrows=len(chroms) + 1,
+        ncols=len(pids),
+    )
+    fig = plt.figure(figsize=(6., 10.))
+    axs = [[]] * (len(chroms) + 1)
+    sharex = None
+    # first row: all
+    for i, pid in enumerate(pids):
+        ax = fig.add_subplot(gs[0, i], sharex=sharex)
+        axs[0].append(ax)
+        if sharex is None:
+            sharex = ax
+        to_plot = bin_one(median_delta_all[pid], edges)
+        if i == 0:
+            legend = 'same'
+        else:
+            legend = None
+        pie.nested_pie_chart(
+            to_plot,
+            colours,
+            inner_radius=inner_radius,
+            width_per_level=width,
+            ax=ax,
+            legend_entries=None,
+            **wedgeprops
+        )
+
+        for j, chrom in enumerate(chroms):
+            ax = fig.add_subplot(gs[j + 1, i], sharex=sharex)
+            axs[j + 1].append(ax)
+            to_plot = bin_one(median_delta_all_by_chrom[pid][chrom], edges)
+            pie.nested_pie_chart(
+                to_plot,
+                colours,
+                inner_radius=inner_radius,
+                width_per_level=width,
+                ax=ax,
+                legend_entries=None,
+                **wedgeprops
+            )
 
     unmapped_density, _ = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size, motif='N')
 
     # get all DMRs (whether significant or not) to use as a null hypothesis
     tmp = get_binned_dmr_locations(
         dmr_res_s1.results,
-        dmr_s1_clusters,
+        clusters,
         chrom_length,
         window_size=window_size,
         split_by_direction=False,
@@ -742,7 +869,7 @@ if __name__ == "__main__":
     #1 ) All DMRs
     tmp = get_binned_dmr_locations(
         dmr_res_all,
-        dmr_s1_clusters,
+        clusters,
         chrom_length,
         window_size=window_size,
         split_by_direction=True,
@@ -817,7 +944,7 @@ if __name__ == "__main__":
 
     tmp = get_binned_dmr_locations(
         dmr_res_specific,
-        dmr_s1_clusters,
+        clusters,
         chrom_length,
         window_size=window_size,
         split_by_direction=True,
@@ -1089,7 +1216,7 @@ if __name__ == "__main__":
     else:
         logger.info("No pre-computed DMR / GTF lookup found. Generating results now (this can take a long time).")
         db = genomics.GtfAnnotation(gtf_fn, logger=None)
-        lookup_all, class_all, cluster_id_to_region = classify_dmr_regions(db, dmr_res_s1.clusters, gene_biotypes=gene_biotypes)
+        lookup_all, class_all, cluster_id_to_region = classify_dmr_regions(db, clusters, gene_biotypes=gene_biotypes)
         # dump to pickle
         logger.info("Dumping pre-computed DMR / GTF lookup data to file %s.", lookup_fn)
         with open(lookup_fn, 'wb') as f:
