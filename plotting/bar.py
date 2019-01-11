@@ -123,7 +123,7 @@ def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None,
     :param y: pd.DataFrame, rows correspond to groups, cols correspond to separate bars
     :param labels:
     :param ax:
-    :param colours:
+    :param colours: If supplied, this is a dictionary or similar with the colours for the index of y
     :param width: Relative to the spacing in x (which is assumed constant (TODO?))
     :return:
     """

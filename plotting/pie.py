@@ -6,6 +6,37 @@ from plotting import common
 import collections
 
 
+def generate_null_key(all_keys):
+    """
+    Generate a random null key, checking to avoid clashes. When a key has been found, add it to the list of keys.
+    :param all_keys:
+    :return:
+    """
+    null_key = all_keys[0]
+    while null_key in all_keys:
+        null_key = string_manipulation.random_string_generator()
+    all_keys.append(null_key)
+    return null_key
+
+
+def get_level_totals(d):
+    """
+    Iterate over the nested dictionary d and sum the leaf node values (which are float / int)
+    :param d:
+    :return: Flat dictionary with the same keys in d. Values give the sum.
+    """
+    res = dict([(k, 0) for k in d])
+    for k, v in d.items():
+        if isinstance(v, dict):
+            sub_res = get_level_totals(v)
+            for k2 in v.keys():
+                res[k] += sub_res[k2]
+            res.update(sub_res)
+        else:
+            res[k] += v
+    return res
+
+
 def nested_pie_chart(
     dat,
     facecolours,
@@ -56,14 +87,6 @@ def nested_pie_chart(
             if t not in key_level:
                 key_level[t] = i
 
-    # generate a random 'null key'
-    def generate_null_key(all_keys):
-        null_key = all_keys[0]
-        while null_key in all_keys:
-            null_key = string_manipulation.random_string_generator()
-        all_keys.append(null_key)
-        return null_key
-
     # generate a null key
     null_key = generate_null_key(all_keys)
 
@@ -83,19 +106,6 @@ def nested_pie_chart(
 
     # reform nested dict
     dat_n = dictionary.flat_dict_to_nested(dat_flat, ordered=True)
-
-    def get_level_totals(d):
-        res = dict([(k, 0) for k in d])
-        for k, v in d.items():
-            if isinstance(v, dict):
-                sub_res = get_level_totals(v)
-                for k2 in v.keys():
-                    res[k] += sub_res[k2]
-                res.update(sub_res)
-            else:
-                res[k] += v
-        return res
-
 
     # get the total for each level, ascending the hierarchy
     level_totals = get_level_totals(dat_n)

@@ -18,7 +18,7 @@ import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 from plotting import common
 
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
 
 """
@@ -744,6 +744,11 @@ if __name__ == "__main__":
     median_delta_all_by_chrom = dmr_median_delta_by_chromosome(dmr_res_all, clusters)
     median_delta_specific_by_chrom = dmr_median_delta_by_chromosome(dmr_res_specific, clusters)
 
+    num_dmr_all_by_chrom = pd.DataFrame(median_delta_all_by_chrom).applymap(len).loc[chroms, pids]
+    num_dmr_specific_by_chrom = pd.DataFrame(median_delta_specific_by_chrom).applymap(
+        lambda x: len(x) if hasattr(x, '__len__') else 0
+    ).loc[chroms, pids]
+
     # integrate over chromosomes for overall picture
     median_delta_all = dict([
         (pid, reduce(lambda x, y: x + y, median_delta_all_by_chrom[pid].values())) for pid in pids
@@ -804,50 +809,205 @@ if __name__ == "__main__":
     width = 0.5
     wedgeprops = {
         'edgecolor': 'k',
-        'linewidth': 1.5
+        'linewidth': .5
     }
+    scale_by_number = 'area'
+    min_width = 0.2
+
+    if scale_by_number is not None:
+        nmax = float(num_dmr_all_by_chrom.max().max())
+        nmax_all = float(num_dmr_all_by_chrom.sum(axis=0).max())
 
     gs = plt.GridSpec(
         nrows=len(chroms) + 1,
         ncols=len(pids),
     )
-    fig = plt.figure(figsize=(6., 10.))
-    axs = [[]] * (len(chroms) + 1)
+    fig = plt.figure(figsize=(7., 10.))
+    axs = [[] for i in range(len(chroms) + 1)]
     sharex = None
     # first row: all
     for i, pid in enumerate(pids):
-        ax = fig.add_subplot(gs[0, i], sharex=sharex)
+        ax = fig.add_subplot(gs[0, i], sharex=sharex, sharey=sharex)
+        ax.set_aspect('equal')
+        ax.set_title(pid, fontsize=12, horizontalalignment='center')
+        if i == 0:
+            ax.set_ylabel(
+                'All',
+                fontsize=12,
+                verticalalignment='center',
+                rotation=0,
+                horizontalalignment='right'
+            )
         axs[0].append(ax)
         if sharex is None:
             sharex = ax
         to_plot = bin_one(median_delta_all[pid], edges)
-        if i == 0:
-            legend = 'same'
-        else:
-            legend = None
+
+        # compute normalisation const
+        k = 1.
+        if scale_by_number == 'area':
+            k = (num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax_all) ** .5
+        elif scale_by_number == 'radius':
+            k = num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax_all
+
+        w_eff = max(width * k, min_width)
+        inner_r_eff = inner_radius * k
+
         pie.nested_pie_chart(
             to_plot,
             colours,
-            inner_radius=inner_radius,
-            width_per_level=width,
+            inner_radius=inner_r_eff,
+            width_per_level=w_eff,
             ax=ax,
             legend_entries=None,
             **wedgeprops
         )
 
         for j, chrom in enumerate(chroms):
-            ax = fig.add_subplot(gs[j + 1, i], sharex=sharex)
+            ax = fig.add_subplot(gs[j + 1, i], sharex=sharex, sharey=sharex)
+            ax.set_aspect('equal')
+            if i == 0:
+                ax.set_ylabel(
+                    chrom,
+                    fontsize=12,
+                    verticalalignment='center',
+                    rotation=0,
+                    horizontalalignment='right'
+                )
             axs[j + 1].append(ax)
             to_plot = bin_one(median_delta_all_by_chrom[pid][chrom], edges)
-            pie.nested_pie_chart(
+
+            # compute normalisation const
+            k = 1.
+            if scale_by_number == 'area':
+                k = (num_dmr_all_by_chrom.loc[chrom, pid] / nmax) ** .5
+            elif scale_by_number == 'radius':
+                k = num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax
+
+            w_eff = max(width * k, min_width)
+            inner_r_eff = inner_radius * k
+
+            res = pie.nested_pie_chart(
                 to_plot,
                 colours,
-                inner_radius=inner_radius,
-                width_per_level=width,
+                inner_radius=inner_r_eff,
+                width_per_level=w_eff,
                 ax=ax,
                 legend_entries=None,
                 **wedgeprops
             )
+
+    # fix axis limits across all plots
+    axs[0][0].set_xlim(np.array([-1, 1]) * (inner_radius + 2.5 * width))
+
+    # add legend outside axes
+    patches = res['patches']
+    legend_dict = collections.OrderedDict()
+    legend_dict['Hyper'] = collections.OrderedDict()
+    legend_dict['Hypo'] = collections.OrderedDict()
+    for k in to_plot['Hypermethylated']:
+        legend_dict['Hyper'][k] = {
+            'class': 'patch',
+            'facecolor': patches[1][k].get_facecolor(),
+            'edgecolor': patches[1][k].get_edgecolor(),
+            'linewidth': patches[1][k].get_linewidth(),
+        }
+    for k in to_plot['Hypomethylated'].keys()[::-1]:
+        legend_dict['Hypo'][k] = {
+            'class': 'patch',
+            'facecolor': patches[1][k].get_facecolor(),
+            'edgecolor': patches[1][k].get_edgecolor(),
+            'linewidth': patches[1][k].get_linewidth(),
+        }
+
+    common.add_custom_legend(
+        axs[int((len(chroms) + 1) / 2.)][-1],
+        legend_dict,
+        loc_outside=True
+    )
+
+    gs.update(left=0.05, bottom=0.02, top=0.97, right=0.72, hspace=0.06, wspace=0.06)
+
+    fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.pdf"), dpi=200)
+
+    # small bar chart showing the number of DMRs in each chrom / patient for inset (?)
+    # by patient
+    n_by_patient_by_direction = pd.DataFrame(index=['hypo', 'hyper'], columns=pids)
+    n_by_patient_by_direction.loc['hypo'] = [sum(np.array(median_delta_all[pid]) < 0) for pid in pids]
+    n_by_patient_by_direction.loc['hyper'] = [sum(np.array(median_delta_all[pid]) > 0) for pid in pids]
+    fig = plt.figure(figsize=(4.5, 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_patient_by_direction, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('Number DMRs')
+    ax.set_xlabel('Patient')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_patient.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_patient.pdf"), dpi=200)
+
+    # by chromosome
+    n_by_chrom_by_direction = pd.DataFrame(index=['hypo', 'hyper'], columns=chroms)
+    n_by_chrom_by_direction.loc['hypo'] = [
+        np.mean(
+            [sum(np.array(median_delta_all_by_chrom[pid][chrom]) < 0) for pid in pids]
+        ) for chrom in chroms
+    ]
+    n_by_chrom_by_direction.loc['hyper'] = [
+        np.mean(
+            [sum(np.array(median_delta_all_by_chrom[pid][chrom]) > 0) for pid in pids]
+        ) for chrom in chroms
+    ]
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_chrom_by_direction, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('Number DMRs')
+    ax.set_xlabel('Chromosome')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom.pdf"), dpi=200)
+
+    # by chromosome background level of DMRs
+    n_by_chrom_bg = pd.Series([t.chr for t in clusters.values()]).value_counts()
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    ax.bar(range(len(chroms)), n_by_chrom_bg, ec='k', lw=1., color='lightgrey')
+    ax.set_xticks(range(len(chroms)))
+    ax.set_xticklabels(chroms)
+    ax.set_ylabel('Number clusters')
+    ax.set_xlabel('Chromosome')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_bg_number_by_chrom.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_bg_number_by_chrom.pdf"), dpi=200)
+
+    # by chromosome as a pct of the BG
+    n_by_chrom_by_direction_pct = (n_by_chrom_by_direction.divide(n_by_chrom_bg, axis=1) * 100.).loc[:, chroms]
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_chrom_by_direction_pct, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('% of clusters that are DM')
+    ax.set_xlabel('Chromosome')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom_pct.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom_pct.pdf"), dpi=200)
+
+    # compare against the (normalised) number of oncogenes in each chrom
+    oncogene_fn = os.path.join(GIT_LFS_DATA_DIR, 'oncogene_database', 'ongene_human.txt')
+    df = pd.read_csv(oncogene_fn, sep='\t', index_col=0, header=0)
+    on_chroms = df['Cytoband'].str.replace(r'^(?P<n>[0-9]*)[pq].*', '\g<n>')
+    on_chroms = on_chroms.loc[on_chroms.isin(chroms)]
+    on_by_chrom = on_chroms.value_counts().loc[chroms]
+    on_by_chrom_n = on_by_chrom / pd.Series(chrom_length).loc[chroms] * 1e7
+
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    ax.bar(range(len(chroms)), on_by_chrom_n, facecolor='lightgrey', edgecolor='k', linewidth=1.)
+    ax.set_xticks(range(len(chroms)))
+    ax.set_xticklabels(chroms)
+    ax.set_xlabel('Chromosome')
+    ax.set_ylabel('Oncogene density (a.u.)')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "oncogene_normalised_density_by_chrom.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "oncogene_normalised_density_by_chrom.pdf"), dpi=200)
 
     unmapped_density, _ = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size, motif='N')
 

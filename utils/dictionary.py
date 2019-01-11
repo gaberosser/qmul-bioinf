@@ -62,9 +62,8 @@ def nested_dict_to_flat(x, ordered=False):
     From the supplied nested dictionary, generate a flat dictionary in which the keys are tuples showing the
     original structure. Any object that is *not* a dictionary is considered an end node.
     """
-    ## FIXME: this doesn't preserve ordering
     res = collections.OrderedDict() if ordered else {}
-    stack = [(None, None)] + x.items()
+    stack = [(None, None)] + x.items()[::-1]
     key = []
     while True:
         k, x = stack.pop()
@@ -80,7 +79,7 @@ def nested_dict_to_flat(x, ordered=False):
             # leave a marker telling us where this nesting happened
             stack += [(None, None)]
             # append items to the stack
-            stack.extend(x.items())
+            stack.extend(x.items()[::-1])
             # add to the key
             key.append(k)
         else:
@@ -97,6 +96,6 @@ def flat_dict_to_nested(x, ordered=False):
             if i == (len(k) - 1):
                 parent[t] = v
             else:
-                parent.setdefault(t, {})
+                parent.setdefault(t, collections.OrderedDict() if ordered else {})
                 parent = parent[t]
     return res
