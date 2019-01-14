@@ -136,6 +136,44 @@ def reduce_union(*args):
     return reduce(unioner, args)
 
 
+def feature_membership_count(*args):
+    """
+    Find the number of each times each feature is shared across the input arrays.
+    :param args: Iterable of input arrays, each containing a list of features.
+    :return: Dictionary keyed by each feature in all the lists giving the number of times it has been seen.
+    """
+    feature_count = collections.defaultdict(int)
+
+    # iterate over all, getting feature count
+    for i, arr in enumerate(args):
+        for x in arr:
+            feature_count[x] += 1
+
+    return feature_count
+
+
+def specific_features(*args):
+    """
+    Find the features that are specific to each input array
+    :param args: Iterable of input arrays, each containing a list of features.
+    :return: List of the same length as args, giving features specific to only that input.
+    This function is designed to be faster than running the full venn_from_arrays function.
+    """
+    feature_count = feature_membership_count(*args)
+
+    specific = set()
+    # [specific.add(ftr) for ftr, ct in feature_count.iteritems() if ct == 1]
+    for ftr, ct in feature_count.iteritems():
+        if ct == 1:
+            specific.add(ftr)
+
+    out = []
+    for arr in args:
+        out.append(specific.intersection(arr))
+
+    return out
+
+
 def venn_set_to_wide_dataframe(
     data,
     venn_set,

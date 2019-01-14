@@ -671,6 +671,70 @@ def classify_dmr_regions(
     return lookup_result, classification, cluster_id_to_region
 
 
+def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup, cat_labels, chroms, pids):
+    fig = plt.figure(figsize=(5.5, 6.8))
+    gs = plt.GridSpec(nrows=len(chroms), ncols=len(pids) + 1)
+    axs = []
+    for j, chrom in enumerate(chroms):
+        axs.append([])
+        ax = fig.add_subplot(gs[j, 0])
+        axs[j].append(ax)
+        ax.set_ylabel(chrom, rotation=0, verticalalignment='center', horizontalalignment='right')
+        if j == 0:
+            ax.set_title('BG')
+        the_dat = pd.Series(class_bg[chrom]).value_counts().reindex(lookup_cats).fillna(0.)
+        if the_dat.sum() > 0:
+            ax.pie(
+                the_dat,
+                colors=[colours_by_lookup[t] for t in lookup_cats],
+                radius=1.,
+                wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                startangle=90,
+            )
+            ax.set_aspect('equal')
+        else:
+            ax.set_visible(False)
+        for i, pid in enumerate(pids):
+            ax = fig.add_subplot(gs[j, i + 1])
+            axs[j].append(ax)
+            if j == 0:
+                ax.set_title(pid)
+            the_dat = pd.Series(class_patients[pid][chrom]).value_counts().reindex(lookup_cats).fillna(0.)
+            if the_dat.sum() > 0:
+                ax.pie(
+                    the_dat,
+                    colors=[colours_by_lookup[t] for t in lookup_cats],
+                    radius=1.,
+                    wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                    startangle=90,
+                )
+                ax.set_aspect('equal')
+            else:
+                ax.set_visible(False)
+
+    gs.update(hspace=0, wspace=0, bottom=0.01, left=0.06, top=0.95, right=0.78)
+    # custom legend
+    legend_dict = {
+        '': collections.OrderedDict(
+            [(
+                 cat_labels[cat],
+                 {
+                     'class': 'patch',
+                     'facecolor': colours_by_lookup[cat],
+                     'edgecolor': 'k',
+                     'linewidth': 0.5
+                 }
+             ) for cat in lookup_cats
+             ])
+    }
+    common.add_custom_legend(
+        axs[0][-1],
+        legend_dict,
+        loc_outside=True,
+    )
+    return fig, axs
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
@@ -757,11 +821,217 @@ if __name__ == "__main__":
         (pid, reduce(lambda x, y: x + y, median_delta_specific_by_chrom[pid].values())) for pid in pids
     ])
 
-    edges = np.array([-1e3, -5., -4., -3., -2., -1., 0., 1., 2., 3., 4., 5., 1e3])
-    colours = {
-        'Hypermethylated': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
-        'Hypomethylated': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
-    }
+    def dmr_direction_by_chromosome_pie_array(
+            dat,
+            number,
+            outer_sm_hypo,
+            outer_sm_hyper,
+            pids=consts.PIDS,
+            chroms=tuple([str(t) for t in range(1, 23)]),
+            edges=None,
+            inner_colours=None,
+            inner_radius=0.5,
+            segment_width=0.5,
+            scale_by_number = 'area',
+            min_segment_width = 0.2,
+            wedgeprops = None
+    ):
+        if wedgeprops is None:
+            wedgeprops = {
+                'edgecolor': 'k',
+                'linewidth': .5
+            }
+        if edges is None:
+            edges = np.array([-np.inf, -5., -4., -3., -2., -1., 0., 1., 2., 3., 4., 5., np.inf])
+        if inner_colours is None:
+            inner_colours = {
+                'Hypermethylated': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+                'Hypomethylated': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+            }
+
+        # result of a call to pie
+        # initially None and set only once
+        res = None
+
+        # combine results over chromosomes
+        dat_all = {}
+        for pid in pids:
+            dat_all[pid] = []
+            for v in dat[pid].values():
+                dat_all[pid].extend(v)
+
+        number_all = number.sum(axis=0)
+
+        # construct a dictionary of all colours
+        colours = dict(inner_colours)
+        for e0, e1 in zip(edges[:-1], edges[1:]):
+            if e0 < 0:
+                sm = outer_sm_hypo
+            else:
+                sm = outer_sm_hyper
+            if e0 == edges[0]:
+                lbl = r"$\Delta M < %d$" % e1
+            elif e1 == edges[-1]:
+                lbl = r"$\Delta M > %d$" % e0
+            else:
+                lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+            colours[lbl] = sm.to_rgba(np.sign(e0) * np.abs([e0, e1]).min())
+
+        def bin_one(vals, edges):
+            binned, _ = np.histogram(vals, edges)
+            to_plot = collections.OrderedDict()
+            to_plot['Hypermethylated'] = collections.OrderedDict()
+            to_plot['Hypomethylated'] = collections.OrderedDict()
+            for e0, e1, b in zip(edges[:-1], edges[1:], binned):
+                if e0 == edges[0]:
+                    lbl = r"$\Delta M < %d$" % e1
+                elif e1 == edges[-1]:
+                    lbl = r"$\Delta M > %d$" % e0
+                else:
+                    lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+
+                if e0 > 0:
+                    dest = to_plot['Hypermethylated']
+                elif e1 < 0:
+                    dest = to_plot['Hypomethylated']
+                else:
+                    continue
+                dest[lbl] = b
+            return to_plot
+
+        if scale_by_number is not None:
+            nmax = float(number.max().max())
+            nmax_all = float(number.sum(axis=0).max())
+
+        gs = plt.GridSpec(
+            nrows=len(chroms) + 1,
+            ncols=len(pids),
+        )
+        fig = plt.figure(figsize=(7., 10.))
+        axs = [[] for i in range(len(chroms) + 1)]
+        sharex = None
+        # first row: all
+        for i, pid in enumerate(pids):
+            ax = fig.add_subplot(gs[0, i], sharex=sharex, sharey=sharex)
+            ax.set_aspect('equal')
+            ax.set_title(pid, fontsize=12, horizontalalignment='center')
+            if i == 0:
+                ax.set_ylabel(
+                    'All',
+                    fontsize=12,
+                    verticalalignment='center',
+                    rotation=0,
+                    horizontalalignment='right'
+                )
+            axs[0].append(ax)
+            if sharex is None:
+                sharex = ax
+
+            if len(dat_all[pid]) > 0:
+                to_plot = bin_one(dat_all[pid], edges)
+                # compute normalisation const
+                k = 1.
+                if scale_by_number == 'area':
+                    k = (number_all.loc[pid] / nmax_all) ** .5
+                elif scale_by_number == 'radius':
+                    k = number_all.loc[pid] / nmax_all
+
+                w_eff = max(segment_width * k, min_segment_width)
+                inner_r_eff = inner_radius * k
+
+                tmp = pie.nested_pie_chart(
+                    to_plot,
+                    colours,
+                    inner_radius=inner_r_eff,
+                    width_per_level=w_eff,
+                    ax=ax,
+                    legend_entries=None,
+                    **wedgeprops
+                )
+                if res is None:
+                    res = tmp
+            else:
+                ax.set_visible(False)
+
+            for j, chrom in enumerate(chroms):
+                ax = fig.add_subplot(gs[j + 1, i], sharex=sharex, sharey=sharex)
+                ax.set_aspect('equal')
+                if i == 0:
+                    ax.set_ylabel(
+                        chrom,
+                        fontsize=12,
+                        verticalalignment='center',
+                        rotation=0,
+                        horizontalalignment='right'
+                    )
+                axs[j + 1].append(ax)
+
+                if len(dat[pid][chrom]) > 0:
+                    to_plot = bin_one(dat[pid][chrom], edges)
+                    # compute normalisation const
+                    k = 1.
+                    if scale_by_number == 'area':
+                        k = (number.loc[chrom, pid] / nmax) ** .5
+                    elif scale_by_number == 'radius':
+                        k = number.sum(axis=0).loc[pid] / nmax
+
+                    w_eff = max(segment_width * k, min_segment_width)
+                    inner_r_eff = inner_radius * k
+
+                    tmp = pie.nested_pie_chart(
+                        to_plot,
+                        colours,
+                        inner_radius=inner_r_eff,
+                        width_per_level=w_eff,
+                        ax=ax,
+                        legend_entries=None,
+                        **wedgeprops
+                    )
+                    if res is None:
+                        res = tmp
+                else:
+                    ax.set_visible(False)
+
+        # fix axis limits across all plots
+        axs[0][0].set_xlim(np.array([-1, 1]) * (inner_radius + 2.5 * width))
+
+        # add legend outside axes
+        patches = res['patches']
+        legend_dict = collections.OrderedDict()
+        legend_dict['Hyper'] = collections.OrderedDict()
+        legend_dict['Hypo'] = collections.OrderedDict()
+        for k in to_plot['Hypermethylated']:
+            legend_dict['Hyper'][k] = {
+                'class': 'patch',
+                'facecolor': patches[1][k].get_facecolor(),
+                'edgecolor': patches[1][k].get_edgecolor(),
+                'linewidth': patches[1][k].get_linewidth(),
+            }
+        for k in to_plot['Hypomethylated'].keys()[::-1]:
+            legend_dict['Hypo'][k] = {
+                'class': 'patch',
+                'facecolor': patches[1][k].get_facecolor(),
+                'edgecolor': patches[1][k].get_edgecolor(),
+                'linewidth': patches[1][k].get_linewidth(),
+            }
+
+        common.add_custom_legend(
+            axs[int((len(chroms) + 1) / 2.)][-1],
+            legend_dict,
+            loc_outside=True
+        )
+
+        gs.update(left=0.05, bottom=0.02, top=0.97, right=0.72, hspace=0.06, wspace=0.06)
+
+        return {
+            'fig': fig,
+            'axs': axs,
+            'gs': gs,
+            'legend_dict': legend_dict,
+            'pie_res': res,
+        }
+
+
     hypo_cmap = plt.get_cmap('Greens_r')
     hyper_cmap = plt.get_cmap('Reds')
     hypo_norm = Normalize(vmin=-6, vmax=0)
@@ -769,167 +1039,25 @@ if __name__ == "__main__":
     hypo_sm = cm.ScalarMappable(norm=hypo_norm, cmap=hypo_cmap)
     hyper_sm = cm.ScalarMappable(norm=hyper_norm, cmap=hyper_cmap)
 
-    for e0, e1 in zip(edges[:-1], edges[1:]):
-        if e0 < 0:
-            sm = hypo_sm
-        else:
-            sm = hyper_sm
-        if e0 == edges[0]:
-            lbl = r"$\Delta M < %d$" % e1
-        elif e1 == edges[-1]:
-            lbl = r"$\Delta M > %d$" % e0
-        else:
-            lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
-        colours[lbl] = sm.to_rgba(np.sign(e0) * np.abs([e0, e1]).min())
-
-    # plot pie charts
-    def bin_one(vals, edges):
-        binned, _ = np.histogram(vals, edges)
-        to_plot = collections.OrderedDict()
-        to_plot['Hypermethylated'] = collections.OrderedDict()
-        to_plot['Hypomethylated'] = collections.OrderedDict()
-        for e0, e1, b in zip(edges[:-1], edges[1:], binned):
-            if e0 == edges[0]:
-                lbl = r"$\Delta M < %d$" % e1
-            elif e1 == edges[-1]:
-                lbl = r"$\Delta M > %d$" % e0
-            else:
-                lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
-
-            if e0 > 0:
-                dest = to_plot['Hypermethylated']
-            elif e1 < 0:
-                dest = to_plot['Hypomethylated']
-            else:
-                continue
-            dest[lbl] = b
-        return to_plot
-
-    inner_radius = 0.5
-    width = 0.5
-    wedgeprops = {
-        'edgecolor': 'k',
-        'linewidth': .5
-    }
-    scale_by_number = 'area'
-    min_width = 0.2
-
-    if scale_by_number is not None:
-        nmax = float(num_dmr_all_by_chrom.max().max())
-        nmax_all = float(num_dmr_all_by_chrom.sum(axis=0).max())
-
-    gs = plt.GridSpec(
-        nrows=len(chroms) + 1,
-        ncols=len(pids),
+    plot_dict = dmr_direction_by_chromosome_pie_array(
+        median_delta_all_by_chrom,
+        num_dmr_all_by_chrom,
+        outer_sm_hyper=hyper_sm,
+        outer_sm_hypo=hypo_sm,
     )
-    fig = plt.figure(figsize=(7., 10.))
-    axs = [[] for i in range(len(chroms) + 1)]
-    sharex = None
-    # first row: all
-    for i, pid in enumerate(pids):
-        ax = fig.add_subplot(gs[0, i], sharex=sharex, sharey=sharex)
-        ax.set_aspect('equal')
-        ax.set_title(pid, fontsize=12, horizontalalignment='center')
-        if i == 0:
-            ax.set_ylabel(
-                'All',
-                fontsize=12,
-                verticalalignment='center',
-                rotation=0,
-                horizontalalignment='right'
-            )
-        axs[0].append(ax)
-        if sharex is None:
-            sharex = ax
-        to_plot = bin_one(median_delta_all[pid], edges)
-
-        # compute normalisation const
-        k = 1.
-        if scale_by_number == 'area':
-            k = (num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax_all) ** .5
-        elif scale_by_number == 'radius':
-            k = num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax_all
-
-        w_eff = max(width * k, min_width)
-        inner_r_eff = inner_radius * k
-
-        pie.nested_pie_chart(
-            to_plot,
-            colours,
-            inner_radius=inner_r_eff,
-            width_per_level=w_eff,
-            ax=ax,
-            legend_entries=None,
-            **wedgeprops
-        )
-
-        for j, chrom in enumerate(chroms):
-            ax = fig.add_subplot(gs[j + 1, i], sharex=sharex, sharey=sharex)
-            ax.set_aspect('equal')
-            if i == 0:
-                ax.set_ylabel(
-                    chrom,
-                    fontsize=12,
-                    verticalalignment='center',
-                    rotation=0,
-                    horizontalalignment='right'
-                )
-            axs[j + 1].append(ax)
-            to_plot = bin_one(median_delta_all_by_chrom[pid][chrom], edges)
-
-            # compute normalisation const
-            k = 1.
-            if scale_by_number == 'area':
-                k = (num_dmr_all_by_chrom.loc[chrom, pid] / nmax) ** .5
-            elif scale_by_number == 'radius':
-                k = num_dmr_all_by_chrom.sum(axis=0).loc[pid] / nmax
-
-            w_eff = max(width * k, min_width)
-            inner_r_eff = inner_radius * k
-
-            res = pie.nested_pie_chart(
-                to_plot,
-                colours,
-                inner_radius=inner_r_eff,
-                width_per_level=w_eff,
-                ax=ax,
-                legend_entries=None,
-                **wedgeprops
-            )
-
-    # fix axis limits across all plots
-    axs[0][0].set_xlim(np.array([-1, 1]) * (inner_radius + 2.5 * width))
-
-    # add legend outside axes
-    patches = res['patches']
-    legend_dict = collections.OrderedDict()
-    legend_dict['Hyper'] = collections.OrderedDict()
-    legend_dict['Hypo'] = collections.OrderedDict()
-    for k in to_plot['Hypermethylated']:
-        legend_dict['Hyper'][k] = {
-            'class': 'patch',
-            'facecolor': patches[1][k].get_facecolor(),
-            'edgecolor': patches[1][k].get_edgecolor(),
-            'linewidth': patches[1][k].get_linewidth(),
-        }
-    for k in to_plot['Hypomethylated'].keys()[::-1]:
-        legend_dict['Hypo'][k] = {
-            'class': 'patch',
-            'facecolor': patches[1][k].get_facecolor(),
-            'edgecolor': patches[1][k].get_edgecolor(),
-            'linewidth': patches[1][k].get_linewidth(),
-        }
-
-    common.add_custom_legend(
-        axs[int((len(chroms) + 1) / 2.)][-1],
-        legend_dict,
-        loc_outside=True
-    )
-
-    gs.update(left=0.05, bottom=0.02, top=0.97, right=0.72, hspace=0.06, wspace=0.06)
-
+    fig = plot_dict['fig']
     fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.pdf"), dpi=200)
+
+    plot_dict = dmr_direction_by_chromosome_pie_array(
+        median_delta_specific_by_chrom,
+        num_dmr_specific_by_chrom,
+        outer_sm_hyper=hyper_sm,
+        outer_sm_hypo=hypo_sm,
+    )
+    fig = plot_dict['fig']
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_by_chrom_pie_chart_array.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_by_chrom_pie_chart_array.pdf"), dpi=200)
 
     # small bar chart showing the number of DMRs in each chrom / patient for inset (?)
     # by patient
@@ -946,7 +1074,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "dmr_direction_number_by_patient.pdf"), dpi=200)
 
     # by chromosome
-    n_by_chrom_by_direction = pd.DataFrame(index=['hypo', 'hyper'], columns=chroms)
+    n_by_chrom_by_direction = pd.DataFrame(index=['hypo', 'hyper'], columns=chroms, dtype=float)
     n_by_chrom_by_direction.loc['hypo'] = [
         np.mean(
             [sum(np.array(median_delta_all_by_chrom[pid][chrom]) < 0) for pid in pids]
@@ -989,6 +1117,51 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom_pct.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom_pct.pdf"), dpi=200)
+
+    # same but for specific DMRs
+    n_by_patient_by_direction_specific = pd.DataFrame(index=['hypo', 'hyper'], columns=pids)
+    n_by_patient_by_direction_specific.loc['hypo'] = [sum(np.array(median_delta_specific[pid]) < 0) for pid in pids]
+    n_by_patient_by_direction_specific.loc['hyper'] = [sum(np.array(median_delta_specific[pid]) > 0) for pid in pids]
+    fig = plt.figure(figsize=(4.5, 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_patient_by_direction_specific, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('Number DMRs')
+    ax.set_xlabel('Patient')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_patient.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_patient.pdf"), dpi=200)
+
+    # by chromosome
+    n_by_chrom_by_direction_specific = pd.DataFrame(index=['hypo', 'hyper'], columns=chroms, dtype=float)
+    n_by_chrom_by_direction_specific.loc['hypo'] = [
+        np.mean(
+            [sum(np.array(median_delta_specific_by_chrom[pid][chrom]) < 0) for pid in pids]
+        ) for chrom in chroms
+    ]
+    n_by_chrom_by_direction_specific.loc['hyper'] = [
+        np.mean(
+            [sum(np.array(median_delta_specific_by_chrom[pid][chrom]) > 0) for pid in pids]
+        ) for chrom in chroms
+    ]
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_chrom_by_direction_specific, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('Number DMRs')
+    ax.set_xlabel('Chromosome')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_chrom.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_chrom.pdf"), dpi=200)
+
+    # by chromosome as a pct of the BG
+    n_by_chrom_by_direction_specific_pct = (n_by_chrom_by_direction_specific.divide(n_by_chrom_bg, axis=1) * 100.).loc[:, chroms]
+    fig = plt.figure(figsize=(6., 2.8))
+    ax = fig.add_subplot(111)
+    bar.stacked_bar_chart(n_by_chrom_by_direction_specific_pct, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
+    ax.set_ylabel('% of clusters that are DM')
+    ax.set_xlabel('Chromosome')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_chrom_pct.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_number_by_chrom_pct.pdf"), dpi=200)
 
     # compare against the (normalised) number of oncogenes in each chrom
     oncogene_fn = os.path.join(GIT_LFS_DATA_DIR, 'oncogene_database', 'ongene_human.txt')
@@ -1422,6 +1595,25 @@ if __name__ == "__main__":
                 cid = region_to_cluster_id[k]
                 class_hypo[pid][chrom][cid] = class_all[chrom][cid]
 
+    # repeat for specific DMRs
+    class_hyper_specific = {}
+    class_hypo_specific = {}
+
+    for pid in pids:
+        class_hyper_specific[pid] = {}
+        class_hypo_specific[pid] = {}
+        for chrom in chroms:
+            class_hyper_specific[pid][chrom] = {}
+            class_hypo_specific[pid][chrom] = {}
+            for reg in dmr_regions_hyper_specific[pid][chrom]:
+                k = (chrom,) + reg
+                cid = region_to_cluster_id[k]
+                class_hyper_specific[pid][chrom][cid] = class_all[chrom][cid]
+            for reg in dmr_regions_hypo_specific[pid][chrom]:
+                k = (chrom,) + reg
+                cid = region_to_cluster_id[k]
+                class_hypo_specific[pid][chrom][cid] = class_all[chrom][cid]
+
     # analyse the distributions
     lookup_cats = ['intergenic', 'intron', 'exon', 'first_exon']
     cat_labels = dict([
@@ -1435,61 +1627,6 @@ if __name__ == "__main__":
         'first_exon': '#d7191c',
     }
 
-
-    def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup, cat_labels, chroms, pids):
-        fig = plt.figure(figsize=(5.5, 6.8))
-        gs = plt.GridSpec(nrows=len(chroms), ncols=len(pids) + 1)
-        axs = []
-        for j, chrom in enumerate(chroms):
-            axs.append([])
-            ax = fig.add_subplot(gs[j, 0])
-            axs[j].append(ax)
-            ax.set_ylabel(chrom, rotation=0, verticalalignment='center', horizontalalignment='right')
-            if j == 0:
-                ax.set_title('BG')
-            ax.pie(
-                pd.Series(class_bg[chrom]).value_counts().reindex(lookup_cats).fillna(0.),
-                colors=[colours_by_lookup[t] for t in lookup_cats],
-                radius=1.,
-                wedgeprops={'edgecolor': 'k', 'width': 0.5},
-                startangle=90,
-            )
-            ax.set_aspect('equal')
-            for i, pid in enumerate(pids):
-                ax = fig.add_subplot(gs[j, i + 1])
-                axs[j].append(ax)
-                if j == 0:
-                    ax.set_title(pid)
-                ax.pie(
-                    pd.Series(class_patients[pid][chrom]).value_counts().reindex(lookup_cats).fillna(0.),
-                    colors=[colours_by_lookup[t] for t in lookup_cats],
-                    radius=1.,
-                    wedgeprops={'edgecolor': 'k', 'width': 0.5},
-                    startangle=90,
-                )
-                ax.set_aspect('equal')
-
-        gs.update(hspace=0, wspace=0, bottom=0.01, left=0.06, top=0.95, right=0.78)
-        # custom legend
-        legend_dict = {
-            '': collections.OrderedDict(
-                [(
-                     cat_labels[cat],
-                     {
-                        'class': 'patch',
-                        'facecolor': colours_by_lookup[cat],
-                        'edgecolor': 'k',
-                        'linewidth': 0.5
-                     }
-                 ) for cat in lookup_cats
-                 ])
-        }
-        common.add_custom_legend(
-            axs[0][-1],
-            legend_dict,
-            loc_outside=True,
-        )
-        return fig, axs
 
     fig, axs = pie_chart_location(
         class_all,
@@ -1517,5 +1654,28 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo.pdf'), dpi=200)
 
+    fig, axs = pie_chart_location(
+        class_all,
+        class_hyper_specific,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+        chroms,
+        pids
+    )
 
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper_specific.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper_specific.pdf'), dpi=200)
 
+    fig, axs = pie_chart_location(
+        class_all,
+        class_hypo_specific,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+        chroms,
+        pids
+    )
+
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo_specific.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo_specific.pdf'), dpi=200)
