@@ -1,5 +1,6 @@
 import numpy as np
 import os
+from bisect import bisect_left
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
 from methylation import dmr, loader
 from utils import setops, output, log
@@ -106,18 +107,35 @@ if __name__ == '__main__':
     big_ax.tick_params(top='off', bottom='off', left='off', right='off', labelcolor='none')
     big_ax.grid(False)
     big_ax.set_ylabel('Density (a.u.)')
+    xmax = 500.
 
     for pid, ax in zip(pids, axs):
         sns.kdeplot(np.array(inters_2[pid]), color=patient_colours[pid], shade=True, ax=ax)
         ax.axvline(n_by_patient_specific[pid], color='k')
         ax.yaxis.set_ticks([])
         ax.set_ylabel(pid)
-        aax = ax.twinx()
-        aax.grid(False)
-        aax.set_yticks([])
-        aax.set_ylabel('p = ')
+        # aax = ax.twinx()
+        # aax.grid(False)
+        # aax.set_yticks([])
+        ix = bisect_left(sorted(inters_2[pid]), n_by_patient_specific[pid])
+        # two tailed test (?) - need to check for direction
+        pval = min(ix / float(n_iter), 1 - ix / float(n_iter))
+        if pval == 0:
+            lbl = 'p < %.3f' % (1 / float(n_iter))
+        else:
+            lbl = 'p = %.3f' % pval
+        ax.text(
+            0.99,
+            0.5,
+            lbl,
+            horizontalalignment='right',
+            verticalalignment='center',
+            transform=ax.transAxes
+        )
 
-    axs[-1].set_xlim([0, 500.])
+        # aax.set_ylabel(lbl, rotation=0, horizontalalignment='right')
+
+    axs[-1].set_xlim([0, xmax])
     axs[-1].set_xlabel('Number of DMRs')
     fig.subplots_adjust(hspace=0.05, left=0.1, right=0.98, bottom=0.1, top=0.98)
 
