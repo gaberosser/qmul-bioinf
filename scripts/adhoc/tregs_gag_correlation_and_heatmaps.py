@@ -1,11 +1,12 @@
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-from rnaseq import loader
+from rnaseq import loader, NH_ID_TO_PATIENT_ID_MAP
 import numpy as np
 from scipy import stats
 import pandas as pd
 from stats import nht
 from utils import output, setops
 from settings import HGIC_LOCAL_DIR
+from plotting import common
 import os
 import pickle
 import references
@@ -28,13 +29,22 @@ if __name__ == "__main__":
     obj_cc = loader.load_by_patient(pids, source='salmon')
     ix = obj_cc.meta.index.isin(consts.S1_RNASEQ_SAMPLES)
     obj_cc.filter_samples(ix)
-    obj_ff = loader.load_by_patient(pids, source='salmon', type='ffpe')
 
+    # add PID to cell culture metadata
     obj_cc.meta.insert(
         0,
         'pid',
         obj_cc.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>')
     )
+
+    obj_ff = loader.load_by_patient(pids, source='salmon', type='ffpe')
+    obj_ff.filter_by_sample_name(consts.FFPE_RNASEQ_SAMPLES)
+
+    # add PID to FFPE metadata
+    nh_id = obj_ff.meta.index.str.replace(r'(_?)(DEF|SP).*', '')
+    p_id = [NH_ID_TO_PATIENT_ID_MAP[t.replace('_', '-')] for t in nh_id]
+    obj_ff.meta.insert(0, 'nh_id', nh_id)
+    obj_ff.meta.insert(0, 'patient_id', p_id)
 
     # pull out logged TPM
     log2_tpm_cc = np.log2(obj_cc.data + eps)
@@ -132,7 +142,7 @@ if __name__ == "__main__":
     ax = fig.add_subplot(111)
     sns.heatmap(
         xx,
-        cmap='RdBu',
+        cmap='RdBu_r',
         vmin=-6.,
         vmax=6.,
         ax=ax,
@@ -151,12 +161,16 @@ if __name__ == "__main__":
     y = log_gic_cc.loc[lookup_ens]
     y.index = lookup_gene
     y.drop(target_gene, axis=0, inplace=True)
+    y = y[x.index]
 
     corr_pdl1_pvals = {}
     corr_pdl1_r = {}
 
     for gene, vals in y.iterrows():
         corr_pdl1_r[gene], corr_pdl1_pvals[gene] = nht.spearman_exact(x, vals.loc[x.index], nperm=10000)
+        # corr_pdl1_r[gene], corr_pdl1_pvals[gene] = stats.pearsonr(x, vals.loc[x.index])
+        # corr_pdl1_r[gene], corr_pdl1_pvals[gene] = stats.spearmanr(x, vals.loc[x.index])
+
     corr_pdl1_r = pd.Series(corr_pdl1_r)
     corr_pdl1_pvals = pd.Series(corr_pdl1_pvals)
 
@@ -175,23 +189,71 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "spearman_correlation_with_pdl1.png"), dpi=200)
 
-    # plot scatterplots for the two significant ones
-    to_plot = ['CHSY3', 'HS6ST3']
+    # plot scatterplots for the more correlated ones
+    cmap = common.get_best_cmap(len(consts.PIDS))
+    to_plot = corr_pdl1_r.index[corr_pdl1_r.abs() > 0.25]
+
+    # to_plot = ['CHSY3', 'HS6ST3']
     for g in to_plot:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.scatter(x, y.loc[g, x.index], s=30, edgecolor='k', linewidths=1., facecolor='lightblue')
+        for i, pid in enumerate(pids):
+            ix = obj_cc.meta.pid[x.index] == pid
+            ax.scatter(
+                x.loc[ix],
+                y.loc[g, ix],
+                facecolors=cmap[i],
+                s=30,
+                edgecolor='k',
+                linewidths=1.,
+                label=pid
+            )
         ax.set_xlabel(r"$\log_2(\mathrm{%s})$" % target_gene)
         ax.set_ylabel(r"$\log_2(\mathrm{%s})$" % g)
+        ax.legend(frameon=True, facecolor='w', framealpha=0.6)
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, "pdl1_vs_%s_scatter.png" % g), dpi=200)
 
+    plt.close('all')
 
+    # expression of Tregs signature genes across our FFPE samples
 
+    # load the signatures
+    xcell_sign_fn = os.path.join(
+        HGIC_LOCAL_DIR,
+        'current/input_data/xcell',
+        'esm3_cell_type_signatures.xlsx'
+    )
 
+    xcell_s = pd.read_excel(xcell_sign_fn, header=0, index_row=0)
+    xcell_signatures = {}
+    for i, row in xcell_s.iterrows():
+        xcell_signatures[row.Celltype_Source_ID] = set(row.iloc[2:].dropna().values)
 
+    tregs_signatures = dict([(k, v) for k, v in xcell_signatures.items() if 'tregs' in k.lower()])
+    # since there's a lot of complementarity, reduce this down to a single list
+    tregs_signature_combined = sorted(setops.reduce_union(*tregs_signatures.values()))
+    tregs_signature_combined_ens = references.gene_symbol_to_ensembl(tregs_signature_combined)
 
-
+    # heatmap
+    dat = log2_tpm_ff.loc[tregs_signature_combined_ens]
+    dat.columns = obj_ff.meta.loc[dat.columns, 'patient_id']
+    dat.index = tregs_signature_combined_ens.index
+    fig = plt.figure(figsize=(5.5, 8))
+    ax = fig.add_subplot(111)
+    sns.heatmap(
+        dat,
+        cmap='Reds',
+        vmin=0,
+        vmax=8,
+        cbar_kws={'label': r'$\log_2(\mathrm{TPM}+0.01)$'}
+    )
+    ax.xaxis.label.set_visible(False)
+    ax.set_ylabel('Treg signature gene')
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "ffpe_xcell_tregs_signature_genes_logtpm.png"), dpi=200)
 
 
 

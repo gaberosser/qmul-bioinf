@@ -152,22 +152,21 @@ def spearman_exact(a, b, nperm=1000, seed=None):
     if len(a) != len(b):
         raise ValueError("Length of arrays must match")
 
-    ## FIXME: I don't know if it's fair to mix exhaustive perms with sampling? Reducing to perm testing only
+    ## FIXME: I don't know if it's fair to mix exhaustive perms with sampling?
     r_perms = []
-    # if special.factorial(len(a)) < nperm:
-    #     nperm = special.factorial(len(a))
-    #     # exhaustive testing
-    #     for t in itertools.permutations(a):
-    #         rp, _ = stats.spearmanr(t, b)
-    #         r_perms.append(rp)
-    # else:
-
-    # permutation testing
-    a_p = np.array(a, copy=True)
-    for i in range(nperm):
-        rst.shuffle(a_p)
-        rp, _ = stats.spearmanr(a_p, b)
-        r_perms.append(rp)
+    if special.factorial(len(a)) < nperm:
+        nperm = special.factorial(len(a))
+        # exhaustive testing
+        for t in itertools.permutations(a):
+            rp, _ = stats.spearmanr(t, b)
+            r_perms.append(rp)
+    else:
+        # permutation testing
+        a_p = np.array(a, copy=True)
+        for i in range(nperm):
+            rst.shuffle(a_p)
+            rp, _ = stats.spearmanr(a_p, b)
+            r_perms.append(rp)
 
     # get pvalue from permutations
     r_perms = np.array(sorted(r_perms))
