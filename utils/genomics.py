@@ -425,6 +425,27 @@ def write_bed_file(region_data, fn):
             )
 
 
+def feature_lengths_from_fasta(fa_file, features=None):
+    """
+    Get the length of the features (e.g. chromosomes) from the supplied fasta file.
+    :param fa_file:
+    :param features:
+    :return:
+    """
+    from Bio import SeqIO
+    feat_lens = collections.OrderedDict()
+
+    with open(fa_file, 'rb') as f:
+        fa_reader = SeqIO.parse(f, 'fasta')
+        for feat in fa_reader:
+            the_id = feat.id
+            if features is not None and the_id not in features:
+                continue
+            feat_lens[the_id] = len(feat.seq)
+
+    return feat_lens
+
+
 def motif_locations(fa_file, motif='CG', features=None):
     """
     Find the locations of all occurrences of the supplied motif (default: CpG sites).

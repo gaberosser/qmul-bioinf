@@ -9,6 +9,7 @@ import collections
 import pickle
 import numpy as np
 from scipy import stats, cluster
+import matplotlib
 from matplotlib import pyplot as plt, patches
 from matplotlib.colors import Normalize
 from matplotlib import cm
@@ -20,6 +21,11 @@ from plotting import common
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
+
+# FIXME: this is a hack to try to avoid non-thread safe TKinter issue, which results in a segfault when we try
+# to use multiprocessing. This requires ipython NOT to be run with --matplotlib
+matplotlib.use('Agg')
+
 
 """
 Here we analyse the direction and genomic locations of DMRs in the individual patients.
@@ -671,7 +677,20 @@ def classify_dmr_regions(
     return lookup_result, classification, cluster_id_to_region
 
 
-def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup, cat_labels, chroms, pids):
+def pie_chart_location(
+        class_bg,
+        class_patients,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+        pids=consts.PIDS,
+        chroms=tuple([str(t) for t in range(1, 23)]),
+        scale_by_number='area',
+        inner_radius=.5,
+        segment_width=0.5,
+        min_segment_width=0.3
+):
+    min_inner_radius = inner_radius * min_segment_width / float(segment_width)
     # construct the combination over all chromosomes for each patient
     class_all = collections.defaultdict(dict)
     for pid, d in class_patients.items():
@@ -683,6 +702,19 @@ def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup,
     for d in class_bg.values():
         class_bg_all.update(d)
 
+    if scale_by_number is not None:
+        n_all_chrom = [pd.Series(class_all[pid]).value_counts().reindex(lookup_cats).fillna(0.).sum() for pid in pids]
+        nmax_all_chrom = float(max(n_all_chrom))
+
+        n_indiv = np.array([
+            [pd.Series(class_patients[pid][chrom]).value_counts().reindex(lookup_cats).fillna(0.).sum() for pid in pids]
+            for chrom in chroms
+        ])
+        nmax = float(n_indiv.max().max())
+
+        n_bg = [pd.Series(class_bg[chrom]).value_counts().reindex(lookup_cats).fillna(0.).sum() for chrom in chroms]
+        nmax_bg = float(max(n_bg))
+
     fig = plt.figure(figsize=(5.5, 6.8))
     gs = plt.GridSpec(nrows=len(chroms) + 1, ncols=len(pids) + 1)
     axs = [[]]
@@ -692,11 +724,12 @@ def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup,
 
     the_dat = pd.Series(class_bg_all).value_counts().reindex(lookup_cats).fillna(0.)
     if the_dat.sum() > 0:
+        # no size scaling for this pie chart (too aggregated)
         ax.pie(
             the_dat,
             colors=[colours_by_lookup[t] for t in lookup_cats],
-            radius=1.,
-            wedgeprops={'edgecolor': 'k', 'width': 0.5},
+            radius=inner_radius + segment_width,
+            wedgeprops={'edgecolor': 'k', 'width': segment_width},
             startangle=90,
         )
         ax.set_aspect('equal')
@@ -709,17 +742,25 @@ def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup,
     axs[0].append(ax)
 
     # first row: summary over all chromosomes
-
     for i, pid in enumerate(pids):
         ax = fig.add_subplot(gs[0, i + 1])
         axs[0].append(ax)
         the_dat = pd.Series(class_all[pid]).value_counts().reindex(lookup_cats).fillna(0.)
         if the_dat.sum() > 0:
+            # compute normalisation const (relative to 'all')
+            k = 1.
+            if scale_by_number == 'area':
+                k = (the_dat.sum() / nmax_all_chrom) ** .5
+            elif scale_by_number == 'radius':
+                k = the_dat.sum() / nmax_all_chrom
+
+            w_eff = max(segment_width * k, min_segment_width)
+            inner_r_eff = max(inner_radius * k, min_inner_radius)
             ax.pie(
                 the_dat,
                 colors=[colours_by_lookup[t] for t in lookup_cats],
-                radius=1.,
-                wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                radius=inner_r_eff + w_eff,
+                wedgeprops={'edgecolor': 'k', 'width': w_eff},
                 startangle=90,
             )
             ax.set_aspect('equal')
@@ -735,11 +776,21 @@ def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup,
 
         the_dat = pd.Series(class_bg[chrom]).value_counts().reindex(lookup_cats).fillna(0.)
         if the_dat.sum() > 0:
+            # compute normalisation const (relative to 'bg')
+            k = 1.
+            if scale_by_number == 'area':
+                k = (the_dat.sum() / nmax_bg) ** .5
+            elif scale_by_number == 'radius':
+                k = the_dat.sum() / nmax_bg
+
+            w_eff = max(segment_width * k, min_segment_width)
+            inner_r_eff = max(inner_radius * k, min_inner_radius)
+
             ax.pie(
                 the_dat,
                 colors=[colours_by_lookup[t] for t in lookup_cats],
-                radius=1.,
-                wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                radius=inner_r_eff + w_eff,
+                wedgeprops={'edgecolor': 'k', 'width': w_eff},
                 startangle=90,
             )
             ax.set_aspect('equal')
@@ -752,11 +803,21 @@ def pie_chart_location(class_bg, class_patients, lookup_cats, colours_by_lookup,
 
             the_dat = pd.Series(class_patients[pid][chrom]).value_counts().reindex(lookup_cats).fillna(0.)
             if the_dat.sum() > 0:
+                # compute normalisation const (relative to 'patients')
+                k = 1.
+                if scale_by_number == 'area':
+                    k = (the_dat.sum() / nmax) ** .5
+                elif scale_by_number == 'radius':
+                    k = the_dat.sum() / nmax
+
+                w_eff = max(segment_width * k, min_segment_width)
+                inner_r_eff = max(inner_radius * k, min_inner_radius)
+
                 ax.pie(
                     the_dat,
                     colors=[colours_by_lookup[t] for t in lookup_cats],
-                    radius=1.,
-                    wedgeprops={'edgecolor': 'k', 'width': 0.5},
+                    radius=inner_r_eff + w_eff,
+                    wedgeprops={'edgecolor': 'k', 'width': w_eff},
                     startangle=90,
                 )
                 ax.set_aspect('equal')
@@ -1204,7 +1265,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "dmr_direction_number_by_chrom.pdf"), dpi=200)
 
     # by chromosome background level of DMRs
-    n_by_chrom_bg = pd.Series([t.chr for t in clusters.values()]).value_counts()
+    n_by_chrom_bg = pd.Series([t.chr for t in clusters.values()]).value_counts()[chroms]
     fig = plt.figure(figsize=(6., 2.8))
     ax = fig.add_subplot(111)
     ax.bar(range(len(chroms)), n_by_chrom_bg, ec='k', lw=1., color='lightgrey')
@@ -1217,7 +1278,7 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, "dmr_bg_number_by_chrom.pdf"), dpi=200)
 
     # by chromosome as a pct of the BG
-    n_by_chrom_by_direction_pct = (n_by_chrom_by_direction.divide(n_by_chrom_bg, axis=1) * 100.).loc[:, chroms]
+    n_by_chrom_by_direction_pct = n_by_chrom_by_direction.divide(n_by_chrom_bg, axis=1) * 100.
     fig = plt.figure(figsize=(6., 2.8))
     ax = fig.add_subplot(111)
     bar.stacked_bar_chart(n_by_chrom_by_direction_pct, ax=ax, colours=consts.METHYLATION_DIRECTION_COLOURS, ec='k', lw=1., legend=False)
@@ -1535,6 +1596,7 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.pdf" % pid), dpi=200)
 
     plt.close('all')
+    plt.pause(1)
 
     # for each chromosome / patient of interest, try to determine whether there are any 'hotspots' causing significant
     # non-randomness
@@ -1628,6 +1690,7 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "patient_%s_chrom_%s_locations.png" % (pid, chrom)), dpi=200)
 
     plt.close('all')
+    plt.pause(1)
 
     # lookup intersecting features in selected DMRs (and the background - all clusters)
     gtf_fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh37', 'gtf', 'Homo_sapiens.GRCh37.87.gtf.gz')
@@ -1688,40 +1751,50 @@ if __name__ == "__main__":
     # now use this long list to populate the short lists
     class_hyper = {}
     class_hypo = {}
+    class_patients = {}
 
     for pid in pids:
         class_hyper[pid] = {}
         class_hypo[pid] = {}
+        class_patients[pid] = {}
         for chrom in chroms:
             class_hyper[pid][chrom] = {}
             class_hypo[pid][chrom] = {}
+            class_patients[pid][chrom] = {}
             for reg in dmr_regions_hyper[pid][chrom]:
                 k = (chrom,) + reg
                 cid = region_to_cluster_id[k]
                 class_hyper[pid][chrom][cid] = class_all[chrom][cid]
+                class_patients[pid][chrom][cid] = class_all[chrom][cid]
             for reg in dmr_regions_hypo[pid][chrom]:
                 k = (chrom,) + reg
                 cid = region_to_cluster_id[k]
                 class_hypo[pid][chrom][cid] = class_all[chrom][cid]
+                class_patients[pid][chrom][cid] = class_all[chrom][cid]
 
     # repeat for specific DMRs
     class_hyper_specific = {}
     class_hypo_specific = {}
+    class_patients_specific = {}
 
     for pid in pids:
         class_hyper_specific[pid] = {}
         class_hypo_specific[pid] = {}
+        class_patients_specific[pid] = {}
         for chrom in chroms:
             class_hyper_specific[pid][chrom] = {}
             class_hypo_specific[pid][chrom] = {}
+            class_patients_specific[pid][chrom] = {}
             for reg in dmr_regions_hyper_specific[pid][chrom]:
                 k = (chrom,) + reg
                 cid = region_to_cluster_id[k]
                 class_hyper_specific[pid][chrom][cid] = class_all[chrom][cid]
+                class_patients_specific[pid][chrom][cid] = class_all[chrom][cid]
             for reg in dmr_regions_hypo_specific[pid][chrom]:
                 k = (chrom,) + reg
                 cid = region_to_cluster_id[k]
                 class_hypo_specific[pid][chrom][cid] = class_all[chrom][cid]
+                class_patients_specific[pid][chrom][cid] = class_all[chrom][cid]
 
     # analyse the distributions
     lookup_cats = ['intergenic', 'intron', 'exon', 'first_exon']
@@ -1757,21 +1830,50 @@ if __name__ == "__main__":
     pdist_hyper_specific = pairwise_distance_by_class_count(class_counts_hyper_specific)
     pdist_hypo_specific = pairwise_distance_by_class_count(class_counts_hypo_specific)
 
+    # convert to vector form and compute linkage
+    # linkage_method = 'average'
+    # pdist_hyper_lkg = [
+    #     cluster.hierarchy.linkage(
+    #         cluster.hierarchy.distance.squareform(x), method=linkage_method
+    #     )  for x in pdist_hyper
+    # ]
+    # pdist_hypo_lkg = [
+    #     cluster.hierarchy.linkage(
+    #         cluster.hierarchy.distance.squareform(x), method=linkage_method
+    #     )  for x in pdist_hypo
+    # ]
+    # pdist_hyper_specific_lkg = [
+    #     cluster.hierarchy.linkage(
+    #         cluster.hierarchy.distance.squareform(x), method=linkage_method
+    #     )  for x in pdist_hyper_specific
+    # ]
+    # pdist_hypo_specific_lkg = [
+    #     cluster.hierarchy.linkage(
+    #         cluster.hierarchy.distance.squareform(x), method=linkage_method
+    #     )  for x in pdist_hypo_specific
+    # ]
+
+    fig, axs = pie_chart_location(
+        class_all,
+        class_patients,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+    )
+
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_both.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_both.pdf'), dpi=200)
+
     fig, axs = pie_chart_location(
         class_all,
         class_hyper,
         lookup_cats,
         colours_by_lookup,
         cat_labels,
-        chroms,
-        pids
     )
 
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper.pdf'), dpi=200)
-
-    # generate hierarchical clustering
-
 
     fig, axs = pie_chart_location(
         class_all,
@@ -1779,8 +1881,6 @@ if __name__ == "__main__":
         lookup_cats,
         colours_by_lookup,
         cat_labels,
-        chroms,
-        pids
     )
 
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo.png'), dpi=200)
@@ -1788,12 +1888,21 @@ if __name__ == "__main__":
 
     fig, axs = pie_chart_location(
         class_all,
+        class_patients_specific,
+        lookup_cats,
+        colours_by_lookup,
+        cat_labels,
+    )
+
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_both_specific.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_both_specific.pdf'), dpi=200)
+
+    fig, axs = pie_chart_location(
+        class_all,
         class_hyper_specific,
         lookup_cats,
         colours_by_lookup,
         cat_labels,
-        chroms,
-        pids
     )
 
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hyper_specific.png'), dpi=200)
@@ -1805,8 +1914,6 @@ if __name__ == "__main__":
         lookup_cats,
         colours_by_lookup,
         cat_labels,
-        chroms,
-        pids
     )
 
     fig.savefig(os.path.join(outdir, 'dmr_classification_pie_array_hypo_specific.png'), dpi=200)
