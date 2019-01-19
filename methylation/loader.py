@@ -35,6 +35,7 @@ project_dirs = {
     "2018-03-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-19'),
     "2018-03-26": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-26'),
     "2018-04-09": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-04-09'),
+    "2018-06-26": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-06-26'),
     "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
     "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
     "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
@@ -96,6 +97,7 @@ PATIENT_LOOKUP_CELL = {
         ('GBM018_P10', '2016-12-19_ucl_genomics'),
         ('DURA018_NSC_N4_P4', '2017-05-12'),
         ('DURA018_NSC_N2_P6', '2016-12-19_ucl_genomics'),
+        ('DURA018_NH15_1877_P6_15/05/2017', '2018-03-26'),
     ],
     '019': [
         ('GBM019_P4', '2016-12-19_ucl_genomics'),
@@ -105,11 +107,15 @@ PATIENT_LOOKUP_CELL = {
         ('DURA019_FB_P7', '2018-01-12'),
         ('DURA019_OPC', '2018-03-19'),
         ('DURA019_IPSC_N8C_P13', '2018-03-19'),
+        ('DURA019_IAPC_D20_N8C_B2', '2018-06-26'),
+        ('DURA019_IAPC_D20_N8C_B3', '2018-06-26'),
+        ('DURA019_IOPC_N8C_B2', '2018-06-26'),
     ],
     '026': [
         ('GBM026_P8', '2016-12-19_ucl_genomics'),
         ('GBM026_P3n4', '2017-05-12'),
         ('DURA026_NSC_N31D_P5', '2016-12-19_ucl_genomics'),
+        ('DURA026_NH16_270_P8_15/05/2017', '2018-03-26'),
     ],
     '030': [
         ('GBM030_P9', "2017-09-19"),
@@ -127,6 +133,9 @@ PATIENT_LOOKUP_CELL = {
         ('DURA031_FB_P7', '2018-01-12'),
         ('DURA031_OPC', '2018-03-19'),
         ('DURA031_IPSC_N44B_P10', '2018-03-19'),
+        ('DURA031_IAPC_D20_N44B_B1', '2018-06-26'),
+        ('DURA031_IAPC_D20_N44B_B2', '2018-06-26'),
+        ('DURA031_IOPC_N44B_B2', '2018-06-26'),
     ],
     '044': [
         ('GBM044_P4', '2017-05-12'),
@@ -134,6 +143,9 @@ PATIENT_LOOKUP_CELL = {
         ('DURA044_NSC_N17_P3', '2017-05-12'),
         ('DURA044_NSC_N8_P2', '2017-05-12'),
         ('DURA044_OPC', '2018-03-19'),
+        ('DURA044_IAPC_D20_N8_B1', '2018-06-26'),
+        ('DURA044_IAPC_D20_N8_B2', '2018-06-26'),
+        ('DURA044_IOPC_N8_B2', '2018-06-26'),
     ],
     '049': [
         ('GBM049_P4', "2017-08-23"),
@@ -144,6 +156,9 @@ PATIENT_LOOKUP_CELL = {
         ('DURA049_OPC', '2018-03-19'),
         ('GBM049_P7', '2018-03-19'),
         ('GBM049_P9', '2018-03-19'),
+        ('DURA049_IAPC_D20_N19_B2', '2018-06-26'),
+        ('DURA049_IAPC_D20_N19_B3', '2018-06-26'),
+        ('DURA049_IOPC_N19_B2', '2018-06-26'),
     ],
     '050': [
         ('GBM050_P7n8', "2017-08-23"),
@@ -153,6 +168,9 @@ PATIENT_LOOKUP_CELL = {
         ('DURA050_IPSC_N12_P5', "2018-01-12"),
         ('DURA050_FB_P7', "2018-01-12"),
         ('DURA050_OPC', '2018-03-19'),
+        ('DURA050_IAPC_D20_N12_B1', '2018-06-26'),
+        ('DURA050_IAPC_D20_N12_B2', '2018-06-26'),
+        ('DURA050_IOPC_N12_B2', '2018-06-26'),
     ],
     '052': [
         ('GBM052_P6n7', "2017-09-19"),
@@ -160,6 +178,10 @@ PATIENT_LOOKUP_CELL = {
         ('DURA052_NSC_N4_P3', "2017-09-19"),
         ('DURA052_NSC_N5_P2', "2017-09-19"),
         ('DURA052_OPC', '2018-03-19'),
+        ('DURA052_IAPC_D20_N4_B2', '2018-06-26'),
+        ('DURA052_IAPC_D20_N4_B3', '2018-06-26'),
+        ('DURA052_IOPC_N4_B2', '2018-06-26'),
+        ('DURA052_NH16_2214_P6_14/04/2017', '2018-03-26'),
     ],
     '054': [
         ('GBM054_P4', "2017-08-23"),
@@ -528,6 +550,88 @@ def load_by_patient(
 
     if samples is not None:
         res.filter_by_sample_name(samples, exact=True)
+
+    # check for missing data and warn if too substantial
+    n_init = res.data.shape[0]
+    dat = res.data.dropna()
+    n_after = dat.shape[0]
+    if (n_init - n_after) / float(n_init) > 0.05:
+        logger.warn(
+            "Dropping probes with null values results in %d probes being lost (%.2f%%). Number remaining: %d.",
+            n_init - n_after,
+            (n_init - n_after) / float(n_init) * 100.,
+            n_after
+        )
+    res.data = dat
+
+    return res
+
+
+def load_by_sample_name(
+    samples,
+    type='cell_culture',
+    norm_method='swan',
+):
+    """
+    Load all methylation data from the samples requested
+    :param patient_ids: Iterable or single int or char
+    :param source:
+    :param include_control: If True (default) include Gibco reference NSC
+    :return:
+    """
+
+    if not hasattr(samples, '__iter__'):
+        samples = [samples]
+
+    samples_remaining = set(samples)
+
+    if type == "cell_culture":
+        LOOKUP = PATIENT_LOOKUP_CELL
+    elif type == "ffpe":
+        LOOKUP = PATIENT_LOOKUP_FFPE
+    else:
+        raise NotImplementedError()
+
+    cls = IlluminaHumanMethylationLoader
+
+    # precompute the loaders required to avoid reloading multiple times
+    # we'll also take a note of the order for later reordering
+    sample_order = []
+    by_loader = {}
+    for pid, arr in LOOKUP.items():
+        for sn, ldr in arr:
+            if sn in samples_remaining:
+                by_loader.setdefault(ldr, []).append(sn)
+                sample_order.append(sn)
+                samples_remaining.remove(sn)
+
+    if len(samples_remaining) > 0:
+        logger.warn("Found %d of the %d samples requested.", len(sample_order), len(samples_remaining))
+        logger.warn("Samples missing: %s", ", ".join(sorted(samples_remaining)))
+
+    objs = []
+    for ldr, smp in by_loader.items():
+        base_dir = os.path.join(project_dirs[ldr], 'beta')
+        meta_fn = os.path.join(project_dirs[ldr], 'sources.csv')
+
+        objs.append(
+            cls(
+                base_dir=base_dir,
+                meta_fn=meta_fn,
+                samples=smp,
+                norm_method=norm_method,
+                batch_id=ldr
+            )
+        )
+
+    if len(objs) > 1:
+        # retain missing probes here for accountability - we can drop them later
+        res = loader.MultipleBatchLoader(objs, intersection_only=False)
+    else:
+        res = objs[0]
+
+    # apply original ordering
+    res.reorder_samples([t for t in samples if t in sample_order])
 
     # check for missing data and warn if too substantial
     n_init = res.data.shape[0]

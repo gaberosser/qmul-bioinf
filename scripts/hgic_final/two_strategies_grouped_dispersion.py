@@ -83,7 +83,7 @@ def load_rnaseq(pids, ref_names, ref_name_filter='NSC', discard_filter='IPSC', s
     return obj
 
 
-def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
+def paired_dmr(me_data, me_meta, anno, pids, dmr_params, type1='GBM', type2='iNSC'):
     """
     Compute DMRs for paired GBM-iNSC comparisons (defined in that order) for all patients
     :param me_data:
@@ -98,8 +98,8 @@ def paired_dmr(me_data, me_meta, anno, pids, dmr_params):
     dmr_res = {}
 
     for pid in pids:
-        the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'GBM')
-        the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == 'iNSC')
+        the_idx1 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == type1)
+        the_idx2 = me_meta.index.str.contains(pid) & (me_meta.loc[:, 'type'] == type2)
         # control comparison order
         the_samples = [
             me_meta.index[the_idx1],
