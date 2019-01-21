@@ -730,7 +730,7 @@ def beta_difference_trace(
     }
 
 
-def get_binned_dmr_locations(
+def get_dmr_locations(
     dmr_res,
     clusters,
     chrom_lengths,
@@ -1340,7 +1340,7 @@ if __name__ == "__main__":
     # the maximum DMR size is 7203 bp (mean ~ 1000), i.e. much smaller than the window size
     # TODO: think this justifies binning by the number of DMRs within a window (?)
     coord_summary_method = 'first'
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_s1.results,
         dmr_s1_clusters,
         chrom_length,
@@ -1352,7 +1352,7 @@ if __name__ == "__main__":
     dmr_all_binned = tmp['dmr_binned'][pids[0]]
 
     #1 ) All DMRs
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_all,
         dmr_s1_clusters,
         chrom_length,
@@ -1363,7 +1363,7 @@ if __name__ == "__main__":
     dmr_loci_hyper = tmp['dmr_loci_hyper']
     dmr_loci_hypo = tmp['dmr_loci_hypo']
 
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_specific,
         dmr_s1_clusters,
         chrom_length,
@@ -1616,7 +1616,7 @@ if __name__ == "__main__":
         
 
     # 2) Patient-specific DMRs
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_specific,
         dmr_s1_clusters,
         chrom_length,

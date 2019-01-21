@@ -49,7 +49,7 @@ def dmr_median_delta_by_chromosome(
     return median_deltas
 
 
-def get_binned_dmr_locations(
+def get_dmr_locations(
     dmr_res,
     clusters,
     chrom_lengths,
@@ -187,6 +187,49 @@ def ks_test_dmr_locations(
     for pid, val in dmr_locs.items():
         for feat in val:
             tmp = stats.ks_2samp(dmr_locs[pid][feat], null_locs[feat])
+            ks_stat_flat.append(tmp[0])
+            ks_pval_flat.append(tmp[1])
+            ks_flat_map.append((pid, feat))
+
+    # correct for MHT
+    if mht_method is None:
+        padj = ks_pval_flat
+    else:
+        _, padj, _, _ = multicomp.multipletests(ks_pval_flat, alpha=0.05, method=mht_method)
+
+    res_fdr = dict([(pid, {}) for pid in dmr_locs.keys()])
+    res_stat = dict([(pid, {}) for pid in dmr_locs.keys()])
+
+    i = 0
+    for pid, feat in ks_flat_map:
+        res_fdr[pid][feat] = padj[i]
+        res_stat[pid][feat] = ks_stat_flat[i]
+        i += 1
+
+    return res_fdr, res_stat
+
+
+def ks_test_dmr_locations_varying_null(
+        dmr_locs,
+        null_locs,
+        mht_method='fdr_bh',
+):
+    """
+    Run the 2 sample KS test on DMR locations, using the supplied null locations as the reference sample.
+    While the null was fixed (by array design) in `ks_test_dmr_locations`, here we allow it to vary.
+    This is useful to compare specific locations against the corresponding full list.
+    :param dmr_locs: Nested dictionary keyed by PID then feature (chromosome name)
+    :param null_locs: Dictionary keyed by feature (chromosome name)
+    :param mht_method: The method to use for MHT correction. Passed to multicomp.multipletests.
+    If None, skip MHT and use the unadjusted pvalues.
+    :return:
+    """
+    ks_pval_flat = []
+    ks_stat_flat = []
+    ks_flat_map = []
+    for pid, val in dmr_locs.items():
+        for feat in val:
+            tmp = stats.ks_2samp(dmr_locs[pid][feat], null_locs[pid][feat])  # this is the only line that differs!
             ks_stat_flat.append(tmp[0])
             ks_pval_flat.append(tmp[1])
             ks_flat_map.append((pid, feat))
@@ -1355,7 +1398,7 @@ if __name__ == "__main__":
     unmapped_density, _ = genomics.cg_content_windowed(fa_fn, features=chroms, window_size=window_size, motif='N')
 
     # get all DMRs (whether significant or not) to use as a null hypothesis
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_s1.results,
         clusters,
         chrom_length,
@@ -1370,7 +1413,7 @@ if __name__ == "__main__":
     dmr_regions_all = tmp['dmr_regions'][pids[0]]
 
     #1 ) All DMRs
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_all,
         clusters,
         chrom_length,
@@ -1445,7 +1488,7 @@ if __name__ == "__main__":
 
     # repeat for patient-specific DMRs
 
-    tmp = get_binned_dmr_locations(
+    tmp = get_dmr_locations(
         dmr_res_specific,
         clusters,
         chrom_length,
