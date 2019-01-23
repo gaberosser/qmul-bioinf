@@ -57,17 +57,19 @@ def load_dmr_results(anno, samples, norm_method='swan', dmr_params=consts.DMR_PA
         raise IOError("Unable to find pre-computed results file %s." % fn)
 
 
-def load_methylation_data(samples, anno, norm_method='swan'):
+def load_methylation_data(samples, anno=None, norm_method='swan'):
     me_obj = loader.load_by_sample_name(
         samples,
         norm_method=norm_method
     )
-    common_probes = anno.index.intersection(me_obj.data.index)
 
-    this_anno = anno.loc[common_probes]
-    me_obj.data = me_obj.data.loc[common_probes]
-
-    return me_obj, this_anno
+    if anno is None:
+        return me_obj
+    else:
+        common_probes = anno.index.intersection(me_obj.data.index)
+        this_anno = anno.loc[common_probes]
+        me_obj.data = me_obj.data.loc[common_probes]
+        return me_obj, this_anno
 
 
 if __name__ == "__main__":
