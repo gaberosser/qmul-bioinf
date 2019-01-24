@@ -17,7 +17,6 @@ from sklearn.neighbors import KernelDensity
 
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
-from plotting import common
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
@@ -292,7 +291,7 @@ def fit_kde_dmr_location(locs, xi, bandwidth, normed=True):
     return score
 
 
-def polar_distribution_plot(
+def polar_distribution_plot_with_kdes(
     dmr_loci_hyper,
     dmr_loci_hypo,
     chrom_length,
@@ -1588,7 +1587,7 @@ if __name__ == "__main__":
     hypo_kdes = {}
 
     for pid in pids:
-        plt_dict = polar_distribution_plot(
+        plt_dict = polar_distribution_plot_with_kdes(
             dmr_loci_hyper[pid],
             dmr_loci_hypo[pid],
             chrom_length,
