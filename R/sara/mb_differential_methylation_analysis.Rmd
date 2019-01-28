@@ -30,7 +30,7 @@ Check for the required input Excel file. Create it if necessary (from the raw id
 
 if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
   writeLines(
-    paste0(c("The input Excel file", MVALUE_FN, "was not found. Computing from raw idats."), collapse = " ")
+    paste0("The input Excel file", MVALUE_FN, "was not found. Computing from raw idats.")
   )
 
   source('io/output.R')
@@ -163,10 +163,17 @@ for (b in base.dirs) {
 }
 
 # manually remove a failed sample
-idx <- in.files %in% failed_filenames
-in.files <- in.files[!idx]
-snames <- snames[!idx]
-batches <- batches[!idx]
+inds <- unlist(lapply(failed_filenames, function(x) grep(x, in.files)))
+if (!is.null(inds)) {
+  in.files <- in.files[-inds]
+  snames <- snames[-inds]
+  batches <- batches[-inds]
+}
+
+# idx <- in.files %in% failed_filenames
+# in.files <- in.files[!idx]
+# snames <- snames[!idx]
+# batches <- batches[!idx]
 
 # idx <- grep("202081130238/202081130238_R01C01", in.files)
 # in.files <- in.files[-idx]
@@ -201,7 +208,7 @@ meta[rownames(meta) == 'C', 'condition'] <- 'shCHD7'
 m <- MfromBeta(beta)
 
 # save M data to Excel file.
-write.xlsx(m, MVALUE_FN)
+write.xlsx(m, MVALUE_FN, colNames = T, rowNames = T)
 # save metadata to CSV file.
 write.csv(meta, META_FN)
 
@@ -212,12 +219,12 @@ write.csv(meta, META_FN)
   }
   
   writeLines(
-    paste0(c("Loading pre-computed M data from", MVALUE_FN), collapse = " ")
+    paste0("Loading pre-computed M data from", MVALUE_FN)
   )
   m <- read.xlsx(MVALUE_FN)
   beta <- BetafromM(m)
   writeLines(
-    paste0(c("Loading pre-computed metadata from", META_FN), collapse = " ")
+    paste0("Loading pre-computed metadata from", META_FN)
   )
   meta <- read.csv(META_FN)
 }
@@ -236,9 +243,171 @@ legend("topright", legend=levels(factor(meta$batch)), text.col=pal, bg="white")
 
 ```
 
+We'll need to filter probes in advance of testing for differential methylation. If we don't do this, our p values will all come out non-significant following the correction for multiple hypothesis testing.
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+We take a fairly simplistic approach, filtering based on the range and requiring a minimum variation across the samples.
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+```{r}
+minimum_range <- 1.
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+n_before <- nrow(m)
+rg <- apply(m, 1, range)
+rg <- rg[2,] - rg[1,]
+ix <- rg > minimum_range
+
+m.post_filter <- m[ix,]
+n_after <- nrow(m.post_filter)
+writeLines(
+  sprintf(
+    "Filtering based on a minimum range threshold of %.2f results in the number of probes going from %d to %d (removing %d)",
+    minimum_range,
+    n_before,
+    n_after,
+    n_before - n_after
+  )
+)
+
+```
+
+Now let's identify differentially methylated probes (DMPs). We'll carry out a separate analysis for each of the two cell lines (1299 and 3021). 
+
+Before searching for DMPs, we'll run two filtering steps:
+1. Filtering based on the range of M values and requiring a minimum variation across the samples.
+2. Requiring consistency within each of the experimental groups, such that the variation in M value cannot exceed a threshold.
+
+```{r}
+minimum_range <- 1.
+maximum_variation_within_group <- 5.
+# this is the FDR cutoff, only used for reporting purposes (all DMPs with unadjusted P < 0.05 are exported)
+alpha <- 0.05
+
+dmps <- list()
+
+for (cl in c('3021', '1299')) {
+  dmps[[cl]] <- list()
+  writeLines(paste0("Cell line ", cl))
+  this.meta <- meta[meta$cell_line == cl,]
+  this.m <- m[, rownames(this.meta)]
+  
+  # Filter 1: minimum range
+  
+  n_before <- nrow(this.m)
+  rg <- apply(this.m, 1, range)
+  rg <- rg[2,] - rg[1,]
+  ix <- rg > minimum_range
+  
+  hist(rg, 40, xlab='M value range', main=paste0(cl, ' M value range'))
+  abline(v=minimum_range, col='red', lty=2)
+  
+  this.m <- this.m[ix,]
+  n_after <- nrow(this.m)
+  writeLines(
+    sprintf(
+      "Filtering based on a minimum range threshold of %.2f results in the number of probes going from %d to %d (removing %d)",
+      minimum_range,
+      n_before,
+      n_after,
+      n_before - n_after
+    )
+  )
+  
+  condition <- factor(this.meta$condition)
+  batch <- make.names(factor(this.meta$batch))
+  
+  # Filter 2: Maximum variation
+  # this should be possible to do efficiently using group_by from dplyr, but I hate R and it hates me.
+  group_probes <- list()
+  for (cnd in levels(condition)) {
+    n_before <- nrow(this.m)
+    this.group.m <- this.m[,condition == cnd]
+    rg <- apply(this.group.m, 1, range)
+    rg <- rg[2,] - rg[1,]
+    ix <- rg < maximum_variation_within_group
+    this.group.m <- this.group.m[ix,]
+    n_after <- nrow(this.group.m)
+    writeLines(
+      sprintf(
+        "Filtering based on a maximum inter-group threshold of %.2f results in the number of probes in group %s going from %d to %d (removing %d)",
+        maximum_variation_within_group,
+        cnd,
+        n_before,
+        n_after,
+        n_before - n_after
+      )
+    )
+    group_probes[[cnd]] <- rownames(this.group.m)
+  }
+  
+  # now eliminate any probes that were removed
+  common_probes = Reduce(intersect, group_probes)
+  n_before <- nrow(this.m)
+  this.m <- this.m[common_probes,]
+  n_after <- nrow(this.m)
+  writeLines(
+    sprintf(
+      "After the second stage of filtering (inter-group variation), we reduced the number of probes from %d to %d (removed %d)",
+      n_before,
+      n_after,
+      n_before - n_after
+    )
+  )
+  
+  # now run DMP
+  
+  design <- model.matrix(~0 + condition + batch)
+  fit <- lmFit(this.m, design)
+  contrasts <- makeContrasts(
+    conditionshBMI1-conditionScr, 
+    conditionshCHD7-conditionScr, 
+    conditionshBMI1shCHD7-conditionshBMI1, 
+    conditionshBMI1shCHD7-conditionshCHD7, 
+    conditionshBMI1shCHD7-conditionScr, 
+    levels=design
+  )
+
+  fit2 <- contrasts.fit(fit, contrasts)
+  fit2 <- eBayes(fit2)
+  
+  print(summary(decideTests(fit2)))
+  
+  for (i in seq(ncol(contrasts))) {
+    ttl <- colnames(contrasts)[i]
+    ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
+    this_res <- topTable(fit2, coef = i, number = Inf)
+    this_res <- this_res[this_res$P.Value < 0.05,]
+    dmps[[cl]][[ttl]] <- this_res
+    writeLines(sprintf(
+      "Comparison %s: %d DMPs with FDR < %.2f",
+      ttl,
+      sum(this_res$adj.P.Val < alpha),
+      alpha
+    ))
+  }
+  out_fn <- paste0("dmps_", cl, ".xlsx")
+  write.xlsx(dmps[[cl]], out_fn, colNames = T, rowNames = T)
+  writeLines(
+    sprintf(
+      "Wrote the DMP results to file %s", 
+      out_fn
+    )
+  )
+
+}
+
+```
+
+Now let's generate the volcano plots
+
+```{r}
+for (cl in c('3021', '1299')) {
+  this.dmps <- dmps[[cl]]
+  the_names <- names(this.dmps)
+  for (cmp in the_names) {
+    x <- this.dmps[[cmp]]
+    plot(x$logFC, -log10(x$adj.P.Val))
+  }
+}
+
+```
+
+
