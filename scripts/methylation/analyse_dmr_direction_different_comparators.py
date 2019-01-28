@@ -432,3 +432,57 @@ if __name__ == "__main__":
 
         fig.savefig(os.path.join(outdir, "ks_fdr_specific_%s.png" % the_key), dpi=200)
         fig.savefig(os.path.join(outdir, "ks_fdr_specific_%s.tiff" % the_key), dpi=200)
+
+    # generate polar location distribution plots for each of the common PIDs
+    from scripts.methylation.analyse_dmr_direction_and_distribution import polar_distribution_plot_with_kdes
+    chrom_lengths = genomics.feature_lengths_from_fasta(fa_fn)
+    window_size = 200000
+    k = 'GIC-iAPC syn'
+    pid = '019'
+    tmp = addd.get_dmr_locations(
+        {pids_included[k][0]: all_results[k].results[pids_included[k][0]]},
+        all_results[k].clusters,
+        chrom_lengths=cl,
+        split_by_direction=False,
+        window_size=window_size
+    )
+    this_bg_binned = tmp['dmr_binned'][pids_included[k][0]]
+
+    # full DMR list
+    tmp = addd.get_dmr_locations(
+        dict([
+            (pid, all_results[k].results_significant[pid]) for pid in common_pids
+        ]),
+        all_results[k].clusters,
+        chrom_lengths=cl,
+        split_by_direction=True,
+        window_size=window_size
+    )
+    this_hyper = tmp['dmr_loci_hyper']
+    this_hypo = tmp['dmr_loci_hypo']
+
+
+
+    for k in pids_included:
+        # BG: same for all patients, so just pick the first
+        tmp = addd.get_dmr_locations(
+            {pids_included[k][0]: all_results[k].results[pids_included[k][0]]},
+            all_results[k].clusters,
+            chrom_lengths=cl,
+            split_by_direction=False,
+            window_size=window_size
+        )
+        this_bg_binned = tmp['dmr_binned'][pids_included[k][0]]
+
+        # full DMR list
+        tmp = addd.get_dmr_locations(
+            dict([
+                (pid, all_results[k].results_significant[pid]) for pid in common_pids
+            ]),
+            all_results[k].clusters,
+            chrom_lengths=cl,
+            split_by_direction=True,
+            window_size=window_size
+        )
+        this_hyper = tmp['dmr_loci_hyper']
+        this_hypo = tmp['dmr_loci_hypo']
