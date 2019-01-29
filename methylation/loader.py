@@ -481,7 +481,8 @@ def load_by_patient(
         type='cell_culture',
         norm_method='swan',
         include_control=True,
-        samples=None
+        samples=None,
+        reduce_to_common_probes=True,
 ):
     """
     Load all RNA-Seq count data associated with the patient ID(s) supplied
@@ -552,17 +553,18 @@ def load_by_patient(
         res.filter_by_sample_name(samples, exact=True)
 
     # check for missing data and warn if too substantial
-    n_init = res.data.shape[0]
-    dat = res.data.dropna()
-    n_after = dat.shape[0]
-    if (n_init - n_after) / float(n_init) > 0.05:
-        logger.warn(
-            "Dropping probes with null values results in %d probes being lost (%.2f%%). Number remaining: %d.",
-            n_init - n_after,
-            (n_init - n_after) / float(n_init) * 100.,
-            n_after
-        )
-    res.data = dat
+    if reduce_to_common_probes:
+        n_init = res.data.shape[0]
+        dat = res.data.dropna()
+        n_after = dat.shape[0]
+        if (n_init - n_after) / float(n_init) > 0.05:
+            logger.warn(
+                "Dropping probes with null values results in %d probes being lost (%.2f%%). Number remaining: %d.",
+                n_init - n_after,
+                (n_init - n_after) / float(n_init) * 100.,
+                n_after
+            )
+        res.data = dat
 
     return res
 

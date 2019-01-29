@@ -1,5 +1,6 @@
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-from rnaseq import loader, NH_ID_TO_PATIENT_ID_MAP
+from rnaseq import loader
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 import numpy as np
 from scipy import stats
 import pandas as pd

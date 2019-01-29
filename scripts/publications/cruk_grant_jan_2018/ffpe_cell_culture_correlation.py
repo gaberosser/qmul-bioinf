@@ -2,7 +2,8 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import pandas as pd
 import rnaseq.loader
-from rnaseq import filter, NH_ID_TO_PATIENT_ID_MAP, general
+from rnaseq import filter, general
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 import methylation.loader
 from stats import transformations
 from scipy import cluster, stats

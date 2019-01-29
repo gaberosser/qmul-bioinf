@@ -24,9 +24,9 @@ if __name__ == '__main__':
 
     # relabel the FFPE samples
     idx = obj.meta.index.tolist()
-    for k, v in hgic_consts.NH_TO_PATIENT_ID.items():
+    for k, v in hgic_consts.NH_ID_TO_PATIENT_ID_MAP.items():
         for i, t in enumerate(idx):
-            if k in t:
+            if k.replace('-', '_') in t:
                 idx[i] = "FFPE GBM%s" % v
     obj.meta.index = idx
     obj.data.columns = idx

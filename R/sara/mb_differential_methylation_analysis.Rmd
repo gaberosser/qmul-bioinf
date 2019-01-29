@@ -7,7 +7,7 @@ author: "Gabriel Rosser"
 
 ```{r setup, include=FALSE}
 require("knitr")
-opts_knit$set(root.dir = normalizePath('..'))
+# opts_knit$set(root.dir = normalizePath('..'))
 
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -19,9 +19,11 @@ require("data.table")
 require(RColorBrewer)
 require(openxlsx)
 
-MVALUE_FN <- "m_values_1299_3021.xlsx"
-META_FN <- "metadata_1299_3021.csv"
+# this specifies the normalisation algorithm to use
+norm.fun <- 'swan'
 
+MVALUE_FN <- sprintf("m_values_1299_3021_%s.xlsx", norm.fun)
+META_FN <- "metadata_1299_3021.csv"
 ```
 
 Check for the required input Excel file. Create it if necessary (from the raw idat files). We should only need to do this once.
@@ -30,12 +32,11 @@ Check for the required input Excel file. Create it if necessary (from the raw id
 
 if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
   writeLines(
-    paste0("The input Excel file", MVALUE_FN, "was not found. Computing from raw idats.")
+    paste0("The input Excel file ", MVALUE_FN, " was not found. Computing from raw idats.")
   )
-
-  source('io/output.R')
-  source('_settings.R')
-  source("utils.R")
+  
+  source('../_settings.R')
+  source("../utils.R")
   
   MfromBeta <- function(beta) {
     log2(beta / (1 - beta))
@@ -103,8 +104,6 @@ if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
   }
 
 # load data from raw
-    
-norm.fun <- 'quantile'
 
 failed_filenames <- c(
   "202081130238/202081130238_R01C01"
@@ -404,7 +403,7 @@ for (cl in c('3021', '1299')) {
   the_names <- names(this.dmps)
   for (cmp in the_names) {
     x <- this.dmps[[cmp]]
-    plot(x$logFC, -log10(x$adj.P.Val))
+    plot(x$logFC, -log10(x$adj.P.Val), main=cl)
   }
 }
 
