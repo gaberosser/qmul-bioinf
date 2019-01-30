@@ -1,5 +1,5 @@
 ---
-title: "BMI1 and CHD7 in medullosblastoma primary lines"
+title: "BMI1 and CHD7 in medulloblastoma primary lines"
 subtitle: "Genome-wide DNA methylation analysis"
 output: html_notebook
 author: "Gabriel Rosser"
@@ -16,6 +16,7 @@ require("ChAMP")
 require("minfi")
 require("wateRmelon")
 require("data.table")
+require(sva)
 require(RColorBrewer)
 require(openxlsx)
 
@@ -169,16 +170,6 @@ if (!is.null(inds)) {
   batches <- batches[-inds]
 }
 
-# idx <- in.files %in% failed_filenames
-# in.files <- in.files[!idx]
-# snames <- snames[!idx]
-# batches <- batches[!idx]
-
-# idx <- grep("202081130238/202081130238_R01C01", in.files)
-# in.files <- in.files[-idx]
-# snames <- snames[-idx]
-# batches <- batches[-idx]
-
 res <- process_idats(in.files, snames, norm.fun=norm.fun)
 beta <- res$beta
 beta.raw <- res$beta.raw
@@ -218,14 +209,12 @@ write.csv(meta, META_FN)
   }
   
   writeLines(
-    paste0("Loading pre-computed M data from", MVALUE_FN)
+    paste0("Loading pre-computed M data from ", MVALUE_FN),
+    paste0("Loading pre-computed metadata from ", META_FN)
   )
-  m <- read.xlsx(MVALUE_FN)
+  m <- read.xlsx(MVALUE_FN, rowNames = T)
   beta <- BetafromM(m)
-  writeLines(
-    paste0("Loading pre-computed metadata from", META_FN)
-  )
-  meta <- read.csv(META_FN)
+  meta <- read.csv(META_FN, row.names = 1)
 }
 ```
 
@@ -240,39 +229,23 @@ pal <- brewer.pal(8,"Dark2")
 plotMDS(m, top=NULL, col=pal[factor(meta$batch)])
 legend("topright", legend=levels(factor(meta$batch)), text.col=pal, bg="white")
 
-```
+plotMDS(m[, meta$cell_line == '1299'], top=NULL, col=pal[factor(meta[meta$cell_line == '1299', 'batch'])])
+legend("topright", legend=levels(factor(meta[meta$cell_line == '1299', 'batch'])), text.col=pal, bg="white")
 
-We'll need to filter probes in advance of testing for differential methylation. If we don't do this, our p values will all come out non-significant following the correction for multiple hypothesis testing.
-
-We take a fairly simplistic approach, filtering based on the range and requiring a minimum variation across the samples.
-
-```{r}
-minimum_range <- 1.
-
-n_before <- nrow(m)
-rg <- apply(m, 1, range)
-rg <- rg[2,] - rg[1,]
-ix <- rg > minimum_range
-
-m.post_filter <- m[ix,]
-n_after <- nrow(m.post_filter)
-writeLines(
-  sprintf(
-    "Filtering based on a minimum range threshold of %.2f results in the number of probes going from %d to %d (removing %d)",
-    minimum_range,
-    n_before,
-    n_after,
-    n_before - n_after
-  )
-)
+ix <- meta$cell_line == '3021'
+plotMDS(m[, ix], top=NULL, col=pal[factor(meta[ix, 'batch'])])
+legend("topright", legend=levels(factor(meta[ix, 'batch'])), text.col=pal, bg="white")
 
 ```
 
 Now let's identify differentially methylated probes (DMPs). We'll carry out a separate analysis for each of the two cell lines (1299 and 3021). 
 
 Before searching for DMPs, we'll run two filtering steps:
+
 1. Filtering based on the range of M values and requiring a minimum variation across the samples.
 2. Requiring consistency within each of the experimental groups, such that the variation in M value cannot exceed a threshold.
+
+If we don't do this, our p values will all come out non-significant following the correction for multiple hypothesis testing.
 
 ```{r}
 minimum_range <- 1.
@@ -281,11 +254,13 @@ maximum_variation_within_group <- 5.
 alpha <- 0.05
 
 dmps <- list()
+dmps.sv <- list()
 
 for (cl in c('3021', '1299')) {
   dmps[[cl]] <- list()
+  
   writeLines(paste0("Cell line ", cl))
-  this.meta <- meta[meta$cell_line == cl,]
+  this.meta <- droplevels(meta[meta$cell_line == cl,])
   this.m <- m[, rownames(this.meta)]
   
   # Filter 1: minimum range
@@ -350,8 +325,8 @@ for (cl in c('3021', '1299')) {
       n_before - n_after
     )
   )
-  
-  # now run DMP
+
+  # run DMP WITHOUT batch correction
   
   design <- model.matrix(~0 + condition + batch)
   fit <- lmFit(this.m, design)
@@ -365,9 +340,7 @@ for (cl in c('3021', '1299')) {
   )
 
   fit2 <- contrasts.fit(fit, contrasts)
-  fit2 <- eBayes(fit2)
-  
-  print(summary(decideTests(fit2)))
+  fit2 <- eBayes(fit2, trend = T, robust = T)
   
   for (i in seq(ncol(contrasts))) {
     ttl <- colnames(contrasts)[i]
@@ -390,23 +363,76 @@ for (cl in c('3021', '1299')) {
       out_fn
     )
   )
+  
+  # run DMP WITH batch correction
+  dmps.sv[[cl]] <- list()
+  
+  mod <- model.matrix(~0+condition+batch, data=this.meta)
+  mod_null <- model.matrix(~0+batch, data=this.meta)
+  # get SVA to estimate the number of latent variables
+  n.sv <- num.sv(as.matrix(this.m), mod, method='leek')
+  svobj <- sva(as.matrix(this.m), mod, mod_null, n.sv=n.sv)
+  
+  fit <- lmFit(this_data, mod.Sv)
+  contrasts <- makeContrasts(
+    conditionshBMI1-conditionScr, 
+    conditionshCHD7-conditionScr, 
+    conditionshBMI1shCHD7-conditionshBMI1, 
+    conditionshBMI1shCHD7-conditionshCHD7, 
+    conditionshBMI1shCHD7-conditionScr, 
+    levels=mod.Sv
+  )
+
+  fit2 <- contrasts.fit(fit, contrasts)
+  fit2 <- eBayes(fit2, trend = T, robust=T)
+  
+  for (i in seq(ncol(contrasts))) {
+    ttl <- colnames(contrasts)[i]
+    ttl <- gsub(pattern = "condition", replacement = '', x = ttl)
+    this_res <- topTable(fit2, coef = i, number = Inf)
+    this_res <- this_res[this_res$P.Value < 0.05,]
+    dmps.sv[[cl]][[ttl]] <- this_res
+    writeLines(sprintf(
+      "BATCH CORRECTED Comparison %s: %d DMPs with FDR < %.2f",
+      ttl,
+      sum(this_res$adj.P.Val < alpha),
+      alpha
+    ))
+  }
+  out_fn <- paste0("dmps_sva_", cl, ".xlsx")
+  write.xlsx(dmps.sv[[cl]], out_fn, colNames = T, rowNames = T)
+  writeLines(
+    sprintf(
+      "Wrote the DMP results to file %s", 
+      out_fn
+    )
+  )
 
 }
 
 ```
 
-Now let's generate the volcano plots
+
+Now let's generate the volcano plots.
 
 ```{r}
 for (cl in c('3021', '1299')) {
   this.dmps <- dmps[[cl]]
   the_names <- names(this.dmps)
   for (cmp in the_names) {
+    ttl <- paste(cl, cmp, sep = ' ')
     x <- this.dmps[[cmp]]
-    plot(x$logFC, -log10(x$adj.P.Val), main=cl)
+    absx_max <- ceiling(max(abs(x$logFC)))
+    plot(x$logFC, -log10(x$adj.P.Val), main=ttl, xlim=c(-absx_max, absx_max))
   }
 }
 
 ```
+The 3021 line results seem to show evidence of dependence (i.e. a functional link between log fold change and adjusted P value). Here are a few forum posts discussing this:
 
+- https://support.bioconductor.org/p/111776/
+- https://support.bioconductor.org/p/95197/
+- https://support.bioconductor.org/p/57445/
+
+In summary: the estimate of prior degrees of freedom is inifinity, meaning that all genes end up with the same estimated dispersion, hence P value is a function of log fold change. We can (partially) fix this by ensuring we run `eBayes()` with `robust=T` and `trend=T`.
 
