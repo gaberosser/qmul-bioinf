@@ -42,7 +42,7 @@ def run_dmr_analyses(data, comparisons, anno, dmr_params, verbose=True):
     dmr_res_obj.identify_clusters(**dmr_params)
     dmr_res = {}
 
-    for the_ttl, the_samples in comparisons:
+    for the_ttl, the_samples in comparisons.items():
         logger.info(
             "Comparison %s. Group 1: %s. Group 2: %s.",
             the_ttl,
@@ -90,6 +90,9 @@ if __name__ == "__main__":
     obj = loader.loader.MultipleBatchLoader([our_obj, val_obj])
     dat = process.m_from_beta(obj.data)
     meta = obj.meta
+    common_probes = anno.index.intersection(dat.index)
+    dat = dat.reindex(common_probes)
+    anno = anno.reindex(common_probes)
 
     dmr_hash_dict = dict(dmr_params)
     dmr_hash_dict['norm_method'] = norm_method
