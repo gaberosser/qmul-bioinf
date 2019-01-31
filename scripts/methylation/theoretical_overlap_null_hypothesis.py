@@ -1,13 +1,16 @@
+import pandas as pd
 import numpy as np
 import os
+import multiprocessing as mp
 from bisect import bisect_left
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
 from methylation import dmr, loader
 from utils import setops, output, log
-from plotting import common
+from plotting import common, venn
 from matplotlib import pyplot as plt
 import seaborn as sns
 logger = log.get_console_logger()
+
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir()
@@ -141,7 +144,132 @@ if __name__ == '__main__':
 
     fig.savefig(os.path.join(outdir, "null_two_number_specific_dmrs.png"), dpi=200)
 
+    # to illustrate the differences, create an UpSet plot
+    subgroup_set_colours = {
+        'RTK I full': '#0d680f',
+        'RTK II full': '#820505',
+        'MES full': '#7900ad',
+        'RTK I partial': '#6ecc70',
+        'RTK II partial': '#d67373',
+        'MES partial': '#cc88ea',
+        'Expanded core': '#4C72B0',
+        'Specific': '#f4e842',
+    }
+    subgroups = consts.SUBGROUPS
 
+    subgroups_lookup = {}
+    for grp, arr in subgroups.items():
+        subgroups_lookup.update(dict([
+            (t, grp) for t in arr
+        ]))
 
+    # indicator showing which groups the PIDs belong to
+    subgroup_ind = dict([
+        (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
+    ])
 
+    for_plot = [rvs[pid][0] for pid in pids]
+    upset = venn.upset_plot_with_groups(
+        for_plot,
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
+        min_size=10,
+        n_plot=30,
+        default_colour='gray'
+    )
+    upset['figure'].savefig(os.path.join(outdir, "upset_de.png"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir, "upset_de.tiff"), dpi=200)
 
+    # quantify this: distribution for each set
+    # this is slow when n_iter is large, so we'll apply multiprocessing
+    pool = mp.Pool()
+    jobs = {}
+
+    simulated_set_sizes = {}
+    for i in range(n_iter):
+        jobs[i] = pool.apply_async(
+            setops.venn_from_arrays,
+            args=tuple(rvs[pid][i] for pid in pids)
+        )
+
+    pool.close()
+    pool.join()
+
+    for i, j in jobs.items():
+        _, this_vc = j.get()
+        for k, v in this_vc.items():
+            simulated_set_sizes.setdefault(k, []).append(v)
+
+    df = pd.DataFrame(simulated_set_sizes).transpose()
+    set_size = [sum([int(t) for t in x]) for x in df.index]
+    df.insert(0, 'set_size', set_size)
+    df.sort_values(by='set_size', inplace=True)
+
+    # plot showing simulated range and our value
+    _, vc = setops.venn_from_arrays(*[dmr_res_all[pid] for pid in pids])
+    df_min = df.drop('set_size', axis=1).min(axis=1)
+    df_range = df.drop('set_size', axis=1).max(axis=1) - df_min
+
+    num = np.array([vc[k] for k in df.index])
+    # Z transform (with offset to avoid infty)
+    mu = df.drop('set_size', axis=1).mean(axis=1)
+    den = df.drop('set_size', axis=1).std(axis=1) + 1e-6
+    zz = (num - mu) / den
+    # take absolute and sign separately
+    logz_abs = np.log10(zz.abs())
+    # any entries where observed and simulated are zero should be masked
+    logz_abs.loc[np.isinf(logz_abs)] = np.nan
+    z_sign = np.sign(zz)
+
+    fig = plt.figure(figsize=(12, 3))
+    ax = fig.add_subplot(111)
+
+    cmap = plt.cm.Vega10.colors
+    cols = [cmap[i-1] for i in df.set_size]
+
+    ax.bar(
+        range(df.shape[0]),
+        df_range,
+        width=.9,
+        bottom=df_min,
+        color=cols,
+        edgecolor='none',
+        zorder=10,
+    )
+    ax.scatter(
+        range(df.shape[0]),
+        num,
+        facecolor=cols,
+        edgecolor='k',
+        linewidth=.5,
+        marker='o',
+        s=10,
+        zorder=9,
+    )
+    ax.set_xticklabels([])
+    ax.set_xlim([0, df.shape[0] + 1])
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "num_dmr_in_set_obs_sim.png"), dpi=200)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    ax.scatter(
+        range(df.shape[0]),
+        logz_abs * z_sign,
+        facecolor=cols,
+        edgecolor='k',
+        linewidth=.5,
+        marker='o',
+        s=10,
+        zorder=9
+    )
+    ax.axhline(0, color='k', linestyle='--', zorder=8)
+    ax.set_ylabel(r"$\log_{10}(z)$")
+    fig.tight_layout()
+    # remove minus signs
+    yticklabels = [t.get_text().replace(u'\u2212', '') for t in ax.yaxis.get_ticklabels()]
+    ax.yaxis.set_ticklabels(yticklabels)
+    ax.xaxis.set_ticklabels([])
+    fig.savefig(os.path.join(outdir, "num_dmr_in_set_logz.png"), dpi=200)

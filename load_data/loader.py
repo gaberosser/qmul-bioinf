@@ -270,6 +270,16 @@ class SingleFileLoader(DatasetLoader):
             self.meta = self.meta.loc[self.data.columns]
         super(SingleFileLoader, self).post_process()
 
+    def filter_samples(self, keep_idx):
+        """
+        Drop samples according to the supplied index. All data structures are updated in-place.
+        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        will be retained.
+        :return:
+        """
+        self.meta = self.meta.loc[keep_idx]
+        self.data = self.data.loc[:, self.meta.index]
+
 
 # TODO idea: create a mixin that replaces load_data in the MultipleFileLoader with a more appropriate method when the
 # data are NOT row-matched. For example. ChIP peaks are not joined on the index, so it's fairly pointless trying to

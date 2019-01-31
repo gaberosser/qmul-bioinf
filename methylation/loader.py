@@ -44,6 +44,7 @@ project_dirs = {
     "E-MTAB-6194": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194'),
     "encode_epic": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_EPIC'),
     "encode_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_450k'),
+    "gse92462_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_450K'),
 }
 
 PATIENT_LOOKUP_FFPE = {
