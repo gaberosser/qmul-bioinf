@@ -63,6 +63,38 @@ def run_dmr_analyses(data, comparisons, anno, dmr_params, verbose=True):
     return dmr.DmrResultCollection(**dmr_res)
 
 
+def bar_plot(res, keys=None):
+    from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
+
+    if keys is None:
+        keys = sorted(res.keys())
+
+    # bar plot showing balance of DMR direction
+    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=(5.5, 5.5))
+
+    addd.direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=True,
+        ax=axs[0],
+        legend=False
+    )
+    axs[0].set_ylabel('% DMRs')
+    addd.direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=False,
+        ax=axs[1],
+        legend=False
+    )
+    axs[1].set_ylabel('Number DMRs')
+    plt.setp(axs[1].xaxis.get_ticklabels(), rotation=90)
+
+    return {
+        'axs': axs,
+        'fig': fig
+    }
+
 
 if __name__ == "__main__":
     pids = consts.PIDS
@@ -129,4 +161,64 @@ if __name__ == "__main__":
         # Save DMR results to disk
         dmr_res.to_pickle(fn, include_annotation=False)
         logger.info("Saved DMR results to %s", fn)
+
+    dmr_res_all = dmr_res.results_significant
+
+    # 1. check the phenomenon is still observed in our syngeneic comparisons
+    # full list
+    for_plot = dict([
+        (pid, dmr_res_all['syngeneic_%s' % pid]) for pid in pids
+    ])
+    plt_dict = bar_plot(for_plot, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_full_list_directions.png"), dpi=200)
+
+    # specific list
+    spec_ix = setops.specific_features(*[for_plot[pid].keys() for pid in pids])
+    for_plot = dict([
+        (pid, dict([(k, for_plot[pid][k]) for k in s])) for pid, s in zip(pids, spec_ix)
+    ])
+    plt_dict = bar_plot(for_plot, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_specific_list_directions.png"), dpi=200)
+
+    # 2. check that we see the same phenomenon when we switch to the validation cohort comparator
+    # full list
+    for_plot = dict([
+        (pid, dmr_res_all['consistency_%s' % pid]) for pid in pids
+    ])
+    plt_dict = bar_plot(for_plot, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "consistency_full_list_directions.png"), dpi=200)
+
+    # specific list
+    spec_ix = setops.specific_features(*[for_plot[pid].keys() for pid in pids])
+    for_plot = dict([
+        (pid, dict([(k, for_plot[pid][k]) for k in s])) for pid, s in zip(pids, spec_ix)
+    ])
+    plt_dict = bar_plot(for_plot, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "consistency_specific_list_directions.png"), dpi=200)
+
+    # 3. how does the same plot look in the validation cohort?
+    # full list
+    for_plot = dict([
+        (k.replace('validation_', ''), dmr_res_all[k]) for k in dmr_res_all if 'validation' in k
+    ])
+    plt_dict = bar_plot(for_plot)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "validation_full_list_directions.png"), dpi=200)
+
+    # specific list
+    keys = sorted(for_plot.keys())
+    spec_ix = setops.specific_features(*[for_plot[k].keys() for k in keys])
+    for_plot = dict([
+        (j, dict([(k, for_plot[j][k]) for k in s])) for j, s in zip(keys, spec_ix)
+    ])
+    plt_dict = bar_plot(for_plot)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "validation_specific_list_directions.png"), dpi=200)
+
+
+
 
