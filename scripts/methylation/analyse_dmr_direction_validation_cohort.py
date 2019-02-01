@@ -130,3 +130,6 @@ if __name__ == "__main__":
         dmr_res.to_pickle(fn, include_annotation=False)
         logger.info("Saved DMR results to %s", fn)
 
+    dmr_res_all = dmr_res.results_significant
+
+    # check syngeneic results still show the same pattern
