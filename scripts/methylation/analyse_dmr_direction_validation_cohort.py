@@ -63,6 +63,38 @@ def run_dmr_analyses(data, comparisons, anno, dmr_params, verbose=True):
     return dmr.DmrResultCollection(**dmr_res)
 
 
+def bar_plot(res, keys=None):
+    from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
+
+    if keys is None:
+        keys = sorted(res.keys())
+
+    # bar plot showing balance of DMR direction
+    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=(5.5, 5.5))
+
+    addd.direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=True,
+        ax=axs[0],
+        legend=False
+    )
+    axs[0].set_ylabel('% DMRs')
+    addd.direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=False,
+        ax=axs[1],
+        legend=False
+    )
+    axs[1].set_ylabel('Number DMRs')
+    plt.setp(axs[1].xaxis.get_ticklabels(), rotation=90)
+
+    return {
+        'axs': axs,
+        'fig': fig
+    }
+
 
 if __name__ == "__main__":
     pids = consts.PIDS
