@@ -102,9 +102,6 @@ if __name__ == "__main__":
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
 
-    # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
-    write_bed_files = False
-
     outdir = output.unique_output_dir()
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
 

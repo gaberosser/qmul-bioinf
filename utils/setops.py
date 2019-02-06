@@ -385,3 +385,17 @@ def specific_sets(set_labels):
         arr[i] = '1'
         res[lbl] = ''.join(arr)
     return res
+
+
+def quantify_feature_membership(venn_count):
+    """
+    Compute the 'sharing histogram', containing the observed frequency of features with only 1 member, 2 members, etc.
+    :param venn_count: As computed by `venn_from_arrays`
+    :return: Pandas Series indexed by integer count of the number of members sharing. Values give the observed
+    frequency.
+    """
+    res = collections.defaultdict(int)
+    for k, ct in venn_count.items():
+        n = sum([int(t) for t in k])
+        res[n] += ct
+    return pd.Series(res).sort_index()

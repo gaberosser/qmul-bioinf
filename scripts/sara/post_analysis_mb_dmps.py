@@ -6,7 +6,7 @@ import numpy as np
 import collections
 
 from methylation import loader
-from utils import setops, genomics, output
+from utils import setops, genomics, output, excel
 from plotting import common
 from settings import LOCAL_DATA_DIR
 from scripts.hgic_final import consts
@@ -189,9 +189,31 @@ def polar_distribution_plot_with_kdes(
 if __name__ == "__main__":
     outdir = output.unique_output_dir()
     anno = loader.load_illumina_methylationepic_annotation()
-    dmp_fn = '~/Dropbox/research/qmul/MB_project/current/core_pipeline/methylation/dmps_3021_swan.xlsx'
+    indir = '/home/gabriel/Dropbox/research/qmul/MB_project/current/core_pipeline/methylation/'
 
-    dmps = pd.read_excel(dmp_fn, header=0, index_col=0, sheet_names=None)
+    # first, add annotation to results and save out again
+    file_list = [
+        'dmps_1299_noob.xlsx',
+        'dmps_3021_noob.xlsx',
+        'dmps_1299_swan.xlsx',
+        'dmps_3021_swan.xlsx',
+    ]
+    for fn in file_list:
+        ff = os.path.join(indir, fn)
+        dat = pd.read_excel(ff, header=0, index_col=0, sheet_name=None)
+        new_dat = {}
+        for k, df in dat.items():
+            to_add = anno.reindex(df.index)[['CHR', 'MAPINFO', 'UCSC_RefGene_Name', 'UCSC_RefGene_Group']]
+            # to_add.columns = ['chrom', 'coord', 'genes', 'gene_relation']
+            df.insert(df.shape[1], 'chrom', to_add.CHR)
+            df.insert(df.shape[1], 'coord', to_add.MAPINFO.fillna(-1).astype(int))
+            df.insert(df.shape[1], 'gene', [','.join(t) if hasattr(t, '__iter__') else '' for t in to_add.UCSC_RefGene_Name])
+            df.insert(df.shape[1], 'gene_relation', [','.join(t) if hasattr(t, '__iter__') else '' for t in to_add.UCSC_RefGene_Group])
+            new_dat[k] = df
+        excel.pandas_to_excel(new_dat, os.path.join(outdir, fn.replace('.xlsx', '.annotated.xlsx')))
+
+    dmp_fn = os.path.join(indir, 'dmps_3021_swan.xlsx')
+    dmps = pd.read_excel(dmp_fn, header=0, index_col=0, sheet_name=None)
 
     # combine all DMPs into a single wideform
     cols = reduce(lambda x, y: x + y, [['%s' % t, '%s_logFC' % t, '%s_FDR' % t] for t in dmps])
@@ -235,6 +257,12 @@ if __name__ == "__main__":
         tt = np.histogram(anno.loc[anno.CHR == ch].MAPINFO, np.arange(0, chrom_length[ch], window_size))
         bg_density[ch] = pd.Series(tt[0], index=tt[1][:-1])
 
+    # full polar plot
+    # plot_dict = polar_distribution_plot_with_kdes(
+    #         dmps_all,
+    #         chrom_length,
+    #         bg_density=None,
+
     # plot
     for_plot = {}
     for k in dmps.keys():
@@ -248,6 +276,16 @@ if __name__ == "__main__":
             tt.index = this_coord.loc[this_chr == ch]
             logfc_vals[ch] = tt
         for_plot[k] = logfc_vals
+
+    for cond in for_plot:
+        plot_dict = polar_distribution_plot_with_kdes(
+            for_plot[cond],
+            chrom_length,
+            bg_density=bg_density,
+            bar_width_bp=3e6,
+            bar_scaling=0.1
+        )
+        plot_dict['fig'].savefig(os.path.join(outdir, "%s_dmps_genomewide.png" % cond.replace(' ', '')), dpi=200)
 
     gs = plt.GridSpec(nrows=3, ncols=1, height_ratios=[3, 1, 3], hspace=0.01, left=0.05, right=0.97, bottom=0.15, top=0.99)
 
