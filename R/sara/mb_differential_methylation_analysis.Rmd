@@ -59,7 +59,7 @@ if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
   process_idats <- function(
     in.files,
     snames,
-    norm.fun=c('swan', 'bmiq', 'funnorm', 'quantile', 'pbc', 'raw'),
+    norm.fun=c('swan', 'bmiq', 'funnorm', 'noob', 'quantile', 'pbc', 'raw'),
     arraytype='EPIC'
   ) {
     norm.fun = match.arg(norm.fun)
@@ -98,6 +98,11 @@ if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
     if (norm.fun == 'quantile') {
       grSet.quantile <- preprocessQuantile(rgSet)
       beta <- getBeta(grSet.quantile)[rownames(beta.raw),]
+    }
+    
+    if (norm.fun == 'noob') {
+      mset.noob <- preprocessNoob(rgSet)
+      beta <- getBeta(mset.noob)[rownames(beta.raw),]
     }
     
     return(list(beta.raw=beta.raw, beta=beta))
@@ -373,7 +378,10 @@ for (cl in c('3021', '1299')) {
   n.sv <- num.sv(as.matrix(this.m), mod, method='leek')
   svobj <- sva(as.matrix(this.m), mod, mod_null, n.sv=n.sv)
   
-  fit <- lmFit(this_data, mod.Sv)
+  mod.Sv <- cbind(mod, svobj$sv)
+  colnames(mod.Sv) <- c(colnames(design), "sva")
+  
+  fit <- lmFit(this.m, mod.Sv)
   contrasts <- makeContrasts(
     conditionshBMI1-conditionScr, 
     conditionshCHD7-conditionScr, 
