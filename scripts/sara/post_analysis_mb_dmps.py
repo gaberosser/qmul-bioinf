@@ -12,7 +12,7 @@ from settings import LOCAL_DATA_DIR
 from scripts.hgic_final import consts
 
 
-def polar_distribution_plot_with_kdes(
+def polar_distribution_plot_with_bars(
     logfc_vals,
     chrom_length,
     bg_density=None,
@@ -278,7 +278,7 @@ if __name__ == "__main__":
         for_plot[k] = logfc_vals
 
     for cond in for_plot:
-        plot_dict = polar_distribution_plot_with_kdes(
+        plot_dict = polar_distribution_plot_with_bars(
             for_plot[cond],
             chrom_length,
             bg_density=bg_density,

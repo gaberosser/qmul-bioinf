@@ -174,3 +174,10 @@ def spearman_exact(a, b, nperm=1000, seed=None):
     this_p = (np.abs(r_perms) >= np.abs(this_r)).sum() / float(nperm)
     return this_r, this_p
 
+
+def _mht_p_adjust_func(pvals, method='BH'):
+    res = robjects.r("p.adjust")(np.array(pvals), method=method)
+    return np.array(res)
+
+
+mht_p_adjust = rinterface.RFunctionDeferred(_mht_p_adjust_func)

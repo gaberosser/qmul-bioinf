@@ -435,7 +435,12 @@ def feature_lengths_from_fasta(fa_file, features=None):
     from Bio import SeqIO
     feat_lens = collections.OrderedDict()
 
-    with open(fa_file, 'rb') as f:
+    if os.path.splitext(fa_file)[1].lower() == '.gz':
+        opener = gzip.GzipFile
+    else:
+        opener = open
+
+    with opener(fa_file, 'rb') as f:
         fa_reader = SeqIO.parse(f, 'fasta')
         for feat in fa_reader:
             the_id = feat.id
@@ -458,7 +463,12 @@ def motif_locations(fa_file, motif='CG', features=None):
     res = collections.OrderedDict()
     feat_lens = collections.OrderedDict()
 
-    with open(fa_file, 'rb') as f:
+    if os.path.splitext(fa_file)[1].lower() == '.gz':
+        opener = gzip.GzipFile
+    else:
+        opener = open
+
+    with opener(fa_file, 'rb') as f:
         fa_reader = SeqIO.parse(f, 'fasta')
         for feat in fa_reader:
             the_id = feat.id
