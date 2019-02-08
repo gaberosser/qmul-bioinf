@@ -1,8 +1,8 @@
-from plotting import bar, common, pie
+from plotting import bar, common, pie, polar
 from methylation import loader, dmr, process
 import pandas as pd
 from stats import nht
-from utils import output, setops, genomics, log
+from utils import output, setops, genomics, log, dictionary
 import multiprocessing as mp
 import os
 import collections
@@ -171,6 +171,128 @@ def log_pval_pcolor(df, figsize=None, pk_alpha=-np.log10(0.05)):
     }
 
 
+def polar_heatmap(
+        binned_data,
+        segment_lengths,
+        bg_density=None,
+        inner_r=1.,
+        central_width=0.25,
+        gap_radians=2 * np.pi / 200.,
+        bg_fmin=0.,
+        bg_fmax=0.99,
+        bg_vmin=None,
+        bg_vmax=None,
+        plot_border=True,
+        bg_cmap=plt.cm.get_cmap('RdYlBu_r'),
+        cmap=plt.cm.get_cmap('Reds'),
+        fmin=0.,
+        fmax=0.99,
+        vmin=None,
+        vmax=None,
+        ax=None,
+        **kwargs
+):
+
+    if vmin is None and fmin is None:
+        vmin = 0
+    if vmax is None and fmax is None:
+        raise ValueError("Must supply one of bg_vmax or bg_fmax.")
+    all_vals = None
+    if vmax is None:
+        tmp = dictionary.nested_dict_to_flat(binned_data)
+        all_vals = reduce(lambda x, y: x + y.values.tolist(), tmp.values(), [])
+        vmax = sorted(all_vals)[int(fmax * len(all_vals))]
+    if vmin is None:
+        if all_vals is None:
+            tmp = dictionary.nested_dict_to_flat(binned_data)
+            all_vals = reduce(lambda x, y: x + y.values.tolist(), tmp.values(), [])
+        vmin = sorted(all_vals)[int(fmin * len(all_vals))]
+
+    segments = segment_lengths.keys()
+
+    if bg_density is not None:
+
+        if bg_vmin is None and bg_fmin is None:
+            bg_vmin = 0.
+        if bg_vmax is None and bg_fmax is None:
+            raise ValueError("Must supply one of bg_vmax or bg_fmax.")
+
+        all_bg = []
+        for s in segments:
+            this_bg = bg_density[s]
+            all_bg.extend(this_bg.values)
+        all_bg = sorted(all_bg)
+        bg_mean = np.mean(all_bg)
+        if bg_vmin is None:
+            bg_vmin = all_bg[int(bg_fmin * len(all_bg))]
+        if bg_vmax is None:
+            bg_vmax = all_bg[int(bg_fmax * len(all_bg))]
+        if bg_vmin > bg_mean:
+            raise ValueError("The vmin value calculated for the background density is greater than the mean.")
+        if bg_vmax < bg_mean:
+            raise ValueError("The vmax value calculated for the background density is less than the mean.")
+
+        bg_norm = common.MidpointNormalize(midpoint=bg_mean, vmin=bg_vmin, vmax=bg_vmax)
+
+    if ax is None:
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='polar')
+        ax.set_theta_direction(-1)
+        ax.set_theta_zero_location('N')
+        ax.set_facecolor('w')
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+    else:
+        fig = ax.figure
+
+    handles = {}
+
+    r = inner_r
+    # background density
+    if bg_density is not None:
+        handles['bg'] = polar.polar_heatmap_in_segments(
+            bg_density,
+            segment_lengths,
+            gap_radians=gap_radians,
+            inner_r=r,
+            delta_r=central_width,
+            vmin=bg_vmin,
+            vmax=bg_vmax,
+            cmap=bg_cmap,
+            norm=bg_norm,
+            ax=ax,
+            plot_border=plot_border,
+            **kwargs
+        )
+        r += central_width
+
+    # other densities
+    for k, v in binned_data.items():
+        handles[k] = polar.polar_heatmap_in_segments(
+            collections.OrderedDict([(t, v[t]) for t in segments]),
+            segment_lengths,
+            gap_radians=gap_radians,
+            inner_r=r,
+            delta_r=central_width,
+            vmin=vmin,
+            vmax=vmax,
+            cmap=cmap,
+            ax=ax,
+            plot_border=plot_border,
+            **kwargs
+        )
+        r += central_width
+
+    fig.tight_layout()
+
+    return {
+        'fig': fig,
+        'ax': ax,
+        'handles': handles
+    }
+
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method = 'swan'
@@ -251,30 +373,30 @@ if __name__ == "__main__":
 
     row_collapse = pd.DataFrame(
         dict([
-            (
-                pid,
-                setops.quantify_feature_membership(
-                    setops.venn_from_arrays(
-                        *[dmr_res_all['%s-%s' % (pid, p)].keys() for p in pids]
-                    )[1]
-                )
-            )
-            for pid in pids
-        ])
+                 (
+                     pid,
+                     setops.quantify_feature_membership(
+                         setops.venn_from_arrays(
+                             *[dmr_res_all['%s-%s' % (pid, p)].keys() for p in pids]
+                         )[1]
+                     )
+                 )
+                 for pid in pids
+                 ])
     )[pids]
 
     col_collapse = pd.DataFrame(
         dict([
-            (
-                pid,
-                setops.quantify_feature_membership(
-                    setops.venn_from_arrays(
-                        *[dmr_res_all['%s-%s' % (p, pid)].keys() for p in pids]
-                    )[1]
-                )
-            )
-            for pid in pids
-        ])
+                 (
+                     pid,
+                     setops.quantify_feature_membership(
+                         setops.venn_from_arrays(
+                             *[dmr_res_all['%s-%s' % (p, pid)].keys() for p in pids]
+                         )[1]
+                     )
+                 )
+                 for pid in pids
+                 ])
     )[pids]
 
     syn_dist = setops.quantify_feature_membership(
@@ -418,16 +540,16 @@ if __name__ == "__main__":
     chrom_length = genomics.feature_lengths_from_fasta(fa_fn, features=chroms)
 
     # get probe density
-    bg_density = {}
+    bg_density = collections.OrderedDict()
     for ch in chroms:
         this_coord = anno.loc[anno.CHR == ch].MAPINFO
-        tt = np.histogram(anno.loc[anno.CHR == ch].MAPINFO, np.arange(0, chrom_length[ch], window_size))
+        tt = np.histogram(anno.loc[anno.CHR == ch].MAPINFO, range(0, chrom_length[ch], window_size) + [chrom_length[ch]])
         bg_density[ch] = pd.Series(tt[0], index=tt[1][:-1])
 
     # extract the DMRs for this GIC line
     this_res = dict([
-        (p, dmr_res_all['-'.join([pid, p])]) for p in pids
-    ])
+                        (p, dmr_res_all['-'.join([pid, p])]) for p in pids
+                        ])
     tmp = get_dmr_locations(
         this_res,
         dmr_res.clusters,
@@ -436,36 +558,151 @@ if __name__ == "__main__":
     dmr_loci_hyper = tmp['hyper']
     dmr_loci_hypo = tmp['hypo']
 
+    hyper_hist = collections.OrderedDict()
+    hypo_hist = collections.OrderedDict()
+    hyper_hist_norm = collections.OrderedDict()
+    hypo_hist_norm = collections.OrderedDict()
+
     for p in pids:
         hyper = dmr_loci_hyper[p]
         hypo = dmr_loci_hypo[p]
-        hyper_for_plot = dict([(ch, sorted(hyper[ch].keys())) for ch in chroms])
-        hypo_for_plot = dict([(ch, sorted(hypo[ch].keys())) for ch in chroms])
-        hyper_hist = dict([
-            (
-                ch,
-                np.histogram(
-                    hyper_for_plot[ch],
-                    range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
-                )[0]
-            ) for ch in chroms
-        ])
-        hypo_hist = dict([
-            (
-                ch,
-                np.histogram(
-                    hypo_for_plot[ch],
-                    range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
-                )[0]
-            ) for ch in chroms
-        ])
+        hyper_for_plot = {}
+        hypo_for_plot = {}
+        this_hyper_hist = collections.OrderedDict()
+        this_hypo_hist = collections.OrderedDict()
+        this_hyper_hist_norm = collections.OrderedDict()
+        this_hypo_hist_norm = collections.OrderedDict()
 
-    plt_dict = addd.polar_distribution_plot_with_kdes(
-        hyper_for_plot,
-        hypo_for_plot,
+        for ch in chroms:
+            hyper_for_plot[ch] = sorted(hyper[ch].keys())
+            hypo_for_plot[ch] = sorted(hypo[ch].keys())
+            a, b = np.histogram(
+                hyper_for_plot[ch],
+                range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
+            )
+            this_hyper_hist[ch] = pd.Series(a, index=b[:-1])
+            this_hyper_hist_norm[ch] = this_hyper_hist[ch] / (bg_density[ch] + 1.)
+            a, b = np.histogram(
+                hypo_for_plot[ch],
+                range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
+            )
+            this_hypo_hist[ch] = pd.Series(a, index=b[:-1])
+            this_hypo_hist_norm[ch] = this_hypo_hist[ch] / (bg_density[ch] + 1.)
+
+        hyper_hist[p] = this_hyper_hist
+        hypo_hist[p] = this_hypo_hist
+        hyper_hist_norm[p] = this_hyper_hist_norm
+        hypo_hist_norm[p] = this_hypo_hist_norm
+
+    # combine hyper and hypo
+    dmr_loci_all = {}
+    for p in pids:
+        dmr_loci_all[p] = {}
+        for ch in chroms:
+            dmr_loci_all[p][ch] = {}
+            dmr_loci_all[p][ch].update(dmr_loci_hyper[p][ch])
+            dmr_loci_all[p][ch].update(dmr_loci_hypo[p][ch])
+
+    # any non-concordant?
+    dmr_loci_nonconcordant = {}
+    for ch in chroms:
+        dmr_loci_nonconcordant[ch] = {}
+        vs, vc = setops.venn_from_arrays(*[dmr_loci_all[p][ch].keys() for p in pids])
+        for k in setops.binary_combinations_sum_gte(len(pids), 2):
+            this_pids = np.array(pids)[[x == '1' for x in k]]
+            for t in vs[k]:
+                signs = np.array([np.sign(dmr_loci_all[x][ch][t]) for x in this_pids])
+                if not np.diff(signs).sum() == 0:
+                    dmr_loci_nonconcordant[ch][t] = dict(zip(this_pids, [dmr_loci_all[x][ch][t] for x in this_pids]))
+
+    # get specifics and hist these, too
+    hyper_loci_specific = collections.OrderedDict()
+    hypo_loci_specific = collections.OrderedDict()
+    hyper_hist_specific = collections.OrderedDict()
+    hypo_hist_specific = collections.OrderedDict()
+
+    for ch in chroms:
+        vs, vc = setops.venn_from_arrays(*[dmr_loci_hyper[p][ch].keys() for p in pids])
+        ll = setops.specific_sets(pids)
+        for p in pids:
+            k = ll[p]
+            for t in vs[k]:
+                hyper_loci_specific.setdefault(p, {}).setdefault(ch, {})[t] = dmr_loci_hyper[p][ch][t]
+
+        vs, vc = setops.venn_from_arrays(*[dmr_loci_hypo[p][ch].keys() for p in pids])
+        ll = setops.specific_sets(pids)
+        for p in pids:
+            k = ll[p]
+            for t in vs[k]:
+                hypo_loci_specific.setdefault(p, {}).setdefault(ch, {})[t] = dmr_loci_hypo[p][ch][t]
+
+    for p in pids:
+        this_hyper_hist_specific = {}
+        this_hypo_hist_specific = {}
+
+        hyper = hyper_loci_specific[p]
+        hypo = hypo_loci_specific[p]
+
+        for ch in chroms:
+            a, b = np.histogram(
+                hyper[ch].keys() if ch in hyper else [],
+                range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
+            )
+            this = pd.Series(a, index=b[:-1])
+            this.loc[this == 0] = np.nan
+            this_hyper_hist_specific[ch] = this
+
+            a, b = np.histogram(
+                hypo[ch].keys() if ch in hypo else [],
+                range(0, chrom_length[ch], window_size) + [chrom_length[ch]]
+            )
+            this = pd.Series(a, index=b[:-1])
+            this.loc[this == 0] = np.nan
+            this_hypo_hist_specific[ch] = this
+
+        hyper_hist_specific[p] = this_hyper_hist_specific
+        hypo_hist_specific[p] = this_hypo_hist_specific
+
+    plt_dict = polar_heatmap(
+        hyper_hist_norm,
         chrom_length,
         bg_density=bg_density,
-        window_size=window_size
+        inner_r=1.,
+        fmax=0.975,
+        cmap='Greys',
+        alpha=0.4,
     )
+    # overlay with specific
+    plt_dict2 = polar_heatmap(
+        hyper_hist_specific,
+        chrom_length,
+        inner_r=1.25,
+        vmin=0.,
+        vmax=1.3,
+        cmap='Reds',
+        ax=plt_dict['ax'],
+        plot_border=False
+    )
+    plt_dict['fig'].savefig(os.path.join(outdir, "%s_hyper_dmrs.pdf" % pid))
 
-
+    plt_dict = polar_heatmap(
+        hypo_hist_norm,
+        chrom_length,
+        bg_density=bg_density,
+        inner_r=1.,
+        fmax=0.975,
+        cmap='Greys',
+        alpha=0.4,
+    )
+    # overlay with specific
+    plt_dict2 = polar_heatmap(
+        hypo_hist_specific,
+        chrom_length,
+        inner_r=1.25,
+        vmin=0.,
+        vmax=1.3,
+        cmap='Greens',
+        ax=plt_dict['ax'],
+        plot_border=False
+    )
+    plt_dict['fig'].savefig(os.path.join(outdir, "%s_hypo_dmrs.pdf" % pid))

@@ -448,6 +448,11 @@ def feature_lengths_from_fasta(fa_file, features=None):
                 continue
             feat_lens[the_id] = len(feat.seq)
 
+    if features is not None:
+        feat_lens = collections.OrderedDict([
+            (ftr, feat_lens[ftr]) for ftr in features
+        ])
+
     return feat_lens
 
 

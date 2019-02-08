@@ -46,7 +46,9 @@ def polar_heatmap_in_segments(
         rr = np.zeros_like(tt) + inner_r
         rr[1] = outer_r
 
-        cc = np.array([density[ftr].values])
+        cc = density[ftr].values[None, :]
+        if np.isnan(cc).any():
+            cc = np.ma.masked_where(np.isnan(cc), cc)
         h_pcolor[ftr] = ax.pcolor(tt, rr, cc, **kwargs)
 
         if plot_border:
