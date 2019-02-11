@@ -365,6 +365,207 @@ if __name__ == "__main__":
     ax = sns.boxplot(n_hyper_pct.transpose(), whis=5, ax=ax)
     ax.scatter(range(len(pids)), np.diagonal(n_hyper_pct), facecolor='k')
     ax.set_ylim([0, 100])
+    ax.set_ylabel("% of hyper methylated DMRs")
+
+    fig.savefig(os.path.join(outdir, "n_hyper_box_whisker.png"), dpi=200)
+
+    # pie chart array
+
+    hypo_cmap = plt.get_cmap('Greens_r')
+    hyper_cmap = plt.get_cmap('Reds')
+    hypo_norm = Normalize(vmin=-6, vmax=0)
+    hyper_norm = Normalize(vmin=0, vmax=6)
+    hypo_sm = cm.ScalarMappable(norm=hypo_norm, cmap=hypo_cmap)
+    hyper_sm = cm.ScalarMappable(norm=hyper_norm, cmap=hyper_cmap)
+
+    wedgeprops = {
+        'edgecolor': 'k',
+        'linewidth': .5
+    }
+
+    scale_by_number = 'area'
+    segment_width = 0.5
+    min_segment_width = 0.2
+    inner_radius = 0.5
+    edges = np.array([-np.inf, -5., -4., -3., -2., -1., 0., 1., 2., 3., 4., 5., np.inf])
+    # create a new colour dict
+    colour_dict = {
+        'Hypermethylated': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+        'Hypomethylated': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+    }
+    for e0, e1 in zip(edges[:-1], edges[1:]):
+        if e0 < 0:
+            sm = hypo_sm
+        else:
+            sm = hyper_sm
+        if e0 == edges[0]:
+            lbl = r"$\Delta M < %d$" % e1
+        elif e1 == edges[-1]:
+            lbl = r"$\Delta M > %d$" % e0
+        else:
+            lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+        colour_dict[lbl] = sm.to_rgba(np.sign(e0) * np.abs([e0, e1]).min())
+
+    if scale_by_number is not None:
+        n_dmr = pd.DataFrame(index=pids, columns=pids)
+        n_dmr.columns.name = 'GIC'
+        n_dmr.index.name = 'iNSC'
+
+        for k, v in dmr_res_all.items():
+            p2, p1 = k.split('-')
+            n_dmr.loc[p1, p2] = len(v)
+
+        n_max = n_dmr.max().max()
+
+    def bin_one(vals, edges):
+        binned, _ = np.histogram(vals, edges)
+        to_plot = collections.OrderedDict()
+        to_plot['Hypermethylated'] = collections.OrderedDict()
+        to_plot['Hypomethylated'] = collections.OrderedDict()
+        for e0, e1, b in zip(edges[:-1], edges[1:], binned):
+            if e0 == edges[0]:
+                lbl = r"$\Delta M < %d$" % e1
+            elif e1 == edges[-1]:
+                lbl = r"$\Delta M > %d$" % e0
+            else:
+                lbl = r"$%d \leq \Delta M < %d$" % (e0, e1)
+
+            if e0 > 0:
+                dest = to_plot['Hypermethylated']
+            elif e1 < 0:
+                dest = to_plot['Hypomethylated']
+            else:
+                continue
+            dest[lbl] = b
+        return to_plot
+
+    gs = plt.GridSpec(
+        nrows=len(pids),
+        ncols=len(pids),
+    )
+    fig = plt.figure(figsize=(7., 5.3))
+
+    big_ax = fig.add_subplot(111, frameon=False)
+    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+    big_ax.grid(False)
+    big_ax.xaxis.set_label_position('top')
+    big_ax.xaxis.tick_top()
+
+    axs = [[] for i in range(len(pids))]
+    sharex = None
+    res = None
+
+    for i, gic in enumerate(pids):
+        for j, insc in enumerate(pids):
+            this_res = dmr_res_all['-'.join([gic, insc])]
+            this_dat = [t['median_change'] for t in this_res.values()]
+            ax = fig.add_subplot(gs[j, i], sharex=sharex)
+            ax.set_aspect('equal')
+            if sharex is None:
+                sharex = ax
+            axs[j].append(ax)
+
+            if i == 0:  # leftmost
+                ax.set_ylabel(
+                    insc,
+                    fontsize=12,
+                    verticalalignment='center',
+                    rotation=0,
+                    horizontalalignment='right'
+                )
+
+            if j == 0:  # topmost
+                ax.set_title(
+                    gic,
+                    fontsize=12,
+                    verticalalignment='center',
+                    rotation=0,
+                    horizontalalignment='center'
+                )
+
+            if len(this_dat) > 0:
+                to_plot = bin_one(this_dat, edges)
+                # compute normalisation const
+                k = 1.
+
+                if scale_by_number == 'area':
+                    k = (float(n_dmr.loc[insc, gic]) / n_max) ** .5
+                elif scale_by_number == 'radius':
+                    k = float(n_dmr.loc[insc, gic]) / n_max
+
+                w_eff = max(segment_width * k, min_segment_width)
+
+                inner_r_eff = inner_radius * k
+
+                tmp = pie.nested_pie_chart(
+                    to_plot,
+                    colour_dict,
+                    inner_radius=inner_r_eff,
+                    width_per_level=w_eff,
+                    ax=ax,
+                    legend_entries=None,
+                    **wedgeprops
+                )
+                if res is None:
+                    res = tmp
+            else:
+                ax.set_visible(False)
+
+    # fix axis limits across all plots
+    axs[0][0].set_xlim(np.array([-1, 1]) * (inner_radius + 2.5 * segment_width))
+
+    # overall axis labels
+    big_ax.set_xlabel('GIC', fontsize=12)
+    big_ax.set_ylabel('iNSC', fontsize=12)
+
+    # add legend outside axes
+    patches = res['patches']
+    legend_dict = collections.OrderedDict()
+    legend_dict['Hyper'] = collections.OrderedDict()
+    legend_dict['Hypo'] = collections.OrderedDict()
+    for k in to_plot['Hypermethylated']:
+        legend_dict['Hyper'][k] = {
+            'class': 'patch',
+            'facecolor': patches[1][k].get_facecolor(),
+            'edgecolor': patches[1][k].get_edgecolor(),
+            'linewidth': patches[1][k].get_linewidth(),
+        }
+    for k in to_plot['Hypomethylated'].keys()[::-1]:
+        legend_dict['Hypo'][k] = {
+            'class': 'patch',
+            'facecolor': patches[1][k].get_facecolor(),
+            'edgecolor': patches[1][k].get_edgecolor(),
+            'linewidth': patches[1][k].get_linewidth(),
+        }
+
+    common.add_custom_legend(
+        axs[int(len(pids) / 2.)][-1],
+        legend_dict,
+        loc_outside=True
+    )
+    # gs.update(left=0.1, right=0.99, bottom=0.03, top=0.9, hspace=0.3, wspace=0.3)
+
+    main_fig_bounds = {
+        'left': 0.1,
+        'bottom': 0.02,
+        'top': 0.9,
+        'right': 0.72
+    }
+    gs.update(hspace=0.06, wspace=0.06, **main_fig_bounds)
+    big_ax.set_position([
+        main_fig_bounds['left'],
+        main_fig_bounds['bottom'],
+        main_fig_bounds['right'] - main_fig_bounds['left'],
+        main_fig_bounds['top'] - main_fig_bounds['bottom'],
+    ])
+    fig.savefig(os.path.join(outdir, "dmr_direction_effect_size_pie_array.png"), dpi=200)
+
+
+
+
+
+
+
 
     # run down the rows or columns and generate an 'overlap spectrum' for each one
     # rows: check the effect of varying the iNSC line (CONSISTENCY)
