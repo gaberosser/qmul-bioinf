@@ -20,6 +20,9 @@ require("data.table")
 require(sva)
 require(RColorBrewer)
 require(openxlsx)
+require(ks)
+require("ggplot2")
+require("reshape")
 
 # this specifies the normalisation algorithm to use
 norm.fun <- 'swan'
@@ -140,11 +143,60 @@ cc_meta$patient_id <- gsub("[^0-9]*([0-9]{3}).*", "\\1", rownames(cc_meta), perl
 cc_meta$cell_type <- "iNSC"
 cc_meta[grep('GBM', rownames(cc_meta)), 'cell_type'] <- 'GIC'
 
-
 ```
 ## Check for batch effects
 
-We're interested in whether batch effects are present in either of the blocks of data.
+We're interested in whether batch effects are present in either of the blocks of data. We start by looking at the distribution of M values. Do these show any obvious correlation with batch?
 
 ```{r batch_effects}
+this_meta <- data.frame(ffpe_meta)
+eval.points <- seq(from = -10, to = 10, by = 0.05)
+fhat <- apply(ffpe_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
+df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
+colnames(df) <- this_meta$patient_id
+rownames(this_meta) <- this_meta$patient_id
+
+df_long <- melt(cbind(eval.points, df), id = 'eval.points')
+df_long$batch <- this_meta[df_long$variable, 'batch']
+
+ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in FFPE", x='M value', y='Density')
+
+this_meta <- data.frame(cc_meta)
+fhat <- apply(cc_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
+df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
+colnames(df) <- this_meta$patient_id
+
+pid_to_batch <- this_meta[this_meta$cell_type == 'GIC',]
+pid_to_batch <- pid_to_batch[!duplicated(pid_to_batch$patient_id),]
+rownames(pid_to_batch) <- pid_to_batch$patient_id
+
+df_long <- melt(cbind(eval.points, df), id = 'eval.points')
+df_long$batch <- pid_to_batch[df_long$variable, 'batch']
+
+ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in cell culture", x='M value', y='Density')
 ```
+
+It appears not, certainly for the cell culture results. FFPE results are trickier to interpret, because the distributions appear more variable. This may be due to differing tumour purity and cell type content?
+
+Let's plot a PCA of the most variable probes.
+
+```{r batch_effects_pca}
+n_probe <- 5000
+ffpe_mad <- as.data.frame(rowMads(ffpe_m))
+rownames(ffpe_mad) <- rownames(ffpe_m)
+ix <- rownames(ffpe_mad)[order(ffpe_mad, decreasing = T)[1:n_probe]]
+ffpe_pca <- data.frame(prcomp(ffpe_m[ix,])$rotation)
+ffpe_pca$batch <- ffpe_meta[rownames(ffpe_pca), 'batch']
+ggplot(ffpe_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d FFPE M values", n_probe))
+
+this_cc <- cc_m[, cc_meta$cell_type == 'GIC']
+cc_mad <- as.data.frame(rowMads(this_cc))
+rownames(cc_mad) <- rownames(this_cc)
+ix <- rownames(cc_mad)[order(cc_mad, decreasing = T)[1:n_probe]]
+cc_pca <- data.frame(prcomp(this_cc[ix,])$rotation)
+cc_pca$batch <- cc_meta[rownames(cc_pca), 'batch']
+ggplot(cc_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d cell culture M values", n_probe))
+
+```
+
+
