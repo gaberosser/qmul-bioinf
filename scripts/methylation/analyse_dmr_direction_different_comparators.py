@@ -213,26 +213,41 @@ if __name__ == "__main__":
         axs[1].set_ylabel('Number DMRs')
         fig.savefig(os.path.join(outdir, '%s_direction.png' % k.replace(' ', '_')), dpi=200)
 
-    # limit to the PIDs that are present in all comparisons
+    # set True to limit to the PIDs that are present in all comparisons
+    limit_to_common_comparisons = False
+
     # compute specific DMRs and plot direction
     common_pids = sorted(setops.reduce_intersection(*pids_included.values()))
+
     dmrs_specific = {}
     for k in pids_included:
+        if limit_to_common_comparisons:
+            this_pids = common_pids
+        else:
+            this_pids = pids_included[k]
         dmrs_specific[k] = {}
-        this = [all_results[k].results_significant[p] for p in common_pids]
+        this = [all_results[k].results_significant[p] for p in this_pids]
         this_specific = setops.specific_features(*this)
-        for p, cids, spec_dict in zip(common_pids, this_specific, this):
+        for p, cids, spec_dict in zip(this_pids, this_specific, this):
             if p not in dmrs_specific[k]:
                 dmrs_specific[k][p] = {}
             for cid in cids:
                 dmrs_specific[k][p][cid] = spec_dict[cid]
 
     for k in pids_included:
-        fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, figsize=(5.5, 4.6))
+
+        if limit_to_common_comparisons:
+            this_pids = common_pids
+        else:
+            this_pids = pids_included[k]
+
+        # scale figure width according to number of PIDs
+        fig_width = 5.5 + 0.24 * (len(this_pids) - 4)
+        fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, figsize=(fig_width, 4.6))
 
         addd.direction_of_dm_bar_plot(
             all_results[k].results_significant,
-            pids=common_pids,
+            pids=this_pids,
             as_pct=True,
             ax=axs[0, 0],
             legend=False
@@ -240,7 +255,7 @@ if __name__ == "__main__":
         axs[0, 0].set_ylabel('% DMRs')
         addd.direction_of_dm_bar_plot(
             all_results[k].results_significant,
-            pids=common_pids,
+            pids=this_pids,
             as_pct=False,
             ax=axs[1, 0],
             legend=False
@@ -250,7 +265,7 @@ if __name__ == "__main__":
 
         addd.direction_of_dm_bar_plot(
             dmrs_specific[k],
-            pids=common_pids,
+            pids=this_pids,
             as_pct=True,
             ax=axs[0, 1],
             legend=False
@@ -258,13 +273,13 @@ if __name__ == "__main__":
         axs[0, 1].set_title('Specific DMR list')
         addd.direction_of_dm_bar_plot(
             dmrs_specific[k],
-            pids=common_pids,
+            pids=this_pids,
             as_pct=False,
             ax=axs[1, 1],
             legend=False
         )
         fig.tight_layout()
-        fig.savefig(os.path.join(outdir, '%s_direction.png' % k.replace(' ', '_')), dpi=200)
+        fig.savefig(os.path.join(outdir, '%s_direction_panel.png' % k.replace(' ', '_')), dpi=200)
 
     # Same KS plot we've used on the full syngeneic dataset
     from scripts.methylation.analyse_dmr_direction_and_distribution import ks_test_dmr_locations

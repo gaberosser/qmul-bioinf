@@ -11,12 +11,15 @@ import os
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output
+from utils import output, log
 import references
+from settings import HGIC_LOCAL_DIR
 
 import plotly.plotly as py
 from plotly import graph_objs as go
 
+
+logger = log.get_console_logger()
 
 def generate_plotly_plot(
         res,
@@ -238,9 +241,56 @@ def plot_biplot(
     return fig, ax, res
 
 
+def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
+    # extract gene lists for pathway analysis
+    rad = (np.array(zip(*feat_dat)) ** 2).sum(axis=1) ** .5
+    val = np.quantile(rad, quantile)
+    ens = dat.index[rad >= val]
+    dif = ens.difference(de_res.index)
+    if len(dif):
+        logger.warning(
+            "%d of the genes selected on the biplot are NOT in the DE results: %s",
+            len(dif),
+            ', '.join(dif)
+        )
+    ens = ens.intersection(de_res.index)
+    this_de_res = de_res.loc[ens]
+
+    this_logfc = this_de_res[["%s_logFC" % p for p in pids]]
+    if alpha is not None:
+        this_fdr = this_de_res[["%s_FDR" % p for p in pids]].fillna(1.)
+
+    if alpha is not None:
+        ens_keep = (this_fdr <= alpha).sum(axis=1) > 0
+        this_logfc = this_logfc.loc[ens_keep]
+        this_fdr = this_fdr.loc[ens_keep]
+        logger.info("Removing %d genes that were not significantly DE in any comparison", (~ens_keep).sum())
 
 
-if __name__ == "__main__":
+    if mean_logfc:
+        this_mean_logfc = np.nanmean(this_logfc, axis=1)
+        # are there any non-concordant genes? if so, warn and remove
+        non_conc = np.array(
+            [np.sign(v[v.abs() > min_logfc]).dropna().unique().size > 1 for _, v in this_logfc.iterrows()])
+        if non_conc.any():
+            logger.warning(
+                "%d selected genes were not concordant across DE results: %s. We'll set the logFC to blank for these.",
+                non_conc.sum(),
+                ens[non_conc]
+            )
+            this_mean_logfc[non_conc] = np.nan
+        return pd.Series(this_mean_logfc, index=ens)
+    else:
+        res = this_logfc
+        if alpha is not None:
+            to_drop = (this_fdr > alpha)
+            this_fdr.values[to_drop] = np.nan
+            this_logfc.values[to_drop] = np.nan
+            res = pd.concat((this_logfc, this_fdr), axis=1)
+        return res
+
+
+if __name__ == '__main__':
     """
     Idea here: recreate the analysis Sven carried out, generating biplots for the RNA-Seq data.
     We can then extend this idea to methylation (?)
@@ -253,8 +303,26 @@ if __name__ == "__main__":
     """
     outdir = output.unique_output_dir()
     publish_plotly = False
+    pids = consts.PIDS
 
+    alpha = 0.05
     eps = 1.  # offset applied during log transform
+
+    min_logfc = consts.DE_PARAMS['lfc']
+
+    # quantiles to use for defining genes of interest
+    # these lists can then be sent to IPA or similar
+    quantiles = [0.99, 0.995]
+
+    # path to syngeneic DE results
+    fn_de_res = os.path.join(
+        HGIC_LOCAL_DIR,
+        'current/core_pipeline/rnaseq/',
+        'full_de_syngeneic_only.xlsx'
+    )
+
+    # load DE results
+    de_res = pd.read_excel(fn_de_res, index_col=0)
 
     # load data for iNSC and GBM (Salmon TPM)
     obj = loader.load_by_patient(consts.PIDS, source='salmon')
@@ -297,7 +365,6 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated_unweighted.png" % dims), dpi=200)
 
-
     fig, ax, res = plot_biplot(
         dat,
         obj.meta,
@@ -308,6 +375,8 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
 
+    dims = (0, 1)  # for copy paste convenience
+    selection_radius = 0.6
     fig, ax, res = plot_biplot(
         dat,
         obj.meta,
@@ -318,6 +387,14 @@ if __name__ == "__main__":
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+
+    # extract gene lists for pathway analysis
+    for q in quantiles:
+        for_export = extract_gois(res['feature_data'], de_res, q)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
 
     if publish_plotly:
         selection_radius = 0.6
@@ -353,6 +430,8 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
 
+    dims = (1, 2)
+    selection_radius = 0.3
     fig, ax, res = plot_biplot(
         dat,
         obj.meta,
@@ -363,6 +442,14 @@ if __name__ == "__main__":
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+
+    # extract gene lists for pathway analysis
+    for q in quantiles:
+        for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
 
     if publish_plotly:
         selection_radius = 0.3
@@ -396,6 +483,8 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
 
+    dims = (2, 3)
+    selection_radius = 0.25
     fig, ax, res = plot_biplot(
         dat,
         obj.meta,
@@ -406,6 +495,14 @@ if __name__ == "__main__":
         scale=0.05
     )
     fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+
+    # extract gene lists for pathway analysis
+    for q in quantiles:
+        for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
 
     if publish_plotly:
         selection_radius = 0.25
@@ -479,15 +576,101 @@ if __name__ == "__main__":
     )
     fig.savefig(os.path.join(outdir, "VGF_TMEFF2.png"), dpi=200)
 
+    ## TODO: consider annotating the biplot gene markers based on the DE results
+    # For example, highlight patient-specific genes with different colours
+    # For example, highlight the most deregulated genes
 
+    dims = (0, 1)  # for copy paste convenience
+    fig, ax, res = plot_biplot(
+        dat,
+        obj.meta,
+        dims,
+        scatter_colours,
+        scatter_markers,
+        scale=0.05
+    )
 
-    # TODO
-#     tt = ax.text(
-#         for_scatter[0].loc[e],
-#         for_scatter[1].loc[e],
-#         txt,
-#         color=c,
-#         weight=weight
-#     )
-#     texts.append(tt)
-# adjust_text(texts, arrowprops=dict(arrowstyle='->', color='black'), ax=ax)
+    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
+    feat_dat.columns = ['x', 'y']
+
+    # get mean logFC to order genes
+    mean_logfc = pd.Series(np.nanmean(de_res[["%s_logFC" % p for p in pids]], axis=1), index=de_res.index)
+    mean_logfc.dropna(inplace=True)
+
+    ix = feat_dat.index.intersection(mean_logfc.index)
+    mean_logfc = mean_logfc.loc[ix]
+
+    mean_logfc = mean_logfc.loc[mean_logfc.abs().sort_values(ascending=False).index]
+
+    ax.scatter(
+        feat_dat.loc[mean_logfc.index[:50], 'x'],
+        feat_dat.loc[mean_logfc.index[:50], 'y'],
+        c='k',
+        facecolor='k',
+        marker='^',
+    )
+    gg = references.ensembl_to_gene_symbol(mean_logfc.index[:50]).dropna()
+    for k, v in feat_dat.loc[mean_logfc.index[:50]].iterrows():
+        g = gg[k] if k in gg else k
+        ax.text(v['x'], v['y'], g)
+
+    dims = (2, 3)  # for copy paste convenience
+    fig, ax, res = plot_biplot(
+        dat,
+        obj.meta,
+        dims,
+        scatter_colours,
+        scatter_markers,
+        scale=0.05
+    )
+
+    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
+    feat_dat.columns = ['x', 'y']
+
+    # get mean logFC to order genes
+    mean_logfc = pd.Series(np.nanmean(de_res[["%s_logFC" % p for p in pids]], axis=1), index=de_res.index)
+    mean_logfc.dropna(inplace=True)
+
+    ix = feat_dat.index.intersection(mean_logfc.index)
+    mean_logfc = mean_logfc.loc[ix]
+
+    mean_logfc = mean_logfc.loc[mean_logfc.abs().sort_values(ascending=False).index]
+
+    ax.scatter(
+        feat_dat.loc[mean_logfc.index[:50], 'x'],
+        feat_dat.loc[mean_logfc.index[:50], 'y'],
+        c='k',
+        facecolor='k',
+        marker='^',
+    )
+    gg = references.ensembl_to_gene_symbol(mean_logfc.index[:50]).dropna()
+
+    # repeat but with DE genes on present in a few patients
+
+    dims = (2, 3)  # for copy paste convenience
+    fig, ax, res = plot_biplot(
+        dat,
+        obj.meta,
+        dims,
+        scatter_colours,
+        scatter_markers,
+        scale=0.05
+    )
+
+    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
+    feat_dat.columns = ['x', 'y']
+
+    # get mean logFC to order genes
+    ix = dat.loc[:, dat.columns.str.contains('GBM')].std(axis=1).sort_values(ascending=False).index[:50]
+
+    ax.scatter(
+        feat_dat.loc[ix, 'x'],
+        feat_dat.loc[ix, 'y'],
+        c='k',
+        facecolor='k',
+        marker='^',
+    )
+    gg = references.ensembl_to_gene_symbol(ix).dropna()
+    for k, v in feat_dat.loc[ix].iterrows():
+        g = gg[k] if k in gg else k
+        ax.text(v['x'], v['y'], g)
