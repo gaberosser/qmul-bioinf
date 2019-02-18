@@ -12,8 +12,9 @@ from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
 from utils import output, log
+from stats import decomposition
 import references
-from settings import HGIC_LOCAL_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
 
 import plotly.plotly as py
 from plotly import graph_objs as go
@@ -128,6 +129,7 @@ def plot_biplot(
         scatter_colours,
         scatter_markers,
         annotate_features_radius=None,
+        annotate_features_quantile=None,
         adjust_annotation=True,
         adjust_annotation_kwargs=None,
         **kwargs
@@ -143,6 +145,12 @@ def plot_biplot(
     :param **kwargs: Passed to pca.biplot()
     :return:
     """
+    if annotate_features_radius is not None and annotate_features_quantile is not None:
+        raise AttributeError("Supply EITHER annotate_features_radius OR annotate_features_quantile.")
+
+    if annotate_features_quantile is not None:
+        assert 0 < annotate_features_quantile < 1, "annotate_features_quantile must be between 0 and 1 (not inclusive)."
+
     if adjust_annotation_kwargs is None:
         adjust_annotation_kwargs = {}
 
@@ -210,15 +218,18 @@ def plot_biplot(
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
 
-    # arrowprops = {
-    #     'color': 'black',
-    #     'linewidth': 1.,
-    #     'arrowstyle': '-',
-    # }
+    selected = None
 
     if annotate_features_radius is not None:
         # annotate most influential genes
         selected = pca.highlight_biplot_features(feat_x, feat_y, annotate_features_radius, ax)
+
+    if annotate_features_quantile is not None:
+        rad = (feat_x ** 2 + feat_y ** 2) ** .5
+        cut = sorted(rad)[int(len(rad) * annotate_features_quantile)]
+        selected = rad >= cut
+
+    if selected is not None:
         genes_selected = dat.index[selected]
         symbols_selected = references.ensembl_to_gene_symbol(genes_selected)
 
@@ -229,13 +240,6 @@ def plot_biplot(
                 text_handles.append(ax.text(feat_x[ix], feat_y[ix], gs, zorder=10))
         # rearrange them to avoid overlaps
         if adjust_annotation:
-            # adjust_text(
-            #     text_handles,
-            #     arrowprops=arrowprops,
-            #     text_from_points=False,
-            #     draggable=False,
-            #     ax=ax
-            # )
             adjuster.adjust_text_radial_plus_repulsion(text_handles, **adjust_annotation_kwargs)
 
     return fig, ax, res
@@ -349,6 +353,9 @@ if __name__ == '__main__':
     # fill back in with ENS where no gene symbol is available
     dat_with_gs.loc[dat_with_gs['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs.index[dat_with_gs['Gene Symbol'].isnull()]
 
+    # dict to store 'selected' genes for later use
+    selected_by_quantile = {}
+
     dims = (0, 1)
     selection_radius = 0.6
 
@@ -395,6 +402,17 @@ if __name__ == '__main__':
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, dims[1] + 1, q)),
             sep='\t'
         )
+        selected_by_quantile.setdefault(dims, {})[q] = for_export
+        fig, ax, res = plot_biplot(
+            dat,
+            obj.meta,
+            dims,
+            scatter_colours,
+            scatter_markers,
+            annotate_features_quantile=q,
+            scale=0.05
+        )
+        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
 
     if publish_plotly:
         selection_radius = 0.6
@@ -450,6 +468,17 @@ if __name__ == '__main__':
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
             sep='\t'
         )
+        selected_by_quantile.setdefault(dims, {})[q] = for_export
+        fig, ax, res = plot_biplot(
+            dat,
+            obj.meta,
+            dims,
+            scatter_colours,
+            scatter_markers,
+            annotate_features_quantile=q,
+            scale=0.05
+        )
+        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
 
     if publish_plotly:
         selection_radius = 0.3
@@ -503,6 +532,17 @@ if __name__ == '__main__':
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
             sep='\t'
         )
+        selected_by_quantile.setdefault(dims, {})[q] = for_export
+        fig, ax, res = plot_biplot(
+            dat,
+            obj.meta,
+            dims,
+            scatter_colours,
+            scatter_markers,
+            annotate_features_quantile=q,
+            scale=0.05
+        )
+        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
 
     if publish_plotly:
         selection_radius = 0.25
@@ -674,3 +714,73 @@ if __name__ == '__main__':
     for k, v in feat_dat.loc[ix].iterrows():
         g = gg[k] if k in gg else k
         ax.text(v['x'], v['y'], g)
+
+    # multi-axis plot showing the distribution of sample values in each component
+    res = decomposition.svd_for_biplot(dat)
+    ix = obj.meta.type == 'GBM'
+
+    n_plot = 6
+    fig, axs = plt.subplots(n_plot, 1, sharex=True)
+    big_ax = fig.add_subplot(111, frameon=False)
+    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+    big_ax.grid(False)
+
+    for i in range(n_plot):
+        ax = axs[i]
+
+        sns.kdeplot(
+            res['sample_dat'][i + 1][ix],
+            color='b',
+            ax=ax,
+            shade=True,
+            label='GBM' if i == 0 else None
+        )
+        ax.scatter(res['sample_dat'][i + 1][ix], np.zeros(ix.sum()), c='b', marker='|')
+        sns.kdeplot(
+            res['sample_dat'][i + 1][~ix],
+            color='r',
+            ax=ax,
+            shade=True,
+            label = 'iNSC' if i == 0 else None
+        )
+        ax.scatter(res['sample_dat'][i + 1][~ix], np.zeros((~ix).sum()), c='r', marker='|')
+
+        if i == 0:
+            ax.legend(loc='upper right')
+    axs[-1].set_xlabel('Sample value in PC')
+    big_ax.set_ylabel('Density (a.u.)')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "kde_pc_values.png"), dpi=200)
+
+    ## Run GO analysis using GOAtools
+    # TODO: if this works well, move to a module
+    from goatools import base
+    import wget
+
+    obo_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'go-basic.obo')
+    genetogo_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'gene2go')
+    genetoens_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'gene2ensembl.gz')
+    genetoens_url = "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2ensembl.gz"
+
+    obo_fn = base.download_go_basic_obo(obo_fn)
+    genetogo_fn = base.download_ncbi_associations(genetogo_fn)
+    if not os.path.isfile(genetoens_fn):
+        logger.info("Downloading RefGene-Ensembl converter from %s, saving to %s.", genetoens_url, genetoens_fn)
+        wget.download(genetoens_url, out=genetoens_fn)
+
+    def ens_to_entrez(ens, genetoens_fn):
+        gene2ens = pd.read_csv(genetoens_fn, header=0, sep='\t')
+        gene2ens = gene2ens.loc[gene2ens['#tax_id'] == 9606]
+        conv_df = gene2ens.loc[gene2ens.Ensembl_gene_identifier.isin(ens), ['GeneID', 'Ensembl_gene_identifier']]
+        # reduce to unique (Entrez ID, Ensembl ID) pairs
+        conv = collections.defaultdict(list)
+        for _, row in conv_df.iterrows():
+            conv[row['Ensembl_gene_identifier']].append(conv['GeneID'])
+
+        res = []
+        for e in ens:
+            res.extend(conv.get(e, []))
+        # alternative: but this takes the LAST definition for any given Entrez ID, ignoring any previous duplicates
+        # conv = dict(set([tuple(t) for t in conv_df.values.tolist()]))
+        return res
+
