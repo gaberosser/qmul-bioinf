@@ -397,6 +397,13 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        val = np.quantile(rad, q)
+        dat.loc[rad >= val].to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
+
         for_export = extract_gois(res['feature_data'], de_res, q)
         for_export.to_csv(
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, dims[1] + 1, q)),
@@ -463,6 +470,13 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        val = np.quantile(rad, q)
+        dat.loc[rad >= val].to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
+
         for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
         for_export.to_csv(
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
@@ -527,6 +541,13 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
+        val = np.quantile(rad, q)
+        dat.loc[rad >= val].to_csv(
+            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
+            sep='\t'
+        )
+
         for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
         for_export.to_csv(
             os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
@@ -685,7 +706,7 @@ if __name__ == '__main__':
     )
     gg = references.ensembl_to_gene_symbol(mean_logfc.index[:50]).dropna()
 
-    # repeat but with DE genes on present in a few patients
+    # repeat but with DE genes present in a few patients
 
     dims = (2, 3)  # for copy paste convenience
     fig, ax, res = plot_biplot(

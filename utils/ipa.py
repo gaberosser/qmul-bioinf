@@ -58,7 +58,10 @@ def load_raw_reports(indir, file_pattern, *args):
         # add ngenes column
         this.insert(3, 'n_gene', this.genes.str.split(',').apply(len))
         this.index = [x.decode('utf-8') for x in this.index]
-        res[tup] = this
+        k = tup
+        if len(k) == 1:
+            k = k[0]
+        res[k] = this
     return res
 
 

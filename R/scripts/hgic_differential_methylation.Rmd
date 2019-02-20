@@ -1,0 +1,196 @@
+---
+title: "Implementing multiple Differential Methylation Analysis methods"
+author: "Gabriel Rosser"
+date: "20 February 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = normalizePath('..'))
+
+knitr::opts_chunk$set(echo = TRUE)
+
+require(limma)
+require("ChAMP")
+require("minfi")
+require("wateRmelon")
+require("data.table")
+require(sva)
+require(RColorBrewer)
+require(openxlsx)
+require(ks)
+require("ggplot2")
+require("reshape")
+
+# this specifies the normalisation algorithm to use
+norm.fun <- 'swan'
+alpha <- 0.01
+min_lfc <- 1.
+
+```
+
+## Load data and prepare metadata
+
+Load the data from the raw `idat` files. We'll load in two blocks: FFPE and cell culture. This ensures that all samples are normalised together for each preparation type.
+
+```{r echo=FALSE}
+source('_settings.R')
+source("methylation/loader.R")
+
+cc_pids <- c('018', '019', '030', '031', '017', '050', '054', '061', '026', '052')
+
+cc_samples <- c(
+  "GBM018_P12",
+  "GBM018_P10",
+  "DURA018_NSC_N4_P4",
+  "DURA018_NSC_N2_P6",
+  "GBM019_P4",
+  "GBM019_P3n6",
+  "DURA019_NSC_N8C_P2",
+  "DURA019_NSC_N5C1_P2",
+  "GBM030_P9",
+  "GBM030_P5",
+  "DURA030_NSC_N16B6_P1",
+  "DURA030_NSC_N9_P2",
+  "GBM031_P7",
+  "GBM031_P4",
+  "DURA031_NSC_N44B_P2",
+  "DURA031_NSC_N44F_P3",
+  "GBM017_P3",
+  "GBM017_P4",
+  "DURA017_NSC_N3C5_P4",
+  "GBM050_P7n8",
+  "GBM050_P9",
+  "DURA050_NSC_N12_P3",
+  "DURA050_NSC_N16_P4",
+  "GBM054_P4",
+  "GBM054_P6",
+  "DURA054_NSC_N3C_P2",
+  "DURA054_NSC_N2E_P1",
+  "GBM061_P3",
+  "GBM061_P5",
+  "DURA061_NSC_N4_P2",
+  "DURA061_NSC_N1_P3n4",
+  "GBM026_P8",
+  "GBM026_P3n4",
+  "DURA026_NSC_N31D_P5",
+  "GBM052_P6n7",
+  "GBM052_P4n5",
+  "DURA052_NSC_N4_P3",
+  "DURA052_NSC_N5_P2"
+)
+
+cc_base.dirs <- c(
+  file.path(data.dir.raid, 'methylation', "2017-05-12"),
+  file.path(data.dir.raid, 'methylation', "2016-12-19_ucl_genomics"),
+  file.path(data.dir.raid, 'methylation', "2017-09-19"),
+  file.path(data.dir.raid, 'methylation', "2018-01-12"),
+  file.path(data.dir.raid, 'methylation', "2017-08-23"),
+  file.path(data.dir.raid, 'methylation', "2018-04-09")
+)
+
+lst <- get_filenames_from_batches(cc_base.dirs, cc_samples)
+
+cc_res <- process_idats(lst$in.files, lst$snames, norm.fun=norm.fun, force = T)
+
+cc_beta <- cc_res$beta
+cc_m <- MfromBeta(cc_beta)
+
+cc_meta <- data.frame(row.names = lst$snames)
+cc_meta$batch <- lst$batches
+cc_meta$patient_id <- gsub("[^0-9]*([0-9]{3}).*", "\\1", rownames(cc_meta), perl=T)
+cc_meta$cell_type <- "iNSC"
+cc_meta[grep('GBM', rownames(cc_meta)), 'cell_type'] <- 'GIC'
+
+```
+## `limma`
+
+This package allows us to build a GLM and identify differentially methylated probes (DMPs). This package was originally designed for gene expression microarrays, but it is also applicable to methylation arrays. We're going to mimic the DE approach by pooling all samples for the purpose of dispersion estimation, then iterating over patient-specific contrasts.
+
+```{r}
+pid <- cc_meta$patient_id
+ct <- cc_meta$cell_type
+group <- paste(pid, ct, sep = '_')
+
+design <- model.matrix(~0 + group)
+
+contrast_string = c()
+for (p in cc_pids) {
+  a <- paste0("group", p, "_GIC")
+  b <- paste0("group", p, "_iNSC")
+  contrast_string <- c(contrast_string, paste(a, b, sep = '-'))
+}
+the_contrasts <- makeContrasts(contrasts = contrast_string, levels=design)
+
+fit.reduced <- lmFit(cc_m, design)
+
+fit.reduced <- contrasts.fit(fit.reduced, the_contrasts)
+fit.reduced <- eBayes(fit.reduced, trend = T, robust=T)
+
+res_limma <- list()
+for (i in seq(ncol(the_contrasts))) {
+  p <- cc_pids[i]
+  res_limma[[p]] <- topTable(fit.reduced, coef=i, n=Inf, lfc=min_lfc, p.value = alpha)
+}
+
+# plot pct by direction
+df <- data.frame(row.names = c('Hyper', 'Hypo'))
+for (p in names(res_limma)) {
+  n_pos <- sum(res_limma[[p]]$logFC > 0)
+  n_neg <- sum(res_limma[[p]]$logFC < 0)
+  df[, p] <- c(n_pos, n_neg)
+}
+df.pct <- t(t(df) / colSums(df)) * 100.
+
+df.long <- melt(as.matrix(df))
+colnames(df.long) <- c('Direction', 'Patient', 'Value')
+pid_col <- sprintf("%03d", df.long$Patient)
+df.long$Patient <- factor(pid_col, levels = cc_pids)
+
+df.pct.long <- melt(df.pct)
+colnames(df.pct.long) <- c('Direction', 'Patient', 'Value')
+pid_col <- sprintf("%03d", df.pct.long$Patient)
+df.pct.long$Patient <- factor(pid_col, levels = cc_pids)
+
+# numbers chart
+ggplot(df.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title="limma DMP, full list")
+
+# full list bar chart (%)
+ggplot(df.pct.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title="limma DMP, full list", y='% by direction')
+
+# specific list %
+
+```
+
+
+## `DMRcate`
+
+This workflow essentially proceeds by first running DMP analysis (in `limma`), then aggregating the outputs.
+```{r batch_effects}
+fhat <- apply(cc_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
+df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
+colnames(df) <- cc_meta$patient_id
+
+pid_to_batch <- this_meta[cc_meta$cell_type == 'GIC',]
+pid_to_batch <- pid_to_batch[!duplicated(pid_to_batch$patient_id),]
+rownames(pid_to_batch) <- pid_to_batch$patient_id
+
+df_long <- melt(cbind(eval.points, df), id = 'eval.points')
+df_long$batch <- pid_to_batch[df_long$variable, 'batch']
+
+ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in cell culture", x='M value', y='Density')
+```
+
+```{r batch_effects_pca}
+this_cc <- cc_m[, cc_meta$cell_type == 'GIC']
+cc_mad <- as.data.frame(rowMads(this_cc))
+rownames(cc_mad) <- rownames(this_cc)
+ix <- rownames(cc_mad)[order(cc_mad, decreasing = T)[1:n_probe]]
+cc_pca <- data.frame(prcomp(this_cc[ix,])$rotation)
+cc_pca$batch <- cc_meta[rownames(cc_pca), 'batch']
+ggplot(cc_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d cell culture M values", n_probe))
+```
+
+

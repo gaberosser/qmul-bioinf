@@ -1,0 +1,203 @@
+---
+title: "Applying EpiDISH cell decomposition algorithm to hGIC methylation data"
+author: "Gabriel Rosser"
+date: "20 February 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = normalizePath('..'))
+
+knitr::opts_chunk$set(echo = TRUE)
+
+require("EpiDISH")
+require(limma)
+require("ChAMP")
+require("minfi")
+require("wateRmelon")
+require("data.table")
+require(sva)
+require(RColorBrewer)
+require(openxlsx)
+require(ks)
+require("ggplot2")
+require("reshape")
+
+# this specifies the normalisation algorithm to use
+norm.fun <- 'swan'
+nhid_to_patient_id <- list("NH16-2214"="052",
+"NH16-2806"="061",
+"NH16-270"="026",
+"NH16-616"="030",
+"NH16-1976"="049",
+"NH16-1574"="044",
+"NH16-677"="031",
+"NH15-1877"="018",
+"NH15-2101"="019",
+"NH16-2255"="054",
+"NH16-2063"="050",
+"NH15-1661"="017"
+)
+
+```
+
+## Load data and prepare metadata
+
+Load the data from the raw `idat` files. We'll load in two blocks: FFPE and cell culture. This ensures that all samples are normalised together for each preparation type.
+
+```{r echo=FALSE}
+source('_settings.R')
+source("methylation/loader.R")
+
+ffpe_samples <- c(
+  'NH15-1877',
+  'NH15-2101',
+  'NH16-616',
+  'NH16-677',
+  'NH15-1661',
+  'NH16-2063',
+  'NH16-2255',
+  'NH16-2806',
+  'NH16-270',
+  'NH16-2214'
+)
+
+ffpe_base.dirs <- c(
+  file.path(data.dir.raid, 'methylation', '2016-06-10_brandner'),
+  file.path(data.dir.raid, 'methylation', '2017-01-17_brandner'),
+  file.path(data.dir.raid, 'methylation', '2017-02-09_brandner')
+)
+
+cc_samples <- c(
+  "GBM018_P12",
+  "GBM018_P10",
+  "DURA018_NSC_N4_P4",
+  "DURA018_NSC_N2_P6",
+  "GBM019_P4",
+  "GBM019_P3n6",
+  "DURA019_NSC_N8C_P2",
+  "DURA019_NSC_N5C1_P2",
+  "GBM030_P9",
+  "GBM030_P5",
+  "DURA030_NSC_N16B6_P1",
+  "DURA030_NSC_N9_P2",
+  "GBM031_P7",
+  "GBM031_P4",
+  "DURA031_NSC_N44B_P2",
+  "DURA031_NSC_N44F_P3",
+  "GBM017_P3",
+  "GBM017_P4",
+  "DURA017_NSC_N3C5_P4",
+  "GBM050_P7n8",
+  "GBM050_P9",
+  "DURA050_NSC_N12_P3",
+  "DURA050_NSC_N16_P4",
+  "GBM054_P4",
+  "GBM054_P6",
+  "DURA054_NSC_N3C_P2",
+  "DURA054_NSC_N2E_P1",
+  "GBM061_P3",
+  "GBM061_P5",
+  "DURA061_NSC_N4_P2",
+  "DURA061_NSC_N1_P3n4",
+  "GBM026_P8",
+  "GBM026_P3n4",
+  "DURA026_NSC_N31D_P5",
+  "GBM052_P6n7",
+  "GBM052_P4n5",
+  "DURA052_NSC_N4_P3",
+  "DURA052_NSC_N5_P2"
+)
+
+cc_base.dirs <- c(
+  file.path(data.dir.raid, 'methylation', "2017-05-12"),
+  file.path(data.dir.raid, 'methylation', "2016-12-19_ucl_genomics"),
+  file.path(data.dir.raid, 'methylation', "2017-09-19"),
+  file.path(data.dir.raid, 'methylation', "2018-01-12"),
+  file.path(data.dir.raid, 'methylation', "2017-08-23"),
+  file.path(data.dir.raid, 'methylation', "2018-04-09")
+)
+
+lst <- get_filenames_from_batches(ffpe_base.dirs, ffpe_samples)
+
+res <- process_idats(lst$in.files, lst$snames, norm.fun=norm.fun)
+
+ffpe_beta <- res$beta
+ffpe_m <- MfromBeta(ffpe_beta)
+
+ffpe_meta <- data.frame(row.names = lst$snames)
+ffpe_meta$batch <- lst$batches
+ffpe_meta$patient_id <- nhid_to_patient_id[rownames(ffpe_meta)]
+
+lst <- get_filenames_from_batches(cc_base.dirs, cc_samples)
+
+cc_res <- process_idats(lst$in.files, lst$snames, norm.fun=norm.fun, force = T)
+
+cc_beta <- cc_res$beta
+cc_m <- MfromBeta(cc_beta)
+
+cc_meta <- data.frame(row.names = lst$snames)
+cc_meta$batch <- lst$batches
+cc_meta$patient_id <- gsub("[^0-9]*([0-9]{3}).*", "\\1", rownames(cc_meta), perl=T)
+cc_meta$cell_type <- "iNSC"
+cc_meta[grep('GBM', rownames(cc_meta)), 'cell_type'] <- 'GIC'
+
+```
+## Check for batch effects
+
+We're interested in whether batch effects are present in either of the blocks of data. We start by looking at the distribution of M values. Do these show any obvious correlation with batch?
+
+```{r batch_effects}
+this_meta <- data.frame(ffpe_meta)
+eval.points <- seq(from = -10, to = 10, by = 0.05)
+fhat <- apply(ffpe_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
+df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
+colnames(df) <- this_meta$patient_id
+rownames(this_meta) <- this_meta$patient_id
+
+df_long <- melt(cbind(eval.points, df), id = 'eval.points')
+df_long$batch <- this_meta[df_long$variable, 'batch']
+
+ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in FFPE", x='M value', y='Density')
+
+this_meta <- data.frame(cc_meta)
+fhat <- apply(cc_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
+df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
+colnames(df) <- this_meta$patient_id
+
+pid_to_batch <- this_meta[this_meta$cell_type == 'GIC',]
+pid_to_batch <- pid_to_batch[!duplicated(pid_to_batch$patient_id),]
+rownames(pid_to_batch) <- pid_to_batch$patient_id
+
+df_long <- melt(cbind(eval.points, df), id = 'eval.points')
+df_long$batch <- pid_to_batch[df_long$variable, 'batch']
+
+ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in cell culture", x='M value', y='Density')
+```
+
+It appears not, certainly for the cell culture results. FFPE results are trickier to interpret, because the distributions appear more variable. This may be due to differing tumour purity and cell type content?
+
+Let's plot a PCA of the most variable probes.
+
+```{r batch_effects_pca}
+n_probe <- 5000
+ffpe_mad <- as.data.frame(rowMads(ffpe_m))
+rownames(ffpe_mad) <- rownames(ffpe_m)
+ix <- rownames(ffpe_mad)[order(ffpe_mad, decreasing = T)[1:n_probe]]
+ffpe_pca <- data.frame(prcomp(ffpe_m[ix,])$rotation)
+ffpe_pca$batch <- ffpe_meta[rownames(ffpe_pca), 'batch']
+ggplot(ffpe_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d FFPE M values", n_probe))
+
+this_cc <- cc_m[, cc_meta$cell_type == 'GIC']
+cc_mad <- as.data.frame(rowMads(this_cc))
+rownames(cc_mad) <- rownames(this_cc)
+ix <- rownames(cc_mad)[order(cc_mad, decreasing = T)[1:n_probe]]
+cc_pca <- data.frame(prcomp(this_cc[ix,])$rotation)
+cc_pca$batch <- cc_meta[rownames(cc_pca), 'batch']
+ggplot(cc_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d cell culture M values", n_probe))
+
+```
+
+
