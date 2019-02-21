@@ -1164,16 +1164,34 @@ if __name__ == "__main__":
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
 
+    load_preprep_data = True
+
     # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
     write_bed_files = False
 
     outdir = output.unique_output_dir()
     DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
 
-    me_obj, anno = tsgd.load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
-    me_data = me_obj.data
-    me_meta = me_obj.meta
-    me_meta.insert(0, 'patient_id', me_meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
+    # test norming method by loading directly from a pre-prepared CSV file
+    meta_fn = 'R/hgic_gbm_insc_meta.csv'
+    m_fn = 'R/hgic_gbm_insc_mvals.csv'
+
+    if load_preprep_data:
+        anno = loader.load_illumina_methylationepic_annotation()
+        me_data = pd.read_csv(m_fn, header=0, index_col=0)
+        me_meta = pd.read_csv(meta_fn, header=0, index_col=0, dtype=str)
+        # for compatibility
+        me_meta.insert(2, 'type', me_meta.cell_type.str.replace('GIC', 'GBM'))
+        # reduce anno and data down to common probes
+        common_probes = anno.index.intersection(me_data.index)
+        anno = anno.loc[common_probes]
+        me_data = me_data.loc[common_probes]
+
+    else:
+        me_obj, anno = tsgd.load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
+        me_data = me_obj.data
+        me_meta = me_obj.meta
+        me_meta.insert(0, 'patient_id', me_meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results
@@ -1182,7 +1200,7 @@ if __name__ == "__main__":
     dmr_hash_dict = dict(dmr_params)
     dmr_hash_dict['norm_method'] = norm_method_s1
 
-    the_hash = tsgd.dmr_results_hash(me_obj.meta.index.tolist(), dmr_hash_dict)
+    the_hash = tsgd.dmr_results_hash(me_meta.index.tolist(), dmr_hash_dict)
     filename = 'dmr_results_paired_comparison.%d.pkl' % the_hash
     fn = os.path.join(DMR_LOAD_DIR, filename)
 

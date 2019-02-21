@@ -25,15 +25,29 @@ require("ggplot2")
 require("reshape")
 
 # this specifies the normalisation algorithm to use
-norm.fun <- 'swan'
+# norm.fun <- 'swan'
+norm.fun <- 'funnorm'
+
+# this is our FDR cutoff
 alpha <- 0.01
+
+# This specifies a minimum logFC
 min_lfc <- 1.
+
+# see description below
+load_preproc <- F
+# load_preproc <- T
 
 ```
 
 ## Load data and prepare metadata
 
-Load the data from the raw `idat` files. We'll load in two blocks: FFPE and cell culture. This ensures that all samples are normalised together for each preparation type.
+Two options here:
+
+1. Load the data from the raw `idat` files. This ensures that all samples are normalised together for each preparation type. However, it doesn't reflect the DMR process I have used in the past [`load_preproc = FALSE`].
+2. Load the data from pre-processed `csv` files. Data were normalised in the batches as they arrived [`load_preproc = TRUE`]. This is quite a lot faster.
+
+**NB** I have tested the effect of these two approaches on the downstream analysis in Python and the results are **not** affected. Therefore, option (2) seems easier.
 
 ```{r echo=FALSE}
 source('_settings.R')
@@ -91,18 +105,67 @@ cc_base.dirs <- c(
   file.path(data.dir.raid, 'methylation', "2018-04-09")
 )
 
-lst <- get_filenames_from_batches(cc_base.dirs, cc_samples)
+if (load_preproc) {
+  cc_beta <- list()
+  snames <- NULL
+  batches <- NULL
+  for (c in cc_base.dirs) {
+    this_batch <- split_path(c)[1]
+    
+    the_fname <- file.path(c, 'beta', paste0('beta_', norm.fun, '.csv.gz'))
+    if (! file.exists(the_fname)) {
+      stop(sprintf("File not found: %s", the_fname))
+    }
+    # get header
+    hdr <- scan(the_fname, sep=',', nlines=1, what = 'character')
+    ix <- hdr %in% cc_samples
+    load_cols <- c(1, which(ix))
+    snames <- c(snames, hdr[ix])
+    batches <- c(batches, rep(this_batch, sum(ix)))
+    
+    # load only selected data
+    this_dat <- fread(sprintf("zcat %s", the_fname), select = load_cols, data.table = F)
+    
+    # set row names and drop the unneeded col
+    rownames(this_dat) <- this_dat[,1]
+    this_dat$V1 <- NULL
+    
+    cc_beta[[c]] <- this_dat
+  }
+  # reduce to common probes
+  common_probes <- Reduce(intersect, lapply(cc_beta, rownames))
+  cc_beta <- lapply(cc_beta, function(x) {as.data.frame(t(x[common_probes,]))})
+  # bind by row then transpose and restore colnames
+  cc_beta <- as.data.frame(t(rbindlist(cc_beta)))
+  colnames(cc_beta) <- snames
 
-cc_res <- process_idats(lst$in.files, lst$snames, norm.fun=norm.fun, force = T)
+} else {
+  
+  lst <- get_filenames_from_batches(cc_base.dirs, cc_samples)
 
-cc_beta <- cc_res$beta
+  cc_res <- process_idats(lst$in.files, lst$snames, norm.fun=norm.fun, force = T)
+  cc_beta <- cc_res$beta
+  
+  snames <- lst$snames
+  batches <- lst$batches
+  
+}
+
 cc_m <- MfromBeta(cc_beta)
 
-cc_meta <- data.frame(row.names = lst$snames)
-cc_meta$batch <- lst$batches
+cc_meta <- data.frame(row.names = snames)
+cc_meta$batch <- batches
 cc_meta$patient_id <- gsub("[^0-9]*([0-9]{3}).*", "\\1", rownames(cc_meta), perl=T)
 cc_meta$cell_type <- "iNSC"
 cc_meta[grep('GBM', rownames(cc_meta)), 'cell_type'] <- 'GIC'
+
+if (!load_preproc) {
+  # save the data to a file, which we can use from within Python
+  write.csv(cc_meta,"hgic_gbm_insc_meta.csv")
+  write.csv(cc_m, sprintf("hgic_gbm_insc_mvals_%s.csv", norm.fun))
+}
+
+
 
 ```
 ## `limma`
@@ -161,6 +224,7 @@ ggplot(df.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identi
 ggplot(df.pct.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title="limma DMP, full list", y='% by direction')
 
 # specific list %
+# lapply(pids, function(x) {})
 
 ```
 
@@ -168,29 +232,4 @@ ggplot(df.pct.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='id
 ## `DMRcate`
 
 This workflow essentially proceeds by first running DMP analysis (in `limma`), then aggregating the outputs.
-```{r batch_effects}
-fhat <- apply(cc_m, MARGIN = 2, FUN = function(x) kde(x, eval.points = eval.points))
-df <- data.frame(lapply(fhat, FUN = function(x) x$estimate))
-colnames(df) <- cc_meta$patient_id
-
-pid_to_batch <- this_meta[cc_meta$cell_type == 'GIC',]
-pid_to_batch <- pid_to_batch[!duplicated(pid_to_batch$patient_id),]
-rownames(pid_to_batch) <- pid_to_batch$patient_id
-
-df_long <- melt(cbind(eval.points, df), id = 'eval.points')
-df_long$batch <- pid_to_batch[df_long$variable, 'batch']
-
-ggplot(df_long, aes(x=eval.points, y=value, hue=variable)) + geom_line(aes(color=batch), size=1., alpha=0.7) + labs(title="M value distribution in cell culture", x='M value', y='Density')
-```
-
-```{r batch_effects_pca}
-this_cc <- cc_m[, cc_meta$cell_type == 'GIC']
-cc_mad <- as.data.frame(rowMads(this_cc))
-rownames(cc_mad) <- rownames(this_cc)
-ix <- rownames(cc_mad)[order(cc_mad, decreasing = T)[1:n_probe]]
-cc_pca <- data.frame(prcomp(this_cc[ix,])$rotation)
-cc_pca$batch <- cc_meta[rownames(cc_pca), 'batch']
-ggplot(cc_pca, aes(x=PC1, y=PC2, hue=batch)) + geom_point(aes(color=batch)) + labs(title=sprintf("PCA of top %d cell culture M values", n_probe))
-```
-
 
