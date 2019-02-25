@@ -41,7 +41,7 @@ min_lfc <- 1.
 load_preproc <- T
 
 # initialise multiple cores
-registerDoParallel(cores = 8)
+registerDoParallel(cores = 4)
 
 
 ```
@@ -312,7 +312,7 @@ ggsave("full_dmps_limma_separate.png", plot = plt, device = 'png')
 res_limma.sep.spec <- get_specific_results(res_limma.sep)
 
 plt <- bar_plot(res_limma.sep.spec, pids = pids[pids != '026'])
-ggsave("specific_dmps_limma.png", plot = plt, device = 'png')
+ggsave("specific_dmps_limma_separate.png", plot = plt, device = 'png')
 
 ```
 
@@ -378,6 +378,7 @@ min_probes <- 6
 max_gap <- 400
 delta_m_cutoff <- 2.  # this is larger than I would use, but needs must: bumphunter is slow
 nperm <- 1000  # the number of perms used by bumphunter
+run_init_check <- F  # first time around, we should run a scan with no permutations to check that the number of candidates isn't outrageous
 
 # since we'll be running bumphunter a number of times, it's best to define the regions once in advance
 clusters <- clusterMaker(anno$chr, anno$pos, maxGap = max_gap)
@@ -398,26 +399,29 @@ this_anno <- anno[probes_keep,]
 # redefine clusters, all of which must now contain at least min_probes probes
 clusters <- clusterMaker(this_anno$chr, this_anno$pos, maxGap = max_gap)
 
-# first time around, we should run a scan with no permutations to check that the number of candidates isn't outrageous
-p <- pids[1]
-ix <- cc_meta$patient_id == p
-this_dat <- this_m[, ix]
-this_meta <- cc_meta[ix, ]
-ct <- factor(this_meta$cell_type, levels=c('iNSC', 'GIC'))
-design <- model.matrix(~ct)
-
-this_initscan <- bumphunter(
-  as.matrix(this_dat),
-  design,
-  chr = this_anno$chr,
-  pos = this_anno$pos,
-  coef = 2,
-  cutoff = delta_m_cutoff,
-  B = 0,
-  type = 'M',
-  cluster = clusters,
-  maxGap = max_gap
-)
+if (run_init_check) {
+  p <- pids[1]
+  ix <- cc_meta$patient_id == p
+  this_dat <- this_m[, ix]
+  this_meta <- cc_meta[ix, ]
+  ct <- factor(this_meta$cell_type, levels=c('iNSC', 'GIC'))
+  design <- model.matrix(~ct)
+  
+  this_initscan <- bumphunter(
+    as.matrix(this_dat),
+    design,
+    chr = this_anno$chr,
+    pos = this_anno$pos,
+    coef = 2,
+    cutoff = delta_m_cutoff,
+    B = 0,
+    type = 'M',
+    cluster = clusters,
+    maxGap = max_gap
+  )
+  # TODO: report result
+  
+}
 
 res_bumphunter <- list()
 
