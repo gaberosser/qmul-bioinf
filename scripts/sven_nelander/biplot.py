@@ -397,6 +397,21 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        # start with just PC1, etc.
+        x = np.abs(res['feature_data'][0])
+        val = np.quantile(x, q)
+        dat.loc[x >= val].to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        for_export = extract_gois((res['feature_data'][0],), de_res, q)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        selected_by_quantile.setdefault(dims[0], {})[q] = for_export
+
+
         rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
         val = np.quantile(rad, q)
         dat.loc[rad >= val].to_csv(
@@ -470,6 +485,19 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        x = np.abs(res['feature_data'][0])
+        val = np.quantile(x, q)
+        dat.loc[x >= val].to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        for_export = extract_gois((res['feature_data'][0],), de_res, q)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        selected_by_quantile.setdefault(dims[0], {})[q] = for_export
+
         rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
         val = np.quantile(rad, q)
         dat.loc[rad >= val].to_csv(
@@ -541,6 +569,19 @@ if __name__ == '__main__':
 
     # extract gene lists for pathway analysis
     for q in quantiles:
+        x = np.abs(res['feature_data'][0])
+        val = np.quantile(x, q)
+        dat.loc[x >= val].to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        for_export = extract_gois((res['feature_data'][0],), de_res, q)
+        for_export.to_csv(
+            os.path.join(outdir, "pc%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, q)),
+            sep='\t'
+        )
+        selected_by_quantile.setdefault(dims[0], {})[q] = for_export
+        
         rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
         val = np.quantile(rad, q)
         dat.loc[rad >= val].to_csv(
