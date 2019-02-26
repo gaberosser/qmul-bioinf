@@ -22,11 +22,13 @@ require(RColorBrewer)
 require(openxlsx)
 require(ks)
 require("ggplot2")
+require("gridExtra")
 require("reshape")
+require("doParallel")
 
 # this specifies the normalisation algorithm to use
-# norm.fun <- 'swan'
-norm.fun <- 'funnorm'
+norm.fun <- 'swan'
+# norm.fun <- 'bmiq'
 
 # this is our FDR cutoff
 alpha <- 0.01
@@ -35,9 +37,62 @@ alpha <- 0.01
 min_lfc <- 1.
 
 # see description below
-load_preproc <- F
-# load_preproc <- T
+# load_preproc <- F
+load_preproc <- T
 
+# initialise multiple cores
+registerDoParallel(cores = 4)
+
+
+```
+
+## Some useful functions
+
+Here I've defined useful (and reusable) functions for later in the script.
+
+```{r}
+bar_plot <- function(dmr_res, fc_var = 'logFC', pids=NULL, ttl = NULL) {
+  if (is.null(pids)) pids <- names(dmr_res)
+
+  df <- data.frame(row.names = c('Hyper', 'Hypo'))
+  for (p in pids) {
+    n_pos <- sum(dmr_res[[p]][, fc_var] > 0)
+    n_neg <- sum(dmr_res[[p]][, fc_var] < 0)
+    df[, p] <- c(n_pos, n_neg)
+  }
+  df.pct <- t(t(df) / colSums(df)) * 100.
+  
+  df.long <- melt(as.matrix(df))
+  colnames(df.long) <- c('Direction', 'Patient', 'Value')
+  pid_col <- sprintf("%03d", df.long$Patient)
+  df.long$Patient <- factor(pid_col, levels = pids)
+  
+  df.pct.long <- melt(as.matrix(df.pct))
+  colnames(df.pct.long) <- c('Direction', 'Patient', 'Value')
+  df.pct.long$Patient <- factor(pid_col, levels = pids)
+  
+  # numbers chart
+  plt2 <- ggplot(df.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(y="Number")
+  
+  # %
+  plt1 <- ggplot(df.pct.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title=ttl, y='% by direction')
+  
+  plt.main <- grid.arrange(plt1, plt2, nrow=2)
+
+}
+
+get_specific_results <- function(dmr_res, pids = NULL, ident_fun = rownames) {
+  if (is.null(pids)) pids <- names(dmr_res)
+  pnames <- lapply(dmr_res, ident_fun)
+  specific <- lapply(pids, function(p) {setdiff(pnames[[p]], Reduce(union, pnames[pids != p]))})
+  names(specific) <- pids
+
+  res_spec <- list()
+  for (p in pids) {
+    res_spec[[p]] <- dmr_res[[p]][pnames[[p]] %in% specific[[p]],]
+  }
+  return(res_spec)
+}
 ```
 
 ## Load data and prepare metadata
@@ -53,7 +108,7 @@ Two options here:
 source('_settings.R')
 source("methylation/loader.R")
 
-cc_pids <- c('018', '019', '030', '031', '017', '050', '054', '061', '026', '052')
+pids <- c('018', '019', '030', '031', '017', '050', '054', '061', '026', '052')
 
 cc_samples <- c(
   "GBM018_P12",
@@ -165,22 +220,30 @@ if (!load_preproc) {
   write.csv(cc_m, sprintf("hgic_gbm_insc_mvals_%s.csv", norm.fun))
 }
 
-
+# annotation
+RSobject <- RatioSet(cc_beta, annotation = c(array = "IlluminaHumanMethylationEPIC",annotation = "ilm10b4.hg19"))
+anno <- getAnnotation(RSobject)
 
 ```
-## `limma`
+## `limma` {limma}
 
 This package allows us to build a GLM and identify differentially methylated probes (DMPs). This package was originally designed for gene expression microarrays, but it is also applicable to methylation arrays. We're going to mimic the DE approach by pooling all samples for the purpose of dispersion estimation, then iterating over patient-specific contrasts.
 
-```{r}
+```{r limma}
+include_batch_var <- T
 pid <- cc_meta$patient_id
 ct <- cc_meta$cell_type
 group <- paste(pid, ct, sep = '_')
 
-design <- model.matrix(~0 + group)
+if (include_batch_var) {
+  bs <- gsub("-", "_", batches)
+  design <- model.matrix(~0 + group + bs)
+} else {
+  design <- model.matrix(~0 + group)
+}
 
 contrast_string = c()
-for (p in cc_pids) {
+for (p in pids) {
   a <- paste0("group", p, "_GIC")
   b <- paste0("group", p, "_iNSC")
   contrast_string <- c(contrast_string, paste(a, b, sep = '-'))
@@ -194,42 +257,198 @@ fit.reduced <- eBayes(fit.reduced, trend = T, robust=T)
 
 res_limma <- list()
 for (i in seq(ncol(the_contrasts))) {
-  p <- cc_pids[i]
+  p <- pids[i]
   res_limma[[p]] <- topTable(fit.reduced, coef=i, n=Inf, lfc=min_lfc, p.value = alpha)
 }
+```
 
-# plot pct by direction
-df <- data.frame(row.names = c('Hyper', 'Hypo'))
-for (p in names(res_limma)) {
-  n_pos <- sum(res_limma[[p]]$logFC > 0)
-  n_neg <- sum(res_limma[[p]]$logFC < 0)
-  df[, p] <- c(n_pos, n_neg)
-}
-df.pct <- t(t(df) / colSums(df)) * 100.
+Look at the number (or proportion) of DMPs by direction.
 
-df.long <- melt(as.matrix(df))
-colnames(df.long) <- c('Direction', 'Patient', 'Value')
-pid_col <- sprintf("%03d", df.long$Patient)
-df.long$Patient <- factor(pid_col, levels = cc_pids)
+```{r fig.width=5, fig.height=8}
 
-df.pct.long <- melt(df.pct)
-colnames(df.pct.long) <- c('Direction', 'Patient', 'Value')
-pid_col <- sprintf("%03d", df.pct.long$Patient)
-df.pct.long$Patient <- factor(pid_col, levels = cc_pids)
+# full list
+plt <- bar_plot(res_limma)
+ggsave("full_dmps_limma.png", plot = plt, device = 'png')
 
-# numbers chart
-ggplot(df.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title="limma DMP, full list")
+# specific list
+res_limma.spec <- get_specific_results(res_limma)
 
-# full list bar chart (%)
-ggplot(df.pct.long, aes(x=Patient, y=Value, fill=Direction)) + geom_bar(stat='identity') + scale_fill_manual(values=c("#FF381F", "#89CD61")) + labs(title="limma DMP, full list", y='% by direction')
-
-# specific list %
-# lapply(pids, function(x) {})
+plt <- bar_plot(res_limma.spec)
+ggsave("specific_dmps_limma.png", plot = plt, device = 'png')
 
 ```
 
+## `limma` without pooling {limma_nopool}
+
+What if we _don't_ pool samples, but re-run the comparison separately for each patient?
+
+```{r}
+res_limma.sep <- list()
+
+for (p in pids) {
+  ix <- cc_meta$patient_id == p
+  this_dat <- cc_m[, ix]
+  this_meta <- cc_meta[ix, ]
+  ct <- this_meta$cell_type
+  design <- model.matrix(~0 + ct)
+  
+  fit.reduced <- lmFit(this_dat, design)
+  fit.reduced <- contrasts.fit(fit.reduced, makeContrasts('ctGIC-ctiNSC', levels = design))
+  fit.reduced <- eBayes(fit.reduced, trend = T, robust=T)
+  
+  res_limma.sep[[p]] <- topTable(fit.reduced, coef=1, n=Inf, lfc=min_lfc, p.value = alpha)
+}
+
+```
+
+There are *no* DMPs for patient 026, so this is not a good approach. Look at the numbers / directions:
+
+```{r fig.width=5, fig.height=8}
+# full list
+plt <- bar_plot(res_limma.sep, pids = pids[pids != '026'])
+ggsave("full_dmps_limma_separate.png", plot = plt, device = 'png')
+
+# specific list
+res_limma.sep.spec <- get_specific_results(res_limma.sep)
+
+plt <- bar_plot(res_limma.sep.spec, pids = pids[pids != '026'])
+ggsave("specific_dmps_limma_separate.png", plot = plt, device = 'png')
+
+```
+
+As we saw in the DE case, running the analysis without pooled dispersion results in very variable numbers of differential methylated probes.
 
 ## `DMRcate`
 
 This workflow essentially proceeds by first running DMP analysis (in `limma`), then aggregating the outputs.
+
+```{r, dmrcate, echo=F}
+min_probes <- 6
+min_delta_beta <- 0.3
+
+if (include_batch_var) {
+  bs <- gsub("-", "_", batches)
+  design <- model.matrix(~0 + group + bs)
+} else {
+  design <- model.matrix(~0 + group)
+}
+
+contrasts <- do.call(makeContrasts, c(as.list(contrast_string), list(levels=design)))
+colnames(contrasts) <- pids
+res_dmrcate <- list()
+
+for (p in pids) {
+  this_annot <- cpg.annotate(
+    "array",
+    as.matrix(cc_m),
+    what='M',
+    arraytype = 'EPIC',
+    analysis.type = 'differential',
+    design = design,
+    contrasts = T,
+    cont.matrix = contrasts,
+    coef = p
+  )
+  this_dmrcate <- dmrcate(this_annot, lambda = 1000, C=2, mc.cores = 8, betacutoff = min_delta_beta, min.cpgs = min_probes)
+  res_dmrcate[[p]] <- this_dmrcate$results
+}
+
+```
+
+Generate the same plots
+
+```{r dmrcate_plots, fig.width=5, fig.height=8}
+plt <- bar_plot(res_dmrcate, fc_var = 'meanbetafc')
+ggsave("full_dmrs_dmrcate.png", plot = plt, device = 'png')
+
+# specific list
+res_dmrcate.spec <- get_specific_results(res_dmrcate, ident_fun = function(x) x[, 'coord'])
+
+plt <- bar_plot(res_dmrcate.spec, fc_var = 'meanbetafc')
+ggsave("specific_dmrs_dmrcate.png", plot = plt, device = 'png')
+
+```
+
+## Bumphunter
+
+The `bumphunter` package is conveniently implemented in the `minfi` package, so we'll use that. The issue here is with the implementation: there is no obvious way to test specific contrasts (as I have done above). We need to specify our comparison as a single coefficient, which rules out including all data at once. We'll basically be running the [limma without pooling option](#limma_nopool) process. Still, let's give it a try?
+
+```{r bumphunter, echo = F}
+min_probes <- 6
+max_gap <- 400
+delta_m_cutoff <- 2.  # this is larger than I would use, but needs must: bumphunter is slow
+nperm <- 1000  # the number of perms used by bumphunter
+run_init_check <- F  # first time around, we should run a scan with no permutations to check that the number of candidates isn't outrageous
+
+# since we'll be running bumphunter a number of times, it's best to define the regions once in advance
+clusters <- clusterMaker(anno$chr, anno$pos, maxGap = max_gap)
+
+# there are many clusters with few probes. Let's remove them?
+tbl <- table(clusters)
+too_small <- names(tbl)[tbl < min_probes]  # cluster numbers that need to be removed
+
+# can't leave NA in clusters, as it results in an error in the bumphunter() call
+# clusters[clusters %in% too_small] <- -1
+
+ix_keep <- ! clusters %in% too_small
+probes_keep <- rownames(anno)[ix_keep]
+
+this_m <- cc_m[probes_keep,]
+this_anno <- anno[probes_keep,]
+
+# redefine clusters, all of which must now contain at least min_probes probes
+clusters <- clusterMaker(this_anno$chr, this_anno$pos, maxGap = max_gap)
+
+if (run_init_check) {
+  p <- pids[1]
+  ix <- cc_meta$patient_id == p
+  this_dat <- this_m[, ix]
+  this_meta <- cc_meta[ix, ]
+  ct <- factor(this_meta$cell_type, levels=c('iNSC', 'GIC'))
+  design <- model.matrix(~ct)
+  
+  this_initscan <- bumphunter(
+    as.matrix(this_dat),
+    design,
+    chr = this_anno$chr,
+    pos = this_anno$pos,
+    coef = 2,
+    cutoff = delta_m_cutoff,
+    B = 0,
+    type = 'M',
+    cluster = clusters,
+    maxGap = max_gap
+  )
+  # TODO: report result
+  
+}
+
+res_bumphunter <- list()
+
+for (p in pids) {
+  ix <- cc_meta$patient_id == p
+  this_dat <- this_m[, ix]
+  this_meta <- cc_meta[ix, ]
+  ct <- factor(this_meta$cell_type, levels=c('iNSC', 'GIC'))
+  design <- model.matrix(~ct)
+  
+  this_res <- bumphunter(
+    as.matrix(this_dat),
+    design,
+    chr = this_anno$chr,
+    pos = this_anno$pos,
+    coef = 2,
+    cutoff = delta_m_cutoff,
+    B = nperm,
+    type = 'M',
+    cluster = clusters,
+    maxGap = max_gap
+  )
+  res_bumphunter[[p]] <- this_res$table
+ 
+}
+
+```
+
+
 
