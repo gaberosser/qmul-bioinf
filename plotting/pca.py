@@ -384,57 +384,6 @@ def biplot(
 
     n = float(data.shape[1])
 
-    # # standardise: mean centred data required for sensible decomposition
-    # # standardisation occurs along the FEATURES axis, which is dim 1
-    # scaler = StandardScaler(with_std=False)
-    #
-    # # features on the ROWS, mean centre by gene
-    # scaler = scaler.fit(data.transpose())
-    # X = scaler.transform(data.transpose()).transpose()
-    #
-    # # SVD
-    # u, s, vh = np.linalg.svd(X, full_matrices=False)
-    #
-    # # checked this against the sklearn PCA code
-    # explained_variance = (s ** 2) / n
-    # explained_variance_ratio = explained_variance / explained_variance.sum()
-    #
-    # if preserve_distance == 'samples':
-    #     # preserve inter-sample distances
-    #
-    #     # project gene data into PCA
-    #     # this matches the output of pca.transform() (except for possible sign switch)
-    #     if include_weighting:
-    #         # scaling by s: components scale by their relative explanatory power (not linearly)
-    #         # the plot may appear 'squashed', depending on the weighting
-    #         us = u.dot(np.diag(s))
-    #         feat_x = scale * us[:, plot_dims[0]]
-    #         feat_y = scale * us[:, plot_dims[1]]
-    #     else:
-    #         # alternatively, just plot the unscaled feature components (plot becomes more circular)
-    #         feat_x = scale * u[:, plot_dims[0]]
-    #         feat_y = scale * u[:, plot_dims[1]]
-    #
-    #     sample_x = vh[plot_dims[0]]
-    #     sample_y = vh[plot_dims[1]]
-    # else:
-    #     # preserve inter-feature distances
-    #     ## TODO: check this
-    #
-    #     if include_weighting:
-    #         # scaling by s: components scale by their relative explanatory power (not linearly)
-    #         # the plot may appear 'squashed', depending on the weighting
-    #         vs = vh.dot(np.diag(s))
-    #         sample_x = vs[plot_dims[0]]
-    #         sample_y = vs[plot_dims[1]]
-    #     else:
-    #         # alternatively, just plot the unscaled feature components (plot becomes more circular)
-    #         sample_x = vh[plot_dims[0]]
-    #         sample_y = vh[plot_dims[1]]
-    #
-    #     feat_x = scale * u[:, plot_dims]
-    #     feat_y = scale * u[:, plot_dims]
-
     feat_x = res['feat_dat'][plot_dims[0] + 1]
     feat_y = res['feat_dat'][plot_dims[1] + 1]
     sample_x = res['sample_dat'][plot_dims[0] + 1]

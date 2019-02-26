@@ -11,7 +11,7 @@ import os
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log
+from utils import output, log, setops
 from stats import decomposition
 import references
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
@@ -30,6 +30,7 @@ def generate_plotly_plot(
         sample_text,
         sample_colours,
         sample_markers,
+        components=(1, 2),
         sample_marker_size=12.,
         auto_open=False,
         feature_text_mask=None
@@ -50,7 +51,7 @@ def generate_plotly_plot(
      If absent, all text is hidden and only available on hover.
     :return:
     """
-    x, y = res['feature_data']
+    x, y = [res['feat_dat'][i] for i in components]
 
     msize_in = (x ** 2 + y ** 2) ** .5
 
@@ -87,9 +88,11 @@ def generate_plotly_plot(
 
     plotly_markers = np.array([_plotly.MATPLOTLIB_TO_PLOTLY_MARKERS[sample_markers[t]] for t in sample_text])
 
+    sx, sy = [res['sample_dat'][i] for i in components]
+
     sample_trace = go.Scatter(
-        x=res['sample_data'][0],
-        y=res['sample_data'][1],
+        x=sx,
+        y=sy,
         mode='markers+text',
         text=dat.columns,
         textposition='bottom center',
@@ -104,7 +107,6 @@ def generate_plotly_plot(
         }
     )
 
-    pcs = res['components']
     ev_pct = res['explained_variance_ratio'] * 100.
 
     layout = go.Layout(
@@ -112,8 +114,8 @@ def generate_plotly_plot(
         hovermode='closest',
         width=800,
         height=600,
-        xaxis=go.layout.XAxis(title='PC %d (%.2f %%)' % (pcs[0] + 1, ev_pct[pcs[0]])),
-        yaxis=go.layout.YAxis(title='PC %d (%.2f %%)' % (pcs[1] + 1, ev_pct[pcs[1]])),
+        xaxis=go.layout.XAxis(title='PC %d (%.2f %%)' % (components[0] - 1, ev_pct[components[0] - 1])),
+        yaxis=go.layout.YAxis(title='PC %d (%.2f %%)' % (components[1] - 1, ev_pct[components[1] - 1])),
         dragmode='pan'
     )
     fig = go.Figure(data=[feat_trace, feat_trace_text_shown, sample_trace], layout=layout)
@@ -306,7 +308,7 @@ if __name__ == '__main__':
     https://stackoverflow.com/questions/39216897/plot-pca-loadings-and-loading-in-biplot-in-sklearn-like-rs-autoplot
     """
     outdir = output.unique_output_dir()
-    publish_plotly = False
+    publish_plotly = True
     pids = consts.PIDS
 
     alpha = 0.05
@@ -317,6 +319,15 @@ if __name__ == '__main__':
     # quantiles to use for defining genes of interest
     # these lists can then be sent to IPA or similar
     quantiles = [0.99, 0.995]
+
+    # dimensions (components) to investigate
+    dims = [0, 1, 2]
+
+    selection_radii_for_plotting = {
+        0: 0.6,
+        1: 0.30,
+        2: 0.25
+    }
 
     # path to syngeneic DE results
     fn_de_res = os.path.join(
@@ -341,6 +352,9 @@ if __name__ == '__main__':
         'iNSC': 'o'
     }
 
+    # scaling parameter applied during SVD
+    scale_preserved = 0.05
+
     sample_colours = obj.meta.patient_id.map(scatter_colours.get).to_dict()
     sample_markers = obj.meta.type.map(scatter_markers.get).to_dict()
 
@@ -353,236 +367,131 @@ if __name__ == '__main__':
     # fill back in with ENS where no gene symbol is available
     dat_with_gs.loc[dat_with_gs['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs.index[dat_with_gs['Gene Symbol'].isnull()]
 
-    # dict to store 'selected' genes for later use
-    selected_by_quantile = {}
-
-    dims = (0, 1)
-    selection_radius = 0.6
-
     # recreate Sven's original (unweighted) plot
+    # we're not going to use this, it's just for validation / reproducibility
     fig, ax, _ = plot_biplot(
         dat,
         obj.meta,
-        dims,
+        (0, 1),
         scatter_colours,
         scatter_markers,
         annotate_features_radius=0.4,
         include_weighting=False,
         scale=10.
     )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated_unweighted.png" % dims), dpi=200)
+    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated_unweighted.png" % (0, 1)), dpi=200)
 
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
+    # dict to store 'selected' genes for later use
+    selected_by_quantile_mean_logfc = {}
+    selected_by_quantile_separate_logfc = {}
+    selected_by_quantile_gene_only_all = {}
 
-    dims = (0, 1)  # for copy paste convenience
-    selection_radius = 0.6
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        annotate_features_radius=selection_radius,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+    svd_res = decomposition.svd_for_biplot(dat, feat_axis=0, scale_preserved=scale_preserved)
 
-    # extract gene lists for pathway analysis
-    for q in quantiles:
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        val = np.quantile(rad, q)
-        dat.loc[rad >= val].to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
+    for first_dim in dims:
+        dims_pair = (first_dim, first_dim + 1)
+        selection_radius = selection_radii_for_plotting[first_dim]
 
-        for_export = extract_gois(res['feature_data'], de_res, q)
-        for_export.to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_mean.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
-        selected_by_quantile.setdefault(dims, {})[q] = for_export
+        # extract gene lists for pathway analysis
+        for q in quantiles:
+            for dim in [(first_dim,), (first_dim, first_dim + 1)]:
+                this_feat = tuple(svd_res['feat_dat'][i + 1] for i in dim)
+
+                # mean logFC
+                selected_by_quantile_mean_logfc.setdefault(dim, {})[q] = extract_gois(
+                    this_feat,
+                    de_res,
+                    q
+                )
+                # separate logFC
+                selected_by_quantile_separate_logfc.setdefault(dim, {})[q] = extract_gois(
+                    this_feat,
+                    de_res,
+                    q,
+                    mean_logfc=False
+                )
+
+                # joint gene only
+                selected_by_quantile_gene_only_all.setdefault(dim, {})[q] = extract_gois(
+                    this_feat,
+                    de_res,
+                    q,
+                ).dropna().index
+
+            fig, ax, res = plot_biplot(
+                dat,
+                obj.meta,
+                dims_pair,
+                scatter_colours,
+                scatter_markers,
+                annotate_features_quantile=q,
+                scale=0.05
+            )
+            fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (first_dim, first_dim + 1, q)), dpi=200)
+
+        selection_radius = selection_radii_for_plotting[first_dim]
         fig, ax, res = plot_biplot(
             dat,
             obj.meta,
-            dims,
+            (first_dim, first_dim + 1),
             scatter_colours,
             scatter_markers,
-            annotate_features_quantile=q,
+            annotate_features_radius=selection_radius,
             scale=0.05
         )
-        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
+        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
 
-    if publish_plotly:
-        selection_radius = 0.6
-        size_scaling = [
-            [0.1, 0.6],
-            [2., 10.]
-        ]
-        feature_text = dat_with_gs['Gene Symbol']
-        sample_text = dat.columns
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        to_annotate = rad > selection_radius
-        p1 = generate_plotly_plot(
-            res,
-            filename="pca_biplot_dims_%d-%d" % dims,
-            feature_size_scaling=size_scaling,
-            feature_text=feature_text,
-            sample_text=sample_text,
-            sample_colours=sample_colours,
-            sample_markers=sample_markers,
-            feature_text_mask=~to_annotate
-        )
+        if publish_plotly:
+            size_scaling = [
+                [0.1, selection_radius],
+                [2., 10.]
+            ]
+            feature_text = dat_with_gs['Gene Symbol']
+            sample_text = dat.columns
+            rad = (np.array(zip(*[svd_res['feat_dat'][i + 1] for i in dims_pair])) ** 2).sum(axis=1) ** .5
+            to_annotate = rad > selection_radius
+            p1 = generate_plotly_plot(
+                svd_res,
+                filename="pca_biplot_dims_%d-%d" % tuple(t + 1 for t in dims_pair),
+                feature_size_scaling=size_scaling,
+                feature_text=feature_text,
+                sample_text=sample_text,
+                sample_colours=sample_colours,
+                sample_markers=sample_markers,
+                feature_text_mask=~to_annotate
+            )
 
-    dims = (1, 2)
-    selection_radius = 0.3
+    # export lists for IPA
+    ix_all = sorted(setops.reduce_union(*[t[0.99].index for t in selected_by_quantile_mean_logfc.values()]))
+    ipa_mean_logfc = pd.DataFrame(index=ix_all)
+    for k, v in selected_by_quantile_mean_logfc.items():
+        ipa_mean_logfc.insert(0, "pc_%s_q99_logFC" % '-'.join([str(t+1) for t in k]), v[0.99])
+        ipa_mean_logfc.insert(0, "pc_%s_q995_logFC" % '-'.join([str(t+1) for t in k]), v[0.995])
+    ipa_mean_logfc.to_excel(os.path.join(outdir, "for_ipa_mean_logfc.xlsx"))
 
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
+    for k, v in selected_by_quantile_separate_logfc.items():
+        ix_all = setops.reduce_union(*[v[q].index for q in quantiles])
+        this = []
+        for q in quantiles:
+            tt = v[q]
+            tt.columns = ["%s_%d_logFC" % (p, int(q * 1000)) for p in pids]
+            this.append(tt)
+        pd.concat(this, axis=1, sort=True).to_excel(os.path.join(outdir, "for_ipa_separate_logfc_pc%s.xlsx" % '-'.join([str(t+1) for t in k])))
 
-    dims = (1, 2)
-    selection_radius = 0.3
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        annotate_features_radius=selection_radius,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
+    ipa_gene_only = pd.DataFrame(index=ix_all)
+    for k, v in selected_by_quantile_gene_only_all.items():
+        for q in quantiles:
+            tt = pd.Series(0.001, index=v[q])  # this is a generically significant pvalue
+            ipa_gene_only.insert(
+                0,
+                "pc_%s_q%d_FDR" % (
+                    '-'.join([str(t + 1) for t in k]),
+                    int(q * 1000)
+                ),
+                tt)
+    ipa_gene_only.fillna(1., inplace=True)
+    ipa_gene_only.to_excel(os.path.join(outdir, "for_ipa_gene_only_all.xlsx"))
 
-    # extract gene lists for pathway analysis
-    for q in quantiles:
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        val = np.quantile(rad, q)
-        dat.loc[rad >= val].to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
-
-        for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
-        for_export.to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
-        selected_by_quantile.setdefault(dims, {})[q] = for_export
-        fig, ax, res = plot_biplot(
-            dat,
-            obj.meta,
-            dims,
-            scatter_colours,
-            scatter_markers,
-            annotate_features_quantile=q,
-            scale=0.05
-        )
-        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
-
-    if publish_plotly:
-        selection_radius = 0.3
-        size_scaling = [
-            [0.1, 0.3],
-            [2., 10.]
-        ]
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        to_annotate = rad > selection_radius
-        p2 = generate_plotly_plot(
-            res,
-            filename="pca_biplot_dims_%d-%d" % dims,
-            feature_size_scaling=size_scaling,
-            feature_text=feature_text,
-            sample_text=sample_text,
-            sample_colours=sample_colours,
-            sample_markers=sample_markers,
-            feature_text_mask=~to_annotate
-        )
-
-    dims = (2, 3)
-    selection_radius = 0.25
-
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d.png" % dims), dpi=200)
-
-    dims = (2, 3)
-    selection_radius = 0.25
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        annotate_features_radius=selection_radius,
-        scale=0.05
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims), dpi=200)
-
-    # extract gene lists for pathway analysis
-    for q in quantiles:
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        val = np.quantile(rad, q)
-        dat.loc[rad >= val].to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_tpm.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
-
-        for_export = extract_gois(res['feature_data'], de_res, q, mean_logfc=False, alpha=alpha)
-        for_export.to_csv(
-            os.path.join(outdir, "pc%d_%d_quantile_%.3f_logfc_separate.tsv" % (dims[0] + 1, dims[1] + 1, q)),
-            sep='\t'
-        )
-        selected_by_quantile.setdefault(dims, {})[q] = for_export
-        fig, ax, res = plot_biplot(
-            dat,
-            obj.meta,
-            dims,
-            scatter_colours,
-            scatter_markers,
-            annotate_features_quantile=q,
-            scale=0.05
-        )
-        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (dims[0], dims[1], q)), dpi=200)
-
-    if publish_plotly:
-        selection_radius = 0.25
-        size_scaling = [
-            [0.1, 0.3],
-            [2., 10.]
-        ]
-        rad = (np.array(zip(*res['feature_data'])) ** 2).sum(axis=1) ** .5
-        to_annotate = rad > selection_radius
-        p3 = generate_plotly_plot(
-            res,
-            filename="pca_biplot_dims_%d-%d" % dims,
-            feature_size_scaling=size_scaling,
-            feature_text=feature_text,
-            sample_text=sample_text,
-            sample_colours=sample_colours,
-            sample_markers=sample_markers,
-            feature_text_mask=~to_annotate
-        )
 
     # bar chart showing the explained variance
     fig = plt.figure(figsize=(5.6, 3.))

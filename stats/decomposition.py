@@ -21,6 +21,8 @@ def svd_for_biplot(data, feat_axis=0, preserve_distance='samples', include_weigh
     if feat_axis == 1:
         data = data.transpose()
 
+    n = float(data.shape[1])
+
     # standardise: mean centred data required for sensible decomposition
     # standardisation occurs along the FEATURES axis, which is dim 1
     scaler = StandardScaler(with_std=False)
@@ -82,10 +84,15 @@ def svd_for_biplot(data, feat_axis=0, preserve_distance='samples', include_weigh
         # sample_dat = u
         # feat_dat = scale_preserved * vs
 
+    explained_variance = (s ** 2) / n
+    explained_variance_ratio = explained_variance / explained_variance.sum()
+
     return {
         'u': u,
         's': s,
         'vh': vh,
         'feat_dat': feat_dat,
-        'sample_dat': sample_dat
+        'sample_dat': sample_dat,
+        'explained_variance': explained_variance,
+        'explained_variance_ratio': explained_variance_ratio,
     }
