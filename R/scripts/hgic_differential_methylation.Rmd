@@ -450,5 +450,32 @@ for (p in pids) {
 
 ```
 
+Generate plots. Since(?) we've run `bumphunter` individually for each patient, the statistics are poor - none have a FWER below 0.1. I have tried filtering by FDR, but the results are also not great (variabe numbers of regions, none for patient 052). I will try two approaches:
 
+- FDR < 0.1
+- Pick the N most significant regions
+
+```{r, bumphunter_plots, echo=F, fig.width=5, fig.height=8}
+method <- 'fdr'
+# method <- 'topn'
+topN <- 1000
+fdr_cutoff <- 0.1  # has to be lenient or we get no results
+
+if (method == 'fdr') {
+  this_res_bump <- lapply(res_bumphunter, function(x) {x[p.adjust(x$p.value, method='BH') < fdr_cutoff,]})
+  file_suffix <- 'by_fdr'
+} else {
+  this_res_bump <- lapply(res_bumphunter, function(x) head(x, topN))
+  file_suffix <- sprintf('top_%d', topN)
+}
+
+plt <- bar_plot(this_res_bump, fc_var = 'value')
+ggsave(sprintf("full_dmrs_bump_%s.png", file_suffix), plot = plt, device = 'png')
+
+# specific list
+res_bump.spec <- get_specific_results(this_res_bump, ident_fun = function(x) x[, 'cluster'])
+
+plt <- bar_plot(res_bump.spec, fc_var = 'value')
+ggsave(sprintf("specific_dmrs_bump_%s.png", file_suffix), plot = plt, device = 'png')
+```
 

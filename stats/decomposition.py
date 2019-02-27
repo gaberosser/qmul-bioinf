@@ -1,5 +1,6 @@
 from sklearn.preprocessing import StandardScaler
 import numpy as np
+import pandas as pd
 
 
 def svd_for_biplot(data, feat_axis=0, preserve_distance='samples', include_weighting=True, scale_preserved=1.):
@@ -86,6 +87,9 @@ def svd_for_biplot(data, feat_axis=0, preserve_distance='samples', include_weigh
 
     explained_variance = (s ** 2) / n
     explained_variance_ratio = explained_variance / explained_variance.sum()
+
+    feat_dat = pd.DataFrame(feat_dat, index=data.index)
+    sample_dat = pd.DataFrame(sample_dat, index=data.columns)
 
     return {
         'u': u,

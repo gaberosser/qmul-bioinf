@@ -11,7 +11,7 @@ import os
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log, setops
+from utils import output, log, setops, excel
 from stats import decomposition
 import references
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
@@ -94,7 +94,7 @@ def generate_plotly_plot(
         x=sx,
         y=sy,
         mode='markers+text',
-        text=dat.columns,
+        text=sample_text,
         textposition='bottom center',
         textfont={
             'color': [sample_colours[t] for t in sample_text]
@@ -172,20 +172,20 @@ def plot_biplot(
     ax = res['ax']
     fig = res['fig']
 
-    typ_ix, typ = obj.meta.type.factorize()
+    typ_ix, typ = meta.type.factorize()
 
     # connect patients
     for pid in meta.patient_id.unique():
-        ix = obj.meta.patient_id == pid
+        ix = meta.patient_id == pid
         for t0, t1 in itertools.combinations(typ, 2):
             # draw all possible connections between these two cell types (in one direction only)
-            ix0 = obj.meta.index[ix & (obj.meta.type == t0)]
-            ix1 = obj.meta.index[ix & (obj.meta.type == t1)]
+            ix0 = meta.index[ix & (meta.type == t0)]
+            ix1 = meta.index[ix & (meta.type == t1)]
 
             for a, b in itertools.product(ix0, ix1):
                 ax.plot(
-                    [sample_x[obj.meta.index == a][0], sample_x[obj.meta.index == b][0]],
-                    [sample_y[obj.meta.index == a][0], sample_y[obj.meta.index == b][0]],
+                    [sample_x[meta.index == a][0], sample_x[meta.index == b][0]],
+                    [sample_y[meta.index == a][0], sample_y[meta.index == b][0]],
                     lw=1.5,
                     color=scatter_colours[pid],
                     zorder=9
@@ -247,11 +247,35 @@ def plot_biplot(
     return fig, ax, res
 
 
-def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
+def get_topmost_quantile_by_loading(feat_dat, quantile):
+    feat_dat = pd.DataFrame(feat_dat)
+
     # extract gene lists for pathway analysis
-    rad = (np.array(zip(*feat_dat)) ** 2).sum(axis=1) ** .5
+    rad = (feat_dat ** 2).sum(axis=1) ** .5
     val = np.quantile(rad, quantile)
-    ens = dat.index[rad >= val]
+    return dat.index[rad >= val]
+
+
+def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
+    """
+    Extract genes of interest from the SVD representation, based on an upper quantile of highest loadings.
+    These are then combined with DE data.
+    The selection is based on the Euclidean distance from the origin across all included component loadings.
+    :param feat_dat: pandas DataFrame (or castable to one), with genes on the rows and however many components required
+    on the columns.
+    :param de_res:
+    :param quantile:
+    :param mean_logfc:
+    :param alpha:
+    :return:
+    """
+    # feat_dat = pd.DataFrame(feat_dat)
+
+    # extract gene lists for pathway analysis
+    # rad = (feat_dat ** 2).sum(axis=1) ** .5
+    # val = np.quantile(rad, quantile)
+    # ens = dat.index[rad >= val]
+    ens = get_topmost_quantile_by_loading(feat_dat, quantile)
     dif = ens.difference(de_res.index)
     if len(dif):
         logger.warning(
@@ -263,13 +287,13 @@ def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
     this_de_res = de_res.loc[ens]
 
     this_logfc = this_de_res[["%s_logFC" % p for p in pids]]
-    if alpha is not None:
-        this_fdr = this_de_res[["%s_FDR" % p for p in pids]].fillna(1.)
 
     if alpha is not None:
+        this_fdr = this_de_res[["%s_FDR" % p for p in pids]].fillna(1.)
         ens_keep = (this_fdr <= alpha).sum(axis=1) > 0
         this_logfc = this_logfc.loc[ens_keep]
         this_fdr = this_fdr.loc[ens_keep]
+        ens = ens[ens_keep]
         logger.info("Removing %d genes that were not significantly DE in any comparison", (~ens_keep).sum())
 
 
@@ -297,10 +321,6 @@ def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
 
 
 if __name__ == '__main__':
-
-    ## TODO: finish moving this script to hgic_final.biplot_gene_expression
-    ## FIXME: this script wil be broken because I changed the decomposition module!
-
     """
     Idea here: recreate the analysis Sven carried out, generating biplots for the RNA-Seq data.
     We can then extend this idea to methylation (?)
@@ -320,9 +340,9 @@ if __name__ == '__main__':
 
     min_logfc = consts.DE_PARAMS['lfc']
 
-    # quantiles to use for defining genes of interest
+    # quantile to use for defining genes of interest
     # these lists can then be sent to IPA or similar
-    quantiles = [0.99, 0.995]
+    quantile = 0.99
 
     # dimensions (components) to investigate
     dims = [0, 1, 2]
@@ -397,47 +417,32 @@ if __name__ == '__main__':
         selection_radius = selection_radii_for_plotting[first_dim]
 
         # extract gene lists for pathway analysis
-        for q in quantiles:
-            for dim in [(first_dim,), (first_dim, first_dim + 1)]:
-                this_feat = tuple(svd_res['feat_dat'][i + 1] for i in dim)
+        for dim in [(first_dim,), dims_pair]:
+            this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
 
-                # mean logFC
-                selected_by_quantile_mean_logfc.setdefault(dim, {})[q] = extract_gois(
-                    this_feat,
-                    de_res,
-                    q
-                )
-                # separate logFC
-                selected_by_quantile_separate_logfc.setdefault(dim, {})[q] = extract_gois(
-                    this_feat,
-                    de_res,
-                    q,
-                    mean_logfc=False
-                )
-
-                # joint gene only
-                selected_by_quantile_gene_only_all.setdefault(dim, {})[q] = extract_gois(
-                    this_feat,
-                    de_res,
-                    q,
-                ).dropna().index
-
-            fig, ax, res = plot_biplot(
-                dat,
-                obj.meta,
-                dims_pair,
-                scatter_colours,
-                scatter_markers,
-                annotate_features_quantile=q,
-                scale=0.05
+            # mean logFC
+            selected_by_quantile_mean_logfc[dim] = extract_gois(
+                this_feat,
+                de_res,
+                quantile,
+                alpha=alpha
             )
-            fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_q%.3f.png" % (first_dim, first_dim + 1, q)), dpi=200)
+
+            # separate logFC
+            # remove non-significant results
+            selected_by_quantile_separate_logfc[dim] = extract_gois(
+                this_feat,
+                de_res,
+                quantile,
+                mean_logfc=False,
+                alpha=alpha
+            )
 
         selection_radius = selection_radii_for_plotting[first_dim]
         fig, ax, res = plot_biplot(
             dat,
             obj.meta,
-            (first_dim, first_dim + 1),
+            dims_pair,
             scatter_colours,
             scatter_markers,
             annotate_features_radius=selection_radius,
@@ -462,259 +467,38 @@ if __name__ == '__main__':
                 sample_text=sample_text,
                 sample_colours=sample_colours,
                 sample_markers=sample_markers,
-                feature_text_mask=~to_annotate
+                feature_text_mask=~to_annotate,
+                components=tuple(i + 1 for i in dims_pair),
             )
 
     # export lists for IPA
-    ix_all = sorted(setops.reduce_union(*[t[0.99].index for t in selected_by_quantile_mean_logfc.values()]))
+
+    ix_all = sorted(setops.reduce_union(*[t.index for t in selected_by_quantile_mean_logfc.values()]))
+
     ipa_mean_logfc = pd.DataFrame(index=ix_all)
     for k, v in selected_by_quantile_mean_logfc.items():
-        ipa_mean_logfc.insert(0, "pc_%s_q99_logFC" % '-'.join([str(t+1) for t in k]), v[0.99])
-        ipa_mean_logfc.insert(0, "pc_%s_q995_logFC" % '-'.join([str(t+1) for t in k]), v[0.995])
+        ipa_mean_logfc.insert(0, "pc_%s_logFC" % '-'.join([str(t+1) for t in k]), v)
     ipa_mean_logfc.to_excel(os.path.join(outdir, "for_ipa_mean_logfc.xlsx"))
 
-    for k, v in selected_by_quantile_separate_logfc.items():
-        ix_all = setops.reduce_union(*[v[q].index for q in quantiles])
-        this = []
-        for q in quantiles:
-            tt = v[q]
-            tt.columns = ["%s_%d_logFC" % (p, int(q * 1000)) for p in pids]
-            this.append(tt)
-        pd.concat(this, axis=1, sort=True).to_excel(os.path.join(outdir, "for_ipa_separate_logfc_pc%s.xlsx" % '-'.join([str(t+1) for t in k])))
+    # for separated data, combine single and paired PC for maximum efficiency
+    for first_dim in dims:
+        dims_pair = (first_dim, first_dim + 1)
+        ix_all = setops.reduce_union(*[selected_by_quantile_separate_logfc[k].index for k in [(first_dim,), dims_pair]])
+        this_df = pd.DataFrame(index=ix_all)
+        for k in [(first_dim,), dims_pair]:
+            tt = selected_by_quantile_separate_logfc[k].copy()
+            tt = tt.loc[:, tt.columns.str.contains('logFC')]
+            tt.columns = tt.columns.str.replace('_logFC', '_%s_logFC' % '-'.join([str(t+1) for t in k]))
+            this_df = pd.concat((this_df, tt), axis=1, sort=True)
+        this_df.to_excel(os.path.join(outdir, "for_ipa_separate_logfc_pc%d.xlsx" % (first_dim + 1)))
 
-    ipa_gene_only = pd.DataFrame(index=ix_all)
-    for k, v in selected_by_quantile_gene_only_all.items():
-        for q in quantiles:
-            tt = pd.Series(0.001, index=v[q])  # this is a generically significant pvalue
-            ipa_gene_only.insert(
-                0,
-                "pc_%s_q%d_FDR" % (
-                    '-'.join([str(t + 1) for t in k]),
-                    int(q * 1000)
-                ),
-                tt)
-    ipa_gene_only.fillna(1., inplace=True)
-    ipa_gene_only.to_excel(os.path.join(outdir, "for_ipa_gene_only_all.xlsx"))
-
-
-    # bar chart showing the explained variance
-    fig = plt.figure(figsize=(5.6, 3.))
-    ax = fig.add_subplot(111)
-    n_plot = 6
-    ax.bar(range(1, n_plot + 1), res['explained_variance_ratio'][:n_plot] * 100.)
-    ax.set_xlabel('Principal component')
-    ax.set_ylabel('% variance explained')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "explained_variance_bar_chart.png"), dpi=200)
-
-    # test out a few distinguishing genes
-    goi = ['VGF', 'CDKN2A', 'STMN2', 'TMEFF2']
-    aa = dat_with_gs.loc[dat_with_gs['Gene Symbol'].isin(goi)].set_index('Gene Symbol')
-
-
-    def compare_two_gene_levels(
-        dat_two_cols,
-        meta,
-        legend_dict,
-        colour_map=scatter_colours,
-        marker_map=scatter_markers,
-    ):
-
-        ax = scatter.scatter_with_colour_and_markers(
-            dat_two_cols,
-            colour_subgroups=meta.patient_id,
-            colour_map=colour_map,
-            marker_subgroups=meta.type,
-            marker_map=marker_map
-        )
-        common.add_custom_legend(ax, legend_dict, loc_outside=True)
-        ax.set_xlabel('%s (logTPM)' % dat_two_cols.columns[0])
-        ax.set_ylabel('%s (logTPM)' % dat_two_cols.columns[1])
-        fig = ax.figure
-        fig.tight_layout()
-        fig.subplots_adjust(right=0.8)
-
-        return fig, ax
-
-    fig, ax = compare_two_gene_levels(
-        aa.transpose()[['VGF', 'CDKN2A']],
-        obj.meta,
-        res['legend_dict']
-    )
-    fig.savefig(os.path.join(outdir, "VGF_CDKN2A.png"), dpi=200)
-
-    fig, ax = compare_two_gene_levels(
-        aa.transpose()[['VGF', 'TMEFF2']],
-        obj.meta,
-        res['legend_dict']
-    )
-    fig.savefig(os.path.join(outdir, "VGF_TMEFF2.png"), dpi=200)
-
-    ## TODO: consider annotating the biplot gene markers based on the DE results
-    # For example, highlight patient-specific genes with different colours
-    # For example, highlight the most deregulated genes
-
-    dims = (0, 1)  # for copy paste convenience
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-
-    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
-    feat_dat.columns = ['x', 'y']
-
-    # get mean logFC to order genes
-    mean_logfc = pd.Series(np.nanmean(de_res[["%s_logFC" % p for p in pids]], axis=1), index=de_res.index)
-    mean_logfc.dropna(inplace=True)
-
-    ix = feat_dat.index.intersection(mean_logfc.index)
-    mean_logfc = mean_logfc.loc[ix]
-
-    mean_logfc = mean_logfc.loc[mean_logfc.abs().sort_values(ascending=False).index]
-
-    ax.scatter(
-        feat_dat.loc[mean_logfc.index[:50], 'x'],
-        feat_dat.loc[mean_logfc.index[:50], 'y'],
-        c='k',
-        facecolor='k',
-        marker='^',
-    )
-    gg = references.ensembl_to_gene_symbol(mean_logfc.index[:50]).dropna()
-    for k, v in feat_dat.loc[mean_logfc.index[:50]].iterrows():
-        g = gg[k] if k in gg else k
-        ax.text(v['x'], v['y'], g)
-
-    dims = (2, 3)  # for copy paste convenience
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-
-    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
-    feat_dat.columns = ['x', 'y']
-
-    # get mean logFC to order genes
-    mean_logfc = pd.Series(np.nanmean(de_res[["%s_logFC" % p for p in pids]], axis=1), index=de_res.index)
-    mean_logfc.dropna(inplace=True)
-
-    ix = feat_dat.index.intersection(mean_logfc.index)
-    mean_logfc = mean_logfc.loc[ix]
-
-    mean_logfc = mean_logfc.loc[mean_logfc.abs().sort_values(ascending=False).index]
-
-    ax.scatter(
-        feat_dat.loc[mean_logfc.index[:50], 'x'],
-        feat_dat.loc[mean_logfc.index[:50], 'y'],
-        c='k',
-        facecolor='k',
-        marker='^',
-    )
-    gg = references.ensembl_to_gene_symbol(mean_logfc.index[:50]).dropna()
-
-    # repeat but with DE genes present in a few patients
-
-    dims = (2, 3)  # for copy paste convenience
-    fig, ax, res = plot_biplot(
-        dat,
-        obj.meta,
-        dims,
-        scatter_colours,
-        scatter_markers,
-        scale=0.05
-    )
-
-    feat_dat = pd.DataFrame(np.array(res['feature_data']).transpose(), index=dat.index)
-    feat_dat.columns = ['x', 'y']
-
-    # get mean logFC to order genes
-    ix = dat.loc[:, dat.columns.str.contains('GBM')].std(axis=1).sort_values(ascending=False).index[:50]
-
-    ax.scatter(
-        feat_dat.loc[ix, 'x'],
-        feat_dat.loc[ix, 'y'],
-        c='k',
-        facecolor='k',
-        marker='^',
-    )
-    gg = references.ensembl_to_gene_symbol(ix).dropna()
-    for k, v in feat_dat.loc[ix].iterrows():
-        g = gg[k] if k in gg else k
-        ax.text(v['x'], v['y'], g)
-
-    # multi-axis plot showing the distribution of sample values in each component
-    res = decomposition.svd_for_biplot(dat)
-    ix = obj.meta.type == 'GBM'
-
-    n_plot = 6
-    fig, axs = plt.subplots(n_plot, 1, sharex=True)
-    big_ax = fig.add_subplot(111, frameon=False)
-    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
-    big_ax.grid(False)
-
-    for i in range(n_plot):
-        ax = axs[i]
-
-        sns.kdeplot(
-            res['sample_dat'][i + 1][ix],
-            color='b',
-            ax=ax,
-            shade=True,
-            label='GBM' if i == 0 else None
-        )
-        ax.scatter(res['sample_dat'][i + 1][ix], np.zeros(ix.sum()), c='b', marker='|')
-        sns.kdeplot(
-            res['sample_dat'][i + 1][~ix],
-            color='r',
-            ax=ax,
-            shade=True,
-            label = 'iNSC' if i == 0 else None
-        )
-        ax.scatter(res['sample_dat'][i + 1][~ix], np.zeros((~ix).sum()), c='r', marker='|')
-
-        if i == 0:
-            ax.legend(loc='upper right')
-    axs[-1].set_xlabel('Sample value in PC')
-    big_ax.set_ylabel('Density (a.u.)')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "kde_pc_values.png"), dpi=200)
-
-    ## Run GO analysis using GOAtools
-    # TODO: if this works well, move to a module
-    from goatools import base
-    import wget
-
-    obo_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'go-basic.obo')
-    genetogo_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'gene2go')
-    genetoens_fn = os.path.join(LOCAL_DATA_DIR, 'gene_ontology', 'current', 'gene2ensembl.gz')
-    genetoens_url = "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2ensembl.gz"
-
-    obo_fn = base.download_go_basic_obo(obo_fn)
-    genetogo_fn = base.download_ncbi_associations(genetogo_fn)
-    if not os.path.isfile(genetoens_fn):
-        logger.info("Downloading RefGene-Ensembl converter from %s, saving to %s.", genetoens_url, genetoens_fn)
-        wget.download(genetoens_url, out=genetoens_fn)
-
-    def ens_to_entrez(ens, genetoens_fn):
-        gene2ens = pd.read_csv(genetoens_fn, header=0, sep='\t')
-        gene2ens = gene2ens.loc[gene2ens['#tax_id'] == 9606]
-        conv_df = gene2ens.loc[gene2ens.Ensembl_gene_identifier.isin(ens), ['GeneID', 'Ensembl_gene_identifier']]
-        # reduce to unique (Entrez ID, Ensembl ID) pairs
-        conv = collections.defaultdict(list)
-        for _, row in conv_df.iterrows():
-            conv[row['Ensembl_gene_identifier']].append(conv['GeneID'])
-
-        res = []
-        for e in ens:
-            res.extend(conv.get(e, []))
-        # alternative: but this takes the LAST definition for any given Entrez ID, ignoring any previous duplicates
-        # conv = dict(set([tuple(t) for t in conv_df.values.tolist()]))
-        return res
-
+    # combine with DE results and export to table
+    for_export = {}
+    for first_dim in dims:
+        dims_pair = (first_dim, first_dim + 1)
+        for dim in [(first_dim,), dims_pair]:
+            the_key = "PC_%s" % '-'.join([str(t + 1) for t in dim])
+            this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
+            this_ens = get_topmost_quantile_by_loading(this_feat, quantile).intersection(de_res.index)
+            for_export[the_key] = de_res.loc[this_ens]
+    excel.pandas_to_excel(for_export, os.path.join(outdir, "full_de_syngeneic_only_filtered_by_biplot.xlsx"))
