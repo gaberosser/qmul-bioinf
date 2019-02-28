@@ -137,4 +137,4 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(outdir, "pc_%d_%d_ipa_pval_heatmap.png" % (first_dim, first_dim + 1)), dpi=200)
         fig.savefig(os.path.join(outdir, "pc_%d_%d_ipa_pval_heatmap.pdf" % (first_dim, first_dim + 1)), dpi=200)
         fig.savefig(os.path.join(outdir, "pc_%d_%d_ipa_pval_heatmap.tiff" % (first_dim, first_dim + 1)), dpi=200)
-        
+

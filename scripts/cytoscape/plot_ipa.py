@@ -22,7 +22,7 @@ import numpy as np
 import itertools
 
 import pandas as pd
-from rnaseq import gsea
+from cytoscape import cyto
 from settings import HGIC_LOCAL_DIR
 import collections
 from plotting import common
@@ -55,16 +55,8 @@ if __name__ == '__main__':
         pathways=ipa_res.index
     )
 
-    # functional API - the python bindings are incomplete here?
-    cy = CyRestClient()
-    # reset the session (in case something is already loaded)
-    cy.session.delete()
-
-    # command API - the python bindings are much better
-    cy_cmd = cyrest.cyclient()
-
-    cy_nets = []
-    cy_styles = []
+    cy_obj = cyto.CytoscapeSession()
+    nx_graphs = {}
 
     # one network per patient:
     for pid in pids:
@@ -132,7 +124,6 @@ if __name__ == '__main__':
 
         edges = {}
         for g, p_arr in g_to_p.items():
-            # graph_node_path.add_edges_from(itertools.combinations(conn_paths, 2), gene_symbol=g)
             for p1, p2 in itertools.combinations(p_arr, 2):
                 edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
 
@@ -141,36 +132,22 @@ if __name__ == '__main__':
             if edge_attr['gene_count'] >= min_n_gene_shared:
                 graph.add_edge(p1, p2, **edge_attr)
 
-        # add network
-        cy_net = cy.network.create_from_networkx(graph, collection=pid)
-        cy_nets.append(cy_net)
+        nx_graphs[pid] = graph
 
-        cy_style = cy.style.create(pid)
+    max_node_val = max([len(v) for v in p_to_g.values()])
 
-        # passthrough node colour, label
-        cy_style.create_passthrough_mapping(column='fill_colour', vp='NODE_FILL_COLOR', col_type='String')
-        cy_style.create_passthrough_mapping(column='name', vp='NODE_LABEL', col_type='String')
+    for name, graph in nx_graphs.items():
+        this_net = cy_obj.add_networkx_graph(graph, name=name)
+        this_net.passthrough_node_fill('fill_colour')
+        this_net.passthrough_node_label('name')
+        this_net.passthrough_node_size_linear('n_gene', xmax=max_node_val)
+        this_net.passthrough_edge_width_linear('gene_count', xmin=min_n_gene_shared, ymin=0., ymax=5)
 
-        # node size based on number of genes
-        vmax = max([len(v) for v in p_to_g.values()])
-        node_size_map = style.StyleUtil.create_slope(min=0, max=vmax, values=(10, 50))
-        cy_style.create_continuous_mapping(column='n_gene', vp='NODE_SIZE', col_type='Double', points=node_size_map)
+    layout_kwargs = dict(
+        EdgeAttribute='gene_count',
+        defaultSpringLength=70,
+        defaultSpringCoefficient=50,
+        maxWeightCutoff=max_node_val,
+    )
 
-        # edge width based on number of genes in common
-        vmax = max([v['gene_count'] for v in edges.values()])
-        edge_width_map = style.StyleUtil.create_slope(min=min_n_gene_shared, max=vmax, values=(0, 5))
-        cy_style.create_continuous_mapping(column='gene_count', vp='EDGE_WIDTH', col_type='Double', points=edge_width_map)
-
-        cy.style.apply(cy_style, network=cy_net)
-        cy_styles.append(cy_style)
-
-        # layout
-        cy_cmd.layout.force_directed(
-            EdgeAttribute='gene_count',
-            defaultSpringLength=70,
-            defaultSpringCoefficient=50,
-            maxWeightCutoff=vmax,
-            network=pid
-        )
-
-
+    cy_obj.apply_layout(**layout_kwargs)
