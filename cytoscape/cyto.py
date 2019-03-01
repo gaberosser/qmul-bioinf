@@ -148,3 +148,15 @@ class CytoNet(object):
             dat = self.obj.get_edge_column(column)
             xmin = dat.min()
         self._create_linear_mapping(column, 'EDGE_WIDTH', x=(xmin, xmax), y=(ymin, ymax), col_belongs_to='edge')
+
+    def update_style_defaults(self, prop_dict):
+        self.style.update_defaults(prop_dict)
+
+    def set_node_border_width(self, width):
+        self.update_style_defaults({'NODE_BORDER_WIDTH': width})
+
+    def set_node_label_colour(self, colour):
+        self.update_style_defaults({'NODE_LABEL_COLOR': colour})
+
+    def set_edge_colour(self, colour):
+        self.update_style_defaults({'EDGE_STROKE_UNSELECTED_PAINT': colour})
