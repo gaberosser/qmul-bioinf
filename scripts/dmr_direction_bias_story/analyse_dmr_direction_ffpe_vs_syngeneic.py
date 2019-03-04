@@ -18,8 +18,7 @@ from sklearn.neighbors import KernelDensity
 
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
-from scripts.methylation.analyse_dmr_direction_validation_cohort import run_dmr_analyses, bar_plot
-from scripts.methylation import analyse_dmr_direction_and_distribution as addd
+from scripts.dmr_direction_bias_story import analyse_dmr_direction_and_distribution as addd
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
@@ -86,7 +85,7 @@ if __name__ == "__main__":
             gbm = meta.index[(meta.type == 'ffpe') & (meta.patient_id == pid)]
             comparisons["%s_ffpe-iNSC" % pid] = [gbm, insc]
             comparisons["%s_GIC-iNSC" % pid] = [gic, insc]
-        dmr_res = run_dmr_analyses(dat, comparisons, anno, dmr_params)
+        dmr_res = addd.run_dmr_analyses(dat, comparisons, anno, dmr_params)
         # Save DMR results to disk
         dmr_res.to_pickle(fn, include_annotation=False)
         logger.info("Saved DMR results to %s", fn)
@@ -173,7 +172,7 @@ if __name__ == "__main__":
     for_plot = dict([
         (pid, dmr_res_all['%s_GIC-iNSC' % pid]) for pid in pids
     ])
-    plt_dict = bar_plot(for_plot, pids)
+    plt_dict = addd.bar_plot(for_plot, pids)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_full_list_directions.png"), dpi=200)
 
@@ -182,7 +181,7 @@ if __name__ == "__main__":
     for_plot = dict([
         (pid, dict([(k, for_plot[pid][k]) for k in s])) for pid, s in zip(pids, spec_ix)
     ])
-    plt_dict = bar_plot(for_plot, pids)
+    plt_dict = addd.bar_plot(for_plot, pids)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_specific_list_directions.png"), dpi=200)
 
@@ -190,7 +189,7 @@ if __name__ == "__main__":
     for_plot = dict([
         (pid, dmr_res_all['%s_ffpe-iNSC' % pid]) for pid in pids
     ])
-    plt_dict = bar_plot(for_plot, pids)
+    plt_dict = addd.bar_plot(for_plot, pids)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "ffpe-iNSC_full_list_directions.png"), dpi=200)
 
@@ -199,6 +198,6 @@ if __name__ == "__main__":
     for_plot = dict([
         (pid, dict([(k, for_plot[pid][k]) for k in s])) for pid, s in zip(pids, spec_ix)
     ])
-    plt_dict = bar_plot(for_plot, pids)
+    plt_dict = addd.bar_plot(for_plot, pids)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "ffpe-iNSC_specific_list_directions.png"), dpi=200)

@@ -17,8 +17,7 @@ from sklearn.neighbors import KernelDensity
 
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
-from scripts.methylation.analyse_dmr_direction_validation_cohort import run_dmr_analyses, bar_plot
-from scripts.methylation import analyse_dmr_direction_and_distribution as addd
+from scripts.dmr_direction_bias_story import analyse_dmr_direction_and_distribution as addd
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
@@ -299,7 +298,6 @@ if __name__ == "__main__":
     alpha = 0.05
     pk_alpha = -np.log10(alpha)
 
-
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
 
@@ -335,7 +333,7 @@ if __name__ == "__main__":
                 gics = meta.index[(meta.type == 'GBM') & (meta.patient_id == pid)]
                 inscs = meta.index[(meta.type == 'iNSC') & (meta.patient_id == pid2)]
                 comparisons['-'.join([pid, pid2])] = [gics, inscs]
-        dmr_res = run_dmr_analyses(dat, comparisons, anno, dmr_params)
+        dmr_res = addd.run_dmr_analyses(dat, comparisons, anno, dmr_params)
         # Save DMR results to disk
         dmr_res.to_pickle(fn, include_annotation=False)
         logger.info("Saved DMR results to %s", fn)

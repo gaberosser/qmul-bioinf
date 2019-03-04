@@ -99,3 +99,44 @@ def flat_dict_to_nested(x, ordered=False):
                 parent.setdefault(t, collections.OrderedDict() if ordered else {})
                 parent = parent[t]
     return res
+
+
+def complement_dictionary_of_iterables(x, squeeze=False, reduce_to_unique=True):
+    """
+    Generate the 'inverse' of dictionary x: values and keys are swapped.
+    If all values in x are hashable, a one-liner will be faster:
+
+    dict([t[::-1] for t in x.items()])
+
+    This function is intended for cases in which values are iterable, such that we need to iterate explicitly.
+    :param x: Dictionary
+    :param squeeze: If True, any values in the resulting dictionary that have length 1 are 'squeezed'
+    :param reduce_to_unique: If True [default], use sets as the transient iterable so that we reduce the resulting
+    dictionary values to unique values only.
+    :return:
+    """
+    res = {}
+    for k, v in x.items():
+        if hasattr(v, '__iter__'):
+            for t in v:
+                if reduce_to_unique:
+                    res.setdefault(t, set()).add(k)
+                else:
+                    res.setdefault(t, []).append(k)
+        else:
+            if reduce_to_unique:
+                res.setdefault(v, set()).add(k)
+            else:
+                res.setdefault(v, []).append(k)
+
+    if reduce_to_unique:
+        # revert values to lists
+        for k, v in res.items():
+            res[k] = list(v)
+
+    if squeeze:
+        for k, v in res.items():
+            if len(v) == 1:
+                res[k] = v[0]
+
+    return res

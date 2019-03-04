@@ -160,3 +160,36 @@ class CytoNet(object):
 
     def set_edge_colour(self, colour):
         self.update_style_defaults({'EDGE_STROKE_UNSELECTED_PAINT': colour})
+
+    def set_node_fill_colour(self, colour):
+        self.update_style_defaults({'NODE_FILL_COLOR': colour})
+
+    def set_node_transparency(self, value):
+        # value should be an integer in [0, 255]
+        self.update_style_defaults({'NODE_TRANSPARENCY': value})
+
+    def node_pie_charts(self, columns, colours=None, val_range=None):
+        """
+        Style nodes as pie charts based on the values of the supplied columns
+        :param columns:
+        :param colours: Optionally supply an array of hexadecimal colours. If these are NOT supplied, the result
+        will be an unsatisfactory grey.
+        :param val_range: Optionally supply a range for the input values. Not sure how this is actually applied.
+        :return:
+        """
+        # for this styling, we need to generate some valid JSON
+        the_json = u'org.cytoscape.PieChart:{'
+        the_json += u'"cy_dataColumns": [%s]' % (
+            ','.join(['"%s"' % t for t in columns])
+        )
+        if colours is not None:
+            the_json += u',"cy_colors": [%s]' % (
+                ','.join(['"%s"' % t for t in colours])
+            )
+        if val_range is not None:
+            the_json += u',"cy_range": [%f,%f]' % val_range
+        the_json += u'}'
+
+        self.update_style_defaults({
+            'NODE_CUSTOMGRAPHICS_1': the_json
+        })
