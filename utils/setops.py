@@ -399,3 +399,18 @@ def quantify_feature_membership(venn_count):
         n = sum([int(t) for t in k])
         res[n] += ct
     return pd.Series(res).sort_index()
+
+
+def groups_to_ind(members, groups):
+    """
+    Starting with a dictionary giving group membership, return a dictionary giving the boolean map for each group.
+    The boolean map is an iterable of the same length as `members` and can be used as a lookup to get members of a
+    group.
+    :param members: Ordered iterable of all members (e.g. patients).
+    :param groups: Dictionary keyed by group names (e.g. tumour subtype), values are iterables of members of the group.
+    :return: Dictionary keyed by groups, values are boolean np.arrays giving the index to group members.
+    """
+    return dict([
+        (k, pd.Index(members).isin(v)) for k, v in groups.items()
+    ])
+

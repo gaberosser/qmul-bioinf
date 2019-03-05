@@ -289,6 +289,16 @@ def ecdf_plot(
     return ax
 
 
+def add_big_ax_to_subplot_fig(fig, xlabel_pos='bottom'):
+    big_ax = fig.add_subplot(111, frameon=False)
+    big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+    big_ax.grid(False)
+    if xlabel_pos == 'top':
+        big_ax.xaxis.set_label_position('top')
+        big_ax.xaxis.tick_top()
+    return big_ax
+
+
 class MidpointNormalize(Normalize):
     def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
         """
