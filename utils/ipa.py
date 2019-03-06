@@ -4,6 +4,8 @@ import csv
 import itertools
 import pandas as pd
 import collections
+import networkx as nx
+from utils import dictionary
 
 
 def results_to_ipa_format(
@@ -90,3 +92,113 @@ def load_supported_signatures_from_raw(indir, file_pattern, args, pathways=None)
                 ipa_pathway_signatures[pw] = this_list
 
     return ipa_pathway_signatures
+
+
+def nx_graph_from_ipa_single(df, name=None, min_edge_count=0):
+    """
+    Generate a networkx graph from IPA results. Nodes are pathways, edges represent similarity between pathways due to
+    shared genes.
+    :param df: A single result from load_raw_results. Index is pathways names. Must have a column named 'genes' giving
+    the deregulated genes in a string, separated by commas.
+    :param name: Name to give the graph, optional.
+    :param min_edge_count: If supplied, this is applied as a cutoff: edges are only created when the number of shared
+    genes is equal to or greater than this value.
+    :return: networkx.Graph object
+    """
+    p_to_g = {}
+    for p, row in df.iterrows():
+        p_to_g[p] = row.genes.split(',')
+
+    # to get connectivity, we need to create the complementary dictionary (indexed by genes)
+    g_to_p = {}
+    for p, g_arr in p_to_g.items():
+        for g in g_arr:
+            g_to_p.setdefault(g, []).append(p)
+
+    node_attrs = {}
+
+    for p in p_to_g:
+        node_attrs[p] = df.loc[p].drop('genes')
+
+    graph = nx.Graph(name=name)
+
+    for p in p_to_g.keys():
+        graph.add_node(
+            p,
+            genes=sorted(p_to_g[p]),
+            **node_attrs[p]
+        )
+
+    edges = {}
+    for g, p_arr in g_to_p.items():
+        for p1, p2 in itertools.combinations(p_arr, 2):
+            edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
+
+    for (p1, p2), edge_attr in edges.iteritems():
+        edge_attr['gene_count'] = len(edge_attr['genes'])
+        if edge_attr['gene_count'] >= min_edge_count:
+            graph.add_edge(p1, p2, **edge_attr)
+
+    return graph
+
+
+def nx_graph_from_ipa_multiple(ipa_dict, name=None, min_edge_count=0, attr_cols=('genes', '-logp')):
+    """
+    Generate a single networkx graph from multiple inputs.
+    Each node is a pathway, which includes an attribute showing which patients are members.
+    :param ipa_dict: Dictionary of IPA results dataframes, as returned by `load_raw_reports`. Keys are used to name
+    attribute columns.
+    :param name: Optionally proivde a name for the graph.
+    :param min_edge_count: See `nx_graph_from_ipa_single`.
+    :param attr_cols: Tuple giving the columns that will be added to the node attributes.
+    :return: networkx.Graph object. Nodes will have attributes named `{key}_{attr_name}`, where {key} is given by the
+    input dictionary.
+    """
+    p_to_g = collections.defaultdict(dict)
+    p_to_g_union = {}
+
+    # create a combined dataframe so we can add node attributes later
+    this_comb = []
+
+    for k, df in ipa_dict.items():
+        this_df = pd.DataFrame(
+            df[list(attr_cols)].values,
+            index=df.index,
+            columns=["%s_%s" % (k, t) for t in attr_cols]
+        )
+        this_comb.append(this_df)
+        p_to_g[k] = {}
+        for p, row in df.iterrows():
+            this_genes = row.genes.split(',')
+            p_to_g[k][p] = this_genes
+            p_to_g_union.setdefault(p, set()).update(this_genes)
+
+    this_comb = pd.concat(this_comb, axis=1, sort=True)
+    node_attrs = {}
+
+    for p in p_to_g_union:
+        node_attrs[p] = this_comb.loc[p].dropna()
+        node_attrs[p]['n_gene'] = len(p_to_g_union[p])
+
+    g_to_p_union = dictionary.complement_dictionary_of_iterables(p_to_g_union)
+
+    graph = nx.Graph(name=name)
+
+    for p in p_to_g_union.keys():
+        graph.add_node(
+            p,
+            all_genes=sorted(p_to_g_union[p]),
+            **node_attrs[p]
+        )
+
+    edges = {}
+    for g, p_arr in g_to_p_union.items():
+        for p1, p2 in itertools.combinations(p_arr, 2):
+            edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
+
+    for (p1, p2), edge_attr in edges.iteritems():
+        edge_attr['gene_count'] = len(edge_attr['genes'])
+        if edge_attr['gene_count'] >= min_edge_count:
+            graph.add_edge(p1, p2, **edge_attr)
+
+    return graph
