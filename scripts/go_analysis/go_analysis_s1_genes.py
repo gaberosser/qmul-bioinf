@@ -114,26 +114,42 @@ if __name__ == "__main__":
         this_res = [
             t for t in goea_res[pid]
             if (t.p_bonferroni <= alpha)
-               and (t.ratio_in_study[0] >= min_n_genes)
-               and (t.NS in namespaces)
+            and (t.ratio_in_study[0] >= min_n_genes)
+            and (t.NS in namespaces)
+            and (t.enrichment == 'e')
         ]
         # include bottom-most nodes only
         goea_res_filt[pid] = [t for t in this_res if (len(t.goterm.get_all_children()) == 0)]
         goe_obj.wr_xlsx(os.path.join(outdir, "goea_de_%s_filtered.xlsx" % pid), goea_res_filt[pid])
 
     # reload results, minor manipulation, then save to a single Excel file
-    all_res = {}
-    for pid in pids:
-        this_res = pd.read_excel(os.path.join(outdir, "goea_de_%s_filtered.xlsx" % pid), header=0, index_col=0)
-        this_gene_symb = [
-            ','.join(references.entrez_to_gene_symbol([int(x) for x in t]).dropna().values)
-            for t in this_res.study_items.str.split(', ')
-        ]
+    # do this for full results and filtered
+
+    def reload_and_annotate(fn):
+        this_res = pd.read_excel(fn, header=0, index_col=0)
+        # get all Entrez gene IDs and convert in one go
+        all_genes = set()
+        for t in this_res.study_items.str.split(', ').dropna():
+            all_genes.update([int(x) for x in t])
+        gene_conv = references.entrez_to_gene_symbol(sorted(all_genes))
+        this_gene_symb = []
+        for t in this_res.study_items:
+            if pd.isnull(t):
+                this_gene_symb.append('')
+            else:
+                this_gene_symb.append(','.join(gene_conv.loc[[int(x) for x in t.split(', ')]].dropna().values))
         this_res.drop('study_items', axis=1, inplace=True)
         this_res.insert(this_res.shape[1], 'genes_in_term', this_gene_symb)
-        all_res[pid] = this_res
+        return this_res
 
-    excel.pandas_to_excel(all_res, os.path.join(outdir, "goea_de_all_results_filtered.xlsx"))
+    all_res = {}
+    all_res_filt = {}
+    for pid in pids:
+        all_res[pid] = reload_and_annotate(os.path.join(outdir, "goea_de_%s.xlsx" % pid))
+        all_res_filt[pid] = reload_and_annotate(os.path.join(outdir, "goea_de_%s_filtered.xlsx" % pid))
+
+    excel.pandas_to_excel(all_res_filt, os.path.join(outdir, "goea_de_all_results.xlsx"))
+    excel.pandas_to_excel(all_res_filt, os.path.join(outdir, "goea_de_all_results_filtered.xlsx"))
 
     # create (mega)heatmap of all results
     tmp = pd.concat([v.name for v in all_res.values()])

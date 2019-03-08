@@ -238,7 +238,7 @@ if __name__ == '__main__':
     upset['axes']['set_size'].set_xlabel('Number of DMRs in single comparison')
     upset['figure'].savefig(os.path.join(outdir, "upset_dmr_by_direction_group.png"), dpi=200)
 
-    # now take all DMRs in the hypo (full OR partial) group (and ditto hyper) and merge with DE
+    # export DMR data to bigwig
     venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
     dmr_groups = {}
     genes_from_dmr_groups = {}
