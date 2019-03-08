@@ -9,7 +9,7 @@ import itertools
 import collections
 
 from plotting import common
-from utils import output, ipa, setops, dictionary
+from utils import output, ipa, setops, dictionary, network
 from settings import GIT_LFS_DATA_DIR
 from scripts.hgic_final import ipa_results_s1_s2 as irss
 from scripts.hgic_final import consts
@@ -54,7 +54,6 @@ if __name__ == '__main__':
     this = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
     this.columns = ['-logp', 'ratio', 'z', 'genes']
     # add ngenes column
-    this.insert(3, 'n_gene', this.genes.str.split(',').apply(len))
     this.index = [x.decode('utf-8') for x in this.index]
     # NaN in the z attribute will cause a parsing error
     this.drop('z', axis=1, inplace=True)
@@ -75,8 +74,9 @@ if __name__ == '__main__':
 
     # formatting
     this_net.passthrough_node_label('name')
-    this_net.passthrough_node_size_linear('n_gene')
-    this_net.passthrough_edge_width_linear('gene_count', xmin=1., ymin=0.2, ymax=5)
+    this_net.passthrough_node_size_linear('n_genes')
+    # this_net.passthrough_edge_width_linear('gene_count', xmin=1., ymin=0.2, ymax=5)
+    this_net.passthrough_edge_width_linear('n_genes', xmin=1., ymin=0.2, ymax=5)
     this_net.set_node_border_width(0.)
     this_net.set_edge_colour('#b7b7b7')
 

@@ -24,6 +24,19 @@ METHYLATION_DIRECTION_COLOURS = {
     'hyper': '#FF381F',
 }
 
+PATIENT_COLOURS = {
+    '018': '#ccffcc',
+    '019': '#4dff4d',
+    '030': '#00cc00',
+    '031': '#004d00',
+    '017': '#ffcccc',
+    '050': '#ff4d4d',
+    '054': '#cc0000',
+    '061': '#660000',
+    '026': '#ff80ff',
+    '052': '#800080'
+}
+
 FFPE_RNASEQ_SAMPLES = [
     'NH15_1661DEF2C',
     'NH15_1877_SP1C',

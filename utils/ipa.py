@@ -5,7 +5,7 @@ import itertools
 import pandas as pd
 import collections
 import networkx as nx
-from utils import dictionary
+from utils import dictionary, network
 
 
 def results_to_ipa_format(
@@ -106,40 +106,19 @@ def nx_graph_from_ipa_single(df, name=None, min_edge_count=0):
     :return: networkx.Graph object
     """
     p_to_g = {}
-    for p, row in df.iterrows():
-        p_to_g[p] = row.genes.split(',')
-
-    # to get connectivity, we need to create the complementary dictionary (indexed by genes)
-    g_to_p = {}
-    for p, g_arr in p_to_g.items():
-        for g in g_arr:
-            g_to_p.setdefault(g, []).append(p)
-
     node_attrs = {}
 
-    for p in p_to_g:
-        node_attrs[p] = df.loc[p].drop('genes')
+    for p, row in df.iterrows():
+        p_to_g[p] = row.genes.split(',')
+        node_attrs[p] = dict(df.loc[p].drop('genes'))
 
-    graph = nx.Graph(name=name)
-
-    for p in p_to_g.keys():
-        graph.add_node(
-            p,
-            genes=sorted(p_to_g[p]),
-            **node_attrs[p]
-        )
-
-    edges = {}
-    for g, p_arr in g_to_p.items():
-        for p1, p2 in itertools.combinations(p_arr, 2):
-            edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
-
-    for (p1, p2), edge_attr in edges.iteritems():
-        edge_attr['gene_count'] = len(edge_attr['genes'])
-        if edge_attr['gene_count'] >= min_edge_count:
-            graph.add_edge(p1, p2, **edge_attr)
-
-    return graph
+    return network.nx_graph_from_overlapping_members(
+        p_to_g,
+        member_key='genes',
+        name=name,
+        min_edge_count=min_edge_count,
+        node_attrs=node_attrs
+    )
 
 
 def nx_graph_from_ipa_multiple(ipa_dict, name=None, min_edge_count=0, attr_cols=('genes', '-logp')):
@@ -154,7 +133,19 @@ def nx_graph_from_ipa_multiple(ipa_dict, name=None, min_edge_count=0, attr_cols=
     :return: networkx.Graph object. Nodes will have attributes named `{key}_{attr_name}`, where {key} is given by the
     input dictionary.
     """
-    p_to_g = collections.defaultdict(dict)
+    p_to_g = {}
+    node_attrs = {}
+
+    for k, df in ipa_dict.items():
+        p_to_g[k] = {}
+        node_attrs[k] = {}
+        for p, row in df.iterrows():
+            this_genes = row.genes.split(',')
+            p_to_g[k][p] = this_genes
+            node_attrs[k][p] = dict(df.loc[p].drop('genes'))
+
+
+
     p_to_g_union = {}
 
     # create a combined dataframe so we can add node attributes later

@@ -13,6 +13,9 @@ from goatools import obo_parser, go_enrichment
 go_dir = os.path.join(OUTPUT_DIR, 'go_analysis')
 datestr_fmt = '%Y-%m-%d'
 
+## TODO: some of this code is rendered obsolete by goatools (now I know how to use it!)
+## merge this in (see scripts.go_analysis.go_analysis_s1_genes)
+
 
 def get_gaf_file(tax_id=9606):
     root_url = "http://geneontology.org/gene-associations/"
@@ -133,5 +136,6 @@ class GOAnalysis(object):
         return check_and_get_file(root_dir, 'gz', get_gaf_file, force_update=force_update, logger=self.logger)
 
 
-
+def nx_graph_from_go_single(df, name=None, min_edge_count=0):
+    pass
 
