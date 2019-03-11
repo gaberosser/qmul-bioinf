@@ -121,7 +121,13 @@ def nx_graph_from_ipa_single(df, name=None, min_edge_count=0):
     )
 
 
-def nx_graph_from_ipa_multiple(ipa_dict, name=None, min_edge_count=0, attr_cols=('genes', '-logp')):
+def nx_graph_from_ipa_multiple(
+        ipa_dict,
+        name=None,
+        min_edge_count=0,
+        attr_cols=('genes', '-logp', 'ratio', 'n_gene'),
+        reduction_method='union'
+):
     """
     Generate a single networkx graph from multiple inputs.
     Each node is a pathway, which includes an attribute showing which patients are members.
@@ -142,54 +148,15 @@ def nx_graph_from_ipa_multiple(ipa_dict, name=None, min_edge_count=0, attr_cols=
         for p, row in df.iterrows():
             this_genes = row.genes.split(',')
             p_to_g[k][p] = this_genes
-            node_attrs[k][p] = dict(df.loc[p].drop('genes'))
+            node_attrs[k][p] = dict(df.loc[p][list(attr_cols)])
 
-
-
-    p_to_g_union = {}
-
-    # create a combined dataframe so we can add node attributes later
-    this_comb = []
-
-    for k, df in ipa_dict.items():
-        this_df = pd.DataFrame(
-            df[list(attr_cols)].values,
-            index=df.index,
-            columns=["%s_%s" % (k, t) for t in attr_cols]
-        )
-        this_comb.append(this_df)
-        p_to_g[k] = {}
-        for p, row in df.iterrows():
-            this_genes = row.genes.split(',')
-            p_to_g[k][p] = this_genes
-            p_to_g_union.setdefault(p, set()).update(this_genes)
-
-    this_comb = pd.concat(this_comb, axis=1, sort=True)
-    node_attrs = {}
-
-    for p in p_to_g_union:
-        node_attrs[p] = this_comb.loc[p].dropna()
-        node_attrs[p]['n_gene'] = len(p_to_g_union[p])
-
-    g_to_p_union = dictionary.complement_dictionary_of_iterables(p_to_g_union)
-
-    graph = nx.Graph(name=name)
-
-    for p in p_to_g_union.keys():
-        graph.add_node(
-            p,
-            all_genes=sorted(p_to_g_union[p]),
-            **node_attrs[p]
-        )
-
-    edges = {}
-    for g, p_arr in g_to_p_union.items():
-        for p1, p2 in itertools.combinations(p_arr, 2):
-            edges.setdefault((p1, p2), {}).setdefault('genes', []).append(g)
-
-    for (p1, p2), edge_attr in edges.iteritems():
-        edge_attr['gene_count'] = len(edge_attr['genes'])
-        if edge_attr['gene_count'] >= min_edge_count:
-            graph.add_edge(p1, p2, **edge_attr)
-
-    return graph
+    return network.nx_graph_from_multiple_member_dicts(
+        p_to_g,
+        member_key='genes',
+        participants_key='patients',
+        name=name,
+        min_edge_count=min_edge_count,
+        dict_of_node_attrs=node_attrs,
+        reduction_method=reduction_method,
+        use_namespace_for_individuals=False
+    )

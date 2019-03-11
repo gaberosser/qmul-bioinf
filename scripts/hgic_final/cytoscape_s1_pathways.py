@@ -87,7 +87,6 @@ if __name__ == '__main__':
         ipa_de_res[pid] = this_df.loc[this_df['-logp'] >= plogalpha]
 
     gg = ipa.nx_graph_from_ipa_multiple(ipa_de_res, name='IPA from DE genes', min_edge_count=min_edge_count)
-    add_patient_specific_node_attributes(gg, pids)
 
     this_net = cy_session.add_networkx_graph(gg, name=gg.name)
 
@@ -95,8 +94,8 @@ if __name__ == '__main__':
 
     # formatting
     this_net.passthrough_node_label('name')
-    this_net.passthrough_node_size_linear('n_gene')
-    this_net.passthrough_edge_width_linear('gene_count', xmin=min_edge_count, ymin=0.4, ymax=5)
+    this_net.passthrough_node_size_linear('n_genes')
+    this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
     this_net.set_node_border_width(0.)
     this_net.set_edge_colour('#b7b7b7')
     this_net.set_node_fill_colour('#ffffff')
@@ -107,18 +106,12 @@ if __name__ == '__main__':
     #######################################################
     # DM
     #######################################################
-    ipa_dm_res = collections.OrderedDict()
-    for pid in pids:
-        fn = os.path.join(dm_indir, "{pid}.txt".format(pid=pid))
-        this_df = pd.read_csv(fn, sep='\t', skiprows=2, header=0, index_col=0)
-        this_df.columns = ['-logp', 'ratio', 'z', 'genes']
-        this_df.insert(3, 'n_gene', this_df.genes.str.split(',').apply(len))
-        this_df.index = this_df.index.str.decode('utf-8')
-        # filter to include only relevant pathways
-        ipa_dm_res[pid] = this_df.loc[this_df['-logp'] >= plogalpha]
+    ipa_dm_res = ipa.load_raw_reports(dm_indir, "{0}.txt", pids)
+    # filter to include only significant pathways
+    for k in ipa_dm_res:
+        ipa_dm_res[k] = ipa_dm_res[k].loc[ipa_dm_res[k]['-logp'] >= plogalpha]
 
     gg = ipa.nx_graph_from_ipa_multiple(ipa_dm_res, name='IPA from DM genes', min_edge_count=min_edge_count)
-    add_patient_specific_node_attributes(gg, pids)
 
     this_net = cy_session.add_networkx_graph(gg, name=gg.name)
 
@@ -126,8 +119,8 @@ if __name__ == '__main__':
 
     # formatting
     this_net.passthrough_node_label('name')
-    this_net.passthrough_node_size_linear('n_gene')
-    this_net.passthrough_edge_width_linear('gene_count', xmin=min_edge_count, ymin=0.4, ymax=5)
+    this_net.passthrough_node_size_linear('n_genes')
+    this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
     this_net.set_node_border_width(0.)
     this_net.set_edge_colour('#b7b7b7')
     this_net.set_node_fill_colour('#ffffff')
@@ -136,10 +129,10 @@ if __name__ == '__main__':
     this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
 
     layout_kwargs = dict(
-        EdgeAttribute='gene_count',
+        EdgeAttribute='n_genes',
         defaultSpringLength=150,
         defaultSpringCoefficient=150,
-        maxWeightCutoff=max([v['n_gene'] for v in gg.nodes.values()]),
+        maxWeightCutoff=max([v['n_genes'] for v in gg.nodes.values()]),
     )
 
     cy_session.apply_layout(**layout_kwargs)

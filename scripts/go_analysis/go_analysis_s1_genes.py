@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 
 from settings import LOCAL_DATA_DIR, HGIC_LOCAL_DIR
-from utils import log, output, excel, setops
+from utils import log, output, excel, setops, network
 from scripts.hgic_final import consts
 import references
 from cytoscape import cyto
@@ -60,16 +60,6 @@ if __name__ == "__main__":
     if not os.path.isfile(genetoens_fn):
         logger.info("Downloading RefGene-Ensembl converter from %s, saving to %s.", genetoens_url, genetoens_fn)
         wget.download(genetoens_url, out=genetoens_fn)
-
-    # entrezid_to_ens = pd.read_csv(genetoens_fn, sep='\t', index_col=None, header=0)
-    # entrezid_to_ens = entrezid_to_ens.loc[entrezid_to_ens['#tax_id'] == 9606, ['GeneID', 'Ensembl_gene_identifier']]
-    # entrezid_to_ens.columns = ['entrez_id', 'ensembl_id']
-    # entrezid_to_ens = entrezid_to_ens.loc[~entrezid_to_ens.entrez_id.duplicated()].set_index('entrez_id')
-    #
-    # ens_to_entrezid = entrezid_to_ens.copy()
-    # ens_to_entrezid.insert(0, 'entrez_id', ens_to_entrezid.index)
-    # ens_to_entrezid = ens_to_entrezid.loc[~ens_to_entrezid.ensembl_id.duplicated()]
-    # ens_to_entrezid.set_index('ensembl_id', inplace=True)
 
     # load ontologies
     obo_fn = base.download_go_basic_obo(obo_fn)
@@ -210,4 +200,30 @@ if __name__ == "__main__":
     cax.set_title(r'$-\log_{10}(p)$', fontsize=9, horizontalalignment='left')
 
     fig.savefig(os.path.join(outdir, "s1_de_go_terms_filtered_heatmap.png"), dpi=200)
+
+    # Cytoscape
+    min_edge_count = 10.
+    attr_cols = ['p_bonferroni']
+    p_to_g = {}
+    node_attrs = {}
+
+    for k, df in all_res_filt.items():
+        p_to_g[k] = {}
+        node_attrs[k] = {}
+        for p, row in df.iterrows():
+            nm = row['name']
+            this_genes = row.genes_in_term.split(',')
+            p_to_g[k][nm] = this_genes
+            node_attrs[k][nm] = dict(df.loc[p][attr_cols])
+
+    gg = network.nx_graph_from_multiple_member_dicts(
+        p_to_g,
+        member_key='genes',
+        participants_key='patients',
+        name='DE S1',
+        min_edge_count=min_edge_count,
+        dict_of_node_attrs=node_attrs,
+        use_namespace_for_individuals=False
+    )
+
 

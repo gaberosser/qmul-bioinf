@@ -25,7 +25,12 @@ norm.fun <- 'swan'
 
 MVALUE_FN <- sprintf("m_values_1299_3021_%s.xlsx", norm.fun)
 META_FN <- "metadata_1299_3021.csv"
+
+source('../_settings.R')
 ```
+
+# Analysing Sara's data
+## Loading and preparing data
 
 Check for the required input Excel file. Create it if necessary (from the raw idat files). We should only need to do this once.
 
@@ -36,7 +41,6 @@ if (!file.exists(MVALUE_FN) | !(file.exists(META_FN))) {
     paste0("The input Excel file ", MVALUE_FN, " was not found. Computing from raw idats.")
   )
   
-  source('../_settings.R')
   source("../utils.R")
   
   MfromBeta <- function(beta) {
@@ -243,6 +247,8 @@ legend("topright", legend=levels(factor(meta[ix, 'batch'])), text.col=pal, bg="w
 
 ```
 
+## Differential methylation
+
 Now let's identify differentially methylated probes (DMPs). We'll carry out a separate analysis for each of the two cell lines (1299 and 3021). 
 
 Before searching for DMPs, we'll run two filtering steps:
@@ -420,7 +426,6 @@ for (cl in c('3021', '1299')) {
 
 ```
 
-
 Now let's generate the volcano plots.
 
 ```{r}
@@ -436,6 +441,7 @@ for (cl in c('3021', '1299')) {
 }
 
 ```
+
 The 3021 line results seem to show evidence of dependence (i.e. a functional link between log fold change and adjusted P value). Here are a few forum posts discussing this:
 
 - https://support.bioconductor.org/p/111776/
@@ -443,4 +449,94 @@ The 3021 line results seem to show evidence of dependence (i.e. a functional lin
 - https://support.bioconductor.org/p/57445/
 
 In summary: the estimate of prior degrees of freedom is inifinity, meaning that all genes end up with the same estimated dispersion, hence P value is a function of log fold change. We can (partially) fix this by ensuring we run `eBayes()` with `robust=T` and `trend=T`.
+
+# Analysing the _Cavalli et al._ cohort data
+## Loading and preparing the data
+
+The authors have provided a pre-normalised matrix of beta values. We'll start with this, to avoid the need to normalise hundreds of samples. We'll load just the group 4 samples.
+
+```{r, cavalli_load, echo=F}
+in.dir <- file.path(data.dir.raid, 'methylation', 'GSE85212')
+meta_fn <- file.path(in.dir, 'sources.csv')
+beta_fn <- file.path(in.dir, 'beta', 'GSE85212_Methylation_763samples_SubtypeStudy_TaylorLab_beta_values.txt.gz')
+
+meta <- read.csv(meta_fn, header=T, row.names = 1)
+ix <- meta$subgroup == 'Group4'
+meta <- meta[ix,]
+load_cols <- c(1, which(ix) + 1)
+beta.cavalli <- fread(cmd = sprintf("zcat %s", beta_fn), select = load_cols, data.table = F)
+
+# set row names and drop the unneeded col
+rownames(beta.cavalli) <- beta.cavalli[,1]
+beta.cavalli$V1 <- NULL
+m.cavalli <- logit2(beta.cavalli)
+
+meta <- droplevels(meta)
+
+```
+
+A few exploratory plots
+
+```{r, cavalli_explore, echo=F}
+
+densityPlot(as.matrix(beta.cavalli), sampGroups = meta$subtype_formatted, ylim = c(0, 7))
+
+# the MDS plot seems to take forever, so disabling for now
+if (F) {
+  pal <- brewer.pal(3,"Dark2")
+  plotMDS(m.cavalli, top=NULL, col=pal[factor(meta$subtype_formatted)])
+  legend("topright", legend=levels(factor(meta$batch)), text.col=pal, bg="white")
+}
+
+```
+
+## Differential methylation
+
+The main comparison of interest here is 'signature vs no signature' in different settings:
+
+- All group 4
+- Group 4 alpha
+- Group 4 beta
+- Group 4 gamma
+
+We'll run this in `limma` as before, supplying the subtype and presence of signature as variables to the model matrix and using contrasts to pull out the relevant results. All parameters will be kept the same as before.
+
+```{r, cavalli_dm, echo=F}
+  subtype <- meta$subtype_formatted
+  signature <- meta$CHD7_signature
+  groups <- as.factor(paste(subtype, as.character(signature), sep='.'))
+  # design <- model.matrix(~0 + groups)
+  
+  # baseline is no signature, subtype alpha
+  design <- model.matrix(~subtype+subtype:signature)
+
+  fit <- lmFit(m.cavalli, design)
+  fit2 <- eBayes(fit, trend = T, robust = T)
+  
+  dmps.cavalli <- list()
+  
+  ## TODO: finish
+    
+  # test: alpha, signature vs no signature
+  this_fit <- contrasts.fit(fit, c(-1, 0, 0, 1, 0, 0))
+  this_fit <- eBayes(this_fit, trend = T, robust = T)
+  dmps.cavalli[['alpha_sign-nosign']] <- topTable(this_fit, number = Inf)
+  writeLines(sprintf(
+    "Comparison %s: %d DMPs with FDR < %.2f",
+    'Alpha',
+    sum(dmps.cavalli[['alpha_sign-nosign']]$adj.P.Val < alpha),
+    alpha
+  ))
+  
+  # out_fn <- paste0("dmps_", cl, ".xlsx")
+  # write.xlsx(dmps[[cl]], out_fn, colNames = T, rowNames = T)
+  # writeLines(
+  #   sprintf(
+  #     "Wrote the DMP results to file %s", 
+  #     out_fn
+  #   )
+  # )
+  
+
+```
 
