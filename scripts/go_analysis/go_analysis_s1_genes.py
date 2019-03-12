@@ -39,6 +39,19 @@ if __name__ == "__main__":
     alpha = 0.01
     min_n_genes = 2
 
+    patient_colours = {
+        '018': '#ccffcc',
+        '019': '#4dff4d',
+        '030': '#00cc00',
+        '031': '#004d00',
+        '017': '#ffcccc',
+        '050': '#ff4d4d',
+        '054': '#cc0000',
+        '061': '#660000',
+        '026': '#ff80ff',
+        '052': '#800080'
+    }
+
     pids = consts.PIDS
     outdir = output.unique_output_dir()
     # load previously generated DE results
@@ -220,10 +233,37 @@ if __name__ == "__main__":
         p_to_g,
         member_key='genes',
         participants_key='patients',
-        name='DE S1',
+        name='DE S1 GO',
         min_edge_count=min_edge_count,
         dict_of_node_attrs=node_attrs,
         use_namespace_for_individuals=False
     )
 
+    # Cytoscape session
+    cy_session = cyto.CytoscapeSession()
+    cyto_nets = {}
 
+    this_net = cy_session.add_networkx_graph(gg, name=gg.name)
+
+    cyto_nets[gg.name] = this_net
+
+    this_net.passthrough_node_label('name')
+    this_net.passthrough_node_size_linear('n_genes')
+    this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
+    this_net.set_node_border_width(0.)
+    this_net.set_edge_colour('#b7b7b7')
+    this_net.set_node_fill_colour('#ffffff')
+    this_net.set_node_transparency(255)
+
+    this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
+
+    layout_kwargs = dict(
+        EdgeAttribute='n_genes',
+        defaultSpringLength=20,
+        defaultSpringCoefficient=20,
+        maxWeightCutoff=max([v['n_genes'] for v in gg.nodes.values()]),
+    )
+
+    cy_session.apply_layout(**layout_kwargs)
+
+    cy_session.cy_cmd.session.save(os.path.join(outdir, "go_cytoscape.cys"))

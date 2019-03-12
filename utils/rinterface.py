@@ -34,6 +34,7 @@ class RFunctionDeferred(object):
             if not rpackages.isinstalled(im):
                 utils = rpackages.importr('utils')
                 utils.chooseCRANmirror(ind=1)
+                ## FIXME: this returns rpy2.rinterface.NULL if package is not found
                 utils.install_packages(im)
             rpackages.importr(im)
         self.ready = True
