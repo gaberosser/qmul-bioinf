@@ -16,21 +16,6 @@ from scripts.hgic_final import consts
 
 from settings import HGIC_LOCAL_DIR
 
-def add_patient_specific_node_attributes(graph, pids):
-    """
-    Attach additional attributes to the nodes in the supplied networkx.Graph object, required to represent nodes as
-    pie charts.
-    :param graph:
-    :return:
-    """
-    for k, n in graph.nodes.items():
-        members = []
-        for p in pids:
-            if "%s_-logp" % p in n:
-                members.append(p)
-            n[p] = int("%s_-logp" % p in n)
-        n['patients'] = ','.join(members)
-
 
 if __name__ == '__main__':
     """

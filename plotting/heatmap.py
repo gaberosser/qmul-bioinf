@@ -27,6 +27,12 @@ def grouped_expression_heatmap(
         raise ValueError("Unsupported orientation %s. Options are horizontal and vertical", orientation)
     horiz =  (orientation == 'horizontal')
 
+    # we need to define the colour bar boundaries, otherwise the sale could be inconsistent between groups
+    if vmin is None:
+        vmin = data.values.flatten().min()
+    if vmax is None:
+        vmax = data.values.flatten().max()
+
     # set GridSpec dims inputs based on options
     if horiz:
         ncol = len(groups)
@@ -50,14 +56,17 @@ def grouped_expression_heatmap(
 
     heatmap_kwargs.setdefault('vmin', vmin)
     heatmap_kwargs.setdefault('vmax', vmax)
-    heatmap_kwargs.setdefault('square', True)
     if cbar:
         default_cbar_kws = {'orientation': orientation}
-        if vmax is not None and vmin is not None:
-            default_cbar_kws['ticks'] = [vmin, vmax]
+        default_cbar_kws['ticks'] = [vmin, vmax]
 
-        heatmap_kwargs.setdefault('cmap', 'RdBu_r')
+        cmap = heatmap_kwargs.setdefault('cmap', 'RdBu_r')
         heatmap_kwargs.setdefault('cbar_kws', default_cbar_kws)
+
+        # create manual scalarmappable for the colour bar
+        norm = plt.cm.colors.Normalize(vmin=vmin, vmax=vmax)
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=plt.get_cmap(cmap))
+        sm.set_array([vmin, vmax])
 
     if horiz:
         gs_kw = dict(
@@ -116,9 +125,9 @@ def grouped_expression_heatmap(
             this_cbar = bool(cbar)
             if this_cbar:
                 if horiz:
-                    cbar_ax = fig.add_subplot(gs[0, 0])
+                    cbar_ax = fig.add_subplot(gs[0, :])
                 else:
-                    cbar_ax = fig.add_subplot(gs[0, 1])
+                    cbar_ax = fig.add_subplot(gs[:, 1])
         else:
             this_cbar = False
 
@@ -128,31 +137,40 @@ def grouped_expression_heatmap(
             arr = this_data.index
         if horiz:
             this_data = this_data.transpose()
+
         sns.heatmap(
             this_data,
             ax=ax,
-            cbar=this_cbar,
-            cbar_ax=cbar_ax,
+            cbar=False,
             **heatmap_kwargs
         )
         if horiz:
             ax.set_xticklabels(arr, rotation=90)
             ax.set_xlabel(grp)
             if i != 0:
-                # only left-most axis needs yticklabels
+                # only left-most axis needs yticklabels and label
                 ax.set_yticklabels([])
+                ax.yaxis.label.set_visible(False)
 
         else:
             ax.set_yticklabels(arr[::-1], rotation=0)  # NB: reverse array ordering due to reversed y axis
             ax.set_ylabel(grp)
             if i != len(groups) - 1:
-                # only bottom-most axis needs xticklabels
+                # only bottom-most axis needs xticklabels and label
                 ax.set_xticklabels([])
+                ax.xaxis.label.set_visible(False)
 
         for tick in ax.get_xticklabels():
             tick.set_rotation(90)
         for tick in ax.get_yticklabels():
             tick.set_rotation(0)
+
+    if cbar:
+        cb = fig.colorbar(sm, cax=cbar_ax, **heatmap_kwargs['cbar_kws'])
+        if horiz:
+            cbar_ax.xaxis.set_ticks_position('top')
+        else:
+            cbar_ax.yaxis.set_ticks_position('right')
 
     # align all xlabels
     fig.canvas.draw()

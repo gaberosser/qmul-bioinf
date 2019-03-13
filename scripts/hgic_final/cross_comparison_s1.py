@@ -102,6 +102,21 @@ if __name__ == '__main__':
     # export to list
     excel.pandas_to_excel(true_syn_only, os.path.join(outdir, "de_only_in_syngeneic.xlsx"))
 
+    # plot: number in each comparison
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sns.heatmap(de_count, cmap='Reds', annot=True, fmt='d', ax=ax)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "cross_comparison_de_count.png"), dpi=200)
+
+    # plot: number non-crossover
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sns.heatmap(n_syn_only, cmap='Reds', annot=True, fmt='d', ax=ax)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "cross_comparison_non_crossover_count.png"), dpi=200)
+
+
     # upset plots x 10, one for each 'row' (fix GIC, change comparator)
     ss = setops.specific_sets(pids)
 
