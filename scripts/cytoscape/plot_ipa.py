@@ -12,10 +12,6 @@ Then will investigate using a single combined network, highlighting only nodes t
 patient-specific.
 """
 
-from apps.py2cytoscape import cyrest
-from apps.py2cytoscape.data.cyrest_client import CyRestClient
-from apps.py2cytoscape.data import style
-
 import networkx as nx
 import os
 import numpy as np

@@ -187,3 +187,54 @@ if __name__ == '__main__':
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, "%s_logfc_heatmap.png" % name), dpi=200)
 
+    # Plot bar chart showing z values (where available) across different pathways (and comparisons?)
+    # start with S1 data (no references)
+    pois = [
+        'Chondroitin Sulfate Biosynthesis',
+        'Dermatan Sulfate Biosynthesis',
+        'Dermatan Sulfate Biosynthesis (Late Stages)',
+        'Chondroitin Sulfate Biosynthesis (Late Stages)',
+        'mTOR Signaling',
+        'EIF2 Signaling',
+        'G-Protein Coupled Receptor Signaling',
+        'cAMP-mediated signaling'
+    ]
+
+    tmp = {}
+    i = 0
+    for pid in pids:
+        for pw in pois:
+            tmp[i] = {'patient_id': pid, 'pathway': pw, 'z': ipa_de_res[pid].reindex([pw]).squeeze()['z']}
+            i += 1
+    df = pd.DataFrame(tmp).transpose()
+    pw_to_keep = df.groupby('pathway').apply(lambda x: ~x.isnull().all()).loc[pois, 'z']
+    pw_to_keep = pw_to_keep.index[pw_to_keep]
+
+    fig, axs = plt.subplots(nrows=len(pw_to_keep), sharex=True, sharey=True, figsize=(5.5, 6.5))
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    for i, pw in enumerate(pw_to_keep):
+        ax = axs[i]
+        ax.bar(
+            range(len(pids)),
+            df.loc[df.pathway == pw, 'z'],
+            color=[patient_colours[pid] for pid in pids],
+            edgecolor='k',
+            linewidth=0.8
+        )
+        ax.set_title(pw)
+        ax.set_ylim([-6, 6])
+        ax.axhline(0, c='k', linestyle='--', alpha=0.6, linewidth=0.8)
+        ax.xaxis.set_ticks(range(len(pids)))
+
+    axs[-1].xaxis.set_ticklabels(pids, rotation=90)
+    axs[-1].set_xlim([-.5, len(pids) - .5])
+    # add manual legend
+    legend_dict = collections.OrderedDict([
+        (pid, {'class': 'patch', 'facecolor': patient_colours[pid], 'edgecolor': 'k', 'linewidth': 0.5}) for pid in pids
+    ])
+    common.add_custom_legend(axs[0], {'': legend_dict}, loc_outside=True, loc_outside_vert='top')
+    big_ax.set_ylabel('IPA inferred z value')
+    fig.subplots_adjust(bottom=0.06, left=0.1, right=0.8, top=0.95, hspace=0.3)
+    fig.savefig(os.path.join(outdir, "selected_pathways_s1_ipa_z_values.png"), dpi=200)
+
+

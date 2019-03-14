@@ -264,12 +264,11 @@ maximum_variation_within_group <- 5.
 # this is the FDR cutoff, only used for reporting purposes (all DMPs with unadjusted P < 0.05 are exported)
 alpha <- 0.05
 
-dmps <- list()
-dmps.sv <- list()
+data.filt <- list()
+meta.filt <- list()
 
 for (cl in c('3021', '1299')) {
-  dmps[[cl]] <- list()
-  
+
   writeLines(paste0("Cell line ", cl))
   this.meta <- droplevels(meta[meta$cell_line == cl,])
   this.m <- m[, rownames(this.meta)]
@@ -336,8 +335,21 @@ for (cl in c('3021', '1299')) {
       n_before - n_after
     )
   )
+  data.filt[[cl]] <- this.m
+  meta.filt[[cl]] <- this.meta
+}
 
-  # run DMP WITHOUT batch correction
+```
+
+Now we  proceed to run DMP analysis *without* batch correction
+
+```{r dmp_no_batch, echo=F}
+dmps <- list()
+
+for (cl in c('3021', '1299')) {
+  dmps[[cl]] <- list()
+  this.m <- data.filt[[cl]]
+  this.meta <- meta.filt[[cl]]
   
   design <- model.matrix(~0 + condition + batch)
   fit <- lmFit(this.m, design)
@@ -375,8 +387,19 @@ for (cl in c('3021', '1299')) {
     )
   )
   
-  # run DMP WITH batch correction
+}
+  
+```
+
+It will turn out that batch correction isn't very helpful, but the code below applies it as suggested by the authors.
+
+``` {r dmp_with_batch, echo=F, eval=F}
+dmps.sv <- list()
+
+for (cl in c('3021', '1299')) {
   dmps.sv[[cl]] <- list()
+  this.m <- data.filt[[cl]]
+  this.meta <- meta.filt[[cl]]
   
   mod <- model.matrix(~0+condition+batch, data=this.meta)
   mod_null <- model.matrix(~0+batch, data=this.meta)
@@ -460,9 +483,9 @@ in.dir <- file.path(data.dir.raid, 'methylation', 'GSE85212')
 meta_fn <- file.path(in.dir, 'sources.csv')
 beta_fn <- file.path(in.dir, 'beta', 'GSE85212_Methylation_763samples_SubtypeStudy_TaylorLab_beta_values.txt.gz')
 
-meta <- read.csv(meta_fn, header=T, row.names = 1)
+meta.cavalli <- read.csv(meta_fn, header=T, row.names = 1)
 ix <- meta$subgroup == 'Group4'
-meta <- meta[ix,]
+meta.cavalli <- meta.cavalli[ix,]
 load_cols <- c(1, which(ix) + 1)
 beta.cavalli <- fread(cmd = sprintf("zcat %s", beta_fn), select = load_cols, data.table = F)
 
@@ -471,7 +494,7 @@ rownames(beta.cavalli) <- beta.cavalli[,1]
 beta.cavalli$V1 <- NULL
 m.cavalli <- logit2(beta.cavalli)
 
-meta <- droplevels(meta)
+meta.cavalli <- droplevels(meta.cavalli)
 
 ```
 
@@ -479,13 +502,13 @@ A few exploratory plots
 
 ```{r, cavalli_explore, echo=F}
 
-densityPlot(as.matrix(beta.cavalli), sampGroups = meta$subtype_formatted, ylim = c(0, 7))
+densityPlot(as.matrix(beta.cavalli), sampGroups = meta.cavalli$subtype_formatted, ylim = c(0, 7))
 
 # the MDS plot seems to take forever, so disabling for now
 if (F) {
   pal <- brewer.pal(3,"Dark2")
-  plotMDS(m.cavalli, top=NULL, col=pal[factor(meta$subtype_formatted)])
-  legend("topright", legend=levels(factor(meta$batch)), text.col=pal, bg="white")
+  plotMDS(m.cavalli, top=NULL, col=pal[factor(meta.cavalli$subtype_formatted)])
+  legend("topright", legend=levels(factor(meta.cavalli$batch)), text.col=pal, bg="white")
 }
 
 ```
@@ -501,42 +524,164 @@ The main comparison of interest here is 'signature vs no signature' in different
 
 We'll run this in `limma` as before, supplying the subtype and presence of signature as variables to the model matrix and using contrasts to pull out the relevant results. All parameters will be kept the same as before.
 
-```{r, cavalli_dm, echo=F}
-  subtype <- meta$subtype_formatted
-  signature <- meta$CHD7_signature
-  groups <- as.factor(paste(subtype, as.character(signature), sep='.'))
-  # design <- model.matrix(~0 + groups)
-  
-  # baseline is no signature, subtype alpha
-  design <- model.matrix(~subtype+subtype:signature)
+Start by filtering the data in a similar way to our own.
 
-  fit <- lmFit(m.cavalli, design)
-  fit2 <- eBayes(fit, trend = T, robust = T)
+```{r cavalli_filt, echo=F}
+minimum_range <- 1.
+maximum_variation_within_group <- 5.
+
+# Filter 1: minimum range
+
+n_before <- nrow(m.cavalli)
+rg <- apply(m.cavalli, 1, range)
+rg <- rg[2,] - rg[1,]
+ix <- rg > minimum_range
+
+hist(rg, 40, xlab='M value range', main=paste0(cl, ' M value range'))
+abline(v=minimum_range, col='red', lty=2)
+
+m.cavalli.filt <- this.m[ix,]
+n_after <- nrow(m.cavalli.filt)
+writeLines(
+  sprintf(
+    "Filtering based on a minimum range threshold of %.2f results in the number of probes going from %d to %d (removing %d)",
+    minimum_range,
+    n_before,
+    n_after,
+    n_before - n_after
+  )
+)
+
+condition <- factor(meta.cavalli$subtype_formatted)
+
+# Filter 2: Maximum variation
+# this should be possible to do efficiently using group_by from dplyr, but I hate R and it hates me.
+group_probes <- list()
+for (cnd in levels(condition)) {
+  n_before <- nrow(m.cavalli.filt)
+  this.group.m <- m.cavalli.filt[,condition == cnd]
+  rg <- apply(this.group.m, 1, range)
+  rg <- rg[2,] - rg[1,]
+  ix <- rg < maximum_variation_within_group
+  this.group.m <- this.group.m[ix,]
+  n_after <- nrow(this.group.m)
+  writeLines(
+    sprintf(
+      "Filtering based on a maximum inter-group threshold of %.2f results in the number of probes in group %s going from %d to %d (removing %d)",
+      maximum_variation_within_group,
+      cnd,
+      n_before,
+      n_after,
+      n_before - n_after
+    )
+  )
+  group_probes[[cnd]] <- rownames(this.group.m)
+}
+
+# now eliminate any probes that were removed
+common_probes = Reduce(intersect, group_probes)
+n_before <- nrow(this.m)
+m.cavalli.filt <- m.cavalli.filt[common_probes,]
+n_after <- nrow(m.cavalli.filt)
+writeLines(
+  sprintf(
+    "After the second stage of filtering (inter-group variation), we reduced the number of probes from %d to %d (removed %d)",
+    n_before,
+    n_after,
+    n_before - n_after
+  )
+)
+
+```
+
+
+```{r, cavalli_dm, echo=F}
+  subtype <- meta.cavalli$subtype_formatted
+  signature <- meta.cavalli$CHD7_signature
+  groups <- as.factor(paste(subtype, as.character(signature), sep='.'))
+  
+  design <- model.matrix(~0 + groups)
+  colnames(design) <- levels(groups)
+  cont.matrix <- makeContrasts(
+    alpha=Group4_alpha.1-Group4_alpha.0,
+    beta=Group4_beta.1-Group4_beta.0,
+    gamma=Group4_gamma.1-Group4_gamma.0,
+    all=(Group4_alpha.1+Group4_beta.1+Group4_gamma.1)/3-(Group4_alpha.0+Group4_beta.0+Group4_gamma.0)/3,
+    levels=design
+  )
+  fit <- lmFit(m.cavalli.filt, design)
+  fit2 <- contrasts.fit(fit, cont.matrix)
+  fit2 <- eBayes(fit2, trend = T, robust = T)
+
+  results <- decideTests(fit2, p.value = alpha)
+  vennDiagram(results)
   
   dmps.cavalli <- list()
+  for (cont in colnames(cont.matrix)) {
+    this.res <- topTable(fit2, coef=cont, number=Inf)
+    dmps.cavalli[[cont]] <- this.res[this.res$P.Value < 0.05,]
+    writeLines(sprintf(
+      "Comparison %s: %d DMPs with FDR < %.2f",
+      cont,
+      sum(this_res$adj.P.Val < alpha),
+      alpha
+    ))
+    out_fn <- paste0("dmps_", cont, ".xlsx")
+    write.xlsx(dmps.cavalli[[cont]], out_fn, colNames = T, rowNames = T)
+    writeLines(sprintf(
+      "Wrote the DMP results to file %s",
+      out_fn
+    ))
+  }
   
-  ## TODO: finish
-    
-  # test: alpha, signature vs no signature
-  this_fit <- contrasts.fit(fit, c(-1, 0, 0, 1, 0, 0))
-  this_fit <- eBayes(this_fit, trend = T, robust = T)
-  dmps.cavalli[['alpha_sign-nosign']] <- topTable(this_fit, number = Inf)
-  writeLines(sprintf(
-    "Comparison %s: %d DMPs with FDR < %.2f",
-    'Alpha',
-    sum(dmps.cavalli[['alpha_sign-nosign']]$adj.P.Val < alpha),
-    alpha
-  ))
-  
-  # out_fn <- paste0("dmps_", cl, ".xlsx")
-  # write.xlsx(dmps[[cl]], out_fn, colNames = T, rowNames = T)
-  # writeLines(
-  #   sprintf(
-  #     "Wrote the DMP results to file %s", 
-  #     out_fn
-  #   )
-  # )
-  
+```
 
+Let's check the level of methylation in the DM probes, as a sanity check.
+
+```{r cavalli_dm_plots}
+  for (cont in names(dmps.cavalli)) {
+    probes <- head(rownames(dmps.cavalli[[cont]]), 4)
+    df <- m.cavalli.filt[probes,]
+    df_melt <- melt(as.matrix(df))
+    colnames(df_melt) <- c('probe', 'sample', 'beta')
+    # add column with subtype, signature
+    df_melt$subtype = meta[df_melt$sample, 'subtype_formatted']
+    df_melt$signature = as.factor(meta[df_melt$sample, 'CHD7_signature'])
+    ggplot(df_melt) + geom_boxplot(aes(x=subtype, y=beta, fill=signature)) + facet_wrap(~as.factor(probe))
+  }
+```
+
+
+Just for information, here's a different way to approach the same comparison. The design matrix and contrasts differ, but the results are exactly the same. Have disabled evaluation for now.
+  
+``` {r, cavalli_dm_approach_2, echo=F, eval=F}
+  # baseline (intercept) is alpha with no signature, all other coefs are given as a difference
+  design.2 <- model.matrix(~subtype+subtype:signature)
+  colnames(design.2) <- c(
+    'baseline',
+    'plus_beta',
+    'plus_gamma',
+    'plus_alpha_sign',
+    'plus_beta_sign',
+    'plus_gamma_sign'
+  )
+  
+  cont.matrix.2 <- makeContrasts(
+    alpha=plus_alpha_sign,
+    beta=plus_beta_sign,
+    gamma=plus_gamma_sign,
+    all=(plus_alpha_sign+plus_beta_sign+plus_gamma_sign)/3,
+    levels=design.2
+  )
+
+  fit.2 <- lmFit(m.cavalli.filt, design.2)
+  fit2.2 <- contrasts.fit(fit.2, cont.matrix.2)
+  fit2.2 <- eBayes(fit2.2, trend = T, robust = T)
+  
+  dmps.cavalli.2 <- list()
+  for (cont in colnames(cont.matrix.2)) {
+    this.res <- topTable(fit2.2, coef=cont, number=Inf)
+    dmps.cavalli.2[[cont]] <- this.res[this.res$P.Value < 0.05,]
+  }
 ```
 
