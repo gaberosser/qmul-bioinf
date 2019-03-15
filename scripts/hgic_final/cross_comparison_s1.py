@@ -102,6 +102,48 @@ if __name__ == '__main__':
     # export to list
     excel.pandas_to_excel(true_syn_only, os.path.join(outdir, "de_only_in_syngeneic.xlsx"))
 
+    # export for IPA
+    # we're going to run the true syngeneic (10) against non-syngeneic chosen to give the greatest number of DE genes
+    # in practice, this means fixing the identity of the iNSC
+    selected_insc = [
+        '018', '030', '054', '052'
+    ]
+
+    cols = []
+    common_probes = set()
+    for pid in pids:
+        cols.append("GBM%siNSC%s_logFC" % (pid, pid))
+        common_probes.update(syn_only[("GBM%s" % pid, "iNSC%s" % pid)].index)
+    for p1 in selected_insc:
+        for p2 in pids:
+            k = "GBM%siNSC%s_logFC" % (p1, p2)
+            if k not in cols:
+                cols.append(k)
+            common_probes.update(syn_only[("GBM%s" % p1, "iNSC%s" % p2)].index)
+    common_probes = sorted(common_probes)
+
+    for_ipa = pd.DataFrame(columns=cols, index=common_probes)
+    for pid in pids:
+        this = syn_only[("GBM%s" % pid, "iNSC%s" % pid)]
+        for_ipa.loc[this.index, "GBM%siNSC%s_logFC" % (pid, pid)] = this.logFC
+    for p1 in selected_insc:
+        for p2 in pids:
+            if p1 == p2:
+                continue
+            this = syn_only[("GBM%s" % p1, "iNSC%s" % p2)]
+            for_ipa.loc[this.index, "GBM%siNSC%s_logFC" % (p1, p2)] = this.logFC
+
+    # split into max 20 column files
+    i = 0
+    part = 1
+    while i < for_ipa.shape[1]:
+        this = for_ipa.iloc[:, i:(i+20)]
+        this.to_excel(os.path.join(outdir, "syngeneic_only_and_selection_spurious_part%d.xlsx" % part))
+        i += 20
+        part += 1
+
+
+
     # plot: number in each comparison
     fig = plt.figure()
     ax = fig.add_subplot(111)

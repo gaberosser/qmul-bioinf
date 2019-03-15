@@ -1048,6 +1048,38 @@ def fit_kde_dmr_location(locs, xi, bandwidth, normed=True):
     return score
 
 
+def dm_direction_bar_plot(res, keys=None):
+
+    if keys is None:
+        keys = sorted(res.keys())
+
+    # bar plot showing balance of DMR direction
+    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=(5.5, 5.5))
+
+    direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=True,
+        ax=axs[0],
+        legend=False
+    )
+    axs[0].set_ylabel('% DMRs')
+    direction_of_dm_bar_plot(
+        res,
+        pids=keys,
+        as_pct=False,
+        ax=axs[1],
+        legend=False
+    )
+    axs[1].set_ylabel('Number DMRs')
+    plt.setp(axs[1].xaxis.get_ticklabels(), rotation=90)
+
+    return {
+        'axs': axs,
+        'fig': fig
+    }
+
+
 if __name__ == "__main__":
     pids = consts.PIDS
     norm_method_s1 = 'swan'
@@ -1207,46 +1239,19 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "patient_%s_log10_residual_delta_beta_quantification.png" % pid), dpi=200)
 
-
-
     # 1) direction of methylation change for all DMRs
     # a) clusters: absolute and relative values
-    gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
-    fig = plt.figure(figsize=(6, 7))
-    fig, ax = direction_of_dm_bar_plot(
-        dmr_res_all,
-        as_pct=False,
-        ax=fig.add_subplot(gs[1]),
-        legend_loc='upper right'
-    )
-    ax.set_ylabel("Number DMRs")
-    fig, ax = direction_of_dm_bar_plot(
-        dmr_res_all,
-        ax=fig.add_subplot(gs[0]),
-        legend=False
-    )
-    ax.xaxis.set_visible(False)
-    fig.tight_layout()
+    plt_dict = dm_direction_bar_plot(dmr_res_all, keys=pids)
+    fig = plt_dict['fig']
     fig.savefig(os.path.join(outdir, "all_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "all_dmr_direction.tiff"), dpi=200)
 
     # b) probes: otherwise as above
-    gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
-    fig = plt.figure(figsize=(6, 7))
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_all,
-        as_pct=False,
-        ax=fig.add_subplot(gs[1]),
-        legend_loc='upper right'
-    )
-    ax.set_ylabel("Number DMPs")
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_all,
-        ax=fig.add_subplot(gs[0]),
-        legend=False
-    )
-    ax.xaxis.set_visible(False)
-    fig.tight_layout()
+    plt_dict = dm_direction_bar_plot(dmp_res_all, keys=pids)
+    fig = plt_dict['fig']
+    axs = plt_dict['axs']
+    axs[0].set_ylabel('% DMPs')
+    axs[1].set_ylabel('Number DMPs')
     fig.savefig(os.path.join(outdir, "all_dmp_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "all_dmp_direction.tiff"), dpi=200)
 
@@ -1265,42 +1270,17 @@ if __name__ == "__main__":
 
     # 2) direction of methylation change for patient-specific DMRs
     # a) clusters: absolute and relative values
-    gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
-    fig = plt.figure(figsize=(6, 7))
-    fig, ax = direction_of_dm_bar_plot(
-        dmr_res_specific,
-        as_pct=False,
-        ax=fig.add_subplot(gs[1]),
-        legend_loc='upper right'
-    )
-    ax.set_ylabel("Number patient-specific DMRs")
-    fig, ax = direction_of_dm_bar_plot(
-        dmr_res_specific,
-        ax=fig.add_subplot(gs[0]),
-        legend=False
-    )
-    ax.xaxis.set_visible(False)
-    fig.tight_layout()
+    plt_dict = dm_direction_bar_plot(dmr_res_specific, keys=pids)
+    fig = plt_dict['fig']
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.tiff"), dpi=200)
 
     # b) probes: obtained by converting patient-specific DMRs to probes
-    gs = plt.GridSpec(2, 1, height_ratios=[1, 4])
-    fig = plt.figure(figsize=(6, 7))
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_specific,
-        as_pct=False,
-        ax=fig.add_subplot(gs[1]),
-        legend_loc='upper right'
-    )
-    ax.set_ylabel("Number DMPs")
-    fig, ax = direction_of_dm_bar_plot(
-        dmp_res_specific,
-        ax=fig.add_subplot(gs[0]),
-        legend=False
-    )
-    ax.xaxis.set_visible(False)
-    fig.tight_layout()
+    plt_dict = dm_direction_bar_plot(dmp_res_specific, keys=pids)
+    fig = plt_dict['fig']
+    axs = plt_dict['axs']
+    axs[0].set_ylabel('% DMPs')
+    axs[1].set_ylabel('Number DMPs')
     fig.savefig(os.path.join(outdir, "patient_specific_dmp_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "patient_specific_dmp_direction.tiff"), dpi=200)
 

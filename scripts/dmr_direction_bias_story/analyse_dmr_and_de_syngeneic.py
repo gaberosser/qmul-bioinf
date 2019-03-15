@@ -24,39 +24,6 @@ from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
 logger = log.get_console_logger()
 
 
-def dm_direction_bar_plot(res, keys=None):
-    from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
-
-    if keys is None:
-        keys = sorted(res.keys())
-
-    # bar plot showing balance of DMR direction
-    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=(5.5, 5.5))
-
-    addd.direction_of_dm_bar_plot(
-        res,
-        pids=keys,
-        as_pct=True,
-        ax=axs[0],
-        legend=False
-    )
-    axs[0].set_ylabel('% DMRs')
-    addd.direction_of_dm_bar_plot(
-        res,
-        pids=keys,
-        as_pct=False,
-        ax=axs[1],
-        legend=False
-    )
-    axs[1].set_ylabel('Number DMRs')
-    plt.setp(axs[1].xaxis.get_ticklabels(), rotation=90)
-
-    return {
-        'axs': axs,
-        'fig': fig
-    }
-
-
 if __name__ == '__main__':
     """
     Use the DMR bias results to lookup into DE results (and vice versa?)
@@ -261,7 +228,8 @@ if __name__ == '__main__':
                 chr_prefix=chr_prefix
             )
 
-        plt_dict = dm_direction_bar_plot(this_results, groups[grp])
+        # bar chart showing DMR direction
+        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp])
         plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s.png" % grp), dpi=200)
 
         # combine with DE to assess bias (if any)
@@ -291,6 +259,51 @@ if __name__ == '__main__':
         axs[0].set_ylabel('Density')
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, "de_genes_from_dmr_groups_logfc_kde.png"), dpi=200)
+
+    # grouped bar chart showing dmr direction (in one figure)
+    colours = pd.Series(
+        {
+            'Hyper': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+            'Hypo': consts.METHYLATION_DIRECTION_COLOURS['hypo']
+        }
+    )
+    group_order = pd.Series([len(t) for t  in groups.values()], index=groups.keys()).sort_values(ascending=False).index
+
+    fig = plt.figure(figsize=(5, 5))
+    gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[len(groups[grp]) for grp in group_order])
+    sharey = None
+
+    for i, grp in enumerate(group_order):
+        this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
+        this_dmrs = sorted(setops.reduce_union(*[venn_set[k] for k in this_sets]))
+        this_results = {}
+        for pid in groups[grp]:
+            this_results[pid] = dict([(t, dmr_res_all[pid][t]) for t in this_dmrs if t in dmr_res_all[pid]])
+
+        for_plot = addd.count_dm_by_direction(this_results, pids=groups[grp])
+        for_plot_pct = for_plot.divide(for_plot.sum(), axis=1) * 100.
+
+        ax = fig.add_subplot(gs[1, i], sharey=sharey)
+        if sharey is None:
+            sharey = ax
+        if i == 0:
+            ax.set_ylabel('Number DMRs')
+        else:
+            ax.yaxis.set_visible(False)
+
+        bar.stacked_bar_chart(for_plot, colours=colours, width=0.8, legend=False, ax=ax)
+        ax = fig.add_subplot(gs[0, i])
+        bar.stacked_bar_chart(for_plot_pct, colours=colours, width=0.8, legend=False, ax=ax)
+        if i == 0:
+            ax.set_ylabel('% DMRs')
+        else:
+            ax.yaxis.set_visible(False)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.tiff"), dpi=200)
+
+
 
     # is there much overlap in the gene sets between the two groups?
     fig = plt.figure(figsize=(5, 3))

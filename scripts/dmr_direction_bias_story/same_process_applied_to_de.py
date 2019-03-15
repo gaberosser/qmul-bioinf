@@ -4,7 +4,6 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy as np
 
-from scripts.dmr_direction_bias_story import analyse_dmr_direction_and_distribution as addd
 from scripts.hgic_final import consts
 from plotting import common, bar
 from settings import HGIC_LOCAL_DIR

@@ -231,8 +231,8 @@ Run a few exploratory checks.
 
 ```{r}
 
-densityPlot(beta, sampGroups = meta$batch, ylim = c(0,7))
-densityPlot(beta, sampGroups = meta$cell_line, ylim = c(0,7))
+densityPlot(as.matrix(beta), sampGroups = meta$batch, ylim = c(0,7))
+densityPlot(as.matrix(beta), sampGroups = meta$cell_line, ylim = c(0,7))
 
 pal <- brewer.pal(8,"Dark2")
 plotMDS(m, top=NULL, col=pal[factor(meta$batch)])
@@ -484,7 +484,7 @@ meta_fn <- file.path(in.dir, 'sources.csv')
 beta_fn <- file.path(in.dir, 'beta', 'GSE85212_Methylation_763samples_SubtypeStudy_TaylorLab_beta_values.txt.gz')
 
 meta.cavalli <- read.csv(meta_fn, header=T, row.names = 1)
-ix <- meta$subgroup == 'Group4'
+ix <- meta.cavalli$subgroup == 'Group4'
 meta.cavalli <- meta.cavalli[ix,]
 load_cols <- c(1, which(ix) + 1)
 beta.cavalli <- fread(cmd = sprintf("zcat %s", beta_fn), select = load_cols, data.table = F)
@@ -524,7 +524,7 @@ The main comparison of interest here is 'signature vs no signature' in different
 
 We'll run this in `limma` as before, supplying the subtype and presence of signature as variables to the model matrix and using contrasts to pull out the relevant results. All parameters will be kept the same as before.
 
-Start by filtering the data in a similar way to our own.
+Start by filtering the data. We only apply step 1 here (require a minimum range across all samples), as step 2 (imposing a maximum intra-group variation) discards an unacceptable number of probes. This is probably due to the larger size of the groups.
 
 ```{r cavalli_filt, echo=F}
 minimum_range <- 1.
@@ -540,7 +540,7 @@ ix <- rg > minimum_range
 hist(rg, 40, xlab='M value range', main=paste0(cl, ' M value range'))
 abline(v=minimum_range, col='red', lty=2)
 
-m.cavalli.filt <- this.m[ix,]
+m.cavalli.filt <- m.cavalli[ix,]
 n_after <- nrow(m.cavalli.filt)
 writeLines(
   sprintf(
@@ -555,42 +555,46 @@ writeLines(
 condition <- factor(meta.cavalli$subtype_formatted)
 
 # Filter 2: Maximum variation
-# this should be possible to do efficiently using group_by from dplyr, but I hate R and it hates me.
-group_probes <- list()
-for (cnd in levels(condition)) {
+# Disabled since it results in a very large loss of probes.
+if (F) {
+  # this should be possible to do efficiently using group_by from dplyr, but I hate R and it hates me.
+  group_probes <- list()
+  for (cnd in levels(condition)) {
+    n_before <- nrow(m.cavalli.filt)
+    this.group.m <- m.cavalli.filt[,condition == cnd]
+    rg <- apply(this.group.m, 1, range)
+    rg <- rg[2,] - rg[1,]
+    ix <- rg < maximum_variation_within_group
+    this.group.m <- this.group.m[ix,]
+    n_after <- nrow(this.group.m)
+    writeLines(
+      sprintf(
+        "Filtering based on a maximum inter-group threshold of %.2f results in the number of probes in group %s going from %d to %d (removing %d)",
+        maximum_variation_within_group,
+        cnd,
+        n_before,
+        n_after,
+        n_before - n_after
+      )
+    )
+    group_probes[[cnd]] <- rownames(this.group.m)
+  }
+  
+  # now eliminate any probes that were removed
+  common_probes = Reduce(intersect, group_probes)
   n_before <- nrow(m.cavalli.filt)
-  this.group.m <- m.cavalli.filt[,condition == cnd]
-  rg <- apply(this.group.m, 1, range)
-  rg <- rg[2,] - rg[1,]
-  ix <- rg < maximum_variation_within_group
-  this.group.m <- this.group.m[ix,]
-  n_after <- nrow(this.group.m)
+  m.cavalli.filt <- m.cavalli.filt[common_probes,]
+  n_after <- nrow(m.cavalli.filt)
   writeLines(
     sprintf(
-      "Filtering based on a maximum inter-group threshold of %.2f results in the number of probes in group %s going from %d to %d (removing %d)",
-      maximum_variation_within_group,
-      cnd,
+      "After the second stage of filtering (inter-group variation), we reduced the number of probes from %d to %d (removed %d)",
       n_before,
       n_after,
       n_before - n_after
     )
   )
-  group_probes[[cnd]] <- rownames(this.group.m)
-}
 
-# now eliminate any probes that were removed
-common_probes = Reduce(intersect, group_probes)
-n_before <- nrow(this.m)
-m.cavalli.filt <- m.cavalli.filt[common_probes,]
-n_after <- nrow(m.cavalli.filt)
-writeLines(
-  sprintf(
-    "After the second stage of filtering (inter-group variation), we reduced the number of probes from %d to %d (removed %d)",
-    n_before,
-    n_after,
-    n_before - n_after
-  )
-)
+}
 
 ```
 
@@ -623,16 +627,13 @@ writeLines(
     writeLines(sprintf(
       "Comparison %s: %d DMPs with FDR < %.2f",
       cont,
-      sum(this_res$adj.P.Val < alpha),
+      sum(this.res$adj.P.Val < alpha),
       alpha
     ))
-    out_fn <- paste0("dmps_", cont, ".xlsx")
-    write.xlsx(dmps.cavalli[[cont]], out_fn, colNames = T, rowNames = T)
-    writeLines(sprintf(
-      "Wrote the DMP results to file %s",
-      out_fn
-    ))
   }
+  
+  out_fn <- "dmps_cavalli.xlsx"
+  write.xlsx(dmps.cavalli, file = out_fn, colnames = T, rowNames = T)
   
 ```
 
@@ -641,13 +642,14 @@ Let's check the level of methylation in the DM probes, as a sanity check.
 ```{r cavalli_dm_plots}
   for (cont in names(dmps.cavalli)) {
     probes <- head(rownames(dmps.cavalli[[cont]]), 4)
-    df <- m.cavalli.filt[probes,]
+    df <- beta.cavalli[probes,]
     df_melt <- melt(as.matrix(df))
     colnames(df_melt) <- c('probe', 'sample', 'beta')
     # add column with subtype, signature
-    df_melt$subtype = meta[df_melt$sample, 'subtype_formatted']
-    df_melt$signature = as.factor(meta[df_melt$sample, 'CHD7_signature'])
-    ggplot(df_melt) + geom_boxplot(aes(x=subtype, y=beta, fill=signature)) + facet_wrap(~as.factor(probe))
+    df_melt$subtype = meta.cavalli[df_melt$sample, 'subtype_formatted']
+    df_melt$signature = as.factor(meta.cavalli[df_melt$sample, 'CHD7_signature'])
+    plt <- ggplot(df_melt) + geom_boxplot(aes(x=subtype, y=beta, fill=signature)) + facet_wrap(~as.factor(probe)) + ggtitle(sprintf("DMPs in %s", cont))
+    plot(plt)
   }
 ```
 
