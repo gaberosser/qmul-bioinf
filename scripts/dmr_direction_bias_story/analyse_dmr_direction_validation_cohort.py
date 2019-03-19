@@ -115,6 +115,8 @@ if __name__ == "__main__":
     # filter
     val_obj.filter_samples(val_obj.meta.type.isin(['GBM (GSC)', 'NSC']))
 
+    # TODO: upload to the classifier and run (toggle this so it's only run once)
+
     # combine and reduce probes
     obj = loader.loader.MultipleBatchLoader([our_obj, val_obj])
     dat = process.m_from_beta(obj.data)
