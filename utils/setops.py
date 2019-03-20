@@ -414,3 +414,13 @@ def groups_to_ind(members, groups):
         (k, pd.Index(members).isin(v)) for k, v in groups.items()
     ])
 
+
+def key_to_members(ind, set_labels):
+    """
+    Given the set key ind (Bool string) and the corresponding set labels, return an array of the members of the set.
+    :param ind:
+    :param set_labels:
+    :return:
+    """
+    return [s for s, b in zip(set_labels, ind) if b == '1']
+
