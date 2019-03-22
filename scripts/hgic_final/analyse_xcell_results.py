@@ -17,7 +17,7 @@ from scipy import stats
 from scipy.cluster import hierarchy as hc
 import numpy as np
 from utils import setops, excel
-import consts
+from scripts.hgic_final import consts
 from stats import nht
 import multiprocessing as mp
 
@@ -466,11 +466,13 @@ if __name__ == '__main__':
         show_gene_clustering=True,
         cmap='YlOrRd',
         row_linkage=rl,
-        z_score=1
+        z_score=1,
+        figsize=(5.5, 5.5)
     )
-    cg.gs.update(left=0.03, bottom=0.22, right=0.9)
+    # cg.gs.update(left=0.03, bottom=0.22, right=0.9)
+    cg.gs.update(left=0.1, bottom=0.4, right=0.9, top=0.93)
     cg.cax.set_yticklabels(['Low', '', '', '', 'High'])
-    cg.cax.set_ylabel('Normalised proportion', labelpad=-70)  # bit hacky, but this places the label correctly
+    cg.cax.set_ylabel('Normalised\nproportion', labelpad=-70)  # bit hacky, but this places the label correctly
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.png"), dpi=200)
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.tiff"), dpi=200)
     cg.savefig(os.path.join(outdir, "cell_proportion_cluster_by_patient.pdf"), dpi=200)
@@ -590,12 +592,37 @@ if __name__ == '__main__':
         dpi=200
     )
 
-    # Generate cut-down plot with only pathways correlated with Tregs
+    # Generate cut-down plots with only pathways correlated with Tregs
     ix = co_p.columns[(co_p.loc['Tregs'] < alpha)]
-    plot_dict = plot_heatmap_with_quantification(co.loc[:, ix], co_p.loc[:, ix], alpha=alpha, figsize=(7., 5.5))
+
+    # a) heatmap showing -log10(p) across patients
+    fig = plt.figure(figsize=(7.5, 3))
+    ax = fig.add_subplot(111)
+    cols = ['%s_syngeneic_-logp' % pid for pid in pids]
+    this_dat = ipa_res.loc[ix.sort_values(), cols]
+    this_dat.columns = pids
+    sns.heatmap(
+        this_dat,
+        cmap='Reds',
+        vmin=-np.log10(alpha),
+        ax=ax
+    )
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    ax.set_xlabel('Patient')
+    cax = [t for t in fig.axes if t is not ax][0]
+    cax.set_title(r'$-\log_{10}(p)$', fontsize=10)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "pathway_plogp_syngeneic_tregs.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "pathway_plogp_syngeneic_tregs.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "pathway_plogp_syngeneic_tregs.pdf"), dpi=200)
+
+    # b) subset of the main correlation heatmap
+    plot_dict = plot_heatmap_with_quantification(co.loc[:, ix], co_p.loc[:, ix], alpha=alpha, figsize=(8., 4.9))
     gs = plot_dict['gs']
-    gs.update(left=0.3, bottom=0.35, top=0.99, right=0.9, wspace=0.03)
+    gs.update(left=0.4, bottom=0.45, top=0.99, right=0.93, wspace=0.03)
     fig = plot_dict['fig']
+    plt.setp(plot_dict['main_ax'].xaxis.get_ticklabels(), fontsize=10)
+    plt.setp(plot_dict['main_ax'].yaxis.get_ticklabels(), fontsize=10)
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.png" % corr_metric), dpi=200)
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.tiff" % corr_metric), dpi=200)
     fig.savefig(os.path.join(outdir, "cell_proportion_pathway_pval_%s_clustering_sign_annot_syngeneic_tregs.pdf" % corr_metric), dpi=200)

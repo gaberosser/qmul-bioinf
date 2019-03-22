@@ -36,7 +36,8 @@ Here we seek to identify DMRs that distinguish the hypo- and hypermethylated gro
 
 This is initially carried out directly using the GIC-iNSC results.
 
-We then query these DMRs to determine whether they have different location distributions.
+- We query these DMRs to determine whether they have different location distributions.
+- We look for shared but discordant DMRs between the two groups
 
 Possible directions:
 - Run a direct DM comparison to identify DMRs without the need for a comparator
@@ -216,19 +217,175 @@ if __name__ == '__main__':
         (k, v) for k, v in shared_dmrs_discordant.items() if (np.array([len(t) for t in v.values()]) > 1).all()
     ])
 
-    # look up probes / genes
-    genes_discordant_gte2 = setops.reduce_union(
-        *[zip(*dmr_res_s1.clusters[t].genes)[0] for t in shared_dmrs_discordant_gte2 if dmr_res_s1.clusters[t].genes]
+    def get_genes_relations(cluster_ids, clusters, relation_map=None, relation_priority=None,  relation_filter=None):
+        if relation_priority is None:
+            relation_priority = [
+                'TSS200',
+                'TSS1500',
+                '1stExon',
+                "3'UTR",
+                "5'UTR",
+                'ExonBnd',
+                'Body'
+            ]
+        if relation_map is None:
+            relation_map = dict([(k, k) for k in relation_priority])
+
+        if relation_filter is not None:
+            if not hasattr(relation_filter, '__iter__'):
+                relation_filter = [relation_filter]
+            relation_filter = set(relation_filter)
+
+        rels = []
+        genes = set()
+
+        for t in cluster_ids:
+            pc = clusters[t]
+            if len(pc.genes) > 0:
+                gs, rs = zip(*clusters[t].genes)
+                if relation_filter is not None:
+                    # filter gene and relation
+                    # if this leaves no results, skip this DMR
+                    tmp = [(g, r) for g, r in zip(gs, rs) if r in relation_filter]
+                    if len(tmp) == 0:
+                        continue
+                    else:
+                        gs, rs = zip(*tmp)
+                for rp in relation_priority:
+                    if rp in rs:
+                        rels.append(relation_map[rp])
+                        break
+                genes.update(gs)
+            else:
+                # if we aren't filtering by relation, add the (arbitrary) label 'intergene' here to express a lack of
+                # gene.
+                if relation_filter is None:
+                    rels.append('Intergene')
+        return sorted(genes), rels
+
+    genes_discordant, rels_discordant = get_genes_relations(shared_dmrs_discordant, dmr_res_s1.clusters)
+    genes_discordant_gte2, rels_discordant_gte2 = get_genes_relations(shared_dmrs_discordant_gte2, dmr_res_s1.clusters)
+    genes_hypo, rels_hypo = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters)
+    genes_hyper, rels_hyper = get_genes_relations(dmr_groups['Hyper'], dmr_res_s1.clusters)
+
+    # export for IPA
+    ix = sorted(setops.reduce_union(genes_hyper, genes_hypo, genes_discordant, genes_discordant_gte2))
+    df_for_ipa = pd.DataFrame(1., columns=['Hypo', 'Hyper', 'Shared discordant', 'Shared discordant GTE2'], index=ix)
+    df_for_ipa.loc[genes_hypo, 'Hypo'] = 0.01
+    df_for_ipa.loc[genes_hyper, 'Hyper'] = 0.01
+    df_for_ipa.loc[genes_discordant, 'Shared discordant'] = 0.01
+    df_for_ipa.loc[genes_discordant_gte2, 'Shared discordant GTE2'] = 0.01
+    df_for_ipa.to_excel(os.path.join(outdir, "group_specific_gene_lists_for_ipa.xlsx"))
+
+    # repeat but only keeping TSS-related genes
+    genes_hypo_tss, rels_hypo_tss = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
+    genes_hyper_tss, rels_hyper_tss = get_genes_relations(dmr_groups['Hyper'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
+
+    # redraw venn
+
+
+    ix = sorted(setops.reduce_union(genes_hyper_tss, genes_hypo_tss))
+    df_for_ipa = pd.DataFrame(1., columns=['Hypo', 'Hyper'], index=ix)
+    df_for_ipa.loc[genes_hypo_tss, 'Hypo'] = 0.01
+    df_for_ipa.loc[genes_hyper_tss, 'Hyper'] = 0.01
+    df_for_ipa.to_excel(os.path.join(outdir, "group_specific_gene_lists_for_ipa_tss_only.xlsx"))
+
+    # distribution of cluster locations in the two groups (TSS, exon, etc.)
+    relation_priority = [
+        'TSS200',
+        'TSS1500',
+        '1stExon',
+        "3'UTR",
+        "5'UTR",
+        'ExonBnd',
+        'Body'
+    ]
+
+    rel_counts = pd.DataFrame(index=relation_priority)
+    rel_counts.insert(
+        0,
+        'Background',
+        pd.Index(get_genes_relations(dmr_res_s1.clusters.keys(), dmr_res_s1.clusters)[1]).value_counts().loc[rel_counts.index]
     )
-    probes_discordant_gte2 = reduce(lambda x, y: x+y, [dmr_res_s1.clusters[t].pids for t in shared_dmrs_discordant_gte2])
+    rel_counts.insert(
+        0,
+        'Hypo',
+        pd.Index(genes_hypo).value_counts().loc[rel_counts.index]
+    )
+    rel_counts.insert(
+        0,
+        'Hyper',
+        pd.Index(genes_hyper).value_counts().loc[rel_counts.index]
+    )
+    rel_counts.insert(0, 'Discordant', pd.Index(rels_discordant).value_counts().loc[rel_counts.index])
+    rel_counts.insert(0, 'Discordant GTE2', pd.Index(rels_discordant_gte2).value_counts().loc[rel_counts.index])
+    rel_counts = rel_counts.fillna(0).astype(int)
+
+    fig = plt.figure(figsize=(5.5, 3.3))
+    ax = fig.add_subplot(111)
+    sns.heatmap(rel_counts.divide(rel_counts.sum(), axis=1) * 100., cmap='Reds')
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    cax = [t for t in fig.get_axes() if t is not ax][0]
+    cax.set_title('% of DMRs')
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "relation_to_gene_pct_dmrs.png"), dpi=200)
 
     # how do these compare to the group-specific DMR genes?
+    set_colours_dict = {
+        'Hypo': 'g',
+        'Hyper': 'r',
+        'Discordant': 'b'
+    }
+
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
+    set_labels = genes_from_dmr_groups.keys()
+    venn.venn_diagram(
+        *genes_from_dmr_groups.values(),
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
+    )
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_dmrs.png"), dpi=200)
+
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
+    set_labels = ['Hypo', 'Hyper']
+    venn.venn_diagram(
+        genes_hypo_tss, genes_hyper_tss,
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
+    )
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_dmrs_tss_only.png"), dpi=200)
+
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
+    set_labels = (genes_from_dmr_groups.keys() + ['Discordant'])
+    venn.venn_diagram(
+        *(genes_from_dmr_groups.values() + [list(genes_discordant)]),
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
+    )
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs.png"), dpi=200)
+
+    # how do these compare to the group-specific DMR genes (GTE2)?
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
     venn.venn_diagram(
         *(genes_from_dmr_groups.values() + [list(genes_discordant_gte2)]),
-        set_labels=(genes_from_dmr_groups.keys() + ['Discordant'])
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
     )
-
-    # distribution of probe/region locations in the two groups
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_gte2.png"), dpi=200)
 
     raise StopIteration
 
