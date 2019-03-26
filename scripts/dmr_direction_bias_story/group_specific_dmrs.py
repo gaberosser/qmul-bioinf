@@ -2,7 +2,8 @@ from plotting import bar, common, pie, polar, venn
 from methylation import loader, dmr, process
 import pandas as pd
 from stats import nht
-from utils import output, setops, genomics, log, dictionary
+from utils import output, setops, genomics, log, ipa, dictionary
+from cytoscape import cyto
 import multiprocessing as mp
 import os
 import collections
@@ -10,7 +11,7 @@ import pickle
 import numpy as np
 from scipy import stats, cluster
 import matplotlib
-from matplotlib import pyplot as plt, patches
+from matplotlib import pyplot as plt, patches, gridspec
 from matplotlib.colors import Normalize
 from matplotlib import cm
 from sklearn.neighbors import KernelDensity
@@ -20,9 +21,9 @@ import references
 from scripts.hgic_final import \
     two_strategies_grouped_dispersion as tsgd, \
     two_strategies_combine_de_dmr as tscd, \
+    analyse_dmrs_s1_direction_distribution as addd, \
     consts
 from scripts.dmr_direction_bias_story import \
-    analyse_dmr_direction_and_distribution as addd, \
     same_process_applied_to_de as same_de
 from rnaseq import loader as rnaseq_loader
 from integrator import rnaseq_methylationarray
@@ -38,6 +39,7 @@ This is initially carried out directly using the GIC-iNSC results.
 
 - We query these DMRs to determine whether they have different location distributions.
 - We look for shared but discordant DMRs between the two groups
+- We run IPA on the genes associated with the DMRs and visualise the pathways (and upstream regulators?)
 
 Possible directions:
 - Run a direct DM comparison to identify DMRs without the need for a comparator
@@ -45,10 +47,178 @@ Possible directions:
 - Link to DE and look for a change in the concordance relative to 'all DMRs' (try this with TSS only)
 """
 
+def pathway_involvement_heatmap_by_p(
+        p_dat,
+        pathway_order,
+        orientation='vertical',
+        vmin=None,
+        vmax=None,
+):
+
+    n = p_dat.columns.levels[0].size + 1
+
+    if orientation == 'vertical':
+        figsize = (7., 7.)
+        gs_kw = dict(
+            left=0.7,
+            right=0.92,
+            top=0.998,
+            bottom=0.15,
+            wspace=0.1,
+            hspace=0.1,
+            width_ratios=[1] * (n - 1) + [.5],
+        )
+        ncols = n
+        nrows = 5
+    else:
+        figsize = (8., 7.)
+        ncols = 5
+        nrows = n
+        raise NotImplementedError("TODO: define gs_kw.")
+
+    fig = plt.figure(figsize=figsize)
+
+    # set up axis grid
+    gs = gridspec.GridSpec(
+        ncols=ncols,
+        nrows=nrows,
+        **gs_kw
+    )
+    if orientation == 'vertical':
+        cax = fig.add_subplot(gs[1:-1, -1])
+    else:
+        cax = fig.add_subplot(gs[-1, 1:-1])
+
+    axs = []
+
+    for i, col in enumerate(p_dat.columns.levels[0]):
+        if orientation == 'vertical':
+            ax = fig.add_subplot(gs[:, i])
+        else:
+            ax = fig.add_subplot(gs[i, :])
+        axs.append(ax)
+
+        this_dat = p_dat.loc[pathway_order, col]
+
+        if orientation != 'vertical':
+            this_dat = this_dat.transpose()
+
+        sns.heatmap(
+            this_dat,
+            mask=this_dat.isnull(),
+            cmap='YlOrRd',
+            linewidths=.2,
+            linecolor='w',
+            vmin=vmin,
+            vmax=vmax,
+            yticklabels=False,
+            cbar=i == 0,
+            cbar_ax=cax,
+            cbar_kws={"orientation": orientation},
+            ax=ax,
+        )
+        if orientation == 'vertical':
+            cax.set_ylabel('$-\log(p)$')
+            ax.xaxis.set_ticklabels(p_dat[col].columns, rotation=90.)
+            ax.set_xlabel(col)
+        else:
+            cax.set_xlabel('$-\log(p)$')
+            ax.yaxis.set_ticklabels(p_dat[col].columns, rotation=0.)
+            ax.set_ylabel(col)
+
+        ax.set_facecolor('0.6')
+
+    # colorbar outline
+    cbar = axs[0].collections[0].colorbar
+    cbar.outline.set_linewidth(1.)
+    cbar.outline.set_edgecolor('k')
+
+    if orientation == 'vertical':
+        axs[0].set_yticks(0.5 + np.arange(len(pathway_order)))
+        axs[0].set_yticklabels(pathway_order[::-1], rotation=0, fontsize=7)
+    else:
+        # TODO: check this is correct
+        axs[-1].set_xticks(0.5 + np.arange(len(pathway_order)))
+        axs[-1].set_xticklabels(pathway_order, rotation=90, fontsize=7)
+
+    return {
+        'figure': fig,
+        'axs': axs,
+        'cax': cax,
+        'cbar': cbar,
+    }
+
+
+def get_genes_relations(cluster_ids, clusters, relation_map=None, relation_priority=None, relation_filter=None):
+    if relation_priority is None:
+        relation_priority = [
+            'TSS200',
+            'TSS1500',
+            '1stExon',
+            "3'UTR",
+            "5'UTR",
+            'ExonBnd',
+            'Body'
+        ]
+    if relation_map is None:
+        relation_map = dict([(k, k) for k in relation_priority])
+
+    if relation_filter is not None:
+        if not hasattr(relation_filter, '__iter__'):
+            relation_filter = [relation_filter]
+        relation_filter = set(relation_filter)
+
+    rels = []
+    genes = set()
+
+    for t in cluster_ids:
+        pc = clusters[t]
+        if len(pc.genes) > 0:
+            gs, rs = zip(*clusters[t].genes)
+            if relation_filter is not None:
+                # filter gene and relation
+                # if this leaves no results, skip this DMR
+                tmp = [(g, r) for g, r in zip(gs, rs) if r in relation_filter]
+                if len(tmp) == 0:
+                    continue
+                else:
+                    gs, rs = zip(*tmp)
+            for rp in relation_priority:
+                if rp in rs:
+                    rels.append(relation_map[rp])
+                    break
+            genes.update(gs)
+        else:
+            # if we aren't filtering by relation, add the (arbitrary) label 'intergene' here to express a lack of
+            # gene.
+            if relation_filter is None:
+                rels.append('Intergene')
+    return sorted(genes), rels
+
+
+def pct_concordant(joint_res):
+    a = (np.sign(joint_res.de_logFC) != np.sign(joint_res.dmr_median_delta)).sum()
+    b = float(joint_res.shape[0])
+    return a / b * 100
+
+
 if __name__ == '__main__':
     """
     Use the DMR bias results to lookup into DE results (and vice versa?)
     """
+    # set a minimum pval for pathways to be used
+    alpha = 0.01
+    plogalpha = -np.log10(alpha)
+    # more lenient pval threshold for considering pathways as relevant
+    alpha_relevant = 0.05
+    plogalpha_relevant = -np.log10(alpha_relevant)
+
+
+    IPA_PATHWAY_DIR = os.path.join(
+        HGIC_LOCAL_DIR,
+        'current/dmr_direction_bias_story/ipa/dmr_genes/pathways'
+    )
+
     outdir = output.unique_output_dir()
     de_res_fn = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq', 'full_de_syngeneic_only.xlsx')
     pids = consts.PIDS
@@ -217,52 +387,6 @@ if __name__ == '__main__':
         (k, v) for k, v in shared_dmrs_discordant.items() if (np.array([len(t) for t in v.values()]) > 1).all()
     ])
 
-    def get_genes_relations(cluster_ids, clusters, relation_map=None, relation_priority=None,  relation_filter=None):
-        if relation_priority is None:
-            relation_priority = [
-                'TSS200',
-                'TSS1500',
-                '1stExon',
-                "3'UTR",
-                "5'UTR",
-                'ExonBnd',
-                'Body'
-            ]
-        if relation_map is None:
-            relation_map = dict([(k, k) for k in relation_priority])
-
-        if relation_filter is not None:
-            if not hasattr(relation_filter, '__iter__'):
-                relation_filter = [relation_filter]
-            relation_filter = set(relation_filter)
-
-        rels = []
-        genes = set()
-
-        for t in cluster_ids:
-            pc = clusters[t]
-            if len(pc.genes) > 0:
-                gs, rs = zip(*clusters[t].genes)
-                if relation_filter is not None:
-                    # filter gene and relation
-                    # if this leaves no results, skip this DMR
-                    tmp = [(g, r) for g, r in zip(gs, rs) if r in relation_filter]
-                    if len(tmp) == 0:
-                        continue
-                    else:
-                        gs, rs = zip(*tmp)
-                for rp in relation_priority:
-                    if rp in rs:
-                        rels.append(relation_map[rp])
-                        break
-                genes.update(gs)
-            else:
-                # if we aren't filtering by relation, add the (arbitrary) label 'intergene' here to express a lack of
-                # gene.
-                if relation_filter is None:
-                    rels.append('Intergene')
-        return sorted(genes), rels
-
     genes_discordant, rels_discordant = get_genes_relations(shared_dmrs_discordant, dmr_res_s1.clusters)
     genes_discordant_gte2, rels_discordant_gte2 = get_genes_relations(shared_dmrs_discordant_gte2, dmr_res_s1.clusters)
     genes_hypo, rels_hypo = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters)
@@ -281,14 +405,77 @@ if __name__ == '__main__':
     genes_hypo_tss, rels_hypo_tss = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
     genes_hyper_tss, rels_hyper_tss = get_genes_relations(dmr_groups['Hyper'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
 
-    # redraw venn
-
-
     ix = sorted(setops.reduce_union(genes_hyper_tss, genes_hypo_tss))
     df_for_ipa = pd.DataFrame(1., columns=['Hypo', 'Hyper'], index=ix)
     df_for_ipa.loc[genes_hypo_tss, 'Hypo'] = 0.01
     df_for_ipa.loc[genes_hyper_tss, 'Hyper'] = 0.01
     df_for_ipa.to_excel(os.path.join(outdir, "group_specific_gene_lists_for_ipa_tss_only.xlsx"))
+
+    # plot heatmap and generate Cytoscape session for the IPA results
+
+    ipa_res = ipa.load_raw_reports(IPA_PATHWAY_DIR, "{0}_{1}.txt", ['hyper', 'hypo'], ['all_relations', 'tss'])
+    pathways_significant = setops.reduce_union(*[
+        v.loc[(v['-logp'] >= plogalpha)].index for v in ipa_res.values()
+    ])
+
+    # heatmap
+    from scripts.hgic_final import ipa_results_s1_s2 as irss
+
+    dd = irss.generate_plotting_structures(ipa_res, pathways_significant, plogalpha)
+    de_all_p = dd['p']
+    de_all_z = dd['z']
+    de_all_in = dd['in']
+
+    # plot 1) P values, ordered by sum of -log(P)
+    p_order = de_all_p.sum(axis=1).sort_values(ascending=False).index
+
+    new_cols = [
+        de_all_p.columns.levels[0].str.capitalize().tolist(),
+        ['All', 'TSS'],
+    ]
+    de_all_p.columns = pd.MultiIndex.from_product(new_cols, names=['Comparison', 'Inclusion'])
+
+    plot_dict = pathway_involvement_heatmap_by_p(
+        de_all_p,
+        p_order,
+    )
+    plot_dict['figure'].savefig(os.path.join(outdir, "ipa_heatmap.png"), dpi=200)
+    plot_dict['figure'].savefig(os.path.join(outdir, "ipa_heatmap.tiff"), dpi=200)
+
+    # cytoscape
+    min_edge_count = 4
+    cyto_colours = consts.METHYLATION_DIRECTION_COLOURS
+    cy_session = cyto.CytoscapeSession()
+    cyto_nets = {}
+
+    for k in ['all_relations', 'tss']:
+        this_dat = dict([
+            (k2, ipa_res[(k2, k)].loc[ipa_res[(k2, k)]['-logp'] >= plogalpha]) for k2 in ['hyper', 'hypo']
+        ])
+        gg = ipa.nx_graph_from_ipa_multiple(this_dat, name='IPA DMR groups %s' % k, min_edge_count=min_edge_count)
+        this_net = cy_session.add_networkx_graph(gg, name=gg.name)
+        cyto_nets[gg.name] = this_net
+
+        # formatting
+        this_net.passthrough_node_label('name')
+        this_net.passthrough_node_size_linear('n_genes')
+        this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
+        this_net.set_node_border_width(0.)
+        this_net.set_edge_colour('#b7b7b7')
+        this_net.set_node_fill_colour('#ffffff')
+        this_net.set_node_transparency(255)
+
+        this_net.node_pie_charts(['hyper', 'hypo'], colours=[cyto_colours[t] for t in ['hyper', 'hypo']])
+
+    layout_kwargs = dict(
+        EdgeAttribute='n_genes',
+        defaultSpringLength=50,
+        defaultSpringCoefficient=50,
+    )
+    cy_session.apply_layout(**layout_kwargs)
+    # in practice, best layout can be achieved by manual movement
+
+    cy_session.cy_cmd.session.save(os.path.join(outdir, "ipa_cytoscape.cys"))
 
     # distribution of cluster locations in the two groups (TSS, exon, etc.)
     relation_priority = [
@@ -297,7 +484,7 @@ if __name__ == '__main__':
         '1stExon',
         "3'UTR",
         "5'UTR",
-        'ExonBnd',
+        # 'ExonBnd',
         'Body'
     ]
 
@@ -310,15 +497,15 @@ if __name__ == '__main__':
     rel_counts.insert(
         0,
         'Hypo',
-        pd.Index(genes_hypo).value_counts().loc[rel_counts.index]
+        pd.Index(rels_hypo).value_counts().reindex(rel_counts.index)
     )
     rel_counts.insert(
         0,
         'Hyper',
-        pd.Index(genes_hyper).value_counts().loc[rel_counts.index]
+        pd.Index(rels_hyper).value_counts().reindex(rel_counts.index)
     )
-    rel_counts.insert(0, 'Discordant', pd.Index(rels_discordant).value_counts().loc[rel_counts.index])
-    rel_counts.insert(0, 'Discordant GTE2', pd.Index(rels_discordant_gte2).value_counts().loc[rel_counts.index])
+    rel_counts.insert(0, 'Discordant', pd.Index(rels_discordant).value_counts().reindex(rel_counts.index))
+    rel_counts.insert(0, 'Discordant GTE2', pd.Index(rels_discordant_gte2).value_counts().reindex(rel_counts.index))
     rel_counts = rel_counts.fillna(0).astype(int)
 
     fig = plt.figure(figsize=(5.5, 3.3))
@@ -386,8 +573,6 @@ if __name__ == '__main__':
     )
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_gte2.png"), dpi=200)
-
-    raise StopIteration
 
     # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
@@ -482,13 +667,11 @@ if __name__ == '__main__':
 
     # export DMR data to bigwig
     venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
-    dmr_groups = {}
-    genes_from_dmr_groups = {}
     for grp in groups:
         # generate bar chart showing number / pct in each direction (DM)
         this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
-        this_dmrs = sorted(setops.reduce_union(*[venn_set[k] for k in this_sets]))
-        dmr_groups[grp] = this_dmrs
+        this_dmrs = dmr_groups[grp]
+        this_genes = genes_from_dmr_groups[grp]
 
         this_results = {}
         for pid in groups[grp]:
@@ -508,13 +691,6 @@ if __name__ == '__main__':
         plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s.png" % grp), dpi=200)
 
         # combine with DE to assess bias (if any)
-        this_genes = sorted(
-            set(
-                [u[0] for u in setops.reduce_union(*[dmr_res_s1.clusters[t].genes for t in this_dmrs])]
-            )
-        )
-        genes_from_dmr_groups[grp] = this_genes
-
         this_results = {}
         for pid in pids:
             this_results[pid] = de_res_s1[pid].loc[de_res_s1[pid]['Gene Symbol'].isin(this_genes)]
@@ -533,7 +709,7 @@ if __name__ == '__main__':
             axs[i].set_title(pid)
         axs[0].set_ylabel('Density')
         fig.tight_layout()
-        fig.savefig(os.path.join(outdir, "de_genes_from_dmr_groups_logfc_kde.png"), dpi=200)
+        fig.savefig(os.path.join(outdir, "de_genes_from_dmr_%s_logfc_kde.png" % grp), dpi=200)
 
     # grouped bar chart showing dmr direction (in one figure)
     colours = pd.Series(
@@ -578,8 +754,6 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.tiff"), dpi=200)
 
-
-
     # is there much overlap in the gene sets between the two groups?
     fig = plt.figure(figsize=(5, 3))
     ax = fig.add_subplot(111)
@@ -613,6 +787,7 @@ if __name__ == '__main__':
 
     # generate scatter plots of joint DE and DMR for the two DMR groups
     # FIXME: this is hard coded to the number of patients in each group. Sloppy.
+
     fig, axs = plt.subplots(nrows=2, ncols=6, sharex=True, sharey=True)
     big_ax = common.add_big_ax_to_subplot_fig(fig)
 
@@ -621,8 +796,26 @@ if __name__ == '__main__':
         for j, pid in enumerate(groups[grp]):
             subplots_filled.add((i, j))
             ax = axs[i, j]
+
             this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
-            ax.scatter(this_joint.de_logFC, this_joint.dmr_median_delta, c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()])
+            ax.scatter(
+                this_joint.de_logFC,
+                this_joint.dmr_median_delta,
+                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
+                alpha=0.5
+            )
+
+            # highlight TSS-linked (only)
+            this_joint_tss = this_joint.loc[(this_joint.dmr_TSS1500 | this_joint.dmr_TSS200).astype(bool)]
+            ax.scatter(
+                this_joint_tss.de_logFC,
+                this_joint_tss.dmr_median_delta,
+                facecolors='none',
+                edgecolor='k',
+                linewidth=1.,
+                alpha=0.5
+            )
+
             ax.axhline(0., c='k', linestyle='--')
             ax.axvline(0., c='k', linestyle='--')
             ax.set_title(pid)
@@ -636,3 +829,39 @@ if __name__ == '__main__':
                 axs[i, j].set_visible(False)
     axs[0,0].set_ylim([-7, 7])
     fig.savefig(os.path.join(outdir, "de_dmr_scatter_from_dmr_groups.png"), dpi=200)
+
+    # what is the extent of 'concordance' here and is it greater than a measure of 'background'?
+    fig = plt.figure(figsize=(8, 3.))
+    ax = fig.add_subplot(111)
+
+    pct_conc = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+
+    for pid in pids:
+        grp = groups_inv[pid]
+        this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
+        # report extent of 'non-bijective mapping'
+        logger.info("Patient %s. Of the %d DMR-DE results being considered", pid, this_joint.shape[0])
+        logger.info("%d of the DMRs appear more than once", (this_joint.cluster_id.value_counts() > 1).sum())
+        logger.info("%d of the DE genes appear more than once", (this_joint.gene.value_counts() > 1).sum())
+
+        pct_conc.loc[pid, 'All'] = pct_concordant(this_joint)
+
+        this_joint = this_joint.loc[(this_joint.dmr_TSS1500 | this_joint.dmr_TSS200).astype(bool)]
+        # report extent of 'non-bijective mapping'
+        logger.info("Patient %s. Of the %d DMR-DE TSS results being considered", pid, this_joint.shape[0])
+        logger.info("%d of the DMRs appear more than once", (this_joint.cluster_id.value_counts() > 1).sum())
+        logger.info("%d of the DE genes appear more than once", (this_joint.gene.value_counts() > 1).sum())
+
+        pct_conc.loc[pid, 'TSS'] = pct_concordant(this_joint)
+
+    # background estimate: for each PID, pick DMRs at random with delta M signs matching the number in the
+    # group-specific DMRs
+
+    # first, find all linked results
+
+    n_iter_bg = 1000
+    for pid in pids:
+        grp = groups_inv[pid]
+        # BG clusters - these are guaranteed to have associated DE genes
+        bg_res = joint_de_dmr_s1[pid]
+        pass
