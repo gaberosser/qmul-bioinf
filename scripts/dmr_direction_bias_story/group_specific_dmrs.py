@@ -857,11 +857,35 @@ if __name__ == '__main__':
     # background estimate: for each PID, pick DMRs at random with delta M signs matching the number in the
     # group-specific DMRs
 
-    # first, find all linked results
-
     n_iter_bg = 1000
+    perm_res = {}
+
     for pid in pids:
         grp = groups_inv[pid]
         # BG clusters - these are guaranteed to have associated DE genes
         bg_res = joint_de_dmr_s1[pid]
+        # split by DMR direction
+        bg_hypo = bg_res.loc[bg_res.dmr_median_delta < 0]
+        bg_hyper = bg_res.loc[bg_res.dmr_median_delta > 0]
+        n_bg_hypo = bg_hypo.shape[0]
+        n_bg_hyper = bg_hyper.shape[0]
+        # how many do we need to draw?
+        this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
+        n_hypo = (this_joint.dmr_median_delta < 0).sum()
+        n_hyper = (this_joint.dmr_median_delta > 0).sum()
+
+        logger.info(
+            "Patient %s. Drawing %d hypo and %d hyper DMRs from background (%d hypo / %d hyper).",
+            pid,
+            n_hypo,
+            n_hyper,
+            bg_hypo.shape[0],
+            bg_hyper.shape[0]
+        )
+
+        this_perm_res = []
+        for i in range(n_iter_bg):
+
+
+        # multiple random draws
         pass

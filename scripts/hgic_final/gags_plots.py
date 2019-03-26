@@ -7,8 +7,9 @@ import os
 import pandas as pd
 
 from settings import HGIC_LOCAL_DIR
-from utils import output, setops
+from utils import output, setops, dictionary
 import references
+from plotting import common
 
 if __name__ == "__main__":
     pids = consts.PIDS
@@ -117,48 +118,64 @@ if __name__ == "__main__":
     cg.savefig(os.path.join(outdir, "gag_genes_logtpm_clustermap.png"), dpi=200)
     cg.savefig(os.path.join(outdir, "gag_genes_logtpm_clustermap.tiff"), dpi=200)
 
-    gs = gridspec.GridSpec(5, 3, width_ratios=[10, 10, 1])
-    fig = plt.figure(figsize=(5.5, 5.))
-    ax_insc = fig.add_subplot(gs[:, 0])
-    ax_gic = fig.add_subplot(gs[:, 1])
+    # same again, buut disable row clustering and provide our own function-based groups
+    function_to_gene = {
+        'Heparan sulphate sulfotransferase': the_dat.index[the_dat.index.str.contains(r'^HS[36]')].tolist(),
+        'Bifunctional heparan deacetylase / sulfotransferase': the_dat.index[the_dat.index.str.contains(r'^NDST')].tolist(),
+        'Sulfotransferase': the_dat.index[the_dat.index.str.contains(r'^SULT')].tolist() + ['UST', 'CHSY3'],
+        'Glucuronosyltransferase': ['B3GAT1', 'B3GAT2', 'CHPF', 'CHPF2', 'CSGALNACT1'],
+        'Carbohydrate transferase': the_dat.index[the_dat.index.str.contains(r'^CHST')].tolist(),
+        'Dermatan sulfate epimerase': the_dat.index[the_dat.index.str.contains(r'^DSE')].tolist(),
+    }
+    gene_to_function = dictionary.complement_dictionary_of_iterables(function_to_gene, squeeze=True)
+    function_colours = dict(zip(function_to_gene.keys(), common.get_best_cmap(len(function_to_gene))))
 
-    cax = fig.add_subplot(gs[1:-1, 2])
-
-    # we need to fix the colour scale in advance
-    vmin = -2
-    # vmin = None
-    vmax = 2
-    # vmax = 50
-
-    sns.heatmap(
-        dat_mean_insc,
-        vmin=vmin,
-        vmax=vmax,
-        cmap='Reds',
-        cbar=False,
-        ax=ax_insc,
-        yticklabels=True
+    # reorder data
+    the_dat = the_dat.loc[reduce(lambda x, y: x + y, function_to_gene.values())]
+    row_colours = pd.DataFrame(
+        [function_colours[gene_to_function[t]] for t in the_dat.index],
+        index=the_dat.index,
+        columns=['Function']
     )
 
-    sns.heatmap(
-        dat_mean_gic,
-        vmin=vmin,
-        vmax=vmax,
-        cmap='Reds',
-        cbar=True,
-        cbar_ax=cax,
-        ax=ax_gic,
-        yticklabels=False
+    # standardise (Z)
+    z = the_dat.subtract(the_dat.mean(axis=1), axis=0).divide(the_dat.std(axis=1), axis=0)
+
+    cg = sns.clustermap(
+        z,
+        col_cluster=False,
+        row_cluster=False,
+        figsize=(6.5, 6.5),
+        col_colors=['0.9'] * len(pids) + ['0.6'] * len(pids),
+        row_colors=row_colours
     )
+    ax = cg.ax_heatmap
+    ax.xaxis.label.set_visible(False)
+    ax.yaxis.label.set_visible(False)
+    plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+    cg.cax.set_title('Row-normalised\nZ value', horizontalalignment='left')
+    cg.gs.update(left=0.06, top=0.92, right=0.82)
 
-    plt.setp(ax_insc.yaxis.get_ticklabels(), rotation=0)
-    plt.setp(ax_insc.xaxis.get_ticklabels(), rotation=90)
-    plt.setp(ax_gic.xaxis.get_ticklabels(), rotation=90)
+    cg.ax_col_colors.text(0.25, 0.5, 'iNSC',
+         horizontalalignment='center',
+         verticalalignment='center',
+         transform=cg.ax_col_colors.transAxes)
 
-    ax_gic.yaxis.label.set_visible(False)
-    ax_gic.xaxis.label.set_visible(False)
-    ax_insc.yaxis.label.set_visible(False)
-    ax_insc.xaxis.label.set_visible(False)
+    cg.ax_col_colors.text(0.75, 0.5, 'GIC',
+         horizontalalignment='center',
+         verticalalignment='center',
+         transform=cg.ax_col_colors.transAxes)
 
-    ax_insc.set_title('iNSC')
-    ax_gic.set_title('GIC')
+    # add custom legend
+    leg_ax = cg.ax_col_dendrogram
+    leg_dict = dict([
+        (k, {'class': 'patch', 'facecolor': function_colours[k], 'edgecolor': 'k', 'linewidth': 1.}) for k in function_to_gene
+    ])
+    leg_dict = {'': leg_dict}
+    leg = common.add_custom_legend(leg_ax, legend_dict=leg_dict)
+    leg_ax.legend(loc='upper center', bbox_to_anchor=(0.6, 1.7), handles=leg)
+
+    cg.savefig(os.path.join(outdir, "gag_genes_logtpm_clustermap_row_by_function.png"), dpi=200)
+    cg.savefig(os.path.join(outdir, "gag_genes_logtpm_clustermap_row_by_function.tiff"), dpi=200)
+
