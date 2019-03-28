@@ -25,7 +25,7 @@ from scripts.hgic_final import \
     consts
 from scripts.dmr_direction_bias_story import \
     same_process_applied_to_de as same_de
-from rnaseq import loader as rnaseq_loader
+from rnaseq import loader as rnaseq_loader, filter
 from integrator import rnaseq_methylationarray
 from scripts.methylation import dmr_values_to_bigwig
 
@@ -149,6 +149,53 @@ def pathway_involvement_heatmap_by_p(
     }
 
 
+def plot_clustermap_tpm_levels(
+        rna_tpm,
+        gois,
+        goi_hypo,
+        goi_hyper,
+        min_tpm=1.,
+        log=True,
+        c_hyper=consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+        c_hypo=consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+        **kwargs
+):
+    g_hyper = references.gene_symbol_to_ensembl(goi_hyper).dropna()
+    g_hypo = references.gene_symbol_to_ensembl(goi_hypo).dropna()
+
+    all_genes = references.gene_symbol_to_ensembl(gois).dropna()
+    all_genes = all_genes.loc[(~all_genes.index.duplicated()) & (~all_genes.duplicated())]
+
+    row_colors = pd.DataFrame('0.5', index=all_genes.values, columns=['Group'])
+    row_colors.loc[row_colors.index.intersection(g_hypo)] = c_hypo
+    row_colors.loc[row_colors.index.intersection(g_hyper)] = c_hyper
+    col_colors = pd.DataFrame(c_hyper, index=rna_tpm.columns,
+                              columns=['Group', 'Cell type'])
+    col_colors.loc[rna_meta.patient_id.isin(groups['Hypo']), 'Group'] = c_hypo
+    col_colors.loc[rna_meta.type == 'GBM', 'Cell type'] = '0.2'
+    col_colors.loc[rna_meta.type == 'iNSC', 'Cell type'] = '0.8'
+
+    dat_for_plot = rna_tpm.reindex(all_genes).dropna(how='all', axis=0)
+    # filter genes that aren't expressed
+    dat_for_plot = dat_for_plot.loc[(dat_for_plot > min_tpm).sum(axis=1) > 2]
+
+    if log:
+        dat_for_plot = np.log10(dat_for_plot + 0.01)
+
+    cg = sns.clustermap(
+        dat_for_plot,
+        yticklabels=False,
+        row_colors=row_colors,
+        col_colors=col_colors,
+        figsize=(8.5, 7.2),
+        **kwargs
+    )
+    plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)
+    cg.ax_heatmap.yaxis.label.set_visible(False)
+    cg.gs.update(bottom=0.28, top=0.98, left=0.05)
+    return cg
+
+
 def get_genes_relations(cluster_ids, clusters, relation_map=None, relation_priority=None, relation_filter=None):
     if relation_priority is None:
         relation_priority = [
@@ -213,6 +260,8 @@ if __name__ == '__main__':
     alpha_relevant = 0.05
     plogalpha_relevant = -np.log10(alpha_relevant)
 
+    relations_tss = ['TSS1500', 'TSS200']
+
 
     IPA_PATHWAY_DIR = os.path.join(
         HGIC_LOCAL_DIR,
@@ -239,10 +288,11 @@ if __name__ == '__main__':
     subgroups_ind = setops.groups_to_ind(pids, subgroups)
 
     # load gene expression values
-    rna_obj = rnaseq_loader.load_by_patient(pids, include_control=False)
+    rna_obj = rnaseq_loader.load_by_patient(pids, include_control=False, source='salmon')
     rna_obj.filter_samples(rna_obj.meta.index.isin(consts.S1_RNASEQ_SAMPLES))
-    tmp = rna_obj.data
-    rna_cpm = tmp.divide((tmp + 1).sum(axis=0), axis=1) * 1e6
+    rna_tpm = rna_obj.data
+    rna_meta = rna_obj.meta
+    rna_meta.insert(0, 'patient_id', rna_meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     # load DE results
     the_hash = tscd.de_results_hash(rna_obj.meta.index.tolist(), de_params)
@@ -424,14 +474,19 @@ if __name__ == '__main__':
     df_for_ipa.to_excel(os.path.join(outdir, "group_specific_gene_lists_for_ipa.xlsx"))
 
     # repeat but only keeping TSS-related genes
-    genes_hypo_tss, rels_hypo_tss = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
-    genes_hyper_tss, rels_hyper_tss = get_genes_relations(dmr_groups['Hyper'], dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
+    genes_hypo_tss, rels_hypo_tss = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters, relation_filter=relations_tss)
+    genes_hyper_tss, rels_hyper_tss = get_genes_relations(dmr_groups['Hyper'], dmr_res_s1.clusters, relation_filter=relations_tss)
 
     ix = sorted(setops.reduce_union(genes_hyper_tss, genes_hypo_tss))
     df_for_ipa = pd.DataFrame(1., columns=['Hypo', 'Hyper'], index=ix)
     df_for_ipa.loc[genes_hypo_tss, 'Hypo'] = 0.01
     df_for_ipa.loc[genes_hyper_tss, 'Hyper'] = 0.01
     df_for_ipa.to_excel(os.path.join(outdir, "group_specific_gene_lists_for_ipa_tss_only.xlsx"))
+
+    # discordant AND TSS only
+    genes_discordant_tss, rels_discordant_tss = get_genes_relations(shared_dmrs_discordant, dmr_res_s1.clusters, relation_filter=relations_tss)
+    genes_discordant_tss_gte2, rels_discordant_tss_gte2 = get_genes_relations(
+        shared_dmrs_discordant_gte2, dmr_res_s1.clusters, relation_filter=relations_tss)
 
     # plot heatmap and generate Cytoscape session for the IPA results
 
@@ -599,6 +654,173 @@ if __name__ == '__main__':
     )
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_gte2.png"), dpi=200)
+
+    # discordant and TSS only
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
+    set_labels = ['Hypo', 'Hyper', 'Discordant']
+    venn.venn_diagram(
+        genes_hypo_tss, genes_hyper_tss, list(genes_discordant_tss),
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
+    )
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_tss_only.png"), dpi=200)
+
+    # discordant and TSS only (GTE2)
+    fig = plt.figure(figsize=(5., 3.3))
+    ax = fig.add_subplot(111)
+    set_labels = ['Hypo', 'Hyper', 'Discordant']
+    venn.venn_diagram(
+        genes_hypo_tss, genes_hyper_tss, list(genes_discordant_tss_gte2),
+        set_labels=set_labels,
+        set_colors=[set_colours_dict[t] for t in set_labels],
+        ax=ax
+    )
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_tss_only_gte2.png"), dpi=200)
+
+    # permutation tests for these: is the lack of overlap actually significant?
+    # null: pick the same number of distinct DMRs without replacement from the pool
+    def permutation_test_dmr_gene_overlap(n_hypo, n_hyper, relation_filter=None, n_iter=1000):
+    # relation_filter = None
+
+    # n_iter = 1000
+        venn_counts = []
+        for i in range(n_iter):
+            picked_hypo = np.random.choice(dmr_res_s1.clusters.keys(), n_hypo, replace=False)
+            picked_hyper = np.random.choice(list(set(dmr_res_s1.clusters.keys()).difference(picked_hypo)), n_hyper, replace=False)
+            if relation_filter is None:
+                picked_hyper_genes = setops.reduce_union(*[[x[0] for x in dmr_res_s1.clusters[t].genes] for t in picked_hyper])
+                picked_hypo_genes = setops.reduce_union(*[[x[0] for x in dmr_res_s1.clusters[t].genes] for t in picked_hypo])
+            else:
+                picked_hyper_genes = setops.reduce_union(
+                    *[[x[0] for x in dmr_res_s1.clusters[t].genes if x[1] in relation_filter] for t in picked_hyper]
+                )
+                picked_hypo_genes = setops.reduce_union(
+                    *[[x[0] for x in dmr_res_s1.clusters[t].genes if x[1] in relation_filter] for t in picked_hypo]
+                )
+            _, vc = setops.venn_from_arrays(picked_hypo_genes, picked_hyper_genes)
+            venn_counts.append(vc)
+        return venn_counts
+
+    n_hypo = len(dmr_groups['Hypo'])
+    n_hyper = len(dmr_groups['Hyper'])
+    vc_all = permutation_test_dmr_gene_overlap(n_hypo, n_hyper)
+    # reduce to single metric
+    vc_metric = np.array([
+        max(
+            x['11'] / float(x['10']) * 100,
+            x['11'] / float(x['01']) * 100,
+        ) for x in vc_all
+    ])
+    _, vc = setops.venn_from_arrays(*genes_from_dmr_groups.values())
+    our_vc_metric = max(
+        vc['11'] / float(vc['10']) * 100.,
+        vc['11'] / float(vc['01']) * 100.,
+    )
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist(vc_metric, 20, alpha=0.6, label='Null')
+    ax.axvline(our_vc_metric, c='k', label='Our value')
+    ax.set_xlabel('Maximum % overlap')
+    ax.set_ylabel('Frequency')
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "gene_overlap_vs_null_all.png"), dpi=200)
+
+    # again with TSS only
+    dmr_groups_hypo = [t for t in dmr_groups['Hypo'] if len([x for x in dmr_res_s1.clusters[t].genes if x[1] in {'TSS200', 'TSS1500'}])]
+    dmr_groups_hyper = [t for t in dmr_groups['Hyper'] if len([x for x in dmr_res_s1.clusters[t].genes if x[1] in {'TSS200', 'TSS1500'}])]
+
+    n_hypo = len(dmr_groups_hypo)
+    n_hyper = len(dmr_groups_hyper)
+    vc_all = permutation_test_dmr_gene_overlap(n_hypo, n_hyper)
+    # reduce to single metric
+    vc_metric = np.array([
+        max(
+            x['11'] / float(x['10']) * 100,
+            x['11'] / float(x['01']) * 100,
+        ) for x in vc_all
+    ])
+    _, vc = setops.venn_from_arrays(genes_hyper_tss, genes_hypo_tss)
+    our_vc_metric = max(
+        vc['11'] / float(vc['10']) * 100.,
+        vc['11'] / float(vc['01']) * 100.,
+    )
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist(vc_metric, 20, alpha=0.6, label='Null')
+    ax.axvline(our_vc_metric, c='k', label='Our value')
+    ax.set_xlabel('Maximum % overlap')
+    ax.set_ylabel('Frequency')
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "gene_overlap_vs_null_tss.png"), dpi=200)
+
+    # Plot gene expr levels (in GIC) of genes that correspond to the group-specific DMRs
+
+    # add 'group' to RNA meta for ease of ordering
+    rna_meta_grp = pd.Series('hypo', index=rna_meta.index)
+    rna_meta_grp.loc[rna_meta.patient_id.isin(groups['Hyper'])] = 'hyper'
+    rna_meta.insert(1, 'dmr_group', rna_meta_grp.loc[rna_meta.index])
+
+    # all GS DMRs
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.sort_values(by=['type', 'dmr_group']).index],
+        genes_hyper + genes_hypo,
+        genes_hypo,
+        genes_hyper,
+        col_cluster=False,
+        z_score=0
+    )
+    cg.savefig(os.path.join(outdir, "group_spec_genes_all_rels_clustermap.png"), dpi=200)
+
+    # TSS-related only
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.sort_values(by=['type', 'dmr_group']).index],
+        genes_hyper_tss + genes_hypo_tss,
+        genes_hypo,
+        genes_hyper,
+        col_cluster=False,
+        z_score=0
+    )
+    cg.savefig(os.path.join(outdir, "group_spec_genes_tss_clustermap.png"), dpi=200)
+
+    # discordant
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.sort_values(by=['type', 'dmr_group']).index],
+        genes_discordant,
+        genes_hypo,
+        genes_hyper,
+        col_cluster=False,
+        z_score=0
+    )
+    cg.savefig(os.path.join(outdir, "discordant_genes_all_rels_clustermap.png"), dpi=200)
+
+    # discordant GTE2
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.sort_values(by=['type', 'dmr_group']).index],
+        genes_discordant_gte2,
+        genes_hypo,
+        genes_hyper,
+        col_cluster=False,
+        z_score=0
+    )
+    cg.savefig(os.path.join(outdir, "discordant_gte2_genes_all_rels_clustermap.png"), dpi=200)
+
+    # discordant GTE2 TSS only
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.sort_values(by=['type', 'dmr_group']).index],
+        genes_discordant_tss_gte2,
+        genes_hypo,
+        genes_hyper,
+        col_cluster=False,
+        z_score=0
+    )
+    cg.savefig(os.path.join(outdir, "discordant_gte2_genes_tss_clustermap.png"), dpi=200)
+
 
     # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
@@ -806,14 +1028,8 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_direction_all_groups.tiff"), dpi=200)
 
-    # is there much overlap in the gene sets between the two groups?
-    fig = plt.figure(figsize=(5, 3))
-    ax = fig.add_subplot(111)
-    venn.venn_diagram(genes_from_dmr_groups['Hyper'], genes_from_dmr_groups['Hypo'], set_labels=['Hyper', 'Hypo'], ax=ax)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "genes_from_dmr_groups_venn.png"), dpi=200)
-
-    # no, but if we look at the intersection genes, are they in different directions (DE) between the two groups?
+    # looking at the genes that are in both DMR groups (all relations),
+    # are they in different directions (DE) between the two groups?
     groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
     in_both = setops.reduce_intersection(*genes_from_dmr_groups.values())
     in_both_ens = references.gene_symbol_to_ensembl(in_both)
