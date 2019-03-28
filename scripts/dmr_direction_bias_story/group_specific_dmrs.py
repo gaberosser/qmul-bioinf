@@ -387,6 +387,28 @@ if __name__ == '__main__':
         (k, v) for k, v in shared_dmrs_discordant.items() if (np.array([len(t) for t in v.values()]) > 1).all()
     ])
 
+    # for completeness, bar chart showing DMR direction in discordant DMRs
+    dmr_res_discordant = collections.defaultdict(dict)
+
+    for cid, res in shared_dmrs_discordant.items():
+        this_pids = setops.reduce_union(*res.values())
+        for pid in this_pids:
+            dmr_res_discordant[pid][cid] = dmr_res_s1[pid].results[cid]
+
+    plt_dict = addd.dm_direction_bar_plot(dmr_res_discordant, keys=pids)
+    plt_dict['fig'].savefig(os.path.join(outdir, "discordant_dmr_directions.png"), dpi=200)
+
+    dmr_res_discordant_gte2 = collections.defaultdict(dict)
+
+    for cid, res in shared_dmrs_discordant_gte2.items():
+        this_pids = setops.reduce_union(*res.values())
+        for pid in this_pids:
+            dmr_res_discordant_gte2[pid][cid] = dmr_res_s1[pid].results[cid]
+
+    plt_dict = addd.dm_direction_bar_plot(dmr_res_discordant_gte2, keys=pids)
+    plt_dict['fig'].savefig(os.path.join(outdir, "discordant_dmr_directions_gte2.png"), dpi=200)
+
+
     genes_discordant, rels_discordant = get_genes_relations(shared_dmrs_discordant, dmr_res_s1.clusters)
     genes_discordant_gte2, rels_discordant_gte2 = get_genes_relations(shared_dmrs_discordant_gte2, dmr_res_s1.clusters)
     genes_hypo, rels_hypo = get_genes_relations(dmr_groups['Hypo'], dmr_res_s1.clusters)
@@ -445,37 +467,41 @@ if __name__ == '__main__':
     # cytoscape
     min_edge_count = 4
     cyto_colours = consts.METHYLATION_DIRECTION_COLOURS
-    cy_session = cyto.CytoscapeSession()
-    cyto_nets = {}
+    try:
+        cy_session = cyto.CytoscapeSession()
+    except cyto.cyrest.requests.ConnectionError:
+        logger.exception("Unable to launch Cytoscape session: is it running?")
+    else:
+        cyto_nets = {}
 
-    for k in ['all_relations', 'tss']:
-        this_dat = dict([
-            (k2, ipa_res[(k2, k)].loc[ipa_res[(k2, k)]['-logp'] >= plogalpha]) for k2 in ['hyper', 'hypo']
-        ])
-        gg = ipa.nx_graph_from_ipa_multiple(this_dat, name='IPA DMR groups %s' % k, min_edge_count=min_edge_count)
-        this_net = cy_session.add_networkx_graph(gg, name=gg.name)
-        cyto_nets[gg.name] = this_net
+        for k in ['all_relations', 'tss']:
+            this_dat = dict([
+                (k2, ipa_res[(k2, k)].loc[ipa_res[(k2, k)]['-logp'] >= plogalpha]) for k2 in ['hyper', 'hypo']
+            ])
+            gg = ipa.nx_graph_from_ipa_multiple(this_dat, name='IPA DMR groups %s' % k, min_edge_count=min_edge_count)
+            this_net = cy_session.add_networkx_graph(gg, name=gg.name)
+            cyto_nets[gg.name] = this_net
 
-        # formatting
-        this_net.passthrough_node_label('name')
-        this_net.passthrough_node_size_linear('n_genes')
-        this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
-        this_net.set_node_border_width(0.)
-        this_net.set_edge_colour('#b7b7b7')
-        this_net.set_node_fill_colour('#ffffff')
-        this_net.set_node_transparency(255)
+            # formatting
+            this_net.passthrough_node_label('name')
+            this_net.passthrough_node_size_linear('n_genes')
+            this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
+            this_net.set_node_border_width(0.)
+            this_net.set_edge_colour('#b7b7b7')
+            this_net.set_node_fill_colour('#ffffff')
+            this_net.set_node_transparency(255)
 
-        this_net.node_pie_charts(['hyper', 'hypo'], colours=[cyto_colours[t] for t in ['hyper', 'hypo']])
+            this_net.node_pie_charts(['hyper', 'hypo'], colours=[cyto_colours[t] for t in ['hyper', 'hypo']])
 
-    layout_kwargs = dict(
-        EdgeAttribute='n_genes',
-        defaultSpringLength=50,
-        defaultSpringCoefficient=50,
-    )
-    cy_session.apply_layout(**layout_kwargs)
-    # in practice, best layout can be achieved by manual movement
+        layout_kwargs = dict(
+            EdgeAttribute='n_genes',
+            defaultSpringLength=50,
+            defaultSpringCoefficient=50,
+        )
+        cy_session.apply_layout(**layout_kwargs)
+        # in practice, best layout can be achieved by manual movement
 
-    cy_session.cy_cmd.session.save(os.path.join(outdir, "ipa_cytoscape.cys"))
+        cy_session.cy_cmd.session.save(os.path.join(outdir, "ipa_cytoscape.cys"))
 
     # distribution of cluster locations in the two groups (TSS, exon, etc.)
     relation_priority = [
@@ -577,8 +603,10 @@ if __name__ == '__main__':
     # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
 
-    # run through DE genes (per patient) and look at direction distribution
-    # full list
+    ## run through DE genes (per patient) and look at direction distribution
+    tss_cols = ['dmr_TSS1500', 'dmr_TSS200']
+
+    # full list, all relations
     de_linked = dict([
         (
             pid,
@@ -590,9 +618,22 @@ if __name__ == '__main__':
 
     plt_dict = same_de.bar_plot(de_linked, pids)
     plt_dict['fig'].tight_layout()
-    plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_full_list_directions.png"), dpi=200)
+    plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_all_rels_directions.png"), dpi=200)
 
-    # patient-specific DMRs linked to genes
+    # full list, TSS only
+    de_linked = {}
+    for pid in pids:
+        ix = joint_de_dmr_s1[pid][tss_cols].sum(axis=1).astype(bool)
+        this_genes = joint_de_dmr_s1[pid].loc[ix, 'gene']
+        de_linked[pid] = de_res_s1[pid].loc[de_res_s1[pid]['Gene Symbol'].isin(this_genes)]
+
+    de_by_direction = same_de.count_de_by_direction(de_linked)
+
+    plt_dict = same_de.bar_plot(de_linked, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_tss_directions.png"), dpi=200)
+
+    # patient-specific DMRs linked to genes, all relations
     spec_ix = setops.specific_features(*[dmr_res_all[pid].keys() for pid in pids])
     dm_specific = dict([
         (
@@ -623,9 +664,20 @@ if __name__ == '__main__':
 
     plt_dict = same_de.bar_plot(de_linked_spec, pids)
     plt_dict['fig'].tight_layout()
-    plt_dict['fig'].savefig(os.path.join(outdir, "de_specific_linked_syngeneic_full_list_directions.png"), dpi=200)
+    plt_dict['fig'].savefig(os.path.join(outdir, "de_specific_linked_syngeneic_all_rels_directions.png"), dpi=200)
 
-    # hypo/hyper DMRs in the hypo group linked (SEPARATELY) to DE
+    # patient-specific DMRs linked to genes, TSS only
+    de_linked_spec_tss = {}
+    for pid in pids:
+        ix = joint_de_dmr_s1[pid][tss_cols].sum(axis=1).astype(bool)
+        this_genes = joint_de_dmr_s1[pid].loc[ix, 'gene']
+        de_linked_spec_tss[pid] = de_linked_spec[pid].loc[de_linked_spec[pid]['Gene Symbol'].isin(this_genes)]
+
+    de_by_direction_spec_tss = same_de.count_de_by_direction(de_linked_spec_tss)
+
+    plt_dict = same_de.bar_plot(de_linked_spec_tss, pids)
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "de_specific_linked_syngeneic_tss_directions.png"), dpi=200)
 
     groups = {
         'Hypo': ['019', '030', '031', '017'],
@@ -887,5 +939,5 @@ if __name__ == '__main__':
         for i in range(n_iter_bg):
 
 
-        # multiple random draws
-        pass
+            # multiple random draws
+            pass
