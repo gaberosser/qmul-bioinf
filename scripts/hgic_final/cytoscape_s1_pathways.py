@@ -2,6 +2,7 @@ from cytoscape import cyto
 import os
 import pandas as pd
 import numpy as np
+import time
 from matplotlib import pyplot as plt
 import seaborn as sns
 import networkx as nx
@@ -16,6 +17,209 @@ from scripts.hgic_final import ipa_results_s1_s2 as irss
 from scripts.hgic_final import consts
 
 from settings import HGIC_LOCAL_DIR
+
+
+def plot_network(g, x, y, ax=None):
+    if ax is None: ax = plt.gca()
+    # nodes
+    ax.scatter(x, y, marker='o', edgecolor='k', facecolor='none', s=40)
+    # edges
+    for (k1, k2), e in g.edges.items():
+        i = g.nodes.keys().index(k1)
+        j = g.nodes.keys().index(k2)
+        ax.plot(
+            [x[i], x[j]],
+            [y[i], y[j]],
+            color='0.5',
+            linestyle='-',
+            lw=0.1 * e['n_genes'],
+            alpha=0.5
+        )
+
+
+def compute_group_similarity(nx_g, pids=consts.PIDS):
+    idx_to_node = pd.Series(nx_g.nodes)
+    n = len(nx_g.nodes)
+    # precompute indices of the pairwise comparisons
+    triu_ind = np.triu_indices(n, k=1)
+
+    group_similarity = []
+
+    for i, j in zip(*triu_ind):
+        k_i = idx_to_node[i]
+        k_j = idx_to_node[j]
+
+        # group similarity
+        members_i = [pid for pid in pids if nx_g.nodes[k_i][pid] == 1]
+        members_j = [pid for pid in pids if nx_g.nodes[k_j][pid] == 1]
+        n_common = len(set(members_i).intersection(members_j))
+        n_tot = float(len(members_i) + len(members_j))
+        group_similarity.append((2 * n_common / n_tot) ** 2)
+
+    return np.array(group_similarity)
+
+
+def network_layout_force_directed_algorithm(
+        cyto_net,
+        group_similarity,
+        edge_weight_col='n_genes',
+        default_edge_length=50.,
+        min_edge_length=10.,
+        spring_const=50.,
+        group_const=300.,
+        node_repulsion_const=4e5,
+        contraction_const=1e5,
+        n_iter_max=1000,
+        delta_t=0.1,
+        animated_gif_out=None,
+        update_each_frame=True,
+):
+    generate_animation = animated_gif_out is not None
+    if generate_animation:
+        update_each_frame = True
+
+    nx_g = cyto_net.nx_graph
+    n = len(nx_g.nodes)
+
+    # it will be useful to precompute indices of the pairwise comparisons
+    triu_ind = np.triu_indices(n, k=1)
+
+    idx_to_node = pd.Series(nx_g.nodes)
+
+    # pre-compute pairwise edge weights and group similarity values
+    edge_similarity = []
+
+    for i, j in zip(*triu_ind):
+        k_i = idx_to_node[i]
+        k_j = idx_to_node[j]
+
+        # edge_similarity
+        if (k_i, k_j) in gg.edges:
+            edge_similarity.append(nx_g.edges[(k_i, k_j)][edge_weight_col])
+        else:
+            edge_similarity.append(0)
+
+    edge_similarity = np.array(edge_similarity)
+
+    eq_lengths = default_edge_length - edge_similarity
+    eq_lengths[eq_lengths < min_edge_length] = min_edge_length
+
+    # we need a boolean multiplier to encode connectivity
+    k_e = np.ones_like(eq_lengths) * edge_similarity.astype(bool) * spring_const
+
+    # initial locations: random
+    d = (1 - .5 ** (1 / float(n))) ** .5
+    l = default_edge_length / d
+    xy = np.random.rand(2, n) * l
+
+    # apply layout
+    x = dict(zip(gg.nodes.keys(), 10 * xy[0]))
+    y = dict(zip(gg.nodes.keys(), 10 * xy[1]))
+    this_net.add_node_column('x', x)
+    this_net.add_node_column('y', y)
+    this_net.passthrough_node_position('x', 'y')
+    this_net.view_fit_content()
+
+    if generate_animation:
+        images = []
+        import PIL
+        from StringIO import StringIO
+
+    iter_count = 0
+    m = 1e6  # max movement - used as convergence indicator
+    tol = 2.
+    while m > tol:
+        if iter_count > n_iter_max:
+            break
+
+        # centre of mass
+        com = xy.mean(axis=1)
+
+        dx = xy[0, triu_ind[1]] - xy[0, triu_ind[0]]
+        dy = xy[1, triu_ind[1]] - xy[1, triu_ind[0]]
+        dr = (dx ** 2 + dy ** 2) ** .5
+
+        # unit pairwise vectors
+        dv = np.array([dx, dy]) / dr
+
+        # unit vector from com
+        ux = xy[0] - com[0]
+        uy = xy[1] - com[1]
+        dist_from_com = (ux ** 2 + uy ** 2) ** .5
+        ux /= dist_from_com
+        uy /= dist_from_com
+        u = np.array([ux, uy])
+
+        # forces (as vectors)
+        # regular node interaction via edges
+        f_e = k_e * (eq_lengths - dr) * -dv
+
+        # node repulsion
+        # apply a small offset in the denominator to avoid very large jumps
+        f_n = node_repulsion_const / (dr ** 2 + 1.) * -dv
+
+        # group attraction
+        f_g = group_similarity * group_const * dr * dv
+
+        # pairwise forces in a squareform
+        f_tot = delta_t ** 2 / 2. * (f_e + f_n + f_g)
+
+        # 'open out' pairwise format, remembering to change the sign on the lower diagonal
+        # if we have any non-symmetric terms, this won't work
+        f_tot_x = distance.squareform(f_tot[0])
+        f_tot_x[np.tril_indices_from(f_tot_x, k=1)] *= -1
+
+        f_tot_y = distance.squareform(f_tot[1])
+        f_tot_y[np.tril_indices_from(f_tot_y, k=1)] *= -1
+
+        # sum for each node
+        force = np.array([
+            f_tot_x.sum(axis=1),
+            f_tot_y.sum(axis=1),
+        ])
+
+        # contraction force
+        f_c = contraction_const * np.exp(-(dist_from_com ** 2)) * -u
+
+        force += delta_t ** 2 / 2. * f_c
+
+        d_xy = force * delta_t ** 2 * 0.5
+
+        # summary metric for extent of movement
+        m = (d_xy ** 2).sum(axis=0).max()
+
+        xy = xy + d_xy
+
+        print "Iteration %d, m = %.2f" % (iter_count, m)
+
+        # optionally update the plot
+        if update_each_frame:
+            x = dict(zip(gg.nodes.keys(), 10 * xy[0]))
+            y = dict(zip(gg.nodes.keys(), 10 * xy[1]))
+            this_net.add_node_column('x', x)
+            this_net.add_node_column('y', y)
+            this_net.view_fit_content()
+
+        if generate_animation:
+            images.append(PIL.Image.open(StringIO(this_net.obj.get_png(height=2000))))
+
+        iter_count += 1
+
+    # apply final layout
+    x = dict(zip(gg.nodes.keys(), 10 * xy[0]))
+    y = dict(zip(gg.nodes.keys(), 10 * xy[1]))
+    this_net.add_node_column('x', x)
+    this_net.add_node_column('y', y)
+    this_net.passthrough_node_position('x', 'y')
+
+    if generate_animation:
+        images[0].save(
+            animated_gif_out,
+            save_all=True,
+            append_images=images[1:],
+            duration=100,  # units: ms
+            loop=0
+        )
 
 
 if __name__ == '__main__':
@@ -102,6 +306,7 @@ if __name__ == '__main__':
             v['name_vis'] = k
             v['z'] = 10.
         else:
+            v['name_vis'] = ''
             v['z'] = 5.
 
     this_net = cy_session.add_networkx_graph(gg, name=gg.name)
@@ -121,78 +326,12 @@ if __name__ == '__main__':
 
     this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
 
-
-    # try to write my own node layout algo
-    n = len(gg.nodes)
-    default_length = 50.
-    min_length = 10.
-    spring_const = 50.
-    group_const = 50.
-    n_iter_max = 100
-    delta_t = 0.1
-
-    idx_to_node = pd.Series(gg.nodes)
-    node_to_idx = pd.Series(range(n), index=gg.nodes)
-
-    # pre-compute pairwise edge weights and group similarity values
-    group_similarity = np.zeros([n] * 2)
-
-    for i, k1 in enumerate(gg.nodes):
-        for j, k2 in enumerate(gg.nodes):
-            if j <= i:
-                continue
-            members_i = [pid for pid in pids if gg.nodes[k1][pid] == 1]
-            members_j = [pid for pid in pids if gg.nodes[k2][pid] == 1]
-            n_common = len(set(members_i).intersection(members_j))
-            if n_common == 0:
-                continue
-            n_tot = float(len(members_i) + len(members_j))
-            # n_union = float(len(set(members_i).union(members_j)))
-            group_similarity[i, j] = 2 * n_common / n_tot
-    group_similarity = group_const * group_similarity
-
-    edge_similarity = np.zeros([n] * 2)
-
-    for k, e in gg.edges.iteritems():
-        i = node_to_idx[k[0]]
-        j = node_to_idx[k[1]]
-        edge_similarity[i, j] = e['n_genes']
-    eq_lengths = default_length - edge_similarity
-    eq_lengths[eq_lengths < min_length] = min_length
-
-    # initial locations: random
-    d = (1 - .5 ** (1 / float(n))) ** .5
-    l = default_length / d
-    xy = np.random.rand(n, 2) * l
-
-    iter_count = 0
-    m = 1e6  # max movement - used as convergence indicator
-    tol = 2.
-    while m > tol:
-        if iter_count > n_iter_max:
-            break
-
-        # pairwise distances
-        # dr = distance.squareform(distance.pdist(xy))
-
-        dx = reduce(
-            lambda x, y: x - y,
-            np.meshgrid(xy[:, 0], xy[:, 0])
-        )
-        dy = reduce(
-            lambda x, y: x - y,
-            np.meshgrid(xy[:, 1], xy[:, 1])
-        )
-        dr = (dx ** 2 + dy ** 2) ** .5
-
-        # unit vectors
-        dv = np.array([dx, dy])
-
-        # forces (as vectors)
-
-
-        iter_count += 1
-
+    group_similarity = compute_group_similarity(gg)
+    network_layout_force_directed_algorithm(
+        this_net,
+        group_similarity,
+        animated_gif_out=os.path.join(outdir, "net_layout_animation_de.gif")
+    )
 
     #######################################################
     # DM
@@ -219,13 +358,20 @@ if __name__ == '__main__':
 
     this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
 
-    layout_kwargs = dict(
-        EdgeAttribute='n_genes',
-        defaultSpringLength=150,
-        defaultSpringCoefficient=150,
-        maxWeightCutoff=max([v['n_genes'] for v in gg.nodes.values()]),
+    group_similarity = compute_group_similarity(gg)
+    network_layout_force_directed_algorithm(
+        this_net,
+        group_similarity,
+        animated_gif_out=os.path.join(outdir, "net_layout_animation_dm.gif")
     )
 
-    cy_session.apply_layout(**layout_kwargs)
+    # layout_kwargs = dict(
+    #     EdgeAttribute='n_genes',
+    #     defaultSpringLength=150,
+    #     defaultSpringCoefficient=150,
+    #     maxWeightCutoff=max([v['n_genes'] for v in gg.nodes.values()]),
+    # )
+    #
+    # cy_session.apply_layout(**layout_kwargs)
 
     cy_session.cy_cmd.session.save(os.path.join(outdir, "ipa_cytoscape.cys"))

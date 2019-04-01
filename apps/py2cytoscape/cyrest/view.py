@@ -116,7 +116,7 @@ class view(object):
         :returns: current view or null if there is none
         """
         PARAMS={}
-        response=api(url=self.__url+"/get_current", PARAMS=PARAMS, method="POST", verbose=verbose)
+        response=api(url=self.__url+"/get current", PARAMS=PARAMS, method="POST", verbose=verbose)
         return response
 
     def list(self, network=None, verbose=False):

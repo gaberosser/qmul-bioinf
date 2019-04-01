@@ -3,6 +3,7 @@ from apps.py2cytoscape.data.cyrest_client import CyRestClient
 from apps.py2cytoscape.data import style
 
 import networkx as nx
+import pandas as pd
 from utils import log
 
 
@@ -44,7 +45,7 @@ class CytoscapeSession(object):
 
             self.name_to_id[name] = this_obj.get_id()
 
-            self.collections[name] = CytoNet(this_obj, this_style, cy_session=self.cy)
+            self.collections[name] = CytoNet(this_obj, this_style, cy_session=self.cy, nx_graph=graph)
             return self.collections[name]
 
         except Exception:
@@ -73,12 +74,13 @@ class CytoscapeSession(object):
 class CytoNet(object):
     allowed_types = {'String', 'Double'}
 
-    def __init__(self, obj, style, cy_session=None):
+    def __init__(self, obj, style, cy_session=None, nx_graph=None):
         self.style = style
         self.obj = obj
         if cy_session is None:
             cy_session = CyRestClient()
         self.cy_session = cy_session
+        self.nx_graph = nx_graph
 
     def apply_style(self):
         if self.cy_session is None:
@@ -149,6 +151,12 @@ class CytoNet(object):
             xmin = dat.min()
         self._create_linear_mapping(column, 'EDGE_WIDTH', x=(xmin, xmax), y=(ymin, ymax), col_belongs_to='edge')
 
+    def passthrough_node_position(self, column_x, column_y, column_z=None):
+        self._create_passthrough_mapping(column_x, 'NODE_X_LOCATION', col_type='Double')
+        self._create_passthrough_mapping(column_y, 'NODE_Y_LOCATION', col_type='Double')
+        if column_z is not None:
+            self._create_passthrough_mapping(column_z, 'NODE_Z_LOCATION', col_type='Double')
+
     def update_style_defaults(self, prop_dict):
         self.style.update_defaults(prop_dict)
 
@@ -193,3 +201,32 @@ class CytoNet(object):
         self.update_style_defaults({
             'NODE_CUSTOMGRAPHICS_1': the_json
         })
+
+    def add_node_column(self, col_name, data):
+        """
+        Add a new column to the node table.
+        :param col_name: Name of the new column
+        :param data: Iterable to use for the new column. This can either be:
+        - Dict (or any object that supports get()) keyed by node name, or a regular iterable. In this case, we re-
+         order it to ensure compatibility with the existing table.
+        OR
+        - Plain iterable with no key. In this case, we assume the data are already ordered correctly (CAVE!)
+        :return:
+        """
+        df = self.obj.get_node_table()
+        try:
+            data = [data.get(k) for k in df.name]
+        except Exception:
+            pass
+        if col_name in df.columns:
+            df.loc[:, col_name] = data
+        else:
+            df.insert(0, col_name, data)
+        self.obj.update_node_table(df, network_key_col='name', data_key_col='name')
+
+    def remove_node_column(self, col_name):
+        self.obj.delete_node_table_column(col_name)
+
+    def view_fit_content(self):
+        cy_cli = cyrest.cyclient()
+        cy_cli.view.fit_content()

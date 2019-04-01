@@ -121,9 +121,9 @@ if __name__ == '__main__':
         #{'base_dir': '2016-09-21_dutt',
         # 'chipType': 'EPIC',
         # 'sampleType': 'FFPE DNA'},
-        {'base_dir': '2016-12-19_ucl_genomics',
-        'chipType': 'EPIC',
-        'sampleType': 'KRYO DNA'},
+        # {'base_dir': '2016-12-19_ucl_genomics',
+        # 'chipType': 'EPIC',
+        # 'sampleType': 'KRYO DNA'},
         # {'base_dir': '2017-01-17_brandner',
         #  'chipType': 'EPIC',
         #  'sampleType': 'FFPE DNA'},
@@ -139,17 +139,47 @@ if __name__ == '__main__':
         # {'base_dir': '2017-09-19',
         #  'chipType': 'EPIC',
         #  'sampleType': 'KRYO DNA'},
+        {'base_dir': 'GSE92462_450K',
+         'chipType': '450K',
+         'sampleType': 'KRYO DNA'},
     ]
+    # include_subdir = True
+    include_subdir = False
     n_retry = 3
     wait_between_retries = 5  # seconds
     outdir = unique_output_dir('heidelberg_bulk_upload', reuse_empty=True)
     flog = get_file_logger('heidelberg_bulk_upload', os.path.join(outdir, 'automated_upload.log'))
+    # include = [
+    #     'GBM018 P10 DNA 8/11/2016 CLEANED',
+    #     'GBM019 P4 DNA 8/11/2016 CLEANED',
+    #     'GBM024 P9 DNA     13/10/2016',
+    #     'GBM026 P8 DNA 24/10/2016',
+    #     'GBM031 P4 DNA     13/10/2016'
+    # ]
     include = [
-        'GBM018 P10 DNA 8/11/2016 CLEANED',
-        'GBM019 P4 DNA 8/11/2016 CLEANED',
-        'GBM024 P9 DNA     13/10/2016',
-        'GBM026 P8 DNA 24/10/2016',
-        'GBM031 P4 DNA     13/10/2016'
+        'GSC80',
+        'GSC164',
+        'GSC64',
+        'GSC76',
+        'GSC102',
+        'GSC6',
+        'GSC14',
+        'GSC10',
+        'GSC39',
+        'GSC43',
+        'GSC108',
+        'GSC59',
+        'GSC12',
+        'GSC84',
+        'GSC61',
+        'GSC22',
+        'GSC187',
+        'GSC182',
+        'GSC154',
+        'GSC184',
+        'GSC143',
+        'GSC195',
+        'H1228',
     ]
     exclude = None
 
@@ -172,10 +202,14 @@ if __name__ == '__main__':
         flog.info("Project %s. %d samples.", base_dir, len(samples))
         for i, row in samples.iterrows():
             n = 1
-            sample_id = str(int(row.Sentrix_ID))  # may be an int
+            # sample_id = str(int(row.Sentrix_ID))  # may be an int
+            sample_id = str(row.Sentrix_ID)  # may be an int
             name = "%s;%s;%s" % (base_dir, sample_id, row.Sample_Name)
             sample_pos = row.Sentrix_Position
-            file = os.path.join(indir, sample_id, "%s_%s_Red.idat" % (sample_id, sample_pos))
+            if include_subdir:
+                file = os.path.join(indir, sample_id, "%s_%s_Red.idat" % (sample_id, sample_pos))
+            else:
+                file = os.path.join(indir, "%s_%s_Red.idat" % (sample_id, sample_pos))
             success = False
             while success is False:
                 try:
