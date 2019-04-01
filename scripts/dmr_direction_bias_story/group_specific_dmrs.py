@@ -175,6 +175,9 @@ def plot_clustermap_tpm_levels(
     col_colors.loc[rna_meta.type == 'GBM', 'Cell type'] = '0.2'
     col_colors.loc[rna_meta.type == 'iNSC', 'Cell type'] = '0.8'
 
+    if len(col_colors['Cell type'].unique()) < 2:
+        col_colors.drop('Cell type', axis=1, inplace=True)
+
     dat_for_plot = rna_tpm.reindex(all_genes).dropna(how='all', axis=0)
     # filter genes that aren't expressed
     dat_for_plot = dat_for_plot.loc[(dat_for_plot > min_tpm).sum(axis=1) > 2]
@@ -247,6 +250,49 @@ def pct_concordant(joint_res):
     a = (np.sign(joint_res.de_logFC) != np.sign(joint_res.dmr_median_delta)).sum()
     b = float(joint_res.shape[0])
     return a / b * 100
+
+
+def tabulate_de_counts_by_direction(de_res, pids=consts.PIDS, **gene_lists):
+    """
+    Given the lists of genes associated with the hypo and hyper group, tabulate the numbers of matching genes in
+    the supplied DE results for each patient. Split counts by DE logFC direction.
+    :param de_res:
+    :param genes_hypo:
+    :param genes_hyper:
+    :param pids:
+    :return: Raw counts table, Table expressing coutns as a % of the total in that direction
+    """
+    cols = reduce(
+        lambda x, y: x + y,
+        [["%s up" % k, "%s down" % k] for k in gene_lists]
+    )
+
+    # table of DE counts (in DMR-linked context)
+    de_count_table = pd.DataFrame(
+        0,
+        index=pids,
+        columns=cols + ['Total up', 'Total down']
+    )
+
+    for pid in pids:
+        de_count_table.loc[pid, 'Total up'] = (de_res[pid]['logFC'] > 0).sum()
+        de_count_table.loc[pid, 'Total down'] = (de_res[pid]['logFC'] < 0).sum()
+        for k, g_arr in gene_lists.items():
+            ix = de_res[pid].index.intersection(references.gene_symbol_to_ensembl(g_arr).dropna().values)
+            de_count_table.loc[pid, '%s up' % k] = (de_res[pid].loc[ix, 'logFC'] > 0).sum()
+            de_count_table.loc[pid, '%s down' % k] = (de_res[pid].loc[ix, 'logFC'] < 0).sum()
+
+    # express this as a pct of the total up/down
+    de_count_table_pct = pd.DataFrame(
+        index=pids,
+        columns=cols
+    )
+    for k in gene_lists:
+        for k2 in ['up', 'down']:
+            de_count_table_pct.loc[pids, "%s %s" % (k, k2)] = \
+                de_count_table.loc[pids, "%s %s" % (k, k2)] / de_count_table.loc[pids, 'Total %s' % k2].astype(float) * 100.
+
+    return de_count_table, de_count_table_pct
 
 
 if __name__ == '__main__':
@@ -363,6 +409,8 @@ if __name__ == '__main__':
         'Hyper': ['018', '050', '054', '061', '026', '052']
     }
     group_ind = setops.groups_to_ind(pids, groups)
+    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
+
     dmr_by_member = [dmr_res_all[pid].keys() for pid in pids]
     venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
 
@@ -821,9 +869,86 @@ if __name__ == '__main__':
     )
     cg.savefig(os.path.join(outdir, "discordant_gte2_genes_tss_clustermap.png"), dpi=200)
 
-
     # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
     joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
+
+    # extract the DE/DMR results that are only associated with the group-specific DMRs
+    tss_cols = ['dmr_TSS1500', 'dmr_TSS200']
+    group_specific_de_dmr = dict([
+        (
+            pid,
+            joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[groups_inv[pid]]), ['de_logFC', 'dmr_median_delta']]
+        ) for pid in pids])
+
+    group_specific_de_dmr_tss = dict([
+        (
+            pid,
+            joint_de_dmr_s1[pid].loc[
+                joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[groups_inv[pid]]) & joint_de_dmr_s1[pid][tss_cols].sum(axis=1).astype(bool),
+                ['de_logFC', 'dmr_median_delta']
+            ]
+        ) for pid in pids
+    ])
+
+    # table of DE counts (in DMR-linked context)
+    de_count_table, de_count_table_pct = tabulate_de_counts_by_direction(
+        de_res_s1,
+        Hypo=genes_hypo,
+        Hyper=genes_hyper
+    )
+    colours = [consts.METHYLATION_DIRECTION_COLOURS[groups_inv[pid].lower()] for pid in pids]
+    fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(5., 5.5), sharex=True, sharey=False)
+    for i, col in enumerate(de_count_table_pct.columns):
+        ax = axs[i]
+        ax.bar(range(len(pids)), de_count_table_pct[col], color=colours, edgecolor='k', linewidth=1.)
+        ax.set_ylabel("%% %s" % col)
+        ax.set_xticks(range(len(pids)))
+        ax.set_xticklabels(pids, rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "de_gene_count_by_direction_and_group.png"), dpi=200)
+
+    # again with TSS
+    de_count_table_tss, de_count_table_pct_tss = tabulate_de_counts_by_direction(
+        de_res_s1,
+        Hypo=genes_hypo_tss,
+        Hyper=genes_hyper_tss
+    )
+    fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(5., 5.5), sharex=True, sharey=False)
+    for i, col in enumerate(de_count_table_pct_tss.columns):
+        ax = axs[i]
+        ax.bar(range(len(pids)), de_count_table_pct_tss[col], color=colours, edgecolor='k', linewidth=1.)
+        ax.set_ylabel("%% %s" % col)
+        ax.set_xticks(range(len(pids)))
+        ax.set_xticklabels(pids, rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "de_gene_count_by_direction_and_group_tss.png"), dpi=200)
+
+    # again with discordant
+    de_count_table_disc, de_count_table_pct_disc = tabulate_de_counts_by_direction(
+        de_res_s1,
+        Discordant=genes_discordant,
+    )
+
+    # plot clustermaps of gene expr / DE logFC for these genes
+    all_genes = setops.reduce_union(
+        *[[t[1] for t in group_specific_de_dmr[pid].index] for pid in pids]
+    )
+
+    tmp = pd.DataFrame(0., index=sorted(all_genes), columns=pids)
+    for pid in pids:
+        this_res = de_res_s1[pid].loc[de_res_s1[pid]['Gene Symbol'].isin(all_genes)]
+        tmp.loc[this_res['Gene Symbol'], pid] = this_res.logFC
+
+    cg = plot_clustermap_tpm_levels(
+        rna_tpm[rna_meta.loc[rna_meta.type == 'GBM'].sort_values(by=['dmr_group', 'patient_id']).index],
+        all_genes,
+        genes_hypo,
+        genes_hyper,
+        z_score=0,
+        metric='correlation',
+        method='average'
+    )
+
 
     ## run through DE genes (per patient) and look at direction distribution
     tss_cols = ['dmr_TSS1500', 'dmr_TSS200']
@@ -906,6 +1031,7 @@ if __name__ == '__main__':
         'Hyper': ['018', '050', '054', '061', '026', '052']
     }
     group_ind = setops.groups_to_ind(pids, groups)
+    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
     # upset plotting colours
     subgroup_set_colours = {
         'Hypo full': '#427425',
@@ -1030,7 +1156,6 @@ if __name__ == '__main__':
 
     # looking at the genes that are in both DMR groups (all relations),
     # are they in different directions (DE) between the two groups?
-    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
     in_both = setops.reduce_intersection(*genes_from_dmr_groups.values())
     in_both_ens = references.gene_symbol_to_ensembl(in_both)
 
