@@ -227,6 +227,8 @@ if __name__ == '__main__':
     Here we create a Cytoscape session for the visualisation of the IPA (and GO?) pathways identified as enriched
     in each patient. We'll be comparing between patients, hence it's a 'Strategy 1' approach.
     """
+    generate_animation = True
+
     # set a minimum pval for pathways to be used
     alpha = 0.01
     plogalpha = -np.log10(alpha)
@@ -236,8 +238,6 @@ if __name__ == '__main__':
     plogalpha_relevant = -np.log10(alpha_relevant)
 
     min_edge_count = 8
-
-    pids = consts.PIDS
 
     de_pathways_manually_labelled = [
         'Chondroitin Sulfate Biosynthesis (Late Stages)',
@@ -297,24 +297,33 @@ if __name__ == '__main__':
             v['plogp_mean'] = np.mean(all_logp)
             mean_plogp[k] = v['plogp_mean']
 
-    # add conditional node labels
-    # these should have a higher z value than the unlabelled nodes
+    # add a few different versions of conditional node labels
+    # in all cases these should have a higher z value than the unlabelled nodes
+
+    # 1. Manually listed pathways plus top N
     to_label = sorted(mean_plogp, key=lambda x:-mean_plogp[x])[:label_top_n_nodes]
     to_label.extend(de_pathways_manually_labelled)
     for k, v in gg.nodes.iteritems():
         if k in to_label:
-            v['name_vis'] = k
-            v['z'] = 10.
+            v['name_vis_1'] = k
+            v['z_1'] = 10.
         else:
-            v['name_vis'] = ''
-            v['z'] = 5.
+            v['name_vis_1'] = ''
+            v['z_1'] = 5.
+
+    # 2. Manually listed pathways only
+    for k, v in gg.nodes.iteritems():
+        if k in de_pathways_manually_labelled:
+            v['name_vis_2'] = k
+            v['z_2'] = 10.
+        else:
+            v['name_vis_2'] = ''
+            v['z_2'] = 5.
 
     this_net = cy_session.add_networkx_graph(gg, name=gg.name)
 
     cyto_nets[gg.name] = this_net
 
-    # formatting
-    this_net.passthrough_node_label('name_vis')
     # this_net.passthrough_node_size_linear('n_genes')
     this_net.passthrough_node_size_linear('plogp_mean')
     this_net.passthrough_edge_width_linear('n_genes', xmin=min_edge_count, ymin=0.4, ymax=5)
@@ -322,16 +331,35 @@ if __name__ == '__main__':
     this_net.set_edge_colour('#b7b7b7')
     this_net.set_node_fill_colour('#ffffff')
     this_net.set_node_transparency(255)
-    this_net._create_passthrough_mapping('z', 'NODE_Z_LOCATION', col_type='Double')
 
     this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
 
     group_similarity = compute_group_similarity(gg)
+
+    animated_gif_fn = None
+    if generate_animation:
+        animated_gif_fn = os.path.join(outdir, "net_layout_animation_de.gif")
+
     network_layout_force_directed_algorithm(
         this_net,
         group_similarity,
-        animated_gif_out=os.path.join(outdir, "net_layout_animation_de.gif")
+        animated_gif_out=animated_gif_fn
     )
+
+    # cycle through node labelling types and export images
+
+    # no labels
+    this_net.export_png(os.path.join(outdir, "cytoscape_de_network_no_node_labels.png"), height=2000)
+
+    # label version 1
+    this_net.passthrough_node_label('name_vis_1')
+    this_net._create_passthrough_mapping('z_1', 'NODE_Z_LOCATION', col_type='Double')
+    this_net.export_png(os.path.join(outdir, "cytoscape_de_network_selected_and_topn_node_labels.png"), height=2000)
+
+    # label version 2
+    this_net.passthrough_node_label('name_vis_2')
+    this_net._create_passthrough_mapping('z_2', 'NODE_Z_LOCATION', col_type='Double')
+    this_net.export_png(os.path.join(outdir, "cytoscape_de_network_selected_node_labels.png"), height=2000)
 
     #######################################################
     # DM
@@ -359,10 +387,15 @@ if __name__ == '__main__':
     this_net.node_pie_charts(pids, colours=[patient_colours[p] for p in pids])
 
     group_similarity = compute_group_similarity(gg)
+
+    animated_gif_fn = None
+    if generate_animation:
+        animated_gif_fn = os.path.join(outdir, "net_layout_animation_dm.gif")
+
     network_layout_force_directed_algorithm(
         this_net,
         group_similarity,
-        animated_gif_out=os.path.join(outdir, "net_layout_animation_dm.gif")
+        animated_gif_out=animated_gif_fn
     )
 
     # layout_kwargs = dict(
@@ -375,3 +408,9 @@ if __name__ == '__main__':
     # cy_session.apply_layout(**layout_kwargs)
 
     cy_session.cy_cmd.session.save(os.path.join(outdir, "ipa_cytoscape.cys"))
+
+    # NB can convert the animated gifs generated here into MP4 (more efficient and versatile) on the command line:
+    # ffmpeg -i net_layout_animation_dm.gif -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" net_layout_animation_dm.mp4
+    # Source: https://unix.stackexchange.com/a/294892/253111
+    # TODO: consider getting there directly with openCV
+    # Source: https://blog.extramaster.net/2015/07/python-pil-to-mp4.html

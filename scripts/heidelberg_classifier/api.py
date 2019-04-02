@@ -129,16 +129,18 @@ class Heidelberg(object):
                 raise AttributeError("Must supply either soup or sample_id")
             soup = self.get_result_soup(sample_id)
 
-        # get the summary table (it's the 1st table)
-        tbl = soup.find('table')
-        if tbl is None:
-            raise ValueError("Unable to find any table elements")
+        # update April 2019: order and details of tables have changed
+        all_tables = soup.find_all('table')
+        # 1st table contains sample name
+        tbl = all_tables[0]
+
         tbl_cont = dict(read_table(tbl))
         batch, sentrix_id, sname = tbl_cont['Sample identifier:'].split(';')
 
-        # get the most recent run number and creation time (it's in the 2nd table)
+        # get the most recent run number and creation time (it's in the 3rd table)
         # FIXME: we're assuming that this table has only one row, will break otherwise
-        tbl = soup.findAll('table')[1]
+        tbl = all_tables[2]
+        # tbl = soup.findAll('table')[1]
         tbl_cont = dict(zip(*read_table(tbl)))
 
         run_id = int(tbl_cont['Run'])
@@ -261,6 +263,7 @@ class Heidelberg(object):
 
         # situation (2) OR (3)
         # Either way, get the classifier results
+        # FIXME: (April 2019) page layout change has broken this part
         try:
             raw_scores = read_table(soup.find(attrs={'id': 'rawScores'}))
             raw_scores = self.save_scores(raw_scores, sample_name, batch, 'raw_scores')

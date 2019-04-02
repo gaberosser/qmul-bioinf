@@ -4,10 +4,79 @@ from utils.output import unique_output_dir
 import os
 from settings import HEIDELBERG_CLASSIFIER_CONFIG, DATA_DIR_NON_GIT
 import pandas as pd
-import api
+from scripts.heidelberg_classifier import api
 from time import sleep
 
 logger = get_console_logger(__name__)
+
+
+def batch_upload(
+    samplesheet_fn,
+    idat_dir,
+    include=None,
+    exclude=None,
+    array_type='EPIC',
+    sample_type='FFPE DNA',
+    include_subdir=True,
+    n_retry=3,
+    wait_between_retries=5
+):
+    """
+
+    :param samplesheet_fn:
+    :param idat_dir:
+    :param include:
+    :param exclude:
+    :param array_type: One of 'EPIC', '450K'
+    :param sample_type: One of 'FFPE DNA', 'KRYO DNA'
+    :param include_subdir: If True (default), look for the pair of idat files in a subdirectory within idat_dir, named
+    by the sample_id. This is the format for the data returned by the UCL facility, but not for GEO downloads.
+    :return:
+    """
+    analysis_params = {
+        'chipType': array_type,
+        'sampleType': sample_type
+    }
+    obj = api.Heidelberg()
+    samples = api.read_samplesheet(samplesheet_fn)
+    if include is not None:
+        samples = samples.loc[samples.Sample_Name.isin(include)]
+    if exclude is not None:
+        samples = samples.loc[~samples.Sample_Name.isin(exclude)]
+
+    logger.info("Uploading %d samples", len(samples))
+    for i, row in samples.iterrows():
+        n = 1
+        sample_id = str(row.Sentrix_ID)  # may be an int
+        name = "%s;%s;%s" % (base_dir, sample_id, row.Sample_Name)
+        sample_pos = row.Sentrix_Position
+        if include_subdir:
+            file = os.path.join(idat_dir, sample_id, "%s_%s_Red.idat" % (sample_id, sample_pos))
+        else:
+            file = os.path.join(idat_dir, "%s_%s_Red.idat" % (sample_id, sample_pos))
+        success = False
+        while success is False:
+            try:
+                # if this is a retry, log back in first
+                if n > 1:
+                    obj.establish_session()
+                obj.submit_sample(name, file, **analysis_params)
+                success = True
+                logger.info("Success: %s", name)
+            except Exception as exc:
+                logger.exception("Failed to process sample %s", name)
+                if n < n_retry:
+                    n += 1
+                    logger.info("Retrying (attempt %d) in %d seconds", n, wait_between_retries)
+                    logger.info("Retrying %s. Attempt %d.", name, n)
+                    sleep(wait_between_retries)
+
+        if not success:
+            logger.error("Upload failed: %s", name)
+            # raise AttributeError("Failed to upload sample %s after %d retries" % (name, n_retry))
+
+    return obj
+
 
 """
 Maintained for purely historic reasons: this is how I classified the TCGA raw data.

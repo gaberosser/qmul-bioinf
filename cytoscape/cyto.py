@@ -4,7 +4,15 @@ from apps.py2cytoscape.data import style
 
 import networkx as nx
 import pandas as pd
+from StringIO import StringIO
+
 from utils import log
+
+try:
+    import PIL
+    pil_available = True
+except ImportError:
+    pil_available = False
 
 
 class CytoscapeSession(object):
@@ -230,3 +238,10 @@ class CytoNet(object):
     def view_fit_content(self):
         cy_cli = cyrest.cyclient()
         cy_cli.view.fit_content()
+
+    def export_png(self, outfile, height=1200):
+        if not pil_available:
+            raise ImportError("Exporting to PNG requires PIL, but it isn't installed.")
+        img_data = self.obj.get_png(height=height)
+        img = PIL.Image.open(StringIO(img_data))
+        img.save(outfile)
