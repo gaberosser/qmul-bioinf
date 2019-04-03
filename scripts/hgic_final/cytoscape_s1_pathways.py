@@ -272,6 +272,21 @@ if __name__ == '__main__':
 
     pids = consts.PIDS
 
+    # generate standalone legend
+    legend_dict = collections.OrderedDict([
+        (pid, {'class': 'patch', 'edgecolor': 'k', 'facecolor': patient_colours[pid], 'linewidth': 1.})
+        for pid in pids
+    ])
+    legend_dict = {'': legend_dict}
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+    fig.set_facecolor('w')
+    common.add_custom_legend(ax, legend_dict, loc='center')
+    fig.set_size_inches((1.4, 2.4))
+    fig.savefig(os.path.join(outdir, "cytoscape_legend.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "cytoscape_legend.tiff"), dpi=200)
+
     # Cytoscape session
     cy_session = cyto.CytoscapeSession()
     cyto_nets = {}

@@ -1243,6 +1243,9 @@ if __name__ == "__main__":
     # a) clusters: absolute and relative values
     plt_dict = dm_direction_bar_plot(dmr_res_all, keys=pids)
     fig = plt_dict['fig']
+    fig.set_size_inches((3, 4))
+    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=12)
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, "all_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "all_dmr_direction.tiff"), dpi=200)
 
@@ -1272,6 +1275,9 @@ if __name__ == "__main__":
     # a) clusters: absolute and relative values
     plt_dict = dm_direction_bar_plot(dmr_res_specific, keys=pids)
     fig = plt_dict['fig']
+    fig.set_size_inches((3, 4))
+    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=12)
+    fig.tight_layout()
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.tiff"), dpi=200)
 

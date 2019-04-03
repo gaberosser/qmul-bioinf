@@ -1,5 +1,5 @@
 from plotting import bar, common, pie, polar, venn
-from methylation import loader, dmr, process
+from methylation import loader, dmr, process, annotation_gene_to_ensembl
 import pandas as pd
 from stats import nht
 from utils import output, setops, genomics, log, ipa, dictionary
@@ -7,6 +7,7 @@ from cytoscape import cyto
 import multiprocessing as mp
 import os
 import collections
+import operator
 import pickle
 import numpy as np
 from scipy import stats, cluster
@@ -295,6 +296,99 @@ def tabulate_de_counts_by_direction(de_res, pids=consts.PIDS, **gene_lists):
     return de_count_table, de_count_table_pct
 
 
+def get_de_dmr_groups(
+        joint_de_dmr,
+        clusters,
+        pids=consts.PIDS,
+        relation_filter=None
+):
+    if relation_filter is not None:
+        if not hasattr(relation_filter, '__iter__'):
+            relation_filter = [relation_filter]
+
+    de_dmr_groups = {}
+    de_dmr_de_logfc = {}
+    de_dmr_de_fdr = {}
+    de_dmr_dmr_delta = {}
+
+    if relation_filter is None:
+        de_dmr_by_member = [joint_de_dmr[pid].index for pid in pids]
+    else:
+        de_dmr_by_member = []
+        for pid in pids:
+            this_members = []
+            for t in joint_de_dmr[pid].index:
+                gene_rel_options = [(t[1], rel) for rel in relation_filter]
+                if len(set(clusters[t[0]].genes).intersection(gene_rel_options)) > 0:
+                    this_members.append(t)
+            de_dmr_by_member.append(this_members)
+    venn_set, venn_count = setops.venn_from_arrays(*de_dmr_by_member)
+
+    for grp in groups:
+        this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
+        this_de_dmrs = sorted(setops.reduce_union(*[venn_set[k] for k in this_sets]))
+
+        if relation_filter is not None:
+            new_de_dmrs = []
+            for t in this_de_dmrs:
+                # look for any intersection here
+                gene_rel_options = [(t[1], rel) for rel in relation_filter]
+                if len(set(clusters[t[0]].genes).intersection(gene_rel_options)) > 0:
+                    new_de_dmrs.append(t)
+            this_de_dmrs = new_de_dmrs
+
+        de_dmr_groups[grp] = this_de_dmrs
+
+        # get separate lists of DE genes and DMR IDs
+        # DMRs is straightforward
+        de_dmr_dmr_delta[grp] = pd.DataFrame(
+            index=sorted(set([t[0] for t in this_de_dmrs])),
+            columns=pids + ['consistent'],
+        )
+        # DEs is trickier: some genes have mapped twice because I was so diligent in curating the original lists!
+        this_de_genes = sorted(set([t[1] for t in this_de_dmrs]))
+        this_de_ens = annotation_gene_to_ensembl.gene_to_ens(this_de_genes)
+        this_de_ens = this_de_ens[~this_de_ens.duplicated()]
+        this_de_genes = this_de_ens.index
+
+        de_dmr_de_logfc[grp] = pd.DataFrame(
+            index=this_de_genes.tolist(),
+            columns=pids + ['consistent'],
+        )
+        de_dmr_de_fdr[grp] = pd.DataFrame(
+            index=this_de_genes.tolist(),
+            columns=pids + ['consistent'],
+        )
+
+        # fill them in
+        for k in this_sets:
+            this_vs = [t for t in venn_set[k] if t[1] in this_de_genes]
+            this_pids = [pids[i] for i, t in enumerate(k) if t == '1']
+            for pid in this_pids:
+                de_dmr_dmr_delta[grp].loc[[t[0] for t in this_vs], pid] = joint_de_dmr[pid].loc[
+                    this_vs, 'dmr_median_delta'].values
+                de_dmr_de_logfc[grp].loc[[t[1] for t in this_vs], pid] = joint_de_dmr[pid].loc[
+                    this_vs, 'de_logFC'].values
+                de_dmr_de_fdr[grp].loc[[t[1] for t in this_vs], pid] = joint_de_dmr[pid].loc[
+                    this_vs, 'de_FDR'].values
+
+        for k, row in de_dmr_dmr_delta[grp].iterrows():
+            tmp_dm = np.sign(row.dropna().astype(float))
+            row['consistent'] = (tmp_dm == tmp_dm.iloc[0]).all()
+
+        for k, row in de_dmr_de_logfc[grp].iterrows():
+            tmp_de = np.sign(row.dropna().astype(float))
+            row['consistent'] = (tmp_de == tmp_de.iloc[0]).all()
+            de_dmr_de_fdr[grp].loc[k, 'consistent'] = row['consistent']
+
+    return {
+        'dmr_median_delta_m': de_dmr_dmr_delta,
+        'de_logFC': de_dmr_de_logfc,
+        'de_FDR': de_dmr_de_fdr,
+        'de_dmr_groups': de_dmr_groups
+    }
+
+
 if __name__ == '__main__':
     """
     Use the DMR bias results to lookup into DE results (and vice versa?)
@@ -384,6 +478,9 @@ if __name__ == '__main__':
 
     # extract full (all significant) results
     dmr_res_all = dmr_res_s1.results_significant
+
+    # combine DE/DMR
+    joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
 
     # load chromosome lengths
     chroms = [str(t) for t in range(1, 23)]
@@ -729,6 +826,50 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "genes_from_group_spec_and_discordant_dmrs_tss_only_gte2.png"), dpi=200)
 
+    ## April 2019: New DE/DM matching process for IPA
+    # Idea here: rather than just looking at genes corresponding to group-specific DMRs, we make the requirements more
+    # stringent. For each Venn set (e.g. 018, 054, 052 - hyper group), we require DE genes in the same patients.
+    # Simplest approach is to use the joint_de_dmr dataframes, which have already been combined.
+
+    # all relations
+
+    tmp = get_de_dmr_groups(joint_de_dmr_s1, dmr_res_s1.clusters)
+    de_dmr_de_fdr = tmp['de_FDR']
+    de_dmr_de_logfc = tmp['de_logFC']
+
+    # export these for IPA analysis
+    df_for_ipa = pd.DataFrame(
+        index=sorted(setops.reduce_union(*[t.index for t in de_dmr_de_logfc.values()])),
+        columns=reduce(operator.add, [["%s_logFC" % pid, "%s_FDR" % pid] for pid in pids])
+    )
+    for grp in groups:
+        for pid in groups[grp]:
+            this_logfc = de_dmr_de_logfc[grp][pid].dropna()
+            this_fdr = de_dmr_de_fdr[grp][pid].dropna()
+            df_for_ipa.loc[this_logfc.index, "%s_logFC" % pid] = this_logfc
+            df_for_ipa.loc[this_fdr.index, "%s_FDR" % pid] = this_fdr
+    df_for_ipa.to_excel(os.path.join(outdir, "group_specific_de_for_ipa.xlsx"))
+
+    # TSS relation only
+
+    tmp = get_de_dmr_groups(joint_de_dmr_s1, dmr_res_s1.clusters, relation_filter=['TSS200', 'TSS1500'])
+    de_dmr_de_fdr = tmp['de_FDR']
+    de_dmr_de_logfc = tmp['de_logFC']
+
+    # export these for IPA analysis
+    df_for_ipa = pd.DataFrame(
+        index=sorted(setops.reduce_union(*[t.index for t in de_dmr_de_logfc.values()])),
+        columns=reduce(operator.add, [["%s_logFC" % pid, "%s_FDR" % pid] for pid in pids])
+    )
+    for grp in groups:
+        for pid in groups[grp]:
+            this_logfc = de_dmr_de_logfc[grp][pid].dropna()
+            this_fdr = de_dmr_de_fdr[grp][pid].dropna()
+            df_for_ipa.loc[this_logfc.index, "%s_logFC" % pid] = this_logfc
+            df_for_ipa.loc[this_fdr.index, "%s_FDR" % pid] = this_fdr
+    df_for_ipa.to_excel(os.path.join(outdir, "group_specific_de_for_ipa_tss.xlsx"))
+
+
     # permutation tests for these: is the lack of overlap actually significant?
     # null: pick the same number of distinct DMRs without replacement from the pool
     def permutation_test_dmr_gene_overlap(n_hypo, n_hyper, relation_filter=None, n_iter=1000):
@@ -869,9 +1010,6 @@ if __name__ == '__main__':
     )
     cg.savefig(os.path.join(outdir, "discordant_gte2_genes_tss_clustermap.png"), dpi=200)
 
-    # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
-    joint_de_dmr_s1 = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
-
     # extract the DE/DMR results that are only associated with the group-specific DMRs
     tss_cols = ['dmr_TSS1500', 'dmr_TSS200']
     group_specific_de_dmr = dict([
@@ -949,8 +1087,9 @@ if __name__ == '__main__':
         method='average'
     )
 
-
     ## run through DE genes (per patient) and look at direction distribution
+    # look at the direction distribution of genes that correspond to a DMR (full and specific lists)
+
     tss_cols = ['dmr_TSS1500', 'dmr_TSS200']
 
     # full list, all relations
@@ -1120,7 +1259,7 @@ if __name__ == '__main__':
     )
     group_order = pd.Series([len(t) for t  in groups.values()], index=groups.keys()).sort_values(ascending=False).index
 
-    fig = plt.figure(figsize=(5, 5))
+    fig = plt.figure(figsize=(3.5, 4))
     gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[len(groups[grp]) for grp in group_order])
     sharey = None
 
@@ -1138,15 +1277,21 @@ if __name__ == '__main__':
         if sharey is None:
             sharey = ax
         if i == 0:
-            ax.set_ylabel('Number DMRs')
+            ax.set_ylabel('Number DMRs', fontsize=12)
         else:
             ax.yaxis.set_visible(False)
 
         bar.stacked_bar_chart(for_plot, colours=colours, width=0.8, legend=False, ax=ax)
+        plt.setp(ax.xaxis.get_ticklabels(), rotation=90, fontsize=12)
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=12)
+
         ax = fig.add_subplot(gs[0, i])
         bar.stacked_bar_chart(for_plot_pct, colours=colours, width=0.8, legend=False, ax=ax)
+        ax.xaxis.set_ticklabels([])
+        plt.setp(ax.yaxis.get_ticklabels(), fontsize=12)
+        ax.set_ylim([0, 100])
         if i == 0:
-            ax.set_ylabel('% DMRs')
+            ax.set_ylabel('% DMRs', fontsize=12)
         else:
             ax.yaxis.set_visible(False)
 

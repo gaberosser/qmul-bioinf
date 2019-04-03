@@ -311,6 +311,7 @@ def polar_distribution_plot_with_kdes(
     unmap_threshold_pct=10.,
     plot_border = True,
     bg_cmap=plt.cm.get_cmap('RdYlBu_r'),
+    fontsize=14
 ):
     chroms = chrom_length.keys()
 
@@ -450,7 +451,8 @@ def polar_distribution_plot_with_kdes(
             outer_r + kde_width / 2.,
             chrom,
             horizontalalignment='center',
-            verticalalignment='center'
+            verticalalignment='center',
+            fontsize=fontsize
         )
         text_handles[chrom] = h_text
 
@@ -960,7 +962,8 @@ def dmr_direction_by_chromosome_pie_array(
         segment_width=0.5,
         scale_by_number='area',
         min_segment_width=0.2,
-        wedgeprops=None
+        wedgeprops=None,
+        fontsize=12
 ):
     if wedgeprops is None:
         wedgeprops = {
@@ -1040,11 +1043,11 @@ def dmr_direction_by_chromosome_pie_array(
     for i, pid in enumerate(pids):
         ax = fig.add_subplot(gs[0, i], sharex=sharex, sharey=sharex)
         ax.set_aspect('equal')
-        ax.set_title(pid, fontsize=12, horizontalalignment='center')
+        ax.set_title(pid, fontsize=fontsize, horizontalalignment='center')
         if i == 0:
             ax.set_ylabel(
                 'All',
-                fontsize=12,
+                fontsize=fontsize,
                 verticalalignment='center',
                 rotation=0,
                 horizontalalignment='right'
@@ -1085,7 +1088,7 @@ def dmr_direction_by_chromosome_pie_array(
             if i == 0:
                 ax.set_ylabel(
                     chrom,
-                    fontsize=12,
+                    fontsize=fontsize,
                     verticalalignment='center',
                     rotation=0,
                     horizontalalignment='right'
@@ -1144,7 +1147,8 @@ def dmr_direction_by_chromosome_pie_array(
     common.add_custom_legend(
         axs[int((len(chroms) + 1) / 2.)][-1],
         legend_dict,
-        loc_outside=True
+        loc_outside=True,
+        fontsize=fontsize
     )
 
     gs.update(left=0.05, bottom=0.02, top=0.97, right=0.72, hspace=0.06, wspace=0.06)
@@ -1164,7 +1168,7 @@ if __name__ == "__main__":
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
 
-    load_preprep_data = True
+    load_preprep_data = False
 
     # set this to True if output bed files are required (this is quite slow due to the large number of combinations)
     write_bed_files = False
@@ -1274,9 +1278,13 @@ if __name__ == "__main__":
         num_dmr_all_by_chrom,
         outer_sm_hyper=hyper_sm,
         outer_sm_hypo=hypo_sm,
+        fontsize=14
     )
     fig = plot_dict['fig']
+    plot_dict['gs'].update(right=0.68)
+    fig.set_size_inches((6.7, 9.2))
     fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.tiff"), dpi=200)
     fig.savefig(os.path.join(outdir, "dmr_direction_by_chrom_pie_chart_array.pdf"), dpi=200)
 
     plot_dict = dmr_direction_by_chromosome_pie_array(
@@ -1284,8 +1292,11 @@ if __name__ == "__main__":
         num_dmr_specific_by_chrom,
         outer_sm_hyper=hyper_sm,
         outer_sm_hypo=hypo_sm,
+        fontsize=14
     )
     fig = plot_dict['fig']
+    plot_dict['gs'].update(right=0.68)
+    fig.set_size_inches((6.7, 9.2))
     fig.savefig(os.path.join(outdir, "specific_dmr_direction_by_chrom_pie_chart_array.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "specific_dmr_direction_by_chrom_pie_chart_array.pdf"), dpi=200)
 
@@ -1459,8 +1470,9 @@ if __name__ == "__main__":
     vmin = .5
     vmax = 3.
     alpha = 0.1
+    fontsize = 14
     gs = plt.GridSpec(1, 3, width_ratios=[9, 9, 1])
-    fig = plt.figure(figsize=(9.5, 5.5))
+    fig = plt.figure(figsize=(6, 5.5))
     ax_hyper = fig.add_subplot(gs[0])
     ax_hypo = fig.add_subplot(gs[1], sharex=ax_hyper, sharey=ax_hyper)
     ax_cbar = fig.add_subplot(gs[2])
@@ -1477,7 +1489,7 @@ if __name__ == "__main__":
         vmax=vmax,
         ax=ax_hyper,
         cbar=False,
-        linewidths=1.,
+        linewidths=.5,
         linecolor='w'
     )
     sns.heatmap(
@@ -1486,20 +1498,21 @@ if __name__ == "__main__":
         vmin=vmin,
         vmax=vmax,
         ax=ax_hypo,
-        linewidths=1.,
+        linewidths=.5,
         linecolor='w',
         cbar_ax=ax_cbar
     )
     plt.setp(ax_hypo.yaxis.get_ticklabels(), visible=False)
-    ax_hyper.set_ylabel('Chromosome')
-    ax_hyper.set_xlabel('Patient')
-    ax_hyper.set_title('Hypermethylated DMRs')
-    ax_hypo.set_xlabel('Patient')
-    ax_hypo.set_title('Hypomethylated DMRs')
-    ax_cbar.set_ylabel('$-\log_{10}(p)$')
-    plt.setp(ax_hyper.yaxis.get_ticklabels(), rotation=0)
+    ax_hyper.set_ylabel('Chromosome', fontsize=fontsize)
+    ax_hyper.set_title('Hypermethylated DMRs', fontsize=fontsize)
+    ax_hypo.set_title('Hypomethylated DMRs', fontsize=fontsize)
+    ax_cbar.set_ylabel('$-\log_{10}(p)$', fontsize=fontsize)
+    plt.setp(ax_hyper.yaxis.get_ticklabels(), rotation=0, fontsize=fontsize)
+    plt.setp(ax_hyper.xaxis.get_ticklabels(), rotation=90, fontsize=fontsize)
+    plt.setp(ax_hypo.xaxis.get_ticklabels(), rotation=90, fontsize=fontsize)
 
-    gs.update(left=0.06, right=0.94, top=0.95, wspace=0.1)
+    # subplot positioning will vary depending on fontsize: this is for 14
+    gs.update(left=0.12, right=0.9, top=0.95, wspace=0.1)
     fig.savefig(os.path.join(outdir, "ks_fdr_all_dmr_location.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "ks_fdr_all_dmr_location.tiff"), dpi=200)
 
@@ -1596,7 +1609,7 @@ if __name__ == "__main__":
     inner_r = 3.
     kde_width = 0.5
     annot_fontdict = {
-        'fontsize': 16,
+        'fontsize': 18,
         'weight': 'bold',
         'horizontalalignment': 'center',
         'verticalalignment': 'center'
@@ -1650,6 +1663,7 @@ if __name__ == "__main__":
                     break
 
         fig = plt_dict['fig']
+        fig.set_size_inches((6.8, 6.2))
 
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.png" % pid), dpi=200)
         fig.savefig(os.path.join(outdir, "all_dmrs_polar_distribution_plot_%s.tiff" % pid), dpi=200)

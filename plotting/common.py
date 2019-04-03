@@ -299,6 +299,26 @@ def add_big_ax_to_subplot_fig(fig, xlabel_pos='bottom'):
     return big_ax
 
 
+def get_children_recursive(obj, type_filt=None):
+    """
+    Recursively get all the children of the provided object. This might be a figure, axis, etc. Optionally filter by
+     type.
+    :param obj: Any object supporting the .get_children() method.
+    :param type_filt: If provided, this is a class used as a filter. Only children whose type() matches this will be
+    included.
+    :return:
+    """
+    out = obj.get_children()
+
+    for t in out:
+        out.extend(get_children_recursive(t))
+
+    if type_filt is not None:
+        out = [t for t in out if isinstance(t, type_filt)]
+
+    return out
+
+
 class MidpointNormalize(Normalize):
     def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
         """
