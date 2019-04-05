@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt, colors, patches
 from scipy.cluster import hierarchy as hc
 
 
-def add_legend(legend_labels, ax, loc='right'):
+def add_legend(legend_labels, ax, loc='right', **kwargs):
     # draw legend outside of the main axis
     handles = []
     for grp, d in legend_labels.items():

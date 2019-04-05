@@ -28,6 +28,25 @@ _FILLED_MARKERS = ['o', 'v', 's', 'd', 'p', 'X', '*', 'D', 'P', '^', '<', '>', '
 FILLED_MARKERS = dict([(i, _FILLED_MARKERS[:i]) for i in range(2, len(_FILLED_MARKERS))])
 
 
+def create_one_custom_legend_entry(attrs, label):
+    if 'class' not in attrs:
+        raise KeyError("Must supply a class with each legend entry")
+
+    args = []
+    cls_str = attrs.pop('class')
+    if cls_str == 'line':
+        cls = plt.Line2D
+        # need to provide x and y data
+        args = [[0], [0]]
+    elif cls_str == 'patch':
+        cls = patches.Patch
+    else:
+        raise NotImplementedError("Class not currently supported: %s" % attrs['class'])
+
+    attrs['label'] = label
+    return cls(*args, **attrs)
+
+
 def add_custom_legend(
         ax,
         legend_dict,
@@ -40,11 +59,26 @@ def add_custom_legend(
     """
     Add a custom legend to the supplied axes.
     :param ax:
-    :param legend_dict: Nested dictionary. First level gives 'section titles'. Second level gives actual legend labels.
+    :param legend_dict: Nested dictionary. Two possible levels are supported.
+
+    Option 1: section titles
+
+    First level gives 'section titles'. Second level gives actual legend labels.
+
     Use an OrderedDict if order is important.
     Second level entries are dictionaries containing two keys:
     - kwargs, containing all kwarg sneeded to create that element (facecolor, marker, etc).
     - class, string indicating which type of artist is required. Supported: 'line', 'patch'. TODO: add more?
+
+    Option 2: no sections
+    First level is as for second level above
+
+    If a mixture is required, it's possible to skip creation of a section title by specifying a blank label ('') OR any
+    label starting with '#'
+
+    One name is forbidden for subsection titles: 'class'! If this is used, the code will mistakenly interpret it as
+    an option (2) situation and an error will ensue!
+
     :param loc: If supplied, this is used to place the legend. Not for outside locations. If absent, 'best' option
     is applied.
     :param loc_outside: If True, place the legend outside the axes, using `legend_outside_axes()`.
@@ -61,8 +95,6 @@ def add_custom_legend(
     if not loc_outside and (loc_outside_horiz is not None or loc_outside_vert is not None):
         raise AttributeError("If loc_outside is False, cannot specify loc_outside_{horiz,vert}.")
 
-
-
     # copy legend dict so we can modify in-place
     legend_dict = copy.deepcopy(legend_dict)
 
@@ -70,33 +102,21 @@ def add_custom_legend(
     for_legend = []
 
     for k1, v1 in legend_dict.items():
+        if 'class' in v1:
+            for_legend.append(create_one_custom_legend_entry(v1, k1))
+        else:
+            if k1 != '' and k1[0] != '#':
+                the_spacer = patches.Patch(
+                    edgecolor='none',
+                    facecolor='none',
+                    label=k1
+                )
+                for_legend.append(the_spacer)
 
-        the_spacer = patches.Patch(
-            edgecolor='none',
-            facecolor='none',
-            label=k1
-        )
-        for_legend.append(the_spacer)
-
-        for lbl, v2 in v1.items():
-            if 'class' not in v2:
-                raise KeyError("Must supply a class with each legend entry")
-
-            args = []
-            cls_str = v2.pop('class')
-            if cls_str == 'line':
-                cls = plt.Line2D
-                # need to provide x and y data
-                args = [[0], [0]]
-            elif cls_str == 'patch':
-                cls = patches.Patch
-            else:
-                raise NotImplementedError("Class not currently supported: %s" % v2['class'])
-
-            v2['label'] = lbl
-            for_legend.append(
-                cls(*args, **v2)
-            )
+            for lbl, v2 in v1.items():
+                for_legend.append(
+                    create_one_custom_legend_entry(v2, lbl)
+                )
 
     if loc_outside:
         if loc_outside_horiz:
@@ -139,7 +159,13 @@ def legend_outside_axes(ax, horiz_loc='right', vert_loc='centre', **kwargs):
     if loc_str == 'center center':
         loc_str = 'center'
 
-    ax.legend(loc=loc_str, bbox_to_anchor=(x, y), **kwargs)
+    if 'loc' not in kwargs:
+        kwargs['loc'] = loc_str
+
+    if 'bbox_to_anchor' not in kwargs:
+        kwargs['bbox_to_anchor'] = (x, y)
+
+    ax.legend(**kwargs)
 
 
 def get_best_cmap(N, cmap='jet'):

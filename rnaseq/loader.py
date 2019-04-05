@@ -553,7 +553,6 @@ def load_by_patient(
             )
         except Exception:
             logger.exception("Failed to load from location %s.", ldr.root_dir)
-            # import ipdb; ipdb.set_trace()
 
     if len(objs) > 1:
         res = loader.MultipleBatchLoader(objs)

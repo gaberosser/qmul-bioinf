@@ -11,6 +11,7 @@ from rnaseq import loader
 from plotting import clustering, common, scatter
 from stats import transformations
 import pandas as pd
+import collections
 import numpy as np
 import os, sys
 from utils import output
@@ -190,6 +191,17 @@ if __name__ == '__main__':
     # Switch QN on here ('mean' or 'median')
     quantile_norm = 'median'
 
+    cell_line_colours = {
+        'FB': '#fff89e',  # yellow
+        'GBM (this study)': '#e6e6e6',  # light gray
+        'GBM': '#4d4d4d',  # dark grey
+        'ESC': '#ff7777',  # light red
+        'iPSC': '#990000',  # dark red
+        'iPSC (this study)': '#fdc086',  # orange
+        'NSC': '#006600',  # dark green
+        'iNSC (this study)': '#7fc97f',  # green
+    }
+
     ref_dict = {
         'GSE80732': {'batch': 'Yang et al.', 'strandedness': 'u', 'alignment_subdir': 'human/trimgalore'},
         # 'GSE63577': {'batch': 'Marthandan et al.', 'strandedness': 'TODO: run STAR'},
@@ -238,8 +250,13 @@ if __name__ == '__main__':
         # set strandedness as a cue to import for each
         load_kwds['strandedness'] = SetMe
 
+    # restrict samples manually to avoid changes going forwards
+    our_samples = consts.S1_RNASEQ_SAMPLES_INSC + consts.S1_RNASEQ_SAMPLES_IPSC + consts.S1_RNASEQ_SAMPLES_FB + ['GIBCO_NSC_P4']
+
     # our data (everything)
+
     obj = loader.load_by_patient(pids, source=source)
+    # obj.filter_by_sample_name(our_samples)
 
     # HipSci data
     hip_obj = loader.hipsci_ipsc(aggregate_to_gene=True)
@@ -326,6 +343,13 @@ if __name__ == '__main__':
     the_mad = transformations.median_absolute_deviation(the_dat).sort_values(ascending=False)
     cc, st, leg_dict = construct_colour_array_legend_studies(the_obj.meta)
 
+    # ref line colours
+    for k, v in cell_line_colours.items():
+        cc.loc[the_obj.meta.type == k, 'Cell type'] = v
+    # our line colours
+    cc.loc[the_obj.meta.batch.str.contains('wtchg') & (the_obj.meta.type == 'iNSC'), 'Cell type'] = cell_line_colours['iNSC (this study)']
+    cc.loc[the_obj.meta.batch.str.contains('wtchg') & (the_obj.meta.type == 'iPSC'), 'Cell type'] = cell_line_colours['iPSC (this study)']
+
     # get appropriate clims
     the_dat = the_dat.loc[the_mad.index[:n_for_heatmap]]
     the_dat_flat = np.sort(the_dat.values.flatten())
@@ -342,8 +366,30 @@ if __name__ == '__main__':
         vmin=vmin,
         vmax=vmax
     )
-    clustering.add_legend(leg_dict, gc.ax_heatmap, loc='right')
-    gc.gs.update(bottom=0.25, right=0.82)
+
+    leg_entry = {
+        'class': 'patch',
+        'edgecolor': 'k',
+        'linewidth': 1.,
+    }
+    leg_dict2 = collections.OrderedDict()
+    leg_dict2['Cell type'] = collections.OrderedDict()
+
+    for k in sorted(cell_line_colours):
+        if k.replace(' (this study)', '') in the_obj.meta.type.unique():
+            leg_dict2['Cell type'][k] = dict(leg_entry)
+            leg_dict2['Cell type'][k].update({'facecolor': cell_line_colours[k]})
+
+    leg_dict2['Study'] = {}
+    for k, v in leg_dict['Study'].items():
+        leg_dict2['Study'][k] = dict(leg_entry)
+        leg_dict2['Study'][k].update({'facecolor': v})
+
+    common.add_custom_legend(gc.ax_heatmap, leg_dict2, loc_outside=True, fontsize=14)
+    gc.fig.set_size_inches((10.9, 8.))
+    gc.gs.update(bottom=0.3, right=0.77, left=0.01, wspace=0.03)
+
+    # clustering.add_legend(leg_dict, gc.ax_heatmap, loc='right')
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.png"), dpi=200)
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb_nsc.tiff"), dpi=200)
 

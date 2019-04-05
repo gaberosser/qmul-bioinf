@@ -274,7 +274,8 @@ def plot_venn_de_directions(
     logfc,
     set_colours_dict,
     ax=None,
-    set_labels=('Hypo', 'Hyper')
+    set_labels=('Hypo', 'Hyper'),
+    fontsize=16
 ):
     if ax is None:
         fig = plt.figure(figsize=(5., 3.3))
@@ -298,13 +299,15 @@ def plot_venn_de_directions(
         this_members["%s down" % k] = this_res.index[this_res < 0].difference(vs['11'])
         # get the corresponding label
         lbl = vv.get_label_by_id(setops.specific_sets(set_labels)[k])
+        ## FIXME: font family seems to change from old text to new - related to LaTeX rendering?
         lbl.set_text(
             lbl.get_text()
             + '\n'
             + r'$%d\uparrow$' % len(this_members["%s up" % k])
             + '\n'
-            + r'$%d\downarrow$' % (len(this_members["%s down" % k])
-        ))
+            + r'$%d\downarrow$' % len(this_members["%s down" % k]),
+        )
+    plt.setp(common.get_children_recursive(ax, type_filt=plt.Text), fontsize=fontsize)
 
     return ax
 
@@ -407,6 +410,33 @@ if __name__ == '__main__':
     group_ind = setops.groups_to_ind(pids, groups)
     groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
 
+    # UpSet plot of joint DE/DMRs relative to groupings
+    subgroup_set_colours = {
+        'Hypo full': '#427425',
+        'Hyper full': '#b31500',
+        'Hypo partial': '#c5e7b1',
+        'Hyper partial': '#ffa599',
+        'Expanded core': '#4C72B0',
+        'Specific': '#f4e842',
+    }
+
+    # start with an UpSet to represent this
+    de_dmr_by_member = [joint_de_dmr_s1[pid].index for pid in pids]
+    venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member)
+
+    upset = venn.upset_plot_with_groups(
+        de_dmr_by_member,
+        pids,
+        group_ind,
+        subgroup_set_colours,
+        min_size=10,
+        n_plot=30,
+        default_colour='gray'
+    )
+    upset['axes']['main'].set_ylabel('Number of DE/DMRs in set')
+    upset['axes']['set_size'].set_xlabel('Number of DE/DMRs in single comparison')
+    upset['figure'].savefig(os.path.join(outdir, "upset_de_dmr_by_direction_group.png"), dpi=200)
+
     set_colours_dict = {
         'Hypo': 'g',
         'Hyper': 'r',
@@ -433,6 +463,7 @@ if __name__ == '__main__':
     de_dmrs_all = tmp['de_dmr_groups']
     de_dmr_de_fdr_all = tmp['de_FDR']
     de_dmr_de_logfc_all = tmp['de_logFC']
+    de_dmr_dmr_median_delta_all = tmp['dmr_median_delta_m']
     de_dmr_ipa_res_all = export_de_dmr_groups_for_ipa(
         de_dmr_de_fdr_all,
         de_dmr_de_logfc_all,
@@ -446,6 +477,7 @@ if __name__ == '__main__':
     de_dmrs_tss = tmp['de_dmr_groups']
     de_dmr_de_fdr_tss = tmp['de_FDR']
     de_dmr_de_logfc_tss = tmp['de_logFC']
+    de_dmr_dmr_median_delta_tss = tmp['dmr_median_delta_m']
     de_dmr_ipa_res_tss = export_de_dmr_groups_for_ipa(
         de_dmr_de_fdr_tss,
         de_dmr_de_logfc_tss,
@@ -453,18 +485,143 @@ if __name__ == '__main__':
         os.path.join(outdir, "group_specific_de_for_ipa_tss.xlsx")
     )
 
-    # Venn diagrams
+    # look at the DMR direction dist (only) in the joint results - is it the same as when we consider DMR only?
+    venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
+    for grp in groups:
+        # generate bar chart showing number / pct in each direction (DM)
+        this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
+        this_de_dmrs = de_dmrs_all[grp]
+        this_dmrs = sorted(set([t[0] for t in this_de_dmrs]))
+
+        # bar chart showing DMR direction
+        this_results = {}
+        for pid in groups[grp]:
+            this_results[pid] = dict([(k, {'median_change': t}) for k, t in de_dmr_dmr_median_delta_all[grp][pid].dropna().iteritems()])
+
+        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp])
+        plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s.png" % grp), dpi=200)
+
+    # Venn diagrams of DE
     fig = plt.figure(figsize=(5., 3.3))
     ax = fig.add_subplot(111)
     plot_venn_de_directions(de_dmr_de_logfc_all, set_colours_dict, ax=ax)
-    fig.savefig(os.path.join(outdir, "genes_from_group_spec_dmrs_all.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_from_group_spec_de_dmrs_all.png"), dpi=200)
 
     fig = plt.figure(figsize=(5., 3.3))
     ax = fig.add_subplot(111)
     plot_venn_de_directions(de_dmr_de_logfc_tss, set_colours_dict, ax=ax)
-    fig.savefig(os.path.join(outdir, "genes_from_group_spec_dmrs_tss.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "de_from_group_spec_de_dmrs_tss.png"), dpi=200)
 
     # assess concordance between DM and DE direction
     # start with scatterplot
+    # FIXME: figsize is hard coded to the specific 6 x 2 setup
+
+    fisher_p = {}
+    fisher_p_tss = {}
+
+    fig, axs = plt.subplots(
+        nrows=len(groups),
+        ncols=max([len(t) for t in groups.values()]),
+        sharex=True,
+        sharey=True,
+        figsize=(8.4, 3.6)
+    )
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+
+    subplots_filled = set()
+    for i, grp in enumerate(groups):
+        # combination of DE/DMRs that are group-specific
+        this_ix = de_dmrs_all[grp]
+        this_ix_tss = de_dmrs_tss[grp]
+
+        this_y = de_dmr_dmr_median_delta_all[grp].loc[[t[0] for t in this_ix]]
+        this_x = de_dmr_de_logfc_all[grp].reindex([t[1] for t in this_ix])
+
+        this_y_tss = de_dmr_dmr_median_delta_tss[grp].loc[[t[0] for t in this_ix_tss]]
+        this_x_tss = de_dmr_de_logfc_tss[grp].reindex([t[1] for t in this_ix_tss])
+
+        # why are there missing lookups? Are those genes we decided were duplicated??
+        # if so: can we just remove these in the original function?
+        missing_in_x = this_x.isnull().all(axis=1)
+        this_x = this_x.loc[~missing_in_x.values]
+        this_y = this_y.loc[~missing_in_x.values]
+
+        missing_in_x_tss = this_x_tss.isnull().all(axis=1)
+        this_x_tss = this_x_tss.loc[~missing_in_x_tss.values]
+        this_y_tss = this_y_tss.loc[~missing_in_x_tss.values]
+
+        for j, pid in enumerate(groups[grp]):
+            # ensure we drop corresponding rows in x and y
+            ix_x = ~this_x[pid].isnull()
+            ix_y = ~this_y[pid].isnull()
+
+            ix = ix_x.values & ix_y.values
+
+            subplots_filled.add((i, j))
+            ax = axs[i, j]
+
+            ax.scatter(
+                this_x[pid].loc[ix],
+                this_y[pid].loc[ix],
+                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
+                alpha=0.5
+            )
+            # fisher test
+            ct = [
+                [
+                    ((this_x[pid].loc[ix] < 0).values & (this_y[pid].loc[ix] < 0).values).sum(),
+                    ((this_x[pid].loc[ix] > 0).values & (this_y[pid].loc[ix] < 0).values).sum()
+                ],
+                [
+                    ((this_x[pid].loc[ix] < 0).values & (this_y[pid].loc[ix] > 0).values).sum(),
+                    ((this_x[pid].loc[ix] > 0).values & (this_y[pid].loc[ix] > 0).values).sum()
+                ],
+            ]
+            fisher_p[pid] = stats.fisher_exact(ct)
+
+            # ensure we drop corresponding rows in x and y
+            ix_x_tss = ~this_x_tss[pid].isnull()
+            ix_y_tss = ~this_y_tss[pid].isnull()
+
+            ix_tss = ix_x_tss.values & ix_y_tss.values
+
+            # highlight TSS-linked (only)
+            ax.scatter(
+                this_x_tss[pid].loc[ix_tss],
+                this_y_tss[pid].loc[ix_tss],
+                facecolors='none',
+                edgecolor='k',
+                linewidth=1.,
+                alpha=0.5
+            )
+            # fisher test
+            ct_tss = [
+                [
+                    ((this_x_tss[pid].loc[ix_tss] < 0).values & (this_y_tss[pid].loc[ix_tss] < 0).values).sum(),
+                    ((this_x_tss[pid].loc[ix_tss] > 0).values & (this_y_tss[pid].loc[ix_tss] < 0).values).sum()
+                ],
+                [
+                    ((this_x_tss[pid].loc[ix_tss] < 0).values & (this_y_tss[pid].loc[ix_tss] > 0).values).sum(),
+                    ((this_x_tss[pid].loc[ix_tss] > 0).values & (this_y_tss[pid].loc[ix_tss] > 0).values).sum()
+                ],
+            ]
+            fisher_p_tss[pid] = stats.fisher_exact(ct_tss)
+
+            ax.axhline(0., c='k', linestyle='--')
+            ax.axvline(0., c='k', linestyle='--')
+            ax.set_title(pid)
+    big_ax.set_xlabel(r'DE logFC')
+    big_ax.set_ylabel(r'DMR median $\Delta M$')
+    fig.tight_layout()
+
+    for i in range(axs.shape[0]):
+        for j in range(axs.shape[1]):
+            if (i, j) not in subplots_filled:
+                axs[i, j].set_visible(False)
+    axs[0,0].set_xlim([-18, 18])
+
+    fig.subplots_adjust(left=0.07, bottom=0.15, top=0.92, right=0.98, wspace=0.04, hspace=0.18)
+
+    fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
 
     # now run a null model and compare

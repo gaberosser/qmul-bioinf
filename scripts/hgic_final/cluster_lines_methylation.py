@@ -86,20 +86,54 @@ def hc_plot_dendrogram_vary_n_gene(
 
 if __name__ == "__main__":
     norm_method = 'bmiq'
+    # norm_method = 'swan'
     n_hipsci = 12
     # qn_method = 'median'
     qn_method = None
 
-    script_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-    outdir = output.unique_output_dir(script_name)
+    outdir = output.unique_output_dir()
     # load 12 patients iNSC, 4 iPSC
     pids = consts.PIDS
 
-    patient_obj = loader.load_by_patient(pids, norm_method=norm_method)
-    ix = patient_obj.meta.type != 'iOPC'
-    patient_obj.meta = patient_obj.meta.loc[ix]
-    patient_obj.batch_id = patient_obj.batch_id[ix]
-    patient_obj.data = patient_obj.data.loc[:, patient_obj.meta.index]
+    # we'll list our samples explicitly to avoid results changing in future
+    our_samples = [
+        'DURA018_NSC_N4_P4',
+        'DURA018_NSC_N2_P6',
+        'DURA019_NSC_N8C_P2',
+        'DURA019_NSC_N5C1_P2',
+        'DURA019_FB_P7',
+        'DURA019_IPSC_N8C_P13',
+        'DURA030_NSC_N16B6_P1',
+        'DURA030_NSC_N9_P2',
+        'DURA030_FB_P8',
+        'DURA030_IPSC_N16B6_P13',
+        'DURA031_NSC_N44B_P2',
+        'DURA031_NSC_N44F_P3',
+        'DURA031_FB_P7',
+        'DURA031_IPSC_N44B_P10',
+        'DURA017_NSC_N3C5_P4',
+        'DURA017_FB_P7',
+        'DURA050_NSC_N12_P3',
+        'DURA050_NSC_N16_P4',
+        'DURA050_IPSC_N12_P5',
+        'DURA050_FB_P7',
+        'DURA054_NSC_N3C_P2',
+        'DURA054_NSC_N2E_P1',
+        'DURA054_IPSC_N3C_P11',
+        'DURA054_FB_P5',
+        'DURA061_NSC_N4_P2',
+        'DURA061_NSC_N6_P4',
+        'DURA061_NSC_N1_P3n4',
+        'DURA026_NSC_N31D_P5',
+        'DURA052_NSC_N4_P3',
+        'DURA052_NSC_N5_P2',
+        'GIBCONSC_P4',
+        # 'DURA052_NH16_2214_P6_14/04/2017',
+        # 'DURA026_NH16_270_P8_15/05/2017',
+        # 'DURA018_NH15_1877_P6_15/05/2017',
+    ]
+
+    patient_obj = loader.load_by_patient(pids, norm_method=norm_method, samples=our_samples)
 
     nazor_ldr = loader.gse31848(norm_method=norm_method)
     ix = nazor_ldr.meta.index.str.contains(r'(ES__WA)|(iPS__HDF)')
@@ -177,17 +211,31 @@ if __name__ == "__main__":
             ref_obj.meta.loc[ix, 'batch'] = v
     ref_obj.rename_with_attributes(existing_attr='batch')
 
+    # restrict references to relevant samples
+    ix = ref_obj.meta.type.isin(['iPSC', 'ESC', 'PSC', 'iNSC', 'NSC', 'NPC', 'FB'])
+    ref_obj.filter_samples(ix)
+
+    ix = ref_obj.meta.index != 'H9 NPC (Encode EPIC)'
+    ref_obj.filter_samples(ix)
+
     obj = loader.loader.MultipleBatchLoader([patient_obj, ref_obj])
 
+    # restrict to relevant samples
+    # ix = obj.meta.type.isin(['iPSC', 'ESC', 'PSC', 'iNSC', 'NSC', 'NPC', 'FB'])
+    # obj.filter_samples(ix)
+
     # remove a few
-    ix = obj.meta.type != 'astrocyte'
-    obj.filter_samples(ix)
+    # ix = obj.meta.type != 'astrocyte'
+    # obj.filter_samples(ix)
+    #
+    # ix = obj.meta.type != 'iAPC'
+    # obj.filter_samples(ix)
+    #
+    # ix = ~obj.meta.index.str.contains('GBM')
+    # obj.filter_samples(ix)
 
-    ix = ~obj.meta.index.str.contains('GBM')
-    obj.filter_samples(ix)
-
-    ix = obj.meta.index != 'H9 NPC (Encode EPIC)'
-    obj.filter_samples(ix)
+    # ix = obj.meta.index != 'H9 NPC (Encode EPIC)'
+    # obj.filter_samples(ix)
 
     bdat = obj.data
     mdat = process.m_from_beta(bdat)
@@ -196,30 +244,41 @@ if __name__ == "__main__":
         mdat = transformations.quantile_normalisation(mdat, method=qn_method)
 
     # tidy up batch IDs
+    obj.meta.loc[obj.meta.batch.isnull(), 'batch'] = obj.meta.loc[obj.meta.batch.isnull(), 'batch_1']
     obj.meta.batch = obj.meta.batch.str.replace('2016-12-19_ucl_genomics', '2016-12-19')
+
     # the only batch names without letters are ours
     obj.meta.loc[~obj.meta.batch.str.contains(r'[A-Z]'), 'batch'] = 'This study'
 
     # PCA plot (by batch and cell type)
-
     colour_subgroups = obj.meta.batch
+    c_sub_sorted = sorted(colour_subgroups.unique(), key=lambda x: 'A' if x == 'This study' else x)
+
+    cmap = collections.OrderedDict(zip(
+        c_sub_sorted,
+        common.get_best_cmap(len(c_sub_sorted)),
+    ))
 
     m_subgroups = obj.meta.type
+    subgroups_sorted = sorted(m_subgroups.unique(), key=lambda x: x[0] if x[0] != 'i' else x[1])
     mmap = pd.Series(
         common.FILLED_MARKERS[len(m_subgroups.unique())],
-        index=m_subgroups.unique()
+        index=subgroups_sorted
     )
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(6.4, 4.8))
     ax = fig.add_subplot(111)
     p, ax = plot_pca(
         mdat,
         colour_subgroups,
+        colour_map=cmap,
         marker_subgroups=m_subgroups,
         marker_map=mmap,
         ax=ax
     )
-    ax.figure.subplots_adjust(left=0.1, right=0.8, top=0.98)
+    # increase legend font size
+    # ax.figure.subplots_adjust(left=0.1, right=0.8, top=0.98)
+    ax.figure.subplots_adjust(left=0.12, right=0.75, top=0.98)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_nsc_fb.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_nsc_fb.tiff"), dpi=200)
 
@@ -237,31 +296,19 @@ if __name__ == "__main__":
     }
 
     row_colours_all = pd.DataFrame('white', index=mdat.columns, columns=[''])
+    row_colours_all.loc[obj.meta.type == 'FB'] = cell_line_colours['FB']
+    row_colours_all.loc[obj.meta.type == 'iNSC'] = cell_line_colours['iNSC (this study)']
+    row_colours_all.loc[obj.meta.type == 'NSC'] = cell_line_colours['NSC']
+    row_colours_all.loc[obj.meta.type == 'iPSC'] = cell_line_colours['iPSC (this study)']
+    row_colours_all.loc[obj.meta.type == 'ESC'] = cell_line_colours['ESC']
+    row_colours_all.loc[obj.meta.type == 'PSC'] = cell_line_colours['ESC']
 
-    row_colours_all.loc[row_colours_all.index.str.contains(r'_FB_')] = cell_line_colours['FB']
-
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GBM')] = cell_line_colours['GBM (this study)']
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NS27Z')] = cell_line_colours['GBM']
-
-    row_colours_all.loc[row_colours_all.index.str.contains('H9')] = cell_line_colours['ESC']
-    row_colours_all.loc[row_colours_all.index.str.contains('H7')] = cell_line_colours['ESC']
-    row_colours_all.loc[row_colours_all.index.str.contains('H1')] = cell_line_colours['ESC']
-    row_colours_all.loc[row_colours_all.index.str.contains('ESO3')] = cell_line_colours['ESC']
+    # specific cases that are not iPSC
     row_colours_all.loc[row_colours_all.index.str.contains('GM23338')] = cell_line_colours['ESC']
-
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NSC')] = cell_line_colours['NSC']
-    row_colours_all.loc[row_colours_all.index.str.contains(r'NPC')] = cell_line_colours['NSC']
-    row_colours_all.loc[row_colours_all.index.str.contains(r'GIBCO')] = cell_line_colours['NSC']
-
     row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_')] = cell_line_colours['iPSC']
     row_colours_all.loc[row_colours_all.index.str.contains('HPSI')] = cell_line_colours['iPSC']
     row_colours_all.loc[row_colours_all.index.str.contains('HEL1')] = cell_line_colours['iPSC']
 
-    row_colours_all.loc[row_colours_all.index.str.contains('neuron')] = '#ccebc5'
-    row_colours_all.loc[row_colours_all.index.str.contains(r'[Aa]strocyte')] = '#e78ac3'  # pink
-
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_NSC')] = cell_line_colours['iNSC (this study)']  # green
-    row_colours_all.loc[row_colours_all.index.str.contains(r'DURA[0-9]*_IPSC')] = cell_line_colours['iPSC (this study)']  # orange
 
     # hierarchical clustering by M value, keeping only variable probes
     clust_n_ftr = 20000
@@ -281,14 +328,18 @@ if __name__ == "__main__":
     this_mad = transformations.median_absolute_deviation(mdat).sort_values(ascending=False)
     this_dat = mdat.loc[this_mad.index[:n_probe_to_show]]
 
-    lkg = plt_dict[clust_n_ftr]['linkage']
-    leg_dict = {
-        'Cell type': collections.OrderedDict([
-            (k, cell_line_colours[k]) for k in sorted(cell_line_colours)
-        ])
+    leg_entry = {
+        'class': 'patch',
+        'edgecolor': 'k',
+        'linewidth': 1.,
     }
-    leg_dict['Cell type'].pop('GBM')
-    leg_dict['Cell type'].pop('GBM (this study)')
+
+    lkg = plt_dict[clust_n_ftr]['linkage']
+    leg_dict = collections.OrderedDict()
+    for k in sorted(cell_line_colours):
+        if cell_line_colours[k] in row_colours_all.values:
+            leg_dict[k] = dict(leg_entry)
+            leg_dict[k].update({'facecolor': cell_line_colours[k]})
 
     cm = clustering.plot_clustermap(
         this_dat,
@@ -299,8 +350,10 @@ if __name__ == "__main__":
         vmin=-10,
         vmax=10
     )
-    clustering.add_legend(leg_dict, cm.ax_heatmap, loc='right')
-    cm.gs.update(bottom=0.25, right=0.85, left=0.03)
+    cm.fig.set_size_inches((10.9, 8.))
+
+    common.add_custom_legend(cm.ax_heatmap, leg_dict, loc_outside=True, fontsize=14)
+    cm.gs.update(bottom=0.3, right=0.79, left=0.01)
 
     cm.savefig(os.path.join(outdir, "clustermap_ipsc_esc_nsc_fb.png"), dpi=200)
     cm.savefig(os.path.join(outdir, "clustermap_ipsc_esc_nsc_fb.tiff"), dpi=200)

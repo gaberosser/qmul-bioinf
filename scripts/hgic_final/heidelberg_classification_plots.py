@@ -12,8 +12,9 @@ from matplotlib import pyplot as plt
 import ternary
 import numpy as np
 import pandas as pd
+import collections
 import os, sys
-from utils import output
+from utils import output, setops
 from plotting import common
 from settings import METHYLATION_ARRAY_DIR
 import consts
@@ -23,6 +24,10 @@ if __name__ == "__main__":
     script_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
     outdir = output.unique_output_dir(script_name)
     in_fn = os.path.join(METHYLATION_ARRAY_DIR, 'classification.xlsx')
+
+    subgroups = consts.SUBGROUPS
+    pids = consts.PIDS
+    subgroups_ind = setops.groups_to_ind(pids, subgroups)
 
     # number of classes to include
     n = 3
@@ -51,7 +56,7 @@ if __name__ == "__main__":
     cc.insert(1, 'mean_passage', cc.Passage.astype(str).apply(lambda x: np.mean([float(t) for t in x.split(';')])))
 
     # let's make a TERNARY plot with the three components: RTK I, RTK II, MES
-    fig, axs = plt.subplots(ncols=3, figsize=(10.6, 3.8))
+    fig, axs = plt.subplots(ncols=3, figsize=(8, 3))
     taxs = []
 
     for ax in axs:
@@ -94,6 +99,7 @@ if __name__ == "__main__":
 
         points = np.concatenate([[this_ff_score.values], this_cc_score.values], axis=0)
 
+        ## FIXME: we could just use the hardcoded classification here, eliminating the need to look it up?
         tax = tax_dict[ff.loc[p, 'Result']]
         # here's how to annotate:
         # tax.annotate('GBM%s' % p, points[0], horizontalalignment='left')
@@ -102,9 +108,54 @@ if __name__ == "__main__":
         for i in range(2):
             tax.line(points[i], points[i+1], c='gray', lw=1., zorder=9)
 
-    for tax in tax_dict.values():
-        tax.legend()
+    # make a custom legend for each subplot
+    leg_dicts = {}
+    leg_kwargs = {
+        'class': 'patch',
+        'edgecolor': 'k',
+        'linewidth': 1.,
+        'alpha': 0.8,
+    }
+    type_attrs = {
+        'class': 'line',
+        'linestyle': 'none',
+        'markeredgecolor': 'k',
+        'markeredgewidth': 1.,
+        'markerfacecolor': 'none',
+        'markersize': 8
+    }
 
-    fig.subplots_adjust(left=0.0, right=1., wspace=0.)
+    leg_type_dict = {
+        'FFPE': dict(type_attrs),
+        'GIC': dict(type_attrs),
+    }
+    leg_type_dict['FFPE']['marker'] = '^'
+    leg_type_dict['GIC']['marker'] = 'o'
+
+    for k in tax_dict:
+        this_leg_dict = collections.OrderedDict()
+        # FIXME: we use the actual results to determine subgroup earlier, here it's hardcoded
+        for pid in subgroups[k]:
+            t = dict()
+            t.update(leg_kwargs)
+            t['facecolor'] = cmap[pids.index(pid)]
+            this_leg_dict[pid] = t
+        if k == tax_dict.keys()[-1]:
+            leg_dicts[k] = collections.OrderedDict()
+            leg_dicts[k]['#1'] = this_leg_dict
+            leg_dicts[k]['#2'] = leg_type_dict
+        else:
+            leg_dicts[k] = this_leg_dict
+        common.add_custom_legend(
+            tax_dict[k].ax,
+            leg_dicts[k],
+            loc_outside=True,
+            loc_outside_horiz='right',
+            loc_outside_vert='top',
+            bbox_to_anchor=(0.7, 1.),
+            frameon=False
+        )
+
+    fig.subplots_adjust(left=0.0, right=.95, wspace=0.)
     fig.savefig(os.path.join(outdir, 'ternary_plot_classification.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'ternary_plot_classification.tiff'), dpi=200)

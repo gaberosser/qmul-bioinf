@@ -111,14 +111,16 @@ def scatter_with_colour_and_markers(
         for_legend = []
 
         # colours: show in patches with no edgecolor
-        for lc in clabels:
-            the_patch = patches.Patch(
-                edgecolor='none',
-                facecolor=colour_map.get(lc, default_colour),
-                linewidth=lw,
-                label=lc
-            )
-            for_legend.append(the_patch)
+        # for lc in clabels:
+        for lc in colour_map.keys():
+            if lc in clabels:
+                the_patch = patches.Patch(
+                    edgecolor='none',
+                    facecolor=colour_map.get(lc, default_colour),
+                    linewidth=lw,
+                    label=lc
+                )
+                for_legend.append(the_patch)
 
         # spacer that doesn't show up
         the_spacer = patches.Patch(
@@ -129,20 +131,22 @@ def scatter_with_colour_and_markers(
         for_legend.append(the_spacer)
 
         # markers: show with no fill
-        for lm in mlabels:
-            the_line = plt.Line2D(
-                [0],
-                [0],
-                marker=marker_map.get(lm, default_marker),
-                markerfacecolor='none',
-                markeredgewidth=lw,
-                markeredgecolor=ec,
-                # markersize=ms,  # the markersize units are different here, so don't specify
-                linestyle='none',
-                linewidth=0.,
-                label=lm
-            )
-            for_legend.append(the_line)
+        # for lm in mlabels:
+        for lm in marker_map.keys():
+            if lm in mlabels:
+                the_line = plt.Line2D(
+                    [0],
+                    [0],
+                    marker=marker_map.get(lm, default_marker),
+                    markerfacecolor='none',
+                    markeredgewidth=lw,
+                    markeredgecolor=ec,
+                    # markersize=ms,  # the markersize units are different here, so don't specify
+                    linestyle='none',
+                    linewidth=0.,
+                    label=lm
+                )
+                for_legend.append(the_line)
 
         if legend == 'outside':
             common.legend_outside_axes(ax, handles=for_legend)

@@ -523,8 +523,13 @@ def load_by_patient(
     for pid in patient_ids:
         d = LOOKUP[pid]
         for s, ldr in d:
-            by_loader.setdefault(ldr, []).append(s)
-            sample_order.append(s)
+            if samples is not None:
+                if s in samples:
+                    by_loader.setdefault(ldr, []).append(s)
+                    sample_order.append(s)
+            else:
+                by_loader.setdefault(ldr, []).append(s)
+                sample_order.append(s)
 
     objs = []
     for ldr, smp in by_loader.items():
