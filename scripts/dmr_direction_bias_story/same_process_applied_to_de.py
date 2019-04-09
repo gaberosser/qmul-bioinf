@@ -85,13 +85,16 @@ def direction_of_de_bar_plot(
     return fig, ax
 
 
-def bar_plot(res, keys=None):
+def bar_plot(res, keys=None, figsize=None):
+
+    if figsize is None:
+        figsize = (5.5, 5.5)
 
     if keys is None:
         keys = sorted(res.keys())
 
     # bar plot showing balance of DMR direction
-    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=(5.5, 5.5))
+    fig, axs = plt.subplots(nrows=2, sharex=True, figsize=figsize)
 
     direction_of_de_bar_plot(
         res,
@@ -110,6 +113,7 @@ def bar_plot(res, keys=None):
     )
     axs[1].set_ylabel('Number DEs')
     plt.setp(axs[1].xaxis.get_ticklabels(), rotation=90)
+    fig.tight_layout()
 
     return {
         'axs': axs,

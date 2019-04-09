@@ -74,8 +74,6 @@ def ols_plot(y, x, add_intercept=True, alpha=0.05, xlim=None, ax=None):
     return res, ax
 
 
-
-
 def get_de_tissue_tumour():
 
     # load tables S1A, S1B: lists of DE genes in healthy vs TAM

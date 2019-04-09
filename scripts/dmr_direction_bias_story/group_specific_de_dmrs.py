@@ -1,7 +1,8 @@
 from plotting import bar, common, pie, polar, venn
 from methylation import loader, dmr, process, annotation_gene_to_ensembl
 import pandas as pd
-from stats import nht
+import itertools
+from stats import nht, basic
 from utils import output, setops, genomics, log, ipa, dictionary
 from cytoscape import cyto
 import multiprocessing as mp
@@ -10,7 +11,7 @@ import collections
 import operator
 import pickle
 import numpy as np
-from scipy import stats, cluster
+from scipy import stats, cluster, special
 import matplotlib
 from matplotlib import pyplot as plt, patches, gridspec
 from matplotlib.colors import Normalize
@@ -312,6 +313,43 @@ def plot_venn_de_directions(
     return ax
 
 
+def fishers_downsample(x, y, n, n_iter=100):
+    """
+    'Downsample' the data by picking a subset of n data points, then run Fisher's test. Repeat n_iter times.
+    :param x:
+    :param y:
+    :param n:
+    :param n_iter:
+    :return:
+    """
+    if len(x) != len(y):
+        raise ValueError("Length of x and y must be equal")
+    if len(x) < n:
+        raise ValueError("len(x) must be greater than or equal to n")
+
+    x = np.array(x)
+    y = np.array(y)
+    # check the maximum number of permutations and warn if it is too low
+    exhaust = False
+    n_poss = special.comb(len(x), n, exact=True)
+    if n_poss < n_iter:
+        logger.warn("Requested %d iterations but the maximum number of permutations is %d, so we'll run an "
+                    "exhaustive search.", n_iter, n_poss)
+        exhaust = True
+
+    if exhaust:
+        it = itertools.combinations(range(len(x)), n)
+    else:
+        it = (np.random.choice(range(len(x)), n, replace=False) for i in range(n_iter))
+
+    res = []
+    for perm in it:
+        ct = basic.construct_contingency(x[list(perm)], y[list(perm)])
+        res.append(stats.fisher_exact(ct))
+
+    return res
+
+
 if __name__ == '__main__':
     # set a minimum pval for pathways to be used
     alpha = 0.01
@@ -421,21 +459,43 @@ if __name__ == '__main__':
     }
 
     # start with an UpSet to represent this
-    de_dmr_by_member = [joint_de_dmr_s1[pid].index for pid in pids]
-    venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member)
+    # all DE/DM relations
+    de_dmr_by_member_all = [joint_de_dmr_s1[pid].index for pid in pids]
 
     upset = venn.upset_plot_with_groups(
-        de_dmr_by_member,
+        de_dmr_by_member_all,
         pids,
         group_ind,
         subgroup_set_colours,
-        min_size=10,
+        # min_size=10,
         n_plot=30,
         default_colour='gray'
     )
     upset['axes']['main'].set_ylabel('Number of DE/DMRs in set')
     upset['axes']['set_size'].set_xlabel('Number of DE/DMRs in single comparison')
-    upset['figure'].savefig(os.path.join(outdir, "upset_de_dmr_by_direction_group.png"), dpi=200)
+    upset['figure'].savefig(os.path.join(outdir, "upset_de_dmr_by_direction_group_all.png"), dpi=200)
+
+    # only TSS DE/DM relations
+    de_dmr_by_member_tss = []
+    for pid in pids:
+        ix = joint_de_dmr_s1[pid][['dmr_%s' % t for t in relations_tss]].sum(axis=1).astype(bool)
+        de_dmr_by_member_tss.append(
+            joint_de_dmr_s1[pid].index[ix.values]
+        )
+
+    upset = venn.upset_plot_with_groups(
+        de_dmr_by_member_tss,
+        pids,
+        group_ind,
+        subgroup_set_colours,
+        # min_size=10,
+        n_plot=30,
+        default_colour='gray'
+    )
+    upset['axes']['main'].set_ylabel('Number of DE/DMRs in set')
+    upset['axes']['set_size'].set_xlabel('Number of DE/DMRs in single comparison')
+    upset['figure'].savefig(os.path.join(outdir, "upset_de_dmr_by_direction_group_tss.png"), dpi=200)
+
 
     set_colours_dict = {
         'Hypo': 'g',
@@ -443,16 +503,18 @@ if __name__ == '__main__':
         'Discordant': 'b'
     }
 
-    dmr_by_member = [dmr_res_all[pid].keys() for pid in pids]
-    venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
+    # Don't think we need this, but may be useful for a comparison?
+    if False:
+        dmr_by_member = [dmr_res_all[pid].keys() for pid in pids]
+        venn_set, venn_ct = setops.venn_from_arrays(*dmr_by_member)
 
-    venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
-    dmr_groups = {}
-    for grp in groups:
-        # generate bar chart showing number / pct in each direction (DM)
-        this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
-        this_dmrs = sorted(setops.reduce_union(*[venn_set[k] for k in this_sets]))
-        dmr_groups[grp] = this_dmrs
+        venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
+        dmr_groups = {}
+        for grp in groups:
+            # generate bar chart showing number / pct in each direction (DM)
+            this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
+            this_dmrs = sorted(setops.reduce_union(*[venn_set[k] for k in this_sets]))
+            dmr_groups[grp] = this_dmrs
 
     # Rather than just looking at genes corresponding to group-specific DMRs, we make the requirements more
     # stringent. For each Venn set (e.g. 018, 054, 052 - hyper group), we require DE genes in the same patients.
@@ -485,11 +547,12 @@ if __name__ == '__main__':
         os.path.join(outdir, "group_specific_de_for_ipa_tss.xlsx")
     )
 
-    # look at the DMR direction dist (only) in the joint results - is it the same as when we consider DMR only?
-    venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
+    # look at the DMR direction dist (only) in the joint results - is it the same as when we consider:
+    # - DMR only?
+    # - DE only
+
     for grp in groups:
-        # generate bar chart showing number / pct in each direction (DM)
-        this_sets = venn_sets_by_group['full'][grp] + venn_sets_by_group['partial'][grp]
+        # generate bar chart showing number / pct in each direction (DM - all)
         this_de_dmrs = de_dmrs_all[grp]
         this_dmrs = sorted(set([t[0] for t in this_de_dmrs]))
 
@@ -498,8 +561,35 @@ if __name__ == '__main__':
         for pid in groups[grp]:
             this_results[pid] = dict([(k, {'median_change': t}) for k, t in de_dmr_dmr_median_delta_all[grp][pid].dropna().iteritems()])
 
-        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp])
-        plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s.png" % grp), dpi=200)
+        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
+        plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s_all.png" % grp.lower()), dpi=200)
+
+        # generate bar chart showing number / pct in each direction (DM - TSS)
+        this_de_dmrs = de_dmrs_tss[grp]
+        this_dmrs = sorted(set([t[0] for t in this_de_dmrs]))
+
+        # bar chart showing DMR direction
+        this_results = {}
+        for pid in groups[grp]:
+            this_results[pid] = dict([(k, {'median_change': t}) for k, t in de_dmr_dmr_median_delta_tss[grp][pid].dropna().iteritems()])
+
+        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
+        plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s_tss.png" % grp.lower()), dpi=200)
+
+        # bar chart showing DE direction
+        for_plot = {}
+        for pid in groups[grp]:
+            for_plot[pid] = de_dmr_de_logfc_all[grp][[pid]].dropna()
+            for_plot[pid].columns = ['logFC']
+        plt_dict = same_de.bar_plot(for_plot, keys=groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
+        plt_dict['fig'].savefig(os.path.join(outdir, "de_direction_by_group_%s_all.png" % grp.lower()), dpi=200)
+
+        for_plot = {}
+        for pid in groups[grp]:
+            for_plot[pid] = de_dmr_de_logfc_tss[grp][[pid]].dropna()
+            for_plot[pid].columns = ['logFC']
+        plt_dict = same_de.bar_plot(for_plot, keys=groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
+        plt_dict['fig'].savefig(os.path.join(outdir, "de_direction_by_group_%s_tss.png" % grp.lower()), dpi=200)
 
     # Venn diagrams of DE
     fig = plt.figure(figsize=(5., 3.3))
@@ -514,17 +604,22 @@ if __name__ == '__main__':
 
     # assess concordance between DM and DE direction
     # start with scatterplot
-    # FIXME: figsize is hard coded to the specific 6 x 2 setup
+
+    de_data_all = {}
+    dm_data_all = {}
+    de_data_tss = {}
+    dm_data_tss = {}
 
     fisher_p = {}
     fisher_p_tss = {}
 
+    ncol = max([len(t) for t in groups.values()])
     fig, axs = plt.subplots(
         nrows=len(groups),
-        ncols=max([len(t) for t in groups.values()]),
+        ncols=ncol,
         sharex=True,
         sharey=True,
-        figsize=(8.4, 3.6)
+        figsize=(1.4 * ncol, 1.8 * len(groups))
     )
     big_ax = common.add_big_ax_to_subplot_fig(fig)
 
@@ -557,6 +652,9 @@ if __name__ == '__main__':
 
             ix = ix_x.values & ix_y.values
 
+            de_data_all[pid] = this_x[pid].loc[ix]
+            dm_data_all[pid] = this_y[pid].loc[ix]
+
             subplots_filled.add((i, j))
             ax = axs[i, j]
 
@@ -567,16 +665,7 @@ if __name__ == '__main__':
                 alpha=0.5
             )
             # fisher test
-            ct = [
-                [
-                    ((this_x[pid].loc[ix] < 0).values & (this_y[pid].loc[ix] < 0).values).sum(),
-                    ((this_x[pid].loc[ix] > 0).values & (this_y[pid].loc[ix] < 0).values).sum()
-                ],
-                [
-                    ((this_x[pid].loc[ix] < 0).values & (this_y[pid].loc[ix] > 0).values).sum(),
-                    ((this_x[pid].loc[ix] > 0).values & (this_y[pid].loc[ix] > 0).values).sum()
-                ],
-            ]
+            ct = basic.construct_contingency(this_x[pid].loc[ix].values, this_y[pid].loc[ix].values)
             fisher_p[pid] = stats.fisher_exact(ct)
 
             # ensure we drop corresponding rows in x and y
@@ -584,6 +673,9 @@ if __name__ == '__main__':
             ix_y_tss = ~this_y_tss[pid].isnull()
 
             ix_tss = ix_x_tss.values & ix_y_tss.values
+
+            de_data_tss[pid] = this_x_tss[pid].loc[ix_tss]
+            dm_data_tss[pid] = this_y_tss[pid].loc[ix_tss]
 
             # highlight TSS-linked (only)
             ax.scatter(
@@ -595,16 +687,7 @@ if __name__ == '__main__':
                 alpha=0.5
             )
             # fisher test
-            ct_tss = [
-                [
-                    ((this_x_tss[pid].loc[ix_tss] < 0).values & (this_y_tss[pid].loc[ix_tss] < 0).values).sum(),
-                    ((this_x_tss[pid].loc[ix_tss] > 0).values & (this_y_tss[pid].loc[ix_tss] < 0).values).sum()
-                ],
-                [
-                    ((this_x_tss[pid].loc[ix_tss] < 0).values & (this_y_tss[pid].loc[ix_tss] > 0).values).sum(),
-                    ((this_x_tss[pid].loc[ix_tss] > 0).values & (this_y_tss[pid].loc[ix_tss] > 0).values).sum()
-                ],
-            ]
+            ct_tss = basic.construct_contingency(this_x_tss[pid].loc[ix_tss].values, this_y_tss[pid].loc[ix_tss].values)
             fisher_p_tss[pid] = stats.fisher_exact(ct_tss)
 
             ax.axhline(0., c='k', linestyle='--')
@@ -624,4 +707,44 @@ if __name__ == '__main__':
 
     fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
 
-    # now run a null model and compare
+    # the issue with comparing between patients here is that the number of data points changes
+    # therefore 'downsample' all to give a common number
+
+    n_iter = 1000
+    lowest_n_all = min([len(v) for v in de_data_all.values()])
+    lowest_n_tss = min([len(v) for v in de_data_tss.values()])
+
+    fisher_p_ds_all = {}
+    fisher_p_ds_tss = {}
+
+    for pid in pids:
+        this_x = de_data_all[pid]
+        this_x_tss = de_data_tss[pid]
+        this_y = dm_data_all[pid]
+        this_y_tss = dm_data_tss[pid]
+
+        try:
+            fisher_p_ds_all[pid] = fishers_downsample(this_x, this_y, lowest_n_all, n_iter=n_iter)
+            fisher_p_ds_tss[pid] = fishers_downsample(this_x_tss, this_y_tss, lowest_n_tss, n_iter=n_iter)
+        except ValueError:
+            # this will happen if we manually override the lowest_n
+            pass
+
+    # the `if` clause here is unnecessary unless we override lowest_n_{all,tss}, but does no harm
+    df_all = pd.DataFrame([np.array(fisher_p_ds_all[pid])[:, 1] if pid in fisher_p_ds_all else [1.0] for pid in pids], index=pids).transpose()
+    df_tss = pd.DataFrame([np.array(fisher_p_ds_tss[pid])[:, 1] if pid in fisher_p_ds_tss else [1.0] for pid in pids], index=pids).transpose()
+
+    cols = [consts.METHYLATION_DIRECTION_COLOURS[groups_inv[pid].lower()] for pid in pids]
+    plt_kws = dict(
+        color=cols,
+        edgecolor='k',
+        linewidth=1.
+    )
+    plt_alpha = 0.01
+    fig, axs = plt.subplots(2, 1, sharex=True, sharey=True, figsize=(5., 5.5))
+    ((df_tss < plt_alpha).sum() / float(n_iter) * 100.).loc[pids].plot.bar(ax=axs[0], **plt_kws)
+    ((df_all < plt_alpha).sum() / float(n_iter) * 100.).loc[pids].plot.bar(ax=axs[1], **plt_kws)
+    axs[0].set_ylabel("All relations % significant")
+    axs[1].set_ylabel("TSS relations % significant")
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "permutation_fisher_pct_significant.png"), dpi=200)

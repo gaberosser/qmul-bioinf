@@ -272,7 +272,7 @@ Adding the numbers in the Venn diagrams in the publication, here are the numbers
 * GL261 BMDM vs MG: 712 up, 660 down.
 * Healthy BMDM vs MG: 840 up, 865 down.
 
-We can ignore the final result, since the authors used the Bruttger data for this section. Otherwise, we are finding very similar results. The Venn diagram is quite close to Fig 2E. A quick check shows that many but not all of the genes listed are indeed detected. The discrepancy isn't surprising, because we've comapred against different control data.
+We can ignore the final result, since the authors used the Bruttger data for this section. Otherwise, we are finding very similar results. The Venn diagram is quite close to Fig 2E. A quick check shows that many but not all of the genes listed are indeed detected. The discrepancy isn't surprising, because we've compared against different control data.
 
 ```{r}
 
