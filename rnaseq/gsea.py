@@ -1,6 +1,7 @@
 import csv
 import os
 import re
+import collections
 import pandas as pd
 from utils.log import get_console_logger
 from utils import rinterface
@@ -115,7 +116,6 @@ def create_gsea_params_file(outfn, rpt_label='foo', permute='gene_set', **kwargs
 
 
 def run_one_ssgsea(sample_data, gs, alpha=0.25, norm_by_gene_count=True, return_ecdf=False):
-    # FIXME: CRUCIAL: which order do we rank in?
     # rank the sample in ascending order (1 corresponds to lowest expression)
     rs = sample_data.rank(method='average', ascending=True)  # ties resolved by averaging
 
@@ -124,15 +124,19 @@ def run_one_ssgsea(sample_data, gs, alpha=0.25, norm_by_gene_count=True, return_
     rs = rs.sort_values(ascending=False)
 
     # boolean vector for inclusion in gene set
-    in_gene_set = rs.index.isin(gs).astype(float)
-    out_gene_set = (~rs.index.isin(gs)).astype(float)
+    # in_gene_set = rs.index.isin(gs).astype(float)
+    # out_gene_set = (~rs.index.isin(gs)).astype(float)
+
+    in_gene_set = rs.index.isin(gs)
+    out_gene_set = (~in_gene_set)
 
     # ECDF
-    x_in = (rs * in_gene_set) ** alpha
-    ecdf_in = (x_in.cumsum() / x_in.sum()).values
+    x_in = ((rs * in_gene_set) ** alpha).cumsum().values
+    ecdf_in = (x_in / x_in[-1])
 
     # the ECDF for samples out is NOT weighted, which is strange
-    ecdf_out = out_gene_set.cumsum() / out_gene_set.sum()
+    x_out = out_gene_set.cumsum()
+    ecdf_out = x_out / x_out[-1]
 
     # if we were to weight it, it would look like:
     # x_out = (rs * out_gene_set) ** alpha
@@ -150,7 +154,6 @@ def run_one_ssgsea(sample_data, gs, alpha=0.25, norm_by_gene_count=True, return_
         return es
 
 
-
 def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ecdf=False, threads=None):
     """
     Run single sample gene set enrichment analysis (ssGSEA) on the supplied data, following the details given in:
@@ -161,7 +164,7 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
 
     See R/stats/ssgsea.R for a further example (found online)
 
-    :param sample_data: Pandas Series
+    :param sample_data: Pandas Series (single sample) or DataFrame (samples in columns)
     :param gene_set: Dictionary. Each entry has a key giving the name of the gene set and value giving a list of genes.
     :param alpha: The weighting used to compute the ECDF. Default is 0.25 following Barbie et al. (2009)
     :param return_ecdf: If True, also return the two ECDFs being considered. Useful for plotting?
@@ -171,14 +174,17 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
     if not isinstance(gene_set, dict):
         b_one_sample = True
         gene_set = {'result': gene_set}
-
     n = len(gene_set)
 
+    if isinstance(sample_data, pd.Series):
+        sample_data = pd.DataFrame({0: sample_data})
+    m = sample_data.shape[1]
+
     pool = None
-    if threads != 1 and n > 1:
+    if threads != 1 and (m * n) > 10:
         pool = mp.Pool(processes=threads)
 
-    res = {}
+    res = collections.defaultdict(dict)
     jobs = {}
     ssgsea_kwds = dict(
         alpha=alpha,
@@ -187,64 +193,32 @@ def ssgsea(sample_data, gene_set, alpha=0.25, norm_by_gene_count=True, return_ec
     )
 
     for name, gs in gene_set.items():
-        if pool is None:
-            res[name] = run_one_ssgsea(
-                sample_data,
-                gs,
-                **ssgsea_kwds
-            )
-        else:
-            jobs[name] = pool.apply_async(
-                run_one_ssgsea,
-                args=(sample_data, gs),
-                kwds=ssgsea_kwds
-            )
+        for sn, ser in sample_data.iteritems():
+            if pool is None:
+                res[name][sn] = run_one_ssgsea(
+                    ser,
+                    gs,
+                    **ssgsea_kwds
+                )
+            else:
+                jobs[(name, sn)] = pool.apply_async(
+                    run_one_ssgsea,
+                    args=(ser, gs),
+                    kwds=ssgsea_kwds
+                )
 
     if pool is not None:
         pool.close()
         pool.join()
-        for name, j in jobs.items():
-            res[name] = j.get()
+        for (name, sn), j in jobs.items():
+            res[name][sn] = j.get()
 
     if b_one_sample:
         return res['result']
 
+    res = pd.DataFrame(res)
+
     return res
-
-
-    # # FIXME: CRUCIAL: which order do we rank in?
-    # # rank the sample in ascending order (1 corresponds to lowest expression)
-    # rs = sample_data.rank(method='average', ascending=True)  # ties resolved by averaging
-    #
-    # # sort in decreasing order
-    # # the most expressed genes come first in the list
-    # rs = rs.sort_values(ascending=False)
-    #
-    # # boolean vector for inclusion in gene set
-    # in_gene_set = rs.index.isin(gene_set).astype(float)
-    # out_gene_set = (~rs.index.isin(gene_set)).astype(float)
-    #
-    # # ECDF
-    # x_in = (rs * in_gene_set) ** alpha
-    # ecdf_in = (x_in.cumsum() / x_in.sum()).values
-    #
-    # # the ECDF for samples out is NOT weighted, which is strange
-    # ecdf_out = out_gene_set.cumsum() / out_gene_set.sum()
-    #
-    # # if we were to weight it, it would look like:
-    # # x_out = (rs * out_gene_set) ** alpha
-    # # ecdf_out = x_out.cumsum() / x_out.sum()
-    #
-    # # enrichment score is the difference in the integrals
-    # es = (ecdf_in - ecdf_out).sum()
-    #
-    # if norm_by_gene_count:
-    #     es /= float(rs.shape[0])
-    #
-    # if return_ecdf:
-    #     return (es, ecdf_in, ecdf_out)
-    # else:
-    #     return es
 
 
 try:
@@ -331,3 +305,67 @@ def load_gsea_report_and_pathways(subdir, comparison='GBM', fdr=None, load_top_n
         return report, pathways
     else:
         return report
+
+
+# including a script here for profiling ssGSEA
+if __name__ == '__main__':
+    import pandas as pd
+    from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR, HGIC_LOCAL_DIR
+    import os
+    import csv
+
+    n_pw = 100
+    n_sample = 10
+
+    # Step 1: compare RNA-Seq count data and some known gene signatures
+    # We just want to demonstrate that ssGSEA and GSVA are similar
+    ipa_pathway_fn = os.path.join(
+        HGIC_LOCAL_DIR,
+        'current/input_data/ipa_pathways',
+        'ipa_exported_pathways_ensembl_ids.csv'
+    )
+    ipa_pathways = {}
+    with open(ipa_pathway_fn, 'rb') as f:
+        c = csv.reader(f)
+        for row in c:
+            ipa_pathways[row[0]] = row[2:]
+
+    ipa_pathways = dict([x for i, x in enumerate(ipa_pathways.items()) if i < n_pw])
+
+    # load TCGA count data (for GSVA)
+    tcga_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
+    tcga_dat_fn = os.path.join(tcga_dir, 'counts.csv')
+    tcga_meta_fn = os.path.join(tcga_dir, 'sources.csv')
+
+    tcga_counts = pd.read_csv(tcga_dat_fn, header=0, index_col=0)
+    tcga_gene_symbol = tcga_counts[['Approved Symbol']]
+    tcga_counts.drop('Approved Symbol', axis=1, inplace=True)
+    tcga_meta = pd.read_csv(tcga_meta_fn, header=0, index_col=0)
+
+    # load TCGA FPKM data (for ssGSEA)
+    tcga_fpkm_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
+    tcga_fpkm_fn = os.path.join(tcga_fpkm_dir, 'fpkm.csv')
+    tcga_fpkm = pd.read_csv(tcga_fpkm_fn, header=0, index_col=0).drop('Approved Symbol', axis=1)
+
+    # for some reason, the samples are slightly different in the two TCGA datasets (more in the FPKM set)
+    # harmonise now
+    common_ix = tcga_counts.columns.intersection(tcga_fpkm.columns)
+    tcga_counts = tcga_counts[common_ix]
+    tcga_fpkm = tcga_fpkm[common_ix]
+    tcga_meta = tcga_meta.loc[common_ix]
+
+    # remove IDH1 mut
+    ix = tcga_meta.idh1_status == 'WT'
+    tcga_counts = tcga_counts.loc[:, ix]
+    tcga_fpkm = tcga_fpkm.loc[:, ix]
+
+    tcga_fpkm = tcga_fpkm.iloc[:, :n_sample]
+
+    # run ssGSEA
+    ssgsea_tcga = {}
+    for col, ser in tcga_fpkm.iteritems():
+        this = {}
+        for pw, gs in ipa_pathways.items():
+            this[pw] = run_one_ssgsea(ser, gs)
+        # ssgsea_tcga[col] = ssgsea(ser, ipa_pathways)
+        ssgsea_tcga[col] = this

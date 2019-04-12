@@ -14,7 +14,7 @@ from rnaseq import loader
 logger = log.get_console_logger()
 
 
-def eval_one_kde(xi):
+def eval_one_kde_poisson(xi):
     # k constant down columns
     # l constant across rows
     k, l = np.meshgrid(xi.values, xi.values)
@@ -24,6 +24,10 @@ def eval_one_kde(xi):
         k,
         l + 0.5,
     ).mean(axis=0)
+
+
+def eval_one_kde_gaussian(xi):
+    return xi.rank(method='average') / float(xi.size)
 
 
 def compute_ks_statistic(z_j, g_k, tau=1.0):
@@ -101,6 +105,10 @@ class GSVA(object):
                 the_ix = the_ix[~the_ix.duplicated()]
             self.__gene_sets[k] = the_ix
 
+    @property
+    def kde_func(self):
+        raise NotImplementedError("KDE implementation is included in the derived classes - please run one of those.")
+
     def run_normalisation(self, njob=None):
         if njob is None:
             njob = mp.cpu_count()
@@ -109,7 +117,7 @@ class GSVA(object):
             pool = mp.Pool()
             jobs = {}
             for ei, xi in self.X.iterrows():
-                jobs[ei] = pool.apply_async(eval_one_kde, args=(xi,))
+                jobs[ei] = pool.apply_async(self.kde_func, args=(xi,))
 
             pool.close()
             pool.join()
@@ -120,48 +128,12 @@ class GSVA(object):
 
         else:
             Fr = pd.DataFrame(dict([
-                (k, eval_one_kde(xi)) for k, xi in self.X.iterrows()
-            ]))
+                                       (k, eval_one_kde_poisson(xi)) for k, xi in self.X.iterrows()
+                                       ]))
 
         self.Fr = Fr
         # convert to normalized ranked data (genes ranked within each sample)
         self.z_ij = Fr.rank(axis=0, method='average')
-
-    def plot_kde_one_gene(self, gene, n_annot=10, gene_ttl=None):
-        """
-        Generate a plot showing the Poisson KDE for the specified gene, optionally adding lookup lines
-        :param gene: The gene of interest. Must be in the index of self.X
-        :param n_annot: Add this many lines (chosen as the first n_annot genes) to the plot to show the norming process.
-        To disable annotations, set this to 0.
-        :param gene_ttl: If supplied, this is an alternative title for the gene (e.g. gene symbol rather than ID)
-        :return:
-        """
-        if gene_ttl is None:
-            gene_ttl = gene
-        x = self.X.loc[gene]
-        counts = np.arange(int(x.max() * 1.1))
-        fr1 = reduce(operator.add, (stats.poisson.pmf(counts, t + 0.5) for t in x))
-        Fr1 = fr1.cumsum() / float(self.n)
-
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()
-
-        ax1.plot(counts, fr1, 'k')
-        ax2.plot(counts, Fr1, 'r')
-        ax1.set_ylabel('Kernels')
-        ax2.set_ylabel('KDE')
-        ax2.grid('off')
-        ax1.set_title("KDE for %s" % gene_ttl)
-
-        fig.tight_layout()
-
-        if n_annot > 0:
-            # add annotation lines
-            for v in x[:10]:
-                ax2.plot([v, v], [0, Fr1[v]], linestyle='--', color='r')
-                ax2.plot([v, counts[-1]], [Fr1[v], Fr1[v]], linestyle='--', color='r')
-
-        return fig, ax1, ax2
 
     def plot_enrichment_one_gene_set_one_sample(self, sample_name=None, gene_set=None, add_scores=True):
         if sample_name is None:
@@ -205,6 +177,22 @@ class GSVA(object):
         return fig, ax
 
     def run_enrichment(self, gene_sets=None):
+        """
+        Run the final step of the GSVA algorithm, in which enrichment scores are computed.
+        We compute three variants, all of which are discussed briefly in the paper and user guide.
+        :param gene_sets: If supplied, this is an iterable containing the names of gene sets to test. Otherwise, they
+        are all tested.
+        :return: Dictionary with the following entries
+        v_jk: The KS random walk statistic, from which all enrichment scores are computed.
+        es1_jk: ES1 is the traditional KS statistic, defined as the maximum absolute value of v_ij. This works for
+        gene signatures that go up or down.
+        es2_jk: ES2 is the alternative ES described in the paper, taken as the difference between the maximum positive
+        deviation and the (absolute value of the) maximum negative deviation. This is designed for signatures with
+        genes that all go in the same direction; it penalises cases where they appear in both tails.
+        es3_jk: As for ES2, but we sum the two values, which is identical to the Kuiper test. This considers appearance
+        in either tail (or a mixture) as an enrichment.
+        """
+        ## TODO: might consider making this parallel for larger jobs
         if len(self.gene_sets) == 0:
             raise AttributeError("Must set gene_sets before running enrichment analysis.")
 
@@ -213,6 +201,7 @@ class GSVA(object):
 
         es1_jk = {}
         es2_jk = {}
+        es3_jk = {}
         v_jk = {}
         for k, gk in self.gene_sets.iteritems():
             if gene_sets is not None and k not in gene_sets:
@@ -226,8 +215,6 @@ class GSVA(object):
             v_j = pd.DataFrame(v_j)
             v_jk[k] = v_j
 
-
-
             # ES (1): maximum deviation from zero
             # This has a bimodal distribution under the null and must be tested from both sides (?)
             # use this if the gene set contains both up- and downregulated genes
@@ -239,7 +226,8 @@ class GSVA(object):
             b = v_j.min(axis=0)
             b[b > 0] = 0.
 
-            es2_jk[k] = a + b
+            es2_jk[k] = a + b  # b is negative
+            es3_jk[k] = a - b  # b is negative
 
         v_jk = v_jk
         es1_jk = pd.DataFrame(es1_jk)
@@ -249,7 +237,93 @@ class GSVA(object):
             'v_jk': v_jk,
             'es1_jk': es1_jk,
             'es2_jk': es2_jk,
+            'es3_jk': es3_jk,
         }
+
+
+class GSVAForCounts(GSVA):
+    @property
+    def kde_func(self):
+        return eval_one_kde_poisson
+
+    def run_normalisation(self, njob=None):
+        if njob is None:
+            njob = mp.cpu_count()
+
+        if njob > 1:
+            pool = mp.Pool()
+            jobs = {}
+            for ei, xi in self.X.iterrows():
+                jobs[ei] = pool.apply_async(self.kde_func, args=(xi,))
+
+            pool.close()
+            pool.join()
+
+            Fr = pd.DataFrame(dict([(k, v.get()) for k, v in jobs.items()])).transpose()
+            Fr = Fr.loc[self.X.index]
+            Fr.columns = self.X.columns
+
+        else:
+            Fr = pd.DataFrame(dict([
+                                       (k, eval_one_kde_poisson(xi)) for k, xi in self.X.iterrows()
+                                       ]))
+
+        self.Fr = Fr
+        # convert to normalized ranked data (genes ranked within each sample)
+        self.z_ij = Fr.rank(axis=0, method='average')
+
+    def plot_kde_one_gene(self, gene, n_annot=10, gene_ttl=None):
+        """
+        Generate a plot showing the Poisson KDE for the specified gene, optionally adding lookup lines
+        :param gene: The gene of interest. Must be in the index of self.X
+        :param n_annot: Add this many lines (chosen as the first n_annot genes) to the plot to show the norming process.
+        To disable annotations, set this to 0.
+        :param gene_ttl: If supplied, this is an alternative title for the gene (e.g. gene symbol rather than ID)
+        :return:
+        """
+        if gene_ttl is None:
+            gene_ttl = gene
+        x = self.X.loc[gene]
+        counts = np.arange(int(x.max() * 1.1))
+        fr1 = reduce(operator.add, (stats.poisson.pmf(counts, t + 0.5) for t in x))
+        Fr1 = fr1.cumsum() / float(self.n)
+
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+
+        ax1.plot(counts, fr1, 'k')
+        ax2.plot(counts, Fr1, 'r')
+        ax1.set_ylabel('Kernels')
+        ax2.set_ylabel('KDE')
+        ax2.grid('off')
+        ax1.set_title("KDE for %s" % gene_ttl)
+
+        fig.tight_layout()
+
+        if n_annot > 0:
+            # add annotation lines
+            for v in x[:10]:
+                ax2.plot([v, v], [0, Fr1[v]], linestyle='--', color='r')
+                ax2.plot([v, counts[-1]], [Fr1[v], Fr1[v]], linestyle='--', color='r')
+
+        return fig, ax1, ax2
+
+
+class GSVAForNormedData(GSVA):
+    """
+    Run GSVA on gene expression data that have been normalised already, such a FPKM or TPM.
+    NB for CPM, it might be better to use the counts variant as the KDE is a little more appropriate?
+    """
+    @property
+    def kde_func(self):
+        return eval_one_kde_gaussian
+
+    def run_normalisation(self, njob=None):
+        self.Fr = self.X.rank(axis=1, method='average') / float(self.n)
+        self.z_ij = self.Fr.rank(axis=0, method='average')
+
+    def plot_kde_one_gene(self, gene, n_annot=10, gene_ttl=None):
+        raise NotImplementedError("TODO: refactor this part")
 
 
 
@@ -262,7 +336,7 @@ if __name__ == "__main__":
 
     # arbitrary gene set: GBM signalling
 
-    gs1 = [
+    gk = [
         'ENSG00000077782',
         'ENSG00000133056',
         'ENSG00000136158',
@@ -361,31 +435,11 @@ if __name__ == "__main__":
 
     Fr1 = fr1.cumsum() / n
 
-    fig, ax1 = plt.subplots()
-    ax2 = ax1.twinx()
-
-    ax1.plot(counts, fr1, 'k')
-    ax2.plot(counts, Fr1, 'r')
-    ax1.set_ylabel('Kernels')
-    ax2.set_ylabel('KDE')
-    ax2.grid('off')
-    ax1.set_title("KDE for %s" % example_gene)
-
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "kde_example_%s.png" % example_gene), dpi=200)
-
-    # add annotation lines
-    for v in x1[:10]:
-        ax2.plot([v, v], [0, Fr1[v]], linestyle='--', color='r')
-        ax2.plot([v, counts[-1]], [Fr1[v], Fr1[v]], linestyle='--', color='r')
-
-    fig.savefig(os.path.join(outdir, "kde_example_%s_annotated.png" % example_gene), dpi=200)
-
     # run for all genes (rows)
     pool = mp.Pool()
     jobs = {}
     for ei, xi in X.iterrows():
-        jobs[ei] = pool.apply_async(eval_one_kde, args=(xi,))
+        jobs[ei] = pool.apply_async(eval_one_kde_poisson, args=(xi,))
 
     pool.close()
     pool.join()
@@ -397,52 +451,6 @@ if __name__ == "__main__":
     # convert to normalized ranked data (genes ranked within each sample)
     z_ij = Fr.rank(axis=0, method='average')
     r_ij = np.abs(p * .5 - z_ij)
-
-    # plot an example of this
-    fig, ax1 = plt.subplots(figsize=(11, 3))
-    ax2 = ax1.twinx()
-    ax2.grid('off')
-    x = np.arange(1, p + 1)
-    z_j = z_ij[example_col].sort_values(ascending=True)
-    ax1.plot(x, np.log10(X.loc[z_j.index, example_col].values + 1), c='b', linestyle='none', marker='o', markersize=5, alpha=0.5)
-    ax2.plot(x, z_j / z_j[-1], c='k')
-    ax2.set_ylim([-0.01, 1.01])
-    ax1.set_ylim([-0.1, 6])
-    ax1.set_xlim([0, x[-1]])
-    ax1.set_xlabel('Rank (ascending)')
-    ax1.set_ylabel('Gene count')
-    ax2.set_ylabel('Transformed value')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "gene_count_z_%s.png" % example_col.lower()), dpi=200)
-
-    # KS statistic: one value per gene rank
-    gk = pd.Index(gs1).intersection(X.index)
-
-    # plot an example KS statistic
-    a, b = compute_ks_statistic(z_ij[example_col], gk, tau=tau)
-    fig, ax = plt.subplots()
-    ax.plot(range(1, p + 1), a, c='k', label='Observed for %s' % example_col)
-    ax.plot(range(1, p + 1), b, c='b', linestyle='--', label='Null')
-    # add ES1 line
-    pos = np.abs(a - b).values.argmax()
-    y0 = min(a[pos], b[pos])
-    y1 = max(a[pos], b[pos])
-    ax.plot([pos + 1, pos + 1], [y0, y1], c='r', linestyle=':', zorder=10, label='ES1')
-    # add ES2 lines
-    pos_max = (a - b).values.argmax()
-    y_max_0 = min(a[pos_max], b[pos_max])
-    y_max_1 = max(a[pos_max], b[pos_max])
-    pos_min = (a - b).values.argmin()
-    y_min_0 = min(a[pos_min], b[pos_min])
-    y_min_1 = max(a[pos_min], b[pos_min])
-    ax.plot([pos_min + 1, pos_min + 1], [y_min_0, y_min_1], c='y', label='ES2(-)')
-    ax.plot([pos_max + 1, pos_max + 1], [y_max_0, y_max_1], c='g', label='ES2(+)')
-
-    ax.set_xlabel('Rank (ascending)')
-    ax.set_ylabel('KS statistic')
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "ks_statistic_%s.png" % example_col.lower()), dpi=200)
 
     v_j = {}
     for col in X.columns:

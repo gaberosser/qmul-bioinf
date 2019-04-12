@@ -748,3 +748,57 @@ if __name__ == '__main__':
     axs[1].set_ylabel("TSS relations % significant")
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "permutation_fisher_pct_significant.png"), dpi=200)
+
+    # snippets pulled from the DMR script
+
+    pct_conc = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+
+    for pid in pids:
+        this_x = de_data_all[pid].values
+        this_x_tss = de_data_tss[pid].values
+        this_y = dm_data_all[pid].values
+        this_y_tss = dm_data_tss[pid].values
+
+        this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(groups[grp])]
+        pct_conc.loc[pid, 'All'] = (np.sign(this_x) != np.sign(this_y)).sum() / float(this_x.size) * 100.
+
+        this_joint = this_joint.loc[(this_joint.dmr_TSS1500 | this_joint.dmr_TSS200).astype(bool)]
+        pct_conc.loc[pid, 'TSS'] = (np.sign(this_x_tss) != np.sign(this_y_tss)).sum() / float(this_x_tss.size) * 100.
+
+    # permutation test: do we see the same level of concordance with a 'random' background selection?
+    ## TODO: finish 
+    # background estimate: for each PID, pick DMRs at random with delta M signs matching the number in the
+    # group-specific DMRs
+
+    # n_iter_bg = 1000
+    # perm_res = {}
+    #
+    # for pid in pids:
+    #     grp = groups_inv[pid]
+    #     # BG clusters - these are guaranteed to have associated DE genes
+    #     bg_res = joint_de_dmr_s1[pid]
+    #     # split by DMR direction
+    #     bg_hypo = bg_res.loc[bg_res.dmr_median_delta < 0]
+    #     bg_hyper = bg_res.loc[bg_res.dmr_median_delta > 0]
+    #     n_bg_hypo = bg_hypo.shape[0]
+    #     n_bg_hyper = bg_hyper.shape[0]
+    #     # how many do we need to draw?
+    #     this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
+    #     n_hypo = (this_joint.dmr_median_delta < 0).sum()
+    #     n_hyper = (this_joint.dmr_median_delta > 0).sum()
+    #
+    #     logger.info(
+    #         "Patient %s. Drawing %d hypo and %d hyper DMRs from background (%d hypo / %d hyper).",
+    #         pid,
+    #         n_hypo,
+    #         n_hyper,
+    #         bg_hypo.shape[0],
+    #         bg_hyper.shape[0]
+    #     )
+    #
+    #     this_perm_res = []
+    #     for i in range(n_iter_bg):
+    #
+    #
+    #         # multiple random draws
+    #         pass
