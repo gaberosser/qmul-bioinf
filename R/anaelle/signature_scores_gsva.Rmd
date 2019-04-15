@@ -1,0 +1,41 @@
+---
+title: "Signature score analysis with GSVA"
+author: "Gabriel Rosser"
+date: "15 April 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Signature scores / single sample gene set enrichment analysis
+
+The aim of this kind of analysis is to assess the extent to which a known gene signature is enriched in a single sample, either relative to some sample cohort or independently.
+
+One such method is `ssGSEA` by Barbie et al. (2009). There is no package as such, but  This was revised by ? et al (2013) and incorporated into the `GSVA` package. The `GSVA` package also implements the ssGSEA algorithm.
+
+I've written code for both of these in `Python` but want to check the details against the `R` implementation. Start by loading TCGA gene expression data and filtering for IDH1 WT GBM samples.
+
+```{r load_data}
+rnaseq_dir <- file.path('~/data/', 'rnaseq', 'tcga_gbm')
+rnaseq_dat_fn <- file.path(rnaseq_dir, 'gliovis_tcga_gbmlgg_expression.csv')
+rnaseq_meta_fn <- file.path(rnaseq_dir, 'gliovis_tcga_gbmlgg_meta.csv')
+
+rnaseq_dat <- t(read.csv(rnaseq_dat_fn, row.names = 1))
+rnaseq_meta <- read.csv(rnaseq_meta_fn, row.names = 1)
+
+ix <- (rnaseq_meta$Histology == 'GBM') & (rnaseq_meta$IDH.status == 'WT')
+rnaseq_meta <- rnaseq_meta[ix,]
+rnaseq_dat <- rnaseq_dat[, rownames(rnaseq_meta)]
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
