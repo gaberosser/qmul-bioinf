@@ -209,7 +209,7 @@ We don't filter lowly-expressed genes for this purpose, as it doesn't appear tha
 
 ```{r}
 samples <- colnames(data)
-dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~group)
+dds <- DESeqDataSetFromMatrix(countData = round(data[, samples]), colData = meta[samples,], design = ~0+group)
 dds <- estimateSizeFactors(dds)
 des <- DESeq(dds)
 
@@ -607,7 +607,7 @@ for (g in mtor_genes) {
 This further demonstrates that the effects are more clearly observed in the GL261 model. We can see several genes that we might expect to be tagged as DE in _both_ groups, but which only show up in one (or neither), for example Rps25 in the GEMM model appears to show a strong upregulation in both MG and BMDM. This must be due to the estimation of dispersion - the large number of comparisons being made means that effects need to be very strong to be picked out as significant.
 
  
-Finally, we output the DE gene lists to text files.
+Output the DE gene lists to text files.
  
 ```{r}
 

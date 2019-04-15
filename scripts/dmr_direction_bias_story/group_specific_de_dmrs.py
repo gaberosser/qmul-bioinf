@@ -705,7 +705,7 @@ if __name__ == '__main__':
 
     fig.subplots_adjust(left=0.07, bottom=0.15, top=0.92, right=0.98, wspace=0.04, hspace=0.18)
 
-    fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "gs_de_dmr_scatter.png"), dpi=200)
 
     # the issue with comparing between patients here is that the number of data points changes
     # therefore 'downsample' all to give a common number
@@ -749,8 +749,7 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "permutation_fisher_pct_significant.png"), dpi=200)
 
-    # snippets pulled from the DMR script
-
+    # quantify the % concordance
     pct_conc = pd.DataFrame(index=pids, columns=['All', 'TSS'])
 
     for pid in pids:
@@ -766,36 +765,36 @@ if __name__ == '__main__':
         pct_conc.loc[pid, 'TSS'] = (np.sign(this_x_tss) != np.sign(this_y_tss)).sum() / float(this_x_tss.size) * 100.
 
     # permutation test: do we see the same level of concordance with a 'random' background selection?
-    ## TODO: finish 
     # background estimate: for each PID, pick DMRs at random with delta M signs matching the number in the
     # group-specific DMRs
 
-    # n_iter_bg = 1000
-    # perm_res = {}
-    #
-    # for pid in pids:
-    #     grp = groups_inv[pid]
-    #     # BG clusters - these are guaranteed to have associated DE genes
-    #     bg_res = joint_de_dmr_s1[pid]
-    #     # split by DMR direction
-    #     bg_hypo = bg_res.loc[bg_res.dmr_median_delta < 0]
-    #     bg_hyper = bg_res.loc[bg_res.dmr_median_delta > 0]
-    #     n_bg_hypo = bg_hypo.shape[0]
-    #     n_bg_hyper = bg_hyper.shape[0]
-    #     # how many do we need to draw?
-    #     this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
-    #     n_hypo = (this_joint.dmr_median_delta < 0).sum()
-    #     n_hyper = (this_joint.dmr_median_delta > 0).sum()
-    #
-    #     logger.info(
-    #         "Patient %s. Drawing %d hypo and %d hyper DMRs from background (%d hypo / %d hyper).",
-    #         pid,
-    #         n_hypo,
-    #         n_hyper,
-    #         bg_hypo.shape[0],
-    #         bg_hyper.shape[0]
-    #     )
-    #
+    n_iter_bg = 1000
+    perm_res = {}
+
+    for pid in pids:
+        grp = groups_inv[pid]
+
+        # BG clusters - these are guaranteed to have associated DE genes
+        bg_res = joint_de_dmr_s1[pid]
+        # split by DMR direction
+        bg_hypo = bg_res.loc[bg_res.dmr_median_delta < 0]
+        bg_hyper = bg_res.loc[bg_res.dmr_median_delta > 0]
+        n_bg_hypo = bg_hypo.shape[0]
+        n_bg_hyper = bg_hyper.shape[0]
+
+        # now look at the group-specific DMRs to determine how many we need to draw
+        n_hypo = (dm_data_all[pid] < 0).sum()
+        n_hyper = (dm_data_all[pid] > 0).sum()
+
+        logger.info(
+            "Patient %s. Drawing %d hypo and %d hyper DMRs from background (%d hypo / %d hyper).",
+            pid,
+            n_hypo,
+            n_hyper,
+            bg_hypo.shape[0],
+            bg_hyper.shape[0]
+        )
+
     #     this_perm_res = []
     #     for i in range(n_iter_bg):
     #

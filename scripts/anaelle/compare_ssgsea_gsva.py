@@ -70,12 +70,14 @@ if __name__ == '__main__':
     gsva_res = gsva_obj.run_enrichment()
     gsva_res['es1_jk'].to_csv(os.path.join(outdir, "tcga_counts_gsva_es1.csv"))
     gsva_res['es2_jk'].to_csv(os.path.join(outdir, "tcga_counts_gsva_es2.csv"))
+    gsva_res['es3_jk'].to_csv(os.path.join(outdir, "tcga_counts_gsva_es3.csv"))
 
     # run GSVA on FPKM data
     gsva_obj2 = gsva.GSVAForNormedData(tcga_fpkm, gene_sets=ipa_pathways)
     gsva_res2 = gsva_obj2.run_enrichment()
     gsva_res2['es1_jk'].to_csv(os.path.join(outdir, "tcga_fpkm_gsva_es1.csv"))
     gsva_res2['es2_jk'].to_csv(os.path.join(outdir, "tcga_fpkm_gsva_es2.csv"))
+    gsva_res2['es3_jk'].to_csv(os.path.join(outdir, "tcga_fpkm_gsva_es3.csv"))
 
     # load (our) data
     obj_star = loader.load_by_patient(consts.PIDS, source='star', include_control=False)

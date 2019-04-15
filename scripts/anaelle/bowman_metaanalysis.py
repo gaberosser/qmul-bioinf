@@ -662,3 +662,11 @@ if __name__ == "__main__":
     to_export.insert(0, 'bmdm_score_z', y.loc[to_export.index])
     to_export.insert(0, 'mtor_score_z', z.loc[to_export.index])
     to_export.to_excel(os.path.join(outdir, 'bowman_data_with_scores.xlsx'))
+
+    # run all signatures through GSVA for comparison
+    from rnaseq import gsva
+    gsva_obj = gsva.GSVAForNormedData(rnaseq_dat)
+    gs = dict(rna_list_hu)
+    gs.update({'mTOR KEGG': mtor_geneset_kegg, 'mTOR AD': mtor_geneset_ad})
+    gsva_obj.gene_sets = gs
+    gsva_res = gsva_obj.run_enrichment()

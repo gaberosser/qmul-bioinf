@@ -232,6 +232,7 @@ class GSVA(object):
         v_jk = v_jk
         es1_jk = pd.DataFrame(es1_jk)
         es2_jk = pd.DataFrame(es2_jk)
+        es3_jk = pd.DataFrame(es3_jk)
 
         return {
             'v_jk': v_jk,
