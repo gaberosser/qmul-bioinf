@@ -6,16 +6,20 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+require(ggplot2)
+require(GSVA)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Signature scores / single sample gene set enrichment analysis
+# Signature scores / single sample gene set enrichment analysis
 
 The aim of this kind of analysis is to assess the extent to which a known gene signature is enriched in a single sample, either relative to some sample cohort or independently.
 
-One such method is `ssGSEA` by Barbie et al. (2009). There is no package as such, but  This was revised by ? et al (2013) and incorporated into the `GSVA` package. The `GSVA` package also implements the ssGSEA algorithm.
+One such method is `ssGSEA` by Barbie et al. (2009). There is no package as such, but  This was revised by Hanzelmann et al. (2013) and incorporated into the `GSVA` package. The `GSVA` package also implements the ssGSEA algorithm.
 
-I've written code for both of these in `Python` but want to check the details against the `R` implementation. Start by loading TCGA gene expression data and filtering for IDH1 WT GBM samples.
+## Setup
+
+Start by loading TCGA gene expression data and filtering for IDH1 WT GBM samples.
 
 ```{r load_data}
 rnaseq_dir <- file.path('~/data/', 'rnaseq', 'tcga_gbm')
@@ -30,12 +34,140 @@ rnaseq_meta <- rnaseq_meta[ix,]
 rnaseq_dat <- rnaseq_dat[, rownames(rnaseq_meta)]
 ```
 
-## Including Plots
+Load gene sets of interest. This includes signatures for microglia (MG) and bone marrow-derived macrophages (BMDM) taken from Table S2 of Bowman et al. (Cell Reports 2016). These were initially given as _mouse_ genes, but I have previously `translated' them using a table of orthologous genes.
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+mtor_geneset_kegg = c(
+    'AKT1', 'AKT2', 'BRAF', 'EIF4B', 'EIF4E', 'EIF4EBP1', 'VEGFD', 'MTOR', 'HIF1A', 'IGF1', 'INS', 'PDPK1', 'PGF',
+    'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PIK3R1', 'PIK3R2', 'PRKAA1', 'PRKAA2', 'MAPK1', 'MAPK3', 'RHEB',
+    'RPS6', 'RPS6KA1', 'RPS6KA2', 'RPS6KA3', 'RPS6KB1', 'RPS6KB2', 'STK11', 'TSC2', 'VEGFA', 'VEGFB', 'VEGFC',
+    'ULK1', 'PIK3R3', 'EIF4E2', 'ULK2', 'AKT3', 'PIK3R5', 'ULK3', 'RPS6KA6', 'CAB39', 'DDIT4', 'RPTOR', 'MLST8',
+    'CAB39L', 'STRADA', 'RICTOR', 'EIF4E1B', 'TSC1'
+)
+# MG geneset from Bowman et al. 
+mg_geneset <- c(
+'FAM135A', 'PARD3B', 'XRCC5', 'SPEG', 'SERPINE2', 'COL6A3', 'MLPH', 'DSEL', 'EPB41L5', 'FAM72A', 'CDK18', 'PIK3C2B', 'ADORA1', 'CFH',
+'GLUL', 'DUSP27', 'ILDR2', 'RXRG', 'OLFML2B', 'SLAMF1', 'SCCPDH', 'LEFTY1', 'TMEM63A', 'LYPLAL1', 'PROX1', 'CD34', 'EYA4', 'CDH23',
+'RHOBTB1', 'ANK3', 'LRRC3', 'CHST11', 'KITLG', 'NAV3', 'LRIG3', 'PMEL', 'SEC14L2', 'PWWP2A', 'ZNF354A', 'SPARC', 'SNAP47',
+'ZNF627', 'GRAP', 'FAM83G', 'PMP22', 'SPNS2', 'RTN4RL1', 'RAB34', 'SLC46A1', 'SARM1', 'CCL4', 'TMEM100', 'TOM1L1', 'LEPREL4',
+'HSD17B1', 'PLEKHH3', 'ETV4', 'RUNDC3A', 'MRC2', 'TANC2', 'ARSG', 'MYADML2', 'APOB', 'RHOB', 'WDR35', 'AGMO', 'ETV1', 'ARHGAP5',
+'ATL1', 'CKB', 'RAPGEF5', 'ZNF184', 'PHACTR1', 'GMPR', 'SUSD3', 'SPOCK1', 'GOLM1', 'TPPP', 'MEF2C', 'ARSB', 'HEXB', 'HSPB3',
+'ABHD6', 'FHIT', 'KCNMA1', 'BMPR1A', 'SLC22A17', 'ATP8A2', 'KLF12', 'FBXO4', 'SLC1A3', 'CSMD3', 'KLHL38', 'KHDRBS3', 'PDGFB', 'SYNGR1',
+'SCUBE1', 'PRICKLE1', 'ZNF641', 'SPATS2', 'BCDIN3D', 'GPD1', 'GPR84', 'SCARF2', 'ARVCF', 'LIPH', 'LEPREL1', 'TMEM44', 'IQCG',
+'UPK1B', 'DCBLD2', 'ST3GAL6', 'PROS1', 'JAM2', 'ADAMTS1', 'LCA5L', 'B3GALT5', 'IGF2R', 'RGMB', 'LIX1', 'C2', 'DDAH2', 'TNF', 'PTPRM',
+'RASGRP3', 'PLEKHH2', 'KCNK12', 'ABHD3', 'CABLES1', 'BIN1', 'ECSCR', 'CXXC5', 'PCDHB15', 'PCDHGA4', 'PCDHGB2', 'PCDHGA5',
+'PCDHGA12', 'LOX', 'SNCAIP', 'SLC12A2', 'AFAP1L1', 'ADRB2', 'SALL3', 'CTSF', 'DAGLA', 'PSAT1', 'SEMA4G', 'NEURL1', 'NRAP',
+'NANOS1', 'OPTN', 'CACNB2', 'PLXDC2', 'ARMC3', 'MSRB2', 'OTUD1', 'C9orf172', 'TMEM8C', 'PHYHD1', 'AK1', 'GARNL3', 'LYPD6', 'PKP4',
+'PHOSPHO2-KLHL23', 'GPR155', 'TTC30B', 'FKBP7', 'CHST1', 'TSPAN18', 'LGR4', 'ZNF770', 'DUOXA1', 'PDYN', 'CST3', 'CST7', 'NINL',
+'SNTA1', 'PLCG1', 'PAG1', 'SPRY1', 'PFN2', 'P2RY12', 'IGSF10', 'PPM1L', 'TRIM2', 'PEAR1', 'OTUD7B', 'SV2A', 'PHGDH', 'ZNF697',
+'OLFML3', 'ADORA3', 'SORT1', 'LRRC39', 'NPNT', 'MTTP', 'DNAJB4', 'TYW3', 'ASPH', 'GEM', 'FAM92A1', 'CTNNAL1', 'ZFP37', 'C9orf43',
+'COL27A1', 'DFNB31', 'CDKN2A', 'CYP2J2', 'NFIA', 'ITGB3BP', 'DMRTB1', 'ELAVL4', 'BEND5', 'TAL1', 'PDZK1IP1', 'ZSWIM5', 'ZFP69',
+'OSCP1', 'FAM167B', 'FABP3', 'ASAP3', 'ANGPTL7', 'SLC2A5', 'KIAA1751', 'MXRA8', 'ABCB4', 'YES1', 'NAT8L', 'C4orf19', 'APBB2',
+'AFP', 'KIAA1107', 'CRYBA4', 'CRYBB1', 'SEZ6L', 'MYO18B', 'TMEM119', 'MYL2', 'BCL7A', 'CCDC62', 'RILPL1', 'TCTN2', 'STX1A',
+'MLXIPL', 'SERPINE1', 'ACHE', 'ZCWPW1', 'SDK1', 'SGCE', 'PPP1R9A', 'PLXNA4', 'LRGUK', 'AGBL3', 'DENND2A', 'FAM115A', 'KRBA1',
+'IGF2BP3', 'CHN2', 'FKBP14', 'FKBP9', 'THNSL2', 'ST3GAL5', 'LBX2', 'TGFA', 'GP9', 'MAGI1', 'CAND2', 'LEPREL2', 'LAG3', 'IFFO1', 'CD9',
+'DYRK4', 'TSPAN9', 'LDHB', 'ZNF580', 'CCDC106', 'ZIK1', 'MEIS3', 'BBC3', 'PVRL2', 'SCN1B', 'CHST8', 'CD37', 'NAV2', 'TJP1', 'CPEB1',
+'THRSP', 'TPBGL', 'FAM160A2', 'APBB1', 'RIC3', 'ST5', 'PDE3B', 'TMC7', 'COX6A2', 'EBF3', 'CTSD', 'CD81', 'ARHGEF18', 'NEK3',
+'C8orf4', 'FAM149A', 'KLF2', 'LARGE', 'CLGN', 'SCOC', 'SALL1', 'GPR56', 'GFOD2', 'CHST6', 'ZCCHC14', 'SIPA1L2', 'NAALAD2', 'RGL3',
+'OAF', 'LAYN', 'DNAJA4', 'SMAD3', 'TLN2', 'DDX43', 'MYO6', 'RAB6B', 'CCDC36', 'ZNF35', 'XK', 'TSPAN7', 'MID1IP1', 'GPR34', 'KLHL13',
+'DDX26B', 'FGF13', 'ZNF275', 'SRPK3', 'MAGED1', 'DLG3', 'CHIC1', 'TCEAL1', 'RNF128', 'MAGED2', 'MAGEH1'
+)
+# BMDM geneset from Bowman et al. 
+bmdm_geneset <- c(
+'NEURL3', 'IL1R2', 'STAT4', 'STK17B', 'COQ10B', 'FZD7', 'CTLA4',
+'CTDSP1', 'CYP27A1', 'TUBA4A', 'GPR35', 'ST8SIA4', 'CXCR4', 'IL10',
+'PTPN7', 'LAD1', 'DENND1B', 'RGS1', 'RGS18', 'KIAA0040', 'SELL',
+'SH2D1B', 'FCRLB', 'SLAMF7', 'KMO', 'TLR5', 'PLEKHG1', 'ZC3H12D',
+'PDE7B', 'NCOA7', 'DSE', 'AIM1', 'PRDM1', 'PKIB', 'SMPDL3A',
+'ADORA2A', 'GSTT2', 'CNN2', 'SMIM24', 'DRAM1', 'SPIC', 'PLXNC1',
+'LYZ', 'B4GALNT1', 'ESYT1', 'INPP5J', 'MYO1G', 'BCL11A',
+'SH3PXD2B', 'TIMD4', 'ADORA2B', 'TNFSF13', 'ACAP1', 'CXCL16',
+'ZMYND15', 'TM4SF5', 'ITGAE', 'P2RX5', 'HIC1', 'SLC6A4', 'UNC119',
+'EVI2B', 'CCL1', 'CWC25', 'RARA', 'PLEKHM1', 'ACE', 'GPRC5C',
+'CD300A', 'SYNGR2', 'CYTH1', 'SECTM1', 'METRNL', 'FAM49A', 'PQLC3',
+'HPCAL1', 'PRKAR2B', 'AHR', 'STXBP6', 'GPR33', 'PRKCH', 'PLEKHG3',
+'ARG2', 'EIF2B2', 'STON2', 'GPR65', 'GPR68', 'RIN3', 'TNFAIP2',
+'GPR132', 'JAG2', 'CRIP1', 'NET1', 'GPR141', 'AOAH', 'SERPINB9',
+'MAK', 'NFIL3', 'RGS14', 'DOK3', 'TGFBI', 'DAPK1', 'IQGAP2',
+'F2RL2', 'ZNF366', 'CCDC125', 'GAPT', 'EMB', 'ANXA11', 'ARHGEF3',
+'PTGER2', 'TEP1', 'MMP14', 'TINF2', 'LTB4R', 'DOCK5', 'ADAMDEC1',
+'GPR18', 'IL7R', 'CTNND2', 'DCSTAMP', 'TRPS1', 'DEPTOR', 'MTSS1',
+'ST3GAL1', 'DGAT1', 'CSF2RB', 'GRAP2', 'MKL1', 'VDR', 'CACNB3',
+'GALNT6', 'KRT80', 'ITGB7', 'NFE2', 'MEFV', 'CIITA', 'SLC7A4',
+'CLDN1', 'TM4SF19', 'CD80', 'CD200R1L', 'BTLA', 'CBLB', 'C21orf91',
+'HLCS', 'SYTL3', 'FPR2', 'MAPK13', 'RAB44', 'PIM1', 'HLA-DMB',
+'HLA-DQB1', 'HLA-DQA1', 'HLA-DRB5', 'CFB', 'PLA2G7', 'RUNX2',
+'NFKBIE', 'TRERF1', 'TREM1', 'EMILIN2', 'NLRC4', 'QPCT', 'CREM',
+'BAMBI', 'SVIL', 'MOCOS', 'GYPC', 'FEM1C', 'NDST1', 'CD74', 'ARSI',
+'ALPK2', 'MALT1', 'PQLC1', 'KCNG2', 'CDK2AP2', 'TBC1D10C',
+'RASGRP2', 'MS4A7', 'TMEM2', 'JAK2', 'FAS', 'HTR7', 'MYOF',
+'DUSP5', 'ATRNL1', 'KIAA1598', 'FAM107B', 'IL2RA', 'IL1RN',
+'OLFM1', 'RALGDS', 'C9orf9', 'AK8', 'TRAF1', 'GSN', 'STOM',
+'DENND1A', 'KYNU', 'ARHGAP15', 'NR4A2', 'CYTIP', 'RBMS1', 'DPP4',
+'NOSTRIN', 'SESTD1', 'ITGA4', 'NR1H3', 'LDLRAD3', 'RASGRP1',
+'THBS1', 'SLC28A2', 'ATP8B4', 'BCL2L11', 'SIGLEC1', 'FLRT3',
+'THBD', 'CD93', 'SLC52A3', 'SAMHD1', 'ADA', 'PLTP', 'CD40',
+'OCSTAMP', 'B4GALT5', 'CA2', 'SIRPB1', 'GPR171', 'P2RY14',
+'TIPARP', 'PDGFC', 'SEMA4A', 'PMVK', 'ADAMTSL4', 'ECM1', 'PTPN22',
+'GSTM5', 'VAV3', 'ALPK1', 'CCDC109B', 'FAM110B', 'CDH17', 'MOB3B',
+'ALDH1B1', 'CORO2A', 'NR4A3', 'PDE4B', 'FGR', 'SEPN1', 'RUNX3',
+'TCEA3', 'ECE1', 'MTHFR', 'KCNAB2', 'TNFRSF4', 'TNFRSF18', 'ABCB1',
+'HGF', 'WDR86', 'FOSL2', 'CD38', 'RELL1', 'NIPAL1', 'HOPX',
+'STAP1', 'IGJ', 'DCK', 'PF4', 'CXCL3', 'ANTXR2', 'PLAC8', 'LRRC8C',
+'FAM69A', 'ADRBK2', 'KSR2', 'VPS37B', 'HIP1', 'MOSPD3', 'PILRB',
+'MICALL2', 'CARD11', 'FLT3', 'HEPACAM2', 'TFEC', 'AHCYL2',
+'OSBPL3', 'VOPP1', 'TNIP3', 'TACSTD2', 'MXD1', 'ISY1-RAB43',
+'BHLHE40', 'SRGAP3', 'PPARG', 'PLXND1', 'GDF3', 'ZNF705A',
+'CLEC4C', 'CLEC4A', 'CLEC6A', 'CLEC4D', 'CLEC4E', 'KLRB1',
+'CLEC12A', 'CLEC9A', 'KLRD1', 'KIAA1467', 'PLBD1', 'GUCY2C',
+'MGST1', 'TMEM150B', 'APOC2', 'B3GNT8', 'MAP4K1', 'RASGRP4',
+'SPINT2', 'FFAR2', 'LSR', 'FXYD5', 'PLEKHF1', 'NAPSA', 'SPTY2D1',
+'SLCO3A1', 'ANPEP', 'SEMA4B', 'CIB1', 'CRTC3', 'IQGAP1', 'PDE8A',
+'RAB38', 'NUP98', 'SPON1', 'APOBR', 'IFITM2', 'PKP3', 'AP2A2',
+'LSP1', 'C19orf59', 'CLEC4M', 'IRS2', 'RAB11FIP1', 'FCHO1',
+'CYP4F2', 'CPNE2', 'CCL22', 'CCL17', 'DPEP2', 'CDH1', 'HP',
+'CBFA2T3', 'TMEM123', 'FUT4', 'LDLR', 'ST3GAL4', 'MPZL3', 'AMICA1',
+'PSTPIP1', 'AQP9', 'MAPKAPK3', 'CISH', 'SLC25A20', 'ITGA9',
+'VIPR1', 'CCR1', 'CCR2', 'FOXP3', 'CYBB', 'CFP', 'MBNL3',
+'DNASE1L1', 'GAB3', 'IL2RG', 'CXCR3', 'SH3BGRL', 'TLR8'
+)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Comparing methods
+
+Now we'll run `ssGSEA` and `GSVA` on the TCGA data using these 3 gene sets. I've written code for both of these in `Python` but want to check the details against the `R` implementation.
+
+```{r gsea, echo=F}
+gene.sets <- list(
+  mTOR=mtor_geneset_kegg,
+  MG=mg_geneset,
+  BMDM=bmdm_geneset
+)
+gsea_res <- list()
+gsea_res[['GSVA_v1']] <- gsva(rnaseq_dat, gene.sets, method='gsva')
+gsea_res[['GSVA_v2']] <- gsva(rnaseq_dat, gene.sets, method='gsva', mx.diff=F)
+gsea_res[['ssGSEA']] <- gsva(rnaseq_dat, gene.sets, method='ssgsea')
+```
+
+Compare the two methods across samples
+
+```{r comparison, echo=FALSE}
+for (gs in names(gene.sets)) {
+  for_plot <- data.frame(lapply(gsea_res, function(x) x[gs,]))
+  fit <- lm(GSVA_v1 ~ ssGSEA, data=for_plot)
+  p <- ggplot(for_plot, aes(x=ssGSEA, y=GSVA_v1)) + geom_point() + stat_smooth(method='lm', col='red') +
+    labs(title = sprintf("%s. Adj R^2 = %.2f, slope = %.2f, P = %.3e", 
+                         gs,
+                         summary(fit)$adj.r.squared,
+                         fit$coef[[2]],
+                         summary(fit)$coef[2,4]))
+  # there is no implicit printing in R loops, so we need to make it explicit
+  # https://yihui.name/en/2017/06/top-level-r-expressions/
+  plot(p)
+}
+```
+
+There is a strong positive correlation, as we'd hope!
+
+## 
+

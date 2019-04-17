@@ -1,4 +1,4 @@
-from rnaseq.gsea import ssgsea, run_one_ssgsea
+from rnaseq import gsva, loader
 import pandas as pd
 from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
 import os
@@ -13,6 +13,22 @@ import numpy as np
 import collections
 from scipy import stats
 from utils.output import unique_output_dir
+from utils import setops
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
+
+
+def z_transform(df, axis=None):
+    if axis is None:
+        return (df - df.values.flatten().mean()) / df.values.flatten().std()
+    elif axis == 0:
+        i = 0
+        j = 1
+    elif axis == 1:
+        i = 1
+        j = 0
+    else:
+        raise NotImplementedError("axis argument must be None, 0 or 1.")
+    return df.subtract(df.mean(axis=i), axis=j).divide(df.std(axis=i), axis=j)
 
 
 def ols_plot(y, x, add_intercept=True, alpha=0.05, xlim=None, ax=None):
@@ -112,6 +128,31 @@ def get_de_tissue_tumour():
     print '\n'
 
 
+def signature_vs_gene(the_gene, geneset_name, ax=None):
+    the_expr = rnaseq_dat.loc[the_gene]
+    # Z transform the signature scores for this gene set
+    the_signature = rna_es.loc[geneset_name]
+    the_signature = (the_signature - the_signature.mean()) / the_signature.std()
+    # ensure the ordering is the same
+    the_signature = the_signature.loc[the_expr.index]
+    lr = stats.linregress(the_signature.astype(float), np.log2(the_expr + 1))
+    x_lr = np.array([the_signature.min(), the_signature.max()])
+    y_lr = lr.intercept + lr.slope * x_lr
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+    else:
+        fig = None
+    ax.scatter(the_signature, np.log2(the_expr + 1))
+    ax.plot(x_lr, y_lr, 'k--')
+    ax.set_xlabel('Normalised ssGSEA score')
+    ax.set_ylabel('log2(%s)' % the_gene)
+    if fig is not None:
+        fig.tight_layout()
+    return ax
+
+
 if __name__ == "__main__":
 
     outdir = unique_output_dir('bowman_meta')
@@ -125,6 +166,21 @@ if __name__ == "__main__":
     fpkm_cutoff = 1.
     fpkm_min_samples = 10
 
+    # define the mTOR signature(s)
+    # from Anaelle
+    # mtor_geneset_ad = ['EIF3H', 'EIF4EBP1', 'HIF1A', 'PIK3R5', 'PLD3', 'PRKCA', 'PRR5L', 'RHOC', 'RPS2', 'RPS5', 'RPS7',
+    #                    'RPS8', 'RPS10', 'RPS12', 'RPS13', 'RPS15', 'RPS16', 'RPS17', 'RPS18', 'RPS19', 'RPS20', 'RPS21',
+    #                    'RPS23', 'RPS24', 'RPS25', 'RPS26', 'RPS28', 'RPS27A', 'RPS27L', 'RPS4Y1', 'RPS6KA4', 'RPTOR']
+
+    # from KEGG pathway hsa04150 (looked up via Entrez IDs)
+    mtor_geneset = [
+        'AKT1', 'AKT2', 'BRAF', 'EIF4B', 'EIF4E', 'EIF4EBP1', 'VEGFD', 'MTOR', 'HIF1A', 'IGF1', 'INS', 'PDPK1', 'PGF',
+        'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PIK3R1', 'PIK3R2', 'PRKAA1', 'PRKAA2', 'MAPK1', 'MAPK3', 'RHEB',
+        'RPS6', 'RPS6KA1', 'RPS6KA2', 'RPS6KA3', 'RPS6KB1', 'RPS6KB2', 'STK11', 'TSC2', 'VEGFA', 'VEGFB', 'VEGFC',
+        'ULK1', 'PIK3R3', 'EIF4E2', 'ULK2', 'AKT3', 'PIK3R5', 'ULK3', 'RPS6KA6', 'CAB39', 'DDIT4', 'RPTOR', 'MLST8',
+        'CAB39L', 'STRADA', 'RICTOR', 'EIF4E1B', 'TSC1'
+    ]
+
     # which list should we use?
     list_name = 'S2'
     # list_name = 'S4'
@@ -136,7 +192,24 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError("Unrecognised list: %s" % list_name)
 
-    ### load RNA-Seq data annotated by Brennan
+    # load FFPE RNA-Seq data
+    obj_ff = loader.load_by_patient('all', source='salmon', type='ffpe', include_control=False)
+
+    # add patient identifiers
+    nh_id = obj_ff.meta.index.str.replace(r'(_?)(DEF|SP).*', '')
+    p_id = [NH_ID_TO_PATIENT_ID_MAP[t.replace('_', '-')] for t in nh_id]
+    obj_ff.meta.insert(0, 'nh_id', nh_id)
+    obj_ff.meta.insert(0, 'patient_id', p_id)
+
+    # switch to gene symbols
+    gs = references.ensembl_to_gene_symbol(obj_ff.data.index)
+    gs = gs.loc[~gs.index.duplicated()]
+    the_ix = np.array(obj_ff.data.index, copy=True)
+    the_ix[~gs.isnull().values] = gs.values[~gs.isnull()]
+    ffpe_dat = obj_ff.data.copy()
+    ffpe_dat.index = the_ix
+
+    # load RNA-Seq data annotated by Brennan
 
     if rnaseq_type == 'counts':
         rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
@@ -163,16 +236,20 @@ if __name__ == "__main__":
         rnaseq_dat_raw = rnaseq_dat_raw.transpose().loc[:, rnaseq_meta.index]
         # add meta columns for compatibility
         idh1_status = pd.Series(data='Mut', index=rnaseq_meta.index, name='idh1_status')
-        idh1_status.loc[rnaseq_meta.loc[rnaseq_meta.loc[:, 'IDH_codel.subtype'] == 'IDHwt'].index] = 'WT'
+        # idh1_status.loc[rnaseq_meta.loc[rnaseq_meta.loc[:, 'IDH_codel.subtype'] == 'IDHwt'].index] = 'WT'
+        idh1_status.loc[rnaseq_meta.loc[rnaseq_meta.loc[:, 'IDH.status'] == 'WT'].index] = 'WT'
         rnaseq_meta.loc[:, 'idh1_status'] = idh1_status
+        # TODO: add subtype from our revised Wang class
         rnaseq_meta.loc[:, 'expression_subclass'] = rnaseq_meta.loc[:, 'Subtype.original']
+
+
 
     if remove_idh1:
         # filter IDH1 mutants
         idh1_wt = (~rnaseq_meta.idh1_status.isnull()) & (rnaseq_meta.idh1_status == 'WT')
 
         rnaseq_meta = rnaseq_meta.loc[idh1_wt]
-        rnaseq_dat = rnaseq_dat_raw.loc[:, idh1_wt.values]
+        rnaseq_dat = rnaseq_dat_raw.loc[:, rnaseq_meta.index]
     else:
         rnaseq_dat = rnaseq_dat_raw.loc[:, rnaseq_dat_raw.columns.str.contains('TCGA')]
 
@@ -240,8 +317,6 @@ if __name__ == "__main__":
     orth = orth.iloc[:, 0]
 
     # use this to generate human gene lists
-    all_genes_in_set = set()
-
     the_list_hu = {}
     rna_list_hu = {}
 
@@ -265,33 +340,36 @@ if __name__ == "__main__":
                       the_list_mo[c].dropna().size
             )
         rna_list_hu[c] = list(this_geneset)
-        all_genes_in_set.update(this_geneset)
 
-    # remove genes that have no appreciable expression level
-    # >=10 samples must have FPKM >= 1
-    to_keep = ((rnaseq_dat > fpkm_cutoff).sum(axis=1) > fpkm_min_samples) | (rnaseq_dat.index.isin(all_genes_in_set))
-    print "Keeping %d / %d genes that are sufficiently abundant" % (to_keep.sum(), to_keep.size)
-    rnaseq_dat = rnaseq_dat.loc[to_keep]
+    diff_kegg = pd.Index(mtor_geneset).difference(rnaseq_dat.index)
+    if len(diff_kegg):
+        print "%d genes in the geneset mTOR (KEGG) are not in the data and will be removed: %s" % (
+            len(diff_kegg),
+            ', '.join(diff_kegg.tolist())
+        )
+        for t in diff_kegg:
+            mtor_geneset.remove(t)
+
+    rna_list_hu['mTOR'] = mtor_geneset
+
+    all_genes_in_set = setops.reduce_union(*the_list_hu.values())
+
+    # DEBUG: disable filtering genes - why would we need to?
+    if False:
+        # remove genes that have no appreciable expression level
+        # >=10 samples must have FPKM >= 1
+        to_keep = ((rnaseq_dat > fpkm_cutoff).sum(axis=1) > fpkm_min_samples) | (rnaseq_dat.index.isin(all_genes_in_set))
+        print "Keeping %d / %d genes that are sufficiently abundant" % (to_keep.sum(), to_keep.size)
+        rnaseq_dat = rnaseq_dat.loc[to_keep]
 
     # run ssGSEA
-    # we'll also store the ecdfs
-    rna_es = pd.DataFrame(index=the_list_hu.keys(), columns=rnaseq_dat.columns)
-    rna_ecdf_in = dict()
-    rna_ecdf_out = dict()
-    for s_name in rnaseq_dat.columns:
-        rna_ecdf_in[s_name] = dict()
-        rna_ecdf_out[s_name] = dict()
-        for g_name in rna_list_hu:
-            rna_es.loc[g_name, s_name], rna_ecdf_in[s_name][g_name], rna_ecdf_out[s_name][g_name] = run_one_ssgsea(
-                rnaseq_dat.loc[:, s_name],
-                rna_list_hu[g_name],
-                alpha=0.25,
-                return_ecdf=True
-            )
+    rna_es = gsva.ssgsea(rnaseq_dat, rna_list_hu)
+    ffpe_es = gsva.ssgsea(ffpe_dat, rna_list_hu)
 
     # scale using the Z transform
-    # z = es.subtract(es.mean(axis=1), axis=0).divide(es.std(axis=1), axis=0)
-    rna_z = (rna_es - rna_es.values.flatten().mean()) / rna_es.values.flatten().std()
+    # TODO: previous operation had axis=None
+    rna_z = z_transform(rna_es, axis=1)
+    ffpe_z = z_transform(ffpe_es, axis=1)
 
     fig = plt.figure(num="TCGA RNA-Seq")
     ax = fig.add_subplot(111)
@@ -322,56 +400,33 @@ if __name__ == "__main__":
     # for this purpose we need to normalise by gene set, not globally
     bplot = {}
     for g_name in rna_list_hu:
-        the_data = rna_es.loc[g_name]
-        the_data = (the_data - the_data.mean()) / the_data.std()
+        the_data = rna_z.loc[g_name]
         bplot[g_name] = collections.OrderedDict()
         for sg in subgroup_order:
-            # bplot[g_name][sg] = rna_z.loc[g_name, subgroups[sg]].values
             bplot[g_name][sg] = the_data.loc[subgroups[sg]].values
 
 
     for col in list_cols:
         lbl, tmp = zip(*bplot[col].items())
         tmp = [list(t) for t in tmp]
-        fig = plt.figure(num=col)
+        fig = plt.figure(num=col, figsize=(5, 4))
         ax = fig.add_subplot(111)
-        sns.boxplot(data=tmp, orient='v', ax=ax)
+        sns.boxplot(data=tmp, orient='v', ax=ax, color='0.5')
         ax.set_xticklabels(lbl, rotation=45)
         ax.set_ylabel("Normalised ssGSEA score")
-        fig = ax.figure
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.png' % col), dpi=200)
         fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.pdf' % col))
 
-    plt.show()
-
     # ITGA4, Tmem119 and P2ry12 markers vs ssGSEA score
     # checked in orth that these are replaced by the capitalized version in humans
 
-    def signature_vs_gene(the_gene, geneset_name):
-        the_expr = rnaseq_dat.loc[the_gene]
-        # Z transform the signature scores for this gene set
-        the_signature = rna_es.loc[geneset_name]
-        the_signature = (the_signature - the_signature.mean()) / the_signature.std()
-        # ensure the ordering is the same
-        the_signature = the_signature.loc[the_expr.index]
-        lr = stats.linregress(the_signature.astype(float), np.log2(the_expr + 1))
-        x_lr = np.array([the_signature.min(), the_signature.max()])
-        y_lr = lr.intercept + lr.slope * x_lr
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.scatter(the_signature, np.log2(the_expr + 1))
-        ax.plot(x_lr, y_lr, 'k--')
-        ax.set_xlabel('Normalised ssGSEA score')
-        ax.set_ylabel('log2(%s)' % the_gene)
-        fig.tight_layout()
-        return ax
-
     for col in list_cols:
         for gene in ['ITGA4', 'TMEM119', 'P2RY12']:
-            ax = signature_vs_gene(gene, col)
-            fig = ax.figure
+            fig = plt.figure(figsize=(5.5, 3.5))
+            ax = fig.add_subplot(111)
+            signature_vs_gene(gene, col, ax=ax)
+            fig.tight_layout()
             fig.savefig(os.path.join(outdir, '%s_ssgsea_vs_%s.png' % (col, gene)), dpi=200)
             fig.savefig(os.path.join(outdir, '%s_ssgsea_vs_%s.pdf' % (col, gene)))
 
@@ -396,132 +451,49 @@ if __name__ == "__main__":
             fig.savefig(os.path.join(outdir, '%s_ssgsea_by_idh1_tcga.png' % g_name), dpi=200)
             fig.savefig(os.path.join(outdir, '%s_ssgsea_by_idh1_tcga.pdf' % g_name))
 
-    yy = np.log2(rnaseq_dat.loc['ITGA4'].values + 1)
-
-    fig = plt.figure(figsize=(3.4, 5.5))
-    ax = fig.add_subplot(111)
-    sns.boxplot(yy, orient='v', ax=ax)
-    sns.stripplot(yy, jitter=True, orient='v', ax=ax, color=".3")
-    ax.set_ylabel("log2(ITGA4 + 1)")
-    ax.set_xlim([-2, 2])
-    fig.savefig(os.path.join(outdir, 'tcga_itga4_boxplot.png'), dpi=200)
-    fig.savefig(os.path.join(outdir, 'tcga_itga4_boxplot.pdf'))
-
-    sns.boxplot()
-
-    # define the mTOR signature(s)
-    mtor_geneset_ad = [
-        'EIF3H',
-        'EIF4EBP1',
-        'HIF1A',
-        'PIK3R5',
-        'PLD3',
-        'PRKCA',
-        'PRR5L',
-        'RHOC',
-        'RPS2',
-        'RPS5',
-        'RPS7',
-        'RPS8',
-        'RPS10',
-        'RPS12',
-        'RPS13',
-        'RPS15',
-        'RPS16',
-        'RPS17',
-        'RPS18',
-        'RPS19',
-        'RPS20',
-        'RPS21',
-        'RPS23',
-        'RPS24',
-        'RPS25',
-        'RPS26',
-        'RPS28',
-        'RPS27A',
-        'RPS27L',
-        'RPS4Y1',
-        'RPS6KA4',
-        'RPTOR',
-    ]
-
-    # this from KEGG pathway hsa04150 (looked up via Entrez IDs)
-    mtor_geneset_kegg = [
-        'AKT1', 'AKT2', 'BRAF', 'EIF4B', 'EIF4E', 'EIF4EBP1', 'VEGFD', 'MTOR', 'HIF1A', 'IGF1', 'INS', 'PDPK1', 'PGF',
-        'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PIK3R1', 'PIK3R2', 'PRKAA1', 'PRKAA2', 'MAPK1', 'MAPK3', 'RHEB',
-        'RPS6', 'RPS6KA1', 'RPS6KA2', 'RPS6KA3', 'RPS6KB1', 'RPS6KB2', 'STK11', 'TSC2', 'VEGFA', 'VEGFB', 'VEGFC',
-        'ULK1', 'PIK3R3', 'EIF4E2', 'ULK2', 'AKT3', 'PIK3R5', 'ULK3', 'RPS6KA6', 'CAB39', 'DDIT4', 'RPTOR', 'MLST8',
-        'CAB39L', 'STRADA', 'RICTOR', 'EIF4E1B', 'TSC1'
-    ]
-
-    # remove any genes not in the data and report
-    diff_ad = pd.Index(mtor_geneset_ad).difference(rnaseq_dat.index)
-    if len(diff_ad):
-        print "%d genes in the geneset mTOR (AD) are not in the data and will be removed: %s" % (
-            len(diff_ad),
-            ', '.join(diff_ad.tolist())
-        )
-        for t in diff_ad:
-            mtor_geneset_ad.remove(t)
-
-    diff_kegg = pd.Index(mtor_geneset_kegg).difference(rnaseq_dat.index)
-    if len(diff_kegg):
-        print "%d genes in the geneset mTOR (KEGG) are not in the data and will be removed: %s" % (
-            len(diff_kegg),
-            ', '.join(diff_kegg.tolist())
-        )
-        for t in diff_kegg:
-            mtor_geneset_kegg.remove(t)
-
-    # compute scores associated with each of these
-    mtor_ad_scores = pd.Series([
-        run_one_ssgsea(
-            rnaseq_dat.loc[:, s_name],
-            mtor_geneset_ad,
-            alpha=0.25,
-            return_ecdf=False
-        ) for s_name in rnaseq_dat.columns
-    ], index=rnaseq_dat.columns)
-
-    mtor_kegg_scores = pd.Series([
-        run_one_ssgsea(
-            rnaseq_dat.loc[:, s_name],
-            mtor_geneset_kegg,
-            alpha=0.25,
-            return_ecdf=False
-        ) for s_name in rnaseq_dat.columns
-    ], index=rnaseq_dat.columns)
-
-    # establish an index to maintain ordering (unnecessary?)
-    idx = rnaseq_dat.columns
-
     # extract three relevant scores (for all TCGA data)
-    x = rna_es.loc[list_cols[0], idx]  # MG
-    y = rna_es.loc[list_cols[1], idx]  # BMDM
-    z = mtor_kegg_scores.loc[idx]
+    x = rna_z.loc[list_cols[0]] # MG
+    y = rna_z.loc[list_cols[1]] # BMDM
+    z = rna_z.loc['mTOR']
 
-    # standardise each
-    x = (x - x.mean()) / x.std()
-    y = (y - y.mean()) / y.std()
-    z = (z - z.mean()) / z.std()
+    # x = rna_es.loc[list_cols[0]]  # MG
+    # y = rna_es.loc[list_cols[1]]  # BMDM
+    # z = rna_es.loc['mTOR']
+    #
+    # # standardise each
+    # x = (x - x.mean()) / x.std()
+    # y = (y - y.mean()) / y.std()
+    # z = (z - z.mean()) / z.std()
 
+
+
+    # FIXME: change the seaborn style to dark grid?
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     colours = ['b', 'r', 'g', 'k']
     for sg, c in zip(subgroup_order, colours):
-        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        sg_idx = (rnaseq_meta.expression_subclass == sg)
         ax.scatter(x.loc[sg_idx], y.loc[sg_idx], z.loc[sg_idx], c=c, marker='o', label=sg)
     ax.set_xlabel(list_cols[0])
     ax.set_ylabel(list_cols[1])
-    ax.set_zlabel('mTOR KEGG')
+    ax.set_zlabel('mTOR (KEGG)')
+    ax.legend()
+    ax.set_facecolor('0.8')  #grey - not pretty, but helps visualisation
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "mg_bmdm_mtor_3d_scatter.png"), dpi=200)
 
     # run linear regression
 
     # is the correlation between MG / BMDM and mTOR higher in a given subgroup?
+    gs = plt.GridSpec(6, 3)
+    fig = plt.figure(figsize=(9, 6))
+    # left panel is 2 x 2, comprising all 4 subgroups
+
+
     fig, axs = plt.subplots(2, int(np.ceil(len(subgroup_order) * 0.5)), sharex=True, sharey=True)
     lr_mtor_mg = pd.DataFrame(index=subgroup_order, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
     for i, sg in enumerate(subgroup_order):
-        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        sg_idx = (rnaseq_meta.expression_subclass == sg)
         lr_mtor_mg.loc[sg] = stats.linregress(x.loc[sg_idx].values.tolist(), z.loc[sg_idx].values.tolist())
         ax = axs.flat[i]
         ols_plot(z.loc[sg_idx].values, x.loc[sg_idx].values.astype(float), xlim=[-3.5, 3.5], ax=ax)
@@ -579,7 +551,7 @@ if __name__ == "__main__":
     fig, axs = plt.subplots(2, int(np.ceil(len(subgroup_order) * 0.5)), sharex=True)
     lr_mtor_bmdm = pd.DataFrame(index=subgroup_order, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
     for i, sg in enumerate(subgroup_order):
-        sg_idx = (rnaseq_meta.expression_subclass == sg).loc[idx]
+        sg_idx = (rnaseq_meta.expression_subclass == sg)
         lr_mtor_bmdm.loc[sg] = stats.linregress(y.loc[sg_idx].values.tolist(), z.loc[sg_idx].values.tolist())
         ax = axs.flat[i]
         ols_plot(z.loc[sg_idx].values, y.loc[sg_idx].values.astype(float), xlim=[-3.5, 3.5], ax=ax)
@@ -662,11 +634,3 @@ if __name__ == "__main__":
     to_export.insert(0, 'bmdm_score_z', y.loc[to_export.index])
     to_export.insert(0, 'mtor_score_z', z.loc[to_export.index])
     to_export.to_excel(os.path.join(outdir, 'bowman_data_with_scores.xlsx'))
-
-    # run all signatures through GSVA for comparison
-    from rnaseq import gsva
-    gsva_obj = gsva.GSVAForNormedData(rnaseq_dat)
-    gs = dict(rna_list_hu)
-    gs.update({'mTOR KEGG': mtor_geneset_kegg, 'mTOR AD': mtor_geneset_ad})
-    gsva_obj.gene_sets = gs
-    gsva_res = gsva_obj.run_enrichment()

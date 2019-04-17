@@ -145,7 +145,7 @@ def contingency_table(new, previous, vals=None, val_func=np.mean):
 
 if __name__ == '__main__':
     alpha = 0.05
-    outdir = unique_output_dir("wang_classification")
+    outdir = unique_output_dir()
 
     # our data
 
@@ -189,9 +189,19 @@ if __name__ == '__main__':
     ss_tcga = simplicity_score(pvals_tcga)
     nm_tcga = (pvals_tcga < alpha).sum(axis=1)
     cls_tcga = pd.Series(index=pvals_tcga.index)
+    cls_tcga_export = pd.DataFrame(index=pvals_tcga.index, columns=['Class'])
+
     min_idx = np.argmin(pvals_tcga.values, axis=1)
     cls_tcga.loc[nm_tcga == 1] = pvals_tcga.columns[min_idx[nm_tcga == 1]]
+    cls_tcga_export.loc[nm_tcga == 1, 'Class'] = pvals_tcga.columns[min_idx[nm_tcga == 1]]
+
     cls_tcga.loc[nm_tcga > 1] = 'Multi'
+    for row in nm_tcga.index[nm_tcga > 1]:
+        p = pvals_tcga.loc[row]
+        cls_tcga_export.loc[row, 'Class'] = ','.join(p.index[p < alpha])
+    cls_tcga_export.insert(1, 'Simplicity score', ss_tcga)
+
+    cls_tcga_export.to_csv(os.path.join(outdir, "tcga_wang_classification.csv"))
 
     # load TCGA meta so we have the previous classification
     _, tcga_meta = rnaseq_data.tcga_primary_gbm(units='fpkm')

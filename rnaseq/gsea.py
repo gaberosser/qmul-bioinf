@@ -15,7 +15,7 @@ def load_from_gct(infile):
     return dat
 
 
-def data_to_gct(data, outfile):
+def data_to_gct(data, outfile, n_decimal_place=3):
     nrow, ncol = data.shape
     with open(outfile, 'wb') as f:
         c = csv.writer(f, delimiter='\t')
@@ -24,7 +24,7 @@ def data_to_gct(data, outfile):
         c.writerow([nrow, ncol])
         c.writerow(['NAME', 'Description'] + data.columns.tolist())
         for name, vals in data.iterrows():
-            c.writerow([name, "NA"] + vals.values.tolist())
+            c.writerow([name, "NA"] + vals.round(n_decimal_place).values.tolist())
 
 
 def combine_gct_files(*infiles):

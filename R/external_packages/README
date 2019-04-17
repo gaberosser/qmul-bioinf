@@ -1,0 +1,16 @@
+This directory contains any external packages that have *not* been added to the regular R repos (CRAN or bioconductor). In these cases, it is necessary to build then install from a local tar.
+
+1) Build from the directory. Run from a shell (not in R):
+R CMD build /path/to/package_dir
+
+2) Install from the resultant tar.gz. Run from within R:
+install.packages('/path/to/package.v1.tar.gz', repos=NULL)
+
+NB I don't think dependencies get installed automatically, d'oh!
+
+Sources
+
+ssgsea.GBM.classification
+Wang et al., Cancer Cell 2017, method S1
+https://www.sciencedirect.com/science/article/pii/S1535610817302532?via%3Dihub#mmc9 
+Dependencies (all in CRAN repo): verification, ROCR, MCMCpack

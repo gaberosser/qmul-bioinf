@@ -10,7 +10,7 @@ import os
 import re
 from settings import OUTPUT_DIR
 import numpy as np
-from utils import excel, powerpoint
+from utils import excel, powerpoint, output
 
 
 def process_results(df, fdr=None):
@@ -252,7 +252,8 @@ def bar_plot_motif_count(probe_dist, motif_counts, vmax=20, cmap=plt.cm.YlOrRd, 
 if __name__ == '__main__':
     fdr = 0.01
     base_dir = os.path.join(OUTPUT_DIR, 'dmr_without_classes')
-    outdir = base_dir
+    outdir = output.unique_output_dir()
+    # outdir = base_dir
     pids = ['018', '019', '030', '031', '017', '050', '054', '061', '026', '052']
     required_comparisons = {
         '017': 'hypo',

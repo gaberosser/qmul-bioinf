@@ -4,15 +4,34 @@ from scipy import stats
 from matplotlib import pyplot as plt
 import seaborn as sns
 import os
+from functools import partial
 import operator
 import multiprocessing as mp
 
 
 import references
-from utils import output, log
+from utils import output, log, rinterface
 from rnaseq import loader
 logger = log.get_console_logger()
 
+
+if rinterface.RFUNCTIONS_PRESENT and rinterface.RPANDAS_PRESENT:
+    from rpy2 import robjects
+    from rpy2.robjects import pandas2ri, r
+    pandas2ri.activate()
+
+    def _run_gsea(df, genesets, method='ssgsea', verbose=False, **kwargs):
+        rdata = r('as.matrix')(df)
+        rgenesets = robjects.ListVector(genesets)
+        res = r('gsva')(rdata, rgenesets, method=method, verbose=verbose, **kwargs)
+        py_res = pandas2ri.ri2py_dataframe(res)
+        py_res.index = r('rownames')(res)
+        py_res.columns = r('colnames')(res)
+        return py_res
+
+    run_gsea = rinterface.RFunctionDeferred(_run_gsea, imports=['GSVA'])
+    ssgsea = rinterface.RFunctionDeferred(partial(_run_gsea, method='ssgsea'), imports=['GSVA'])
+    gsva = rinterface.RFunctionDeferred(partial(_run_gsea, method='gsva'), imports=['GSVA'])
 
 def eval_one_kde_poisson(xi):
     # k constant down columns
@@ -47,9 +66,6 @@ def compute_ks_statistic(z_j, g_k, tau=1.0):
 
 
 def compute_ks_statistic_no_norm(z_j, g_k, tau=1.0):
-    # p = len(z_j)
-    # r_j = np.abs(p * .5 - z_j)
-
     ranked_ix = z_j.sort_values().index
     g_in = ranked_ix.isin(g_k)
     z_j_ranked = z_j.loc[ranked_ix]
