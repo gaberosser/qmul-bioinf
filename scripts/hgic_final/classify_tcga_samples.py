@@ -14,53 +14,60 @@ if __name__ == '__main__':
     alpha = 0.05
 
     # rnaseq_type = 'counts'
-    rnaseq_type = 'gliovis'
+    rnaseq_type = 'fpkm'
+    # rnaseq_type = 'gliovis'
 
     # remove_idh1 = False
     remove_idh1 = True
 
     outdir = output.unique_output_dir()
 
-    if rnaseq_type == 'counts':
-        rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
-        rnaseq_dat_fn = os.path.join(rnaseq_dir, 'counts.csv')
-        rnaseq_meta_fn = os.path.join(rnaseq_dir, 'sources.csv')
-        reader = pd.read_csv
-    elif rnaseq_type == 'fpkm':
-        rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
-        rnaseq_dat_fn = os.path.join(rnaseq_dir, 'fpkm.csv')
-        rnaseq_meta_fn = os.path.join(rnaseq_dir, 'sources.csv')
-        reader = pd.read_csv
-    elif rnaseq_type == 'gliovis':
-        rnaseq_dir = os.path.join(
-            HGIC_LOCAL_DIR,
-            'current/input_data/tcga/gliovis'
-        )
-        rnaseq_dat_fn = os.path.join(rnaseq_dir, 'gliovis_tcga_gbm_rnaseq.xlsx')
-        rnaseq_meta_fn = os.path.join(rnaseq_dir, 'GlioVis_TCGA_GBMLGG.meta.xlsx')
-        reader = pd.read_excel
+    basedir = os.path.join(
+        HGIC_LOCAL_DIR,
+        'current/input_data/tcga'
+    )
 
-        # rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm')
-        # rnaseq_dat_fn = os.path.join(rnaseq_dir, 'gliovis_tcga_gbmlgg_expression.csv')
-        # rnaseq_meta_fn = os.path.join(rnaseq_dir, 'gliovis_tcga_gbmlgg_meta.csv')
+    brennan_s7_fn = os.path.join(basedir, "brennan_s7.csv")
+    brennan_s7 = pd.read_csv(brennan_s7_fn, header=0, index_col=0)
+
+    if rnaseq_type == 'counts':
+        rnaseq_dat_fn = os.path.join(basedir, 'rnaseq.xlsx')
+        rnaseq_meta_fn = os.path.join(basedir, 'rnaseq.meta.xlsx')
+        sheet_name = 'htseq'
+    elif rnaseq_type == 'fpkm':
+        rnaseq_dat_fn = os.path.join(basedir, 'rnaseq.xlsx')
+        rnaseq_meta_fn = os.path.join(basedir, 'rnaseq.meta.xlsx')
+        sheet_name = 'fpkm'
+    elif rnaseq_type == 'gliovis':
+        rnaseq_dat_fn = os.path.join(basedir, 'gliovis', 'gliovis_tcga_gbm_rnaseq.xlsx')
+        rnaseq_meta_fn = os.path.join(basedir, 'gliovis', 'GlioVis_TCGA_GBMLGG.meta.xlsx')
+        sheet_name = 0
     else:
         raise NotImplementedError("Unrecognised rnaseq data type")
 
 
-    rnaseq_dat_raw = reader(rnaseq_dat_fn, header=0, index_col=0)
-    rnaseq_meta = reader(rnaseq_meta_fn, header=0, index_col=0)
+    rnaseq_dat_raw = pd.read_excel(rnaseq_dat_fn, header=0, index_col=0, sheet_name=sheet_name)
+    rnaseq_meta = pd.read_excel(rnaseq_meta_fn, header=0, index_col=0)
 
     if rnaseq_type == 'gliovis':
         # filter only GBM
         rnaseq_meta = rnaseq_meta.loc[rnaseq_meta.Histology == 'GBM']
-        # rnaseq_dat_raw = rnaseq_dat_raw.transpose().loc[:, rnaseq_meta.index]
         rnaseq_dat_raw = rnaseq_dat_raw.loc[:, rnaseq_meta.index]
-        # add meta columns for compatibility
+
         idh1_status = pd.Series(data='Mut', index=rnaseq_meta.index, name='idh1_status')
-        # idh1_status.loc[rnaseq_meta.loc[rnaseq_meta.loc[:, 'IDH_codel.subtype'] == 'IDHwt'].index] = 'WT'
         idh1_status.loc[rnaseq_meta.loc[rnaseq_meta.loc[:, 'IDH.status'] == 'WT'].index] = 'WT'
-        rnaseq_meta.loc[:, 'idh1_status'] = idh1_status
-        rnaseq_meta.loc[:, 'expression_subclass'] = rnaseq_meta.loc[:, 'Subtype.original']
+        rnaseq_meta.insert(0, 'idh1_status', idh1_status)
+    else:
+        # simplify sample naming
+        new_cols = rnaseq_dat_raw.columns.str.replace(r'(?P<x>TCGA-[0-9]{2}-[0-9]{4})-.*', r'\g<x>')
+        rnaseq_meta = rnaseq_meta.loc[~new_cols.duplicated()]
+        rnaseq_dat_raw = rnaseq_dat_raw.loc[:, rnaseq_meta.index]
+        rnaseq_meta.index = new_cols[~new_cols.duplicated()]
+        rnaseq_dat_raw.columns = rnaseq_meta.index
+
+        # add IDH1 status from Brennan metadata
+        idh1_status = brennan_s7.reindex(rnaseq_dat_raw.columns)['idh1_status']
+        rnaseq_meta.insert(0, 'idh1_status', idh1_status)
 
     if remove_idh1:
         # filter IDH1 mutants
