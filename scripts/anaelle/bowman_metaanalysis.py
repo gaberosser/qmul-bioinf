@@ -168,9 +168,9 @@ if __name__ == "__main__":
 
     # define the mTOR signature(s)
     # from Anaelle
-    # mtor_geneset_ad = ['EIF3H', 'EIF4EBP1', 'HIF1A', 'PIK3R5', 'PLD3', 'PRKCA', 'PRR5L', 'RHOC', 'RPS2', 'RPS5', 'RPS7',
-    #                    'RPS8', 'RPS10', 'RPS12', 'RPS13', 'RPS15', 'RPS16', 'RPS17', 'RPS18', 'RPS19', 'RPS20', 'RPS21',
-    #                    'RPS23', 'RPS24', 'RPS25', 'RPS26', 'RPS28', 'RPS27A', 'RPS27L', 'RPS4Y1', 'RPS6KA4', 'RPTOR']
+    mtor_geneset_ad = ['EIF3H', 'EIF4EBP1', 'HIF1A', 'PIK3R5', 'PLD3', 'PRKCA', 'PRR5L', 'RHOC', 'RPS2', 'RPS5', 'RPS7',
+                       'RPS8', 'RPS10', 'RPS12', 'RPS13', 'RPS15', 'RPS16', 'RPS17', 'RPS18', 'RPS19', 'RPS20', 'RPS21',
+                       'RPS23', 'RPS24', 'RPS25', 'RPS26', 'RPS28', 'RPS27A', 'RPS27L', 'RPS4Y1', 'RPS6KA4', 'RPTOR']
 
     # from KEGG pathway hsa04150 (looked up via Entrez IDs)
     mtor_geneset = [

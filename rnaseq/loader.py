@@ -635,6 +635,15 @@ def load_references(
     return res
 
 
+class HipsciRnaseqLoader(object):
+    extra_df_attributes = tuple()
+    tax_id = 9606
+    row_indexed = True
+    meta_is_linked = True
+
+
+## TODO: move most of this to the CLASS definition
+
 def hipsci_ipsc(aggregate_to_gene=True):
     """
     Load all samples associated with the HiPSCi database.
@@ -642,12 +651,6 @@ def hipsci_ipsc(aggregate_to_gene=True):
     TODO: make one?
     :return:
     """
-
-    class HipsciRnaseqLoader(object):
-        extra_df_attributes = tuple()
-        tax_id = 9606
-        row_indexed = True
-        meta_is_linked = True
 
     indir = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'tpm')
     meta_fn = os.path.join(RNASEQ_DIR, 'hipsci_ipsc', 'sources.csv')
@@ -686,6 +689,54 @@ def hipsci_ipsc(aggregate_to_gene=True):
     obj.data = dat
     obj.meta = meta
     obj.batch_id = 'HipSci'
+
+    return obj
+
+
+class IVYGAPRnaseqLoader(loader.SingleFileLoader):
+    extra_df_attributes = tuple()
+    tax_id = 9606
+    row_indexed = True
+    meta_is_linked = True
+
+    meta_col_sample_name = 'rna_well_id'
+
+    def __init__(self, gene_conversion_fn=None, gene_conversion_col='gene_symbol', *args, **kwargs):
+        self.gene_conversion_fn = gene_conversion_fn
+        self.gene_conversion_col = gene_conversion_col
+        super(IVYGAPRnaseqLoader, self).__init__(*args, **kwargs)
+
+    def load_one_file(self, fn):
+        return pd.read_csv(fn, index_col=0, header=0)
+
+    def post_process(self):
+        super(IVYGAPRnaseqLoader, self).post_process()
+        # if gene conversion file has been supplied, use this
+        if self.gene_conversion_fn is not None:
+            df = pd.read_csv(self.gene_conversion_fn, header=0, index_col=0)
+            ix = df[self.gene_conversion_col].dropna()
+            ix = ix[~ix.duplicated()]
+            self.data = self.data.loc[ix.index]
+            self.data.index = ix.values
+
+
+def ivygap(units='fpkm_norm'):
+    """
+
+    :param units:
+    :return:
+    """
+    if units not in {'fpkm_norm', 'tpm', 'fpkm'}:
+        raise NotImplementedError("Unrecognised units %s" % units)
+    basedir = os.path.join(RNASEQ_DIR, 'ivygap')
+    meta_fn = os.path.join(basedir, 'sources.csv')
+
+    if units == 'fpkm_norm':
+        dat_fn = os.path.join(basedir, 'preprocessed', 'fpkm_table.csv')
+        gene_conv_fn = os.path.join(basedir, 'preprocessed', 'rows-genes.csv')
+        obj = IVYGAPRnaseqLoader(data_fn=dat_fn, meta_fn=meta_fn, gene_conversion_fn=gene_conv_fn)
+    else:
+        raise NotImplementedError("TODO: download the raw data files.")
 
     return obj
 

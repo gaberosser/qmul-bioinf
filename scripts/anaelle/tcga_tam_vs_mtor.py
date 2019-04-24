@@ -1,6 +1,6 @@
 from rnaseq import gsva, loader
 import pandas as pd
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
 from plotting import venn
 
 import os
@@ -18,6 +18,64 @@ from utils import setops, output, log
 from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 
 logger = log.get_console_logger()
+
+
+kegg_mtor_from_msigdb = [
+    "AKT3", "EIF4B", "EIF4E", "EIF4EBP1", "AKT1", "AKT2", "FIGF", "PIK3R5", "MTOR", "RICTOR", "EIF4E1B", "ULK3",
+    "RPS6KA6", "HIF1A", "IGF1", "INS", "PDPK1", "CAB39", "PGF", "PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "PIK3R1",
+    "PIK3R2", "DDIT4", "PRKAA1", "PRKAA2", "MAPK1", "MAPK3", "RPTOR", "RHEB", "RPS6", "RPS6KA1", "RPS6KA2",
+    "RPS6KA3", "RPS6KB1", "RPS6KB2", "MLST8", "BRAF", "STK11", "TSC1", "TSC2", "VEGFA", "VEGFB", "VEGFC", "CAB39L",
+    "ULK1", "PIK3R3", "STRADA", "EIF4E2", "ULK2"
+]
+
+# downloaded directly from KEGG website (hsa04150)
+kegg_mtor_from_kegg = [
+    "SLC7A5", "SLC3A2", "SLC38A9", "ATP6V1A", "ATP6V1B1", "ATP6V1B2", "ATP6V1C2", "ATP6V1C1", "ATP6V1D", "ATP6V1E2",
+    "ATP6V1E1", "ATP6V1F", "ATP6V1G1", "ATP6V1G3", "ATP6V1G2", "ATP6V1H", "LAMTOR1", "LAMTOR2", "LAMTOR3",
+    "LAMTOR4", "LAMTOR5", "FLCN", "FNIP1", "FNIP2", "RRAGA", "RRAGB", "RRAGC", "RRAGD", "SESN2", "CASTOR1",
+    "CASTOR2", "MIOS", "SEH1L", "WDR24", "WDR59", "SEC13", "DEPDC5", "NPRL2", "NPRL3", "SKP2", "RNF152", "RPTOR",
+    "AKT1S1", "MTOR", "DEPTOR", "MLST8", "TELO2", "TTI1", "CLIP1", "GRB10", "ULK1", "ULK2", "EIF4EBP1", "EIF4E",
+    "EIF4E2", "EIF4E1B", "RPS6KB1", "RPS6KB2", "EIF4B", "RPS6", "STRADA", "STRADB", "STK11", "CAB39", "CAB39L",
+    "PRKAA1", "PRKAA2", "TSC1", "TSC2", "TBC1D7", "TBC1D7", "RHEB", "DDIT4", "WNT1", "WNT2", "WNT2B", "WNT3",
+    "WNT3A", "WNT4", "WNT5A", "WNT5B", "WNT6", "WNT7A", "WNT7B", "WNT8A", "WNT8B", "WNT9A", "WNT9B", "WNT10B",
+    "WNT10A", "WNT11", "WNT16", "FZD1", "FZD7", "FZD2", "FZD3", "FZD4", "FZD5", "FZD8", "FZD6", "FZD10", "FZD9",
+    "LRP5", "LRP6", "DVL3", "DVL2", "DVL1", "GSK3B", "TNF", "TNFRSF1A", "IKBKB", "INS", "IGF1", "INSR", "IGF1R",
+    "GRB2", "SOS1", "SOS2", "HRAS", "KRAS", "NRAS", "BRAF", "RAF1", "MAP2K1", "MAP2K2", "MAPK1", "MAPK3", "RPS6KA3",
+    "RPS6KA1", "RPS6KA2", "RPS6KA6", "IRS1", "PIK3R1", "PIK3R2", "PIK3R3", "PIK3CA", "PIK3CD", "PIK3CB", "PTEN",
+    "PDPK1", "AKT1", "AKT2", "AKT3", "CHUK", "MAPKAP1", "RICTOR", "PRR5", "RHOA", "PRKCA", "PRKCB", "PRKCG", "SGK1",
+    "LPIN1"
+]
+
+pid_mtor = [
+    "SSPO", "SGK1", "EEF2K", "IKBKB", "PLD2", "PDPK1", "ATG13", "ULK1", "NRAS", "HRAS", "KRAS", "RAF1", "EIF4E",
+    "EEF2", "BRAF", "PRKCA", "RPS6KB1", "EIF4B", "CCNE1", "CDK2", "YY1", "YWHAQ", "MAPK3", "MAPK1", "PML", "CLIP1",
+    "AKT1", "YWHAB", "SFN", "IRS1", "MAP2K2", "SREBF1", "MTOR", "PXN", "TSC2", "EIF4A1", "RHOA", "YWHAG", "YWHAE",
+    "RAC1", "YWHAZ", "PRR5", "CYCS", "MAP2K1", "YWHAH", "BNIP3", "PLD1", "EIF4EBP1", "RHEB", "RPS6KA1", "PDCD4",
+    "RRAGB", "RICTOR", "RRAGA", "ULK2", "RPTOR", "DEPTOR", "RB1CC1", "TSC1", "AKT1S1", "MAPKAP1", "MLST8",
+    "POLDIP3", "RRAGC", "RRAGD", "DDIT4", "RRN3", "PPARGC1A", "FBXW11"
+]
+
+biocarta_mtor = [
+    "EIF4A1", "EIF4A2", "EIF4B", "EIF4E", "EIF4EBP1", "EIF4G1", "EIF4G2", "AKT1", "FKBP1A", "MTOR", "PDK2", "PDPK1",
+    "PIK3CA", "PIK3R1", "PPP2CA", "PTEN", "RPS6", "RPS6KB1", "TSC1", "TSC2", "MKNK1", "EIF3A", "EIF4G3"
+]
+
+manual_gene_name_correction = {
+    'ATG13': 'KIAA0652',
+    'CASTOR1': 'GATSL3',
+    'CASTOR2': 'GATSL2',  # might also be GATSL1?
+    'DEPTOR': 'DEPDC6',
+    'LAMTOR1': 'C11orf59',
+    'LAMTOR2': 'ROBLD3',
+    'LAMTOR3': 'MAPKSP1',
+    'LAMTOR4': 'C7orf59',
+    'LAMTOR5': 'HBXIP',
+    'TTI1': 'KIAA0406',
+    'VEGFD': 'FIGF',
+    'HLA-DMB': 'HLA.DMB',
+    'HLA-DQA1': 'HLA.DQA1',
+    'HLA-DRB5': 'HLA.DRB5'
+}
 
 
 def z_transform(df, axis=None):
@@ -93,6 +151,85 @@ def ols_plot(y, x, add_intercept=True, alpha=0.05, xlim=None, ax=None):
     return res, ax
 
 
+def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
+    nrow = 2
+    reduce_before_return = False
+    if groups is None:
+        nrow = 1
+        ncol = 1
+        group_list = ['foo']
+        groups = pd.Series('foo', index=x.index)
+        reduce_before_return = True
+    else:
+        if group_list is None:
+            group_list = groups.unique()
+        ncol = int(np.ceil(len(group_list) * 0.5))
+    res = pd.DataFrame(index=group_list, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
+    sm_res = {}
+
+    fig, axs = plt.subplots(nrow, ncol, sharex=True, sharey=True)
+    if reduce_before_return:
+        axs = np.array([axs])
+
+    axs_seen = set(axs.flat)
+
+    for i, sg in enumerate(group_list):
+        sg_idx = (groups == sg)
+        this_x = x.loc[sg_idx].values.astype(float)
+        this_y = y.loc[sg_idx].values.astype(float)
+        lr = stats.linregress(this_x, this_y)
+        res.loc[sg] = lr
+
+        ax = axs.flat[i]
+        axs_seen.remove(ax)
+
+        sm_res[sg], _ = ols_plot(
+            this_y,
+            this_x,
+            xlim=[-3.5, 3.5],
+            ax=ax
+        )
+
+        rsq = lr.rvalue ** 2
+        sl = lr.slope
+        pval = lr.pvalue
+
+        if np.abs(sl - sm_res[sg].params[-1]) > 1e-3:
+            logger.warn("Subgroup %s. stats.linregress slope doesn't agree with statsmodels OLS.", sg)
+
+        if pval < 0.05:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
+        else:
+            lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
+        ax.text(
+            1.,
+            0.,
+            lbl,
+            bbox={'facecolor': 'w', 'alpha': 0.3},
+            verticalalignment='bottom',
+            horizontalalignment='right',
+            transform=ax.transAxes
+        )
+        ax.set_ylim([-4, 4])
+        ax.set_xlabel(x.name)
+        ax.set_ylabel(y.name)
+        if not reduce_before_return:
+            ax.set_title(sg)
+
+    if reduce_before_return:
+        res = res.loc['foo']
+
+    for ax in axs_seen:
+        ax.set_visible(False)
+
+    return {
+        'fig': fig,
+        'axs': axs,
+        'linregress': res,
+        'statsmodels': sm_res
+    }
+
+
 def plot_signature_vs_gene(dat, es, the_gene, geneset_name, ax=None):
     the_expr = dat.loc[the_gene]
     # Z transform the signature scores for this gene set
@@ -119,6 +256,49 @@ def plot_signature_vs_gene(dat, es, the_gene, geneset_name, ax=None):
     return ax
 
 
+def mtor_signature_dict():
+    # kegg mtor from msigdb (hsa04150)
+    for arr in [kegg_mtor_from_msigdb, kegg_mtor_from_kegg, pid_mtor, biocarta_mtor]:
+        for i, t in enumerate(arr):
+            if t in manual_gene_name_correction:
+                arr[i] = manual_gene_name_correction[t]
+
+    return {
+        'kegg_msigdb': kegg_mtor_from_msigdb,
+        'kegg': kegg_mtor_from_kegg,
+        'biocarta': biocarta_mtor,
+        'pid': pid_mtor
+    }
+
+
+def tam_signature_dict():
+    # Human-specific by Muller et al.
+    muller_tam_signature_fn = os.path.join(GIT_LFS_DATA_DIR, 'muller_2017_tam', '13059_2017_1362_MOESM5_ESM.xlsx')
+    muller_tam_signatures = pd.read_excel(muller_tam_signature_fn, header=0, index_col=None)
+    muller_tam_signatures = {
+        'MG': muller_tam_signatures['MG_Markers'].dropna().values,
+        'BMDM': muller_tam_signatures['Mac_Markers'].dropna().values,
+    }
+
+    # Mouse version (needs translating) by Bowman et al.
+    bowman_tam_signature_fn = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S2.csv')
+    bowman_tam_signatures = pd.read_csv(bowman_tam_signature_fn, header=0, index_col=None)
+
+    # generate series of orthologs of the relevant gene signatures
+    orth = references.homologs_table(references.mouse_tid, references.human_tid)
+    orth = orth.set_index('gene_symbol_10090').squeeze()
+
+    bowman_tam_signatures = {
+        'MG': orth.reindex(bowman_tam_signatures['MG'].dropna().values).dropna().values,
+        'BMDM': orth.reindex(bowman_tam_signatures['BMDM'].dropna().values).dropna().values,
+    }
+
+    return {
+        'bowman': bowman_tam_signatures,
+        'muller': muller_tam_signatures,
+    }
+
+
 if __name__ == "__main__":
     """
     Use the TCGA cohort to validate a link between the mTOR pathway and the proportion of microglial and macrophage
@@ -127,103 +307,38 @@ if __name__ == "__main__":
     mTOR is assessed using a known set of genes.
     
     Tumour-associated bone marrow-derived macrophages (TAM-BMDM) and microglia (TAM-MG) are distinguished using a 
-    human signature from Muller et al. (Genome Biol 2017). 
+    human signature from Muller et al. (Genome Biol 2017) or a converted mouse signature from Bowman et al. (???).
     """
     rnaseq_type = 'gliovis'
     remove_idh1 = True
+    # tam_signature_source = 'bowman'
+    tam_signature_source = 'muller'
     mtor_source = 'kegg_msigdb'  # ('kegg', 'pid', 'biocarta')
-    class_method = 'wang'  # ('verhaak')
+    class_method = 'wang'
+    # class_method = 'verhaak'
     # toggle allowing more than one class to be used
-    allow_multiple_classes = True
+    allow_multiple_classes = False
 
-    # kegg mtor from msigdb (hsa04150)
-    kegg_mtor_from_msigdb = [
-        "AKT3", "EIF4B", "EIF4E", "EIF4EBP1", "AKT1", "AKT2", "FIGF", "PIK3R5", "MTOR", "RICTOR", "EIF4E1B", "ULK3",
-        "RPS6KA6", "HIF1A", "IGF1", "INS", "PDPK1", "CAB39", "PGF", "PIK3CA", "PIK3CB", "PIK3CD", "PIK3CG", "PIK3R1",
-        "PIK3R2", "DDIT4", "PRKAA1", "PRKAA2", "MAPK1", "MAPK3", "RPTOR", "RHEB", "RPS6", "RPS6KA1", "RPS6KA2",
-        "RPS6KA3", "RPS6KB1", "RPS6KB2", "MLST8", "BRAF", "STK11", "TSC1", "TSC2", "VEGFA", "VEGFB", "VEGFC", "CAB39L",
-        "ULK1", "PIK3R3", "STRADA", "EIF4E2", "ULK2"
-    ]
-
-    # downloaded directly from KEGG website (hsa04150)
-    kegg_mtor_from_kegg = [
-        "SLC7A5", "SLC3A2", "SLC38A9", "ATP6V1A", "ATP6V1B1", "ATP6V1B2", "ATP6V1C2", "ATP6V1C1", "ATP6V1D", "ATP6V1E2",
-        "ATP6V1E1", "ATP6V1F", "ATP6V1G1", "ATP6V1G3", "ATP6V1G2", "ATP6V1H", "LAMTOR1", "LAMTOR2", "LAMTOR3",
-        "LAMTOR4", "LAMTOR5", "FLCN", "FNIP1", "FNIP2", "RRAGA", "RRAGB", "RRAGC", "RRAGD", "SESN2", "CASTOR1",
-        "CASTOR2", "MIOS", "SEH1L", "WDR24", "WDR59", "SEC13", "DEPDC5", "NPRL2", "NPRL3", "SKP2", "RNF152", "RPTOR",
-        "AKT1S1", "MTOR", "DEPTOR", "MLST8", "TELO2", "TTI1", "CLIP1", "GRB10", "ULK1", "ULK2", "EIF4EBP1", "EIF4E",
-        "EIF4E2", "EIF4E1B", "RPS6KB1", "RPS6KB2", "EIF4B", "RPS6", "STRADA", "STRADB", "STK11", "CAB39", "CAB39L",
-        "PRKAA1", "PRKAA2", "TSC1", "TSC2", "TBC1D7", "TBC1D7", "RHEB", "DDIT4", "WNT1", "WNT2", "WNT2B", "WNT3",
-        "WNT3A", "WNT4", "WNT5A", "WNT5B", "WNT6", "WNT7A", "WNT7B", "WNT8A", "WNT8B", "WNT9A", "WNT9B", "WNT10B",
-        "WNT10A", "WNT11", "WNT16", "FZD1", "FZD7", "FZD2", "FZD3", "FZD4", "FZD5", "FZD8", "FZD6", "FZD10", "FZD9",
-        "LRP5", "LRP6", "DVL3", "DVL2", "DVL1", "GSK3B", "TNF", "TNFRSF1A", "IKBKB", "INS", "IGF1", "INSR", "IGF1R",
-        "GRB2", "SOS1", "SOS2", "HRAS", "KRAS", "NRAS", "BRAF", "RAF1", "MAP2K1", "MAP2K2", "MAPK1", "MAPK3", "RPS6KA3",
-        "RPS6KA1", "RPS6KA2", "RPS6KA6", "IRS1", "PIK3R1", "PIK3R2", "PIK3R3", "PIK3CA", "PIK3CD", "PIK3CB", "PTEN",
-        "PDPK1", "AKT1", "AKT2", "AKT3", "CHUK", "MAPKAP1", "RICTOR", "PRR5", "RHOA", "PRKCA", "PRKCB", "PRKCG", "SGK1",
-        "LPIN1"
-    ]
-
-    pid_mtor = [
-        "SSPO", "SGK1", "EEF2K", "IKBKB", "PLD2", "PDPK1", "ATG13", "ULK1", "NRAS", "HRAS", "KRAS", "RAF1", "EIF4E",
-        "EEF2", "BRAF", "PRKCA", "RPS6KB1", "EIF4B", "CCNE1", "CDK2", "YY1", "YWHAQ", "MAPK3", "MAPK1", "PML", "CLIP1",
-        "AKT1", "YWHAB", "SFN", "IRS1", "MAP2K2", "SREBF1", "MTOR", "PXN", "TSC2", "EIF4A1", "RHOA", "YWHAG", "YWHAE",
-        "RAC1", "YWHAZ", "PRR5", "CYCS", "MAP2K1", "YWHAH", "BNIP3", "PLD1", "EIF4EBP1", "RHEB", "RPS6KA1", "PDCD4",
-        "RRAGB", "RICTOR", "RRAGA", "ULK2", "RPTOR", "DEPTOR", "RB1CC1", "TSC1", "AKT1S1", "MAPKAP1", "MLST8",
-        "POLDIP3", "RRAGC", "RRAGD", "DDIT4", "RRN3", "PPARGC1A", "FBXW11"
-    ]
-
-    biocarta_mtor = [
-        "EIF4A1", "EIF4A2", "EIF4B", "EIF4E", "EIF4EBP1", "EIF4G1", "EIF4G2", "AKT1", "FKBP1A", "MTOR", "PDK2", "PDPK1",
-        "PIK3CA", "PIK3R1", "PPP2CA", "PTEN", "RPS6", "RPS6KB1", "TSC1", "TSC2", "MKNK1", "EIF3A", "EIF4G3"
-    ]
-
-    manual_gene_name_correction = {
-        'ATG13': 'KIAA0652',
-        'CASTOR1': 'GATSL3',
-        'CASTOR2': 'GATSL2',  # might also be GATSL1?
-        'DEPTOR': 'DEPDC6',
-        'LAMTOR1': 'C11orf59',
-        'LAMTOR2': 'ROBLD3',
-        'LAMTOR3': 'MAPKSP1',
-        'LAMTOR4': 'C7orf59',
-        'LAMTOR5': 'HBXIP',
-        'TTI1': 'KIAA0406',
-        'VEGFD': 'FIGF',
-        'HLA-DMB': 'HLA.DMB',
-        'HLA-DQA1': 'HLA.DQA1',
-        'HLA-DRB5': 'HLA.DRB5'
-
-    }
-
-    for arr in [kegg_mtor_from_msigdb, kegg_mtor_from_kegg, pid_mtor, biocarta_mtor]:
-        for i, t in enumerate(arr):
-            if t in manual_gene_name_correction:
-                arr[i] = manual_gene_name_correction[t]
-
-    mtor_gs_dict = {
-        'kegg_msigdb': kegg_mtor_from_msigdb,
-        'kegg': kegg_mtor_from_kegg,
-        'biocarta': biocarta_mtor,
-        'pid': pid_mtor
-    }
-
-    if mtor_source not in mtor_gs_dict:
-        raise KeyError("Unsupported mTOR geneset source. Supported options are %s." % ','.join(mtor_gs_dict.keys()))
+    # load mTOR signatures
+    mtor_gs_dict = mtor_signature_dict()
 
     # load MG/BMDM signatures
-    tam_signature_fn = os.path.join(GIT_LFS_DATA_DIR, 'muller_2017_tam', '13059_2017_1362_MOESM5_ESM.xlsx')
-    tam_signatures = pd.read_excel(tam_signature_fn, header=0, index_col=None)
+    tam_gs_dict = tam_signature_dict()
+
+    mtor_geneset = mtor_gs_dict[mtor_source]
+    tam_genesets = tam_gs_dict[tam_signature_source]
+
+    genesets = dict(tam_genesets)
+    genesets['mTOR'] = mtor_geneset
 
     outdir = output.unique_output_dir()
 
-    # Venn diagram showing various options and overlap
+    # Venn diagram showing various mTOR signature options and overlap between them
     fig, ax = plt.subplots()
     venn.venn_diagram(*mtor_gs_dict.values(), set_labels=mtor_gs_dict.keys(), ax=ax)
     fig.tight_layout()
     ax.set_facecolor('w')
     fig.savefig(os.path.join(outdir, "venn_mtor_genesets.png"), dpi=200)
-
-    mtor_geneset = mtor_gs_dict[mtor_source]
 
     basedir = os.path.join(
         HGIC_LOCAL_DIR,
@@ -301,12 +416,6 @@ if __name__ == "__main__":
     rnaseq_meta.insert(0, 'wang_classification', wang_classes.loc[rnaseq_meta.index, 'Wang subclass'])
 
     # check that signature genes are all found in the data
-    genesets = {
-        'MG': tam_signatures['MG_Markers'].dropna().values,
-        'BMDM': tam_signatures['Mac_Markers'].dropna().values,
-        'mTOR': mtor_geneset
-    }
-
     for k, v in genesets.items():
         for i, t in enumerate(v):
             if t in manual_gene_name_correction:
@@ -371,58 +480,10 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.png' % k.lower()), dpi=200)
         fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.pdf' % k.lower()))
 
-
-
-
-
     # is the correlation between MG / BMDM and mTOR higher in a given subgroup?
     gs = plt.GridSpec(6, 3)
     fig = plt.figure(figsize=(9, 6))
     # left panel is 2 x 2, comprising all 4 subgroups
-
-    def scatter_plot_with_linregress(x, y, group_list, groups):
-        res = pd.DataFrame(index=group_list, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
-        fig, axs = plt.subplots(2, int(np.ceil(len(group_list) * 0.5)), sharex=True, sharey=True)
-
-        for i, sg in enumerate(group_list):
-            sg_idx = (groups == sg)
-            this_x = x.loc[sg_idx].values.astype(float)
-            this_y = y.loc[sg_idx].values.astype(float)
-            lr = stats.linregress(this_x, this_y)
-            res.loc[sg] = lr
-
-            ax = axs.flat[i]
-            ols_plot(
-                this_x,
-                this_y,
-                xlim=[-3.5, 3.5],
-                ax=ax
-            )
-            rsq = lr.rvalue ** 2
-            sl = lr.slope
-            pval = lr.pvalue
-            if pval < 0.05:
-                lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=\mathbf{%.3e}$" % (rsq, sl, pval)
-            else:
-                lbl = "$R^2 = %.2f$\n$\mathrm{slope}=%.2f$\n$p=%.3e$" % (rsq, sl, pval)
-            ax.text(
-                1.,
-                0.,
-                lbl,
-                bbox={'facecolor': 'w', 'alpha': 0.3},
-                verticalalignment='bottom',
-                horizontalalignment='right',
-                transform=ax.transAxes
-            )
-            ax.set_ylim([-4, 4])
-            ax.set_title(sg)
-
-        return {
-            'fig': fig,
-            'axs': axs,
-            'linregress': res
-        }
-
 
     dict_mg = scatter_plot_with_linregress(es_z.loc['mTOR'], es_z.loc['MG'], group_list, groups)
     dict_bmdm = scatter_plot_with_linregress(es_z.loc['mTOR'], es_z.loc['BMDM'], group_list, groups)
@@ -433,8 +494,14 @@ if __name__ == "__main__":
     dict_bmdm['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.png"), dpi=300)
     dict_bmdm['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.pdf"))
 
-
     # check for MG / BMDM correlation
     dict_both = scatter_plot_with_linregress(es_z.loc['MG'],  es_z.loc['BMDM'], group_list, groups)
     dict_both['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup.png"), dpi=300)
     dict_both['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup.pdf"))
+
+    # again but across groups
+    dict_both_uniform = scatter_plot_with_linregress(es_z.loc['MG'],  es_z.loc['BMDM'])
+    dict_both_uniform['fig'].set_size_inches([6, 4])
+    dict_both_uniform['fig'].tight_layout()
+    dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.png"), dpi=200)
+    dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.pdf"))

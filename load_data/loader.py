@@ -94,57 +94,7 @@ def _rename_with_attributes(obj, new_attr=None, existing_attr='batch'):
 
 class DatasetLoader(object):
     meta_col_sample_name = 'sample'
-    meta_col_filename = 'filename'
     extra_df_attributes = tuple()
-
-    def __init__(
-            self,
-            base_dir=None,
-            meta_fn=None,
-            samples=None,
-            tax_id=9606,
-            batch_id=None,
-            verbose=True,
-            *args,
-            **kwargs):
-
-        """
-        Base class for loading a dataset.
-        :param base_dir: Path to the root input directory. All data must be contained in this directory
-        or below it.
-        :param meta_fn: Path to the meta file.
-        :param samples: If supplied, use this to filter the files loaded.
-        :param tax_id: The taxonomy ID (default: 9606, human)
-        :param batch_id: Optionally supply a name for this batch, useful when combining batches
-        """
-        self.base_dir = base_dir
-        if not os.path.isdir(self.base_dir):
-            raise ValueError("Supplied base_dir %s does not exist or is not a directory." % self.base_dir)
-
-        self.meta_fn = meta_fn
-        if self.meta_fn is not None:
-            if not os.path.isfile(self.meta_fn):
-                raise ValueError("Meta file %s does not exist." % self.meta_fn)
-
-        self.meta_is_linked = None
-        self.sample_names = None
-
-        self.samples_to_keep = samples
-        self.tax_id = tax_id
-        self.batch_id = batch_id
-        self.verbose = verbose
-
-        self.logger = log.get_console_logger(self.__class__.__name__)
-
-        self.meta = None
-        self.input_files = None
-        self.data = None
-
-        self.load_meta()
-
-        self.get_inputs()
-        self.load_data()
-        self.post_process()
 
     def load_meta(self):
         """
@@ -161,17 +111,10 @@ class DatasetLoader(object):
                 self.meta_is_linked = False
             else:
                 self.meta.set_index(self.meta_col_sample_name, inplace=True)
-                if self.meta_col_filename == self.meta_col_sample_name:
-                    # the filename and sample name columns are shared, so we need to replace it
-                    self.meta.insert(0, self.meta_col_filename, self.meta.index)
+                # if self.meta_col_filename == self.meta_col_sample_name:
+                #     # the filename and sample name columns are shared, so we need to replace it
+                #     self.meta.insert(0, self.meta_col_filename, self.meta.index)
                 self.meta_is_linked = True
-
-
-    def get_inputs(self):
-        """
-        Set self.input_files based on the metadata (if loaded) and base_dir
-        """
-        raise NotImplementedError
 
     def load_one_file(self, fn):
         """
@@ -206,32 +149,6 @@ class DatasetLoader(object):
         self.meta = self.meta.loc[idx]
         self.data = self.data.loc[:, self.meta.index]
 
-    def filter_samples(self, keep_idx):
-        """
-        Drop samples according to the supplied index. All data structures are updated in-place.
-        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
-        will be retained.
-        :return:
-        """
-        self.meta = self.meta.loc[keep_idx]
-        self.data = self.data.loc[:, self.meta.index]
-        self.input_files = self.input_files.loc[keep_idx]
-
-    def reorder_samples(self, new_order):
-        """
-        Reorder samples according to the input iterable new_order. This is safer than manually reordering selected
-        elements, because that can lead to, e.g., mismatched meta and data.
-        :param new_order: Iterable of sample names, used for modifying the sample order.
-        :return:
-        """
-        new_order = pd.Index(new_order)
-        if new_order.sort_values() != self.meta.index.sort_values():
-            raise ValueError("new_order must have the same entries as existing samples")
-        self.meta = self.meta.loc[new_order]
-        self.data = self.data.loc[:, new_order]
-        if isinstance(self.input_files, pd.DataFrame):
-            self.input_files = self.input_files.loc[new_order]
-
     def aggregate_by_pattern(self, search_patt, new_name, how='mean'):
         _aggregate_by_regex(self, search_patt, new_name, how=how)
 
@@ -240,6 +157,55 @@ class DatasetLoader(object):
 
 
 class SingleFileLoader(DatasetLoader):
+    def __init__(
+            self,
+            data_fn=None,
+            meta_fn=None,
+            samples=None,
+            tax_id=9606,
+            batch_id=None,
+            verbose=True,
+            *args,
+            **kwargs):
+
+        """
+        Base class for loading a dataset based on a single data file.
+        :param data_fn: Path to the file containing all the data.
+        :param meta_fn: Path to the meta file.
+        :param samples: If supplied, use this to filter the files loaded.
+        :param tax_id: The taxonomy ID (default: 9606, human)
+        :param batch_id: Optionally supply a name for this batch, useful when combining batches
+        """
+        self.data_fn = data_fn
+        if self.data_fn is None:
+            raise ValueError("Must supply a valid path to the data file.")
+        elif not os.path.isfile(self.data_fn):
+            raise ValueError("Data file %s does not exist." % self.data_fn)
+
+        self.meta_fn = meta_fn
+        if self.meta_fn is not None:
+            if not os.path.isfile(self.meta_fn):
+                raise ValueError("Meta file %s does not exist." % self.meta_fn)
+
+
+        self.meta_is_linked = None
+        self.sample_names = None
+
+        self.samples_to_keep = samples
+        self.tax_id = tax_id
+        self.batch_id = batch_id
+        self.verbose = verbose
+
+        self.logger = log.get_console_logger(self.__class__.__name__)
+
+        self.meta = None
+        self.input_files = data_fn
+        self.data = None
+
+        self.load_meta()
+        self.load_data()
+        self.post_process()
+
     def load_data(self):
         self.data = self.load_one_file(self.input_files)
 
@@ -312,6 +278,56 @@ def join_row_indexed_data(**kwargs):
 class MultipleFileLoader(DatasetLoader):
     file_pattern = ''
     row_indexed = True
+    meta_col_filename = 'filename'
+
+    def __init__(
+            self,
+            base_dir=None,
+            meta_fn=None,
+            samples=None,
+            tax_id=9606,
+            batch_id=None,
+            verbose=True,
+            *args,
+            **kwargs):
+
+        """
+        Base class for loading a dataset.
+        :param base_dir: Path to the root input directory. All data must be contained in this directory
+        or below it.
+        :param meta_fn: Path to the meta file.
+        :param samples: If supplied, use this to filter the files loaded.
+        :param tax_id: The taxonomy ID (default: 9606, human)
+        :param batch_id: Optionally supply a name for this batch, useful when combining batches
+        """
+        self.base_dir = base_dir
+        if not os.path.isdir(self.base_dir):
+            raise ValueError("Supplied base_dir %s does not exist or is not a directory." % self.base_dir)
+
+        self.meta_fn = meta_fn
+        if self.meta_fn is not None:
+            if not os.path.isfile(self.meta_fn):
+                raise ValueError("Meta file %s does not exist." % self.meta_fn)
+
+        self.meta_is_linked = None
+        self.sample_names = None
+
+        self.samples_to_keep = samples
+        self.tax_id = tax_id
+        self.batch_id = batch_id
+        self.verbose = verbose
+
+        self.logger = log.get_console_logger(self.__class__.__name__)
+
+        self.meta = None
+        self.input_files = None
+        self.data = None
+
+        self.load_meta()
+
+        self.get_inputs()
+        self.load_data()
+        self.post_process()
 
     def generate_input_path(self, fname):
         """
@@ -336,7 +352,11 @@ class MultipleFileLoader(DatasetLoader):
                 )
                 self.meta_is_linked = False
             else:
+                if self.meta_col_filename == self.meta_col_sample_name:
+                    # the filename and sample name columns are shared, so we need to replace it
+                    self.meta.insert(0, self.meta_col_filename, self.meta.index)
                 self.meta_is_linked = True
+
 
     def get_inputs(self):
         inputs = pd.Series()
@@ -445,6 +465,32 @@ class MultipleFileLoader(DatasetLoader):
         if self.meta_is_linked:
             # ensure that meta has the same entries as data
             self.meta = self.meta.loc[self.input_files.index]
+
+    def filter_samples(self, keep_idx):
+        """
+        Drop samples according to the supplied index. All data structures are updated in-place.
+        :param drop_idx: Either a boolean index or an iterable that can be used as an indexer. The samples indicated
+        will be retained.
+        :return:
+        """
+        self.meta = self.meta.loc[keep_idx]
+        self.data = self.data.loc[:, self.meta.index]
+        self.input_files = self.input_files.loc[keep_idx]
+
+    def reorder_samples(self, new_order):
+        """
+        Reorder samples according to the input iterable new_order. This is safer than manually reordering selected
+        elements, because that can lead to, e.g., mismatched meta and data.
+        :param new_order: Iterable of sample names, used for modifying the sample order.
+        :return:
+        """
+        new_order = pd.Index(new_order)
+        if new_order.sort_values() != self.meta.index.sort_values():
+            raise ValueError("new_order must have the same entries as existing samples")
+        self.meta = self.meta.loc[new_order]
+        self.data = self.data.loc[:, new_order]
+        if isinstance(self.input_files, pd.DataFrame):
+            self.input_files = self.input_files.loc[new_order]
 
 
 class MultipleBatchLoader(object):

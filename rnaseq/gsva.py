@@ -26,7 +26,8 @@ if rinterface.RFUNCTIONS_PRESENT and rinterface.RPANDAS_PRESENT:
         res = r('gsva')(rdata, rgenesets, method=method, verbose=verbose, **kwargs)
         py_res = pandas2ri.ri2py_dataframe(res)
         py_res.index = r('rownames')(res)
-        py_res.columns = r('colnames')(res)
+        # py_res.columns = r('colnames')(res)
+        py_res.columns = df.columns
         return py_res
 
     run_gsea = rinterface.RFunctionDeferred(_run_gsea, imports=['GSVA'])
