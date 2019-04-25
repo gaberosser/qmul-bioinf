@@ -147,6 +147,8 @@ if __name__ == "__main__":
         'MES': taxs[2]
     }
 
+    ## TODO: the ternary plot has been updated and improved at scripts/hgic_final/heidelberg_classification_plots.py
+
     # each patient is a 'trajectory': FFPE -> early pass -> later passage
     bases = ['GBM_RTK_I', 'GBM_RTK_II', 'GBM_MES']
     # cmap_func = common.continuous_cmap(cc.mean_passage.max(), cmap='Blues')

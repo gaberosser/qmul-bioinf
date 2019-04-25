@@ -233,9 +233,17 @@ if __name__ == '__main__':
     keep_genes_sorted = cor_gene.loc[keep_genes].sort_values(ascending=False).index
 
     # define a column colour band
-    base_n = (base + 1) / 2.5
-    cmap = plt.cm.RdBu_r
-    vals = [colors.rgb2hex(t) for t in cmap(base_n)]
+    # base_n = 2 * (base - base.min()) / (base.max() - base.min()) - 1.
+    # cmap = plt.cm.RdBu_r
+    # norm = colors.Normalize(vmin=-1, vmax=0.)
+    # sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    # vals = [colors.rgb2hex(sm.to_rgba(t)) for t in base_n]
+
+    norm = colors.Normalize(vmin=base.min(), vmax=base.max())
+    sm = plt.cm.ScalarMappable(cmap=plt.cm.gray_r, norm=norm)
+
+    vals = [colors.rgb2hex(sm.to_rgba(t)) for t in base]
+
     col_colours = pd.DataFrame(vals, index=the_data.columns, columns=['MYC'])
 
     cg = clustering.plot_clustermap(
@@ -247,9 +255,45 @@ if __name__ == '__main__':
         col_colors=col_colours,
         vmin=-8, vmax=8
     )
-    cg.gs.update(bottom=0.1)
+    cg.fig.set_size_inches((7., 7.))
+    cg.cax.set_ylabel("Gene expression")
+    cg.cax.yaxis.set_label_coords(-.7, 0.5)
+    cg.gs.update(bottom=0.12, left=0.04, top=0.97, right=0.93)
     cg.savefig(os.path.join(outdir, 'myc_genes_clustermap.png'), dpi=200)
     cg.savefig(os.path.join(outdir, 'myc_genes_clustermap.tiff'), dpi=200)
+
+    # does the clustering partition by MYC expression level?
+    dend = cg.dendrogram_col.calculate_dendrogram()
+    lkg = cg.dendrogram_col.linkage
+
+    n_clust = 4
+    # get cluster ID
+    cluster_id = hierarchy.fcluster(lkg, n_clust, criterion='maxclust')
+    myc_group_mean = base.groupby(cluster_id).mean()
+
+    grouped_means = pd.Series(index=base.index)
+    for i, m in myc_group_mean.iteritems():
+        grouped_means.loc[cluster_id == i] = m
+
+    # add this as a second column colour bar
+    vals_2 = [colors.rgb2hex(sm.to_rgba(t)) for t in grouped_means]
+    col_colours.insert(1, 'Mean MYC', vals_2)
+
+    cg = clustering.plot_clustermap(
+        dat_corr_with_myc_aggr.loc[keep_genes_sorted],
+        cmap='RdBu_r',
+        metric='euclidean',
+        method='ward',
+        row_cluster=False,
+        col_colors=col_colours,
+        vmin=-8, vmax=8
+    )
+    cg.fig.set_size_inches((7., 7.))
+    cg.cax.set_ylabel("Gene expression")
+    cg.cax.yaxis.set_label_coords(-.7, 0.5)
+    cg.gs.update(bottom=0.12, left=0.04, top=0.97, right=0.88)
+    cg.savefig(os.path.join(outdir, 'myc_genes_clustermap_with_group_means.png'), dpi=200)
+    cg.savefig(os.path.join(outdir, 'myc_genes_clustermap_with_group_means.tiff'), dpi=200)
 
     # export to excel for downstream analysis
     to_export = pd.DataFrame.from_dict(

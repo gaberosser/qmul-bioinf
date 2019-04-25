@@ -114,9 +114,9 @@ if __name__ == "__main__":
     pmax_s = pdist_s.values.flatten().max()
     pdist_s = (pdist_s - pmin_s) / (pmax_s - pmin_s)
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(6, 3.6))
     ax = fig.add_subplot(111)
-    # ax = sns.heatmap(pdist_z, vmin=-1.5, vmax=1.5, ax=ax)
+
     vmin = 0.1
     vmax = 0.9
     ax = sns.heatmap(
@@ -130,16 +130,16 @@ if __name__ == "__main__":
 
     plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
     plt.setp(ax.yaxis.get_ticklabels(), rotation=0)
-    ax.figure.tight_layout(rect=(0.05, 0.05, 1., 1.))
+    ax.figure.subplots_adjust(left=0.12, right=0.99, bottom=0.4, top=0.97)
 
-    # make arbitrary cax scaling
+    # modify cax
     cax = [t for t in ax.figure.get_axes() if t is not ax][0]
-    cax.yaxis.set_ticklabels(['Low', 'High'])
+    cax.yaxis.set_label_coords(2.5, 0.5)
 
     ax.figure.savefig(os.path.join(outdir, "ffpe_cc_correlation_heatmap.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "ffpe_cc_correlation_heatmap.tiff"), dpi=200)
 
+    ## TODO: finish?
+
     meth_cc_obj = methylation.loader.load_by_patient(pids, norm_method=norm_method, include_control=False)
     meth_ff_obj = methylation.loader.load_by_patient(pids, norm_method=norm_method, include_control=False, type='ffpe')
-
-    # dat_rna_ff = rna_ff_obj.data.loc[:, rna_ff_obj.meta]
