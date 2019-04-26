@@ -41,8 +41,8 @@ if __name__ == "__main__":
     human signature from Muller et al. (Genome Biol 2017) or a converted mouse signature from Bowman et al. (???).
     """
     rnaseq_units = 'fpkm_norm'  # ('fpkm', 'tpm')
-    # tam_signature_source = 'bowman'
-    tam_signature_source = 'muller'
+    tam_signature_source = 'bowman'
+    # tam_signature_source = 'muller'
     mtor_source = 'kegg_msigdb'  # ('kegg', 'pid', 'biocarta')
 
     # significance cutoff
@@ -148,16 +148,18 @@ if __name__ == "__main__":
     slope_norm = common.MidpointNormalize(vmin=-.5, vmax=1.2, midpoint=0.)
     slope_sm = plt.cm.ScalarMappable(cmap=slope_cmap, norm=slope_norm)
 
-    s = pd.DataFrame(index=['MG-BMDM', 'mTOR-BMDM', 'mTOR-MG'], columns=group_list)
+    group_list_extended = list(group_list) + ['All']
+
+    s = pd.DataFrame(index=['MG-BMDM', 'mTOR-BMDM', 'mTOR-MG'], columns=group_list_extended)
     p = s.copy()
 
-    s.loc['MG-BMDM'] = [dict_both['statsmodels'][k].params[-1] for k in group_list]
-    s.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].params[-1] for k in group_list]
-    s.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].params[-1] for k in group_list]
+    s.loc['MG-BMDM'] = [dict_both['statsmodels'][k].params[-1] for k in group_list_extended]
+    s.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].params[-1] for k in group_list_extended]
+    s.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].params[-1] for k in group_list_extended]
 
-    p.loc['MG-BMDM'] = [dict_both['statsmodels'][k].f_pvalue for k in group_list]
-    p.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].f_pvalue for k in group_list]
-    p.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].f_pvalue for k in group_list]
+    p.loc['MG-BMDM'] = [dict_both['statsmodels'][k].f_pvalue for k in group_list_extended]
+    p.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].f_pvalue for k in group_list_extended]
+    p.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].f_pvalue for k in group_list_extended]
 
     p_to_size = lambda t: min(150., 45 - 12 * np.log10(t))
 
@@ -202,3 +204,69 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "correlation_summary.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "correlation_summary.pdf"))
+
+    plt.close('all')
+
+    # bespoke analysis using individual genes from the mTOR pathway rather than the whole signature
+    mtor_genes = [
+        'RPS6',
+        'EIF4EBP1',
+        'VEGFA',
+        'VEGFB',
+        'VEGFC',
+        'FIGF',  # VEGFD
+        'IL10',
+        'IL6',
+    ]
+
+    ix = reduce(lambda x, y: x + y, [['%s_%s' % (t, g) for g in mtor_genes] for t in ['MG', 'BMDM']])
+    s_g = pd.DataFrame(index=ix, columns=group_list_extended)
+    p_g = s_g.copy()
+
+    for g in mtor_genes:
+        for t in ['MG', 'BMDM']:
+            the_dict = ttm.scatter_plot_with_linregress(
+                es_z.loc[t],
+                np.log10(rnaseq_dat.loc[g] + 0.01),
+                group_list,
+                groups
+            )
+            the_dict['fig'].set_size_inches((11, 5.5))
+            the_dict['fig'].tight_layout()
+            the_dict['fig'].savefig(os.path.join(outdir, "%s_%s_scatterplots.png" % (t, g)), dpi=200)
+
+            s_g.loc['%s_%s' % (t, g)] = [the_dict['statsmodels'][k].params[-1] for k in group_list_extended]
+            p_g.loc['%s_%s' % (t, g)] = [the_dict['statsmodels'][k].f_pvalue for k in group_list_extended]
+
+    x = range(len(group_list_extended))
+    y_fun = lambda t: [t] * len(group_list_extended)
+
+    for k in ['MG', 'BMDM']:
+        fig, ax = plt.subplots(figsize=(6, 3.4))
+        for i, g in enumerate(mtor_genes):
+            the_key = '%s_%s' % (k, g)
+            ax.scatter(
+                x,
+                y_fun(i),
+                color=[slope_sm.to_rgba(t) for t in s_g.loc[the_key]],
+                s=[p_to_size(t) for t in p_g.loc[the_key]],
+                edgecolor='k',
+                linewidth=[.5 if t > alpha else 1.5 for t in p_g.loc[the_key]]
+            )
+
+        ax.grid('off')
+        ax.set_facecolor('w')
+        ax.set_xticks(x)
+        ax.set_xticklabels(group_list_extended)
+
+        ix = ['%s_%s' % (k, g) for g in mtor_genes]
+
+        ax.set_yticks(range(len(ix)))
+        ax.set_yticklabels(ix)
+
+        slope_sm.set_array(s_g.values)
+        cbar = fig.colorbar(slope_sm)
+        cbar.set_label('Slope')
+        fig.tight_layout()
+
+        fig.savefig(os.path.join(outdir, "correlation_summary_individual_genes_%s.png" % k), dpi=200)

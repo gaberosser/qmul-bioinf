@@ -155,6 +155,7 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
     nrow = 2
     reduce_before_return = False
     if groups is None:
+        # no subgroups: just run with 'all'
         nrow = 1
         ncol = 1
         group_list = ['foo']
@@ -163,6 +164,8 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
     else:
         if group_list is None:
             group_list = groups.unique()
+        # add 'all' to the group list
+        group_list = list(group_list) + [None]
         ncol = int(np.ceil(len(group_list) * 0.5))
     res = pd.DataFrame(index=group_list, columns=['slope', 'intercept', 'rvalue', 'pvalue', 'stderr'])
     sm_res = {}
@@ -174,7 +177,12 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
     axs_seen = set(axs.flat)
 
     for i, sg in enumerate(group_list):
-        sg_idx = (groups == sg)
+        if sg is None:
+            sg_idx = pd.Series(True, index=groups.index)
+            ttl = 'All'
+        else:
+            sg_idx = (groups == sg)
+            ttl = sg
         this_x = x.loc[sg_idx].values.astype(float)
         this_y = y.loc[sg_idx].values.astype(float)
         lr = stats.linregress(this_x, this_y)
@@ -183,7 +191,7 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
         ax = axs.flat[i]
         axs_seen.remove(ax)
 
-        sm_res[sg], _ = ols_plot(
+        sm_res[ttl], _ = ols_plot(
             this_y,
             this_x,
             xlim=[-3.5, 3.5],
@@ -194,7 +202,7 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
         sl = lr.slope
         pval = lr.pvalue
 
-        if np.abs(sl - sm_res[sg].params[-1]) > 1e-3:
+        if np.abs(sl - sm_res[ttl].params[-1]) > 1e-3:
             logger.warn("Subgroup %s. stats.linregress slope doesn't agree with statsmodels OLS.", sg)
 
         if pval < 0.05:
@@ -214,7 +222,7 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
         ax.set_xlabel(x.name)
         ax.set_ylabel(y.name)
         if not reduce_before_return:
-            ax.set_title(sg)
+            ax.set_title(ttl)
 
     if reduce_before_return:
         res = res.loc['foo']
