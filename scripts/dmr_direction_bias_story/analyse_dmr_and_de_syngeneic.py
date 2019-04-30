@@ -2,6 +2,7 @@ from plotting import bar, common, venn
 from methylation import dmr
 from rnaseq import loader as rnaseq_loader
 import pandas as pd
+from stats import basic
 from utils import output, setops, genomics, log, dictionary
 import multiprocessing as mp
 import os
@@ -42,6 +43,8 @@ if __name__ == '__main__':
 
     # should we add 'chr' prefix to bigwig output?
     chr_prefix = True
+
+    relations_tss = ['TSS1500', 'TSS200']
 
     subgroups = consts.SUBGROUPS
     subgroups_ind = setops.groups_to_ind(pids, subgroups)
@@ -128,9 +131,25 @@ if __name__ == '__main__':
 
     de_by_direction = same_de.count_de_by_direction(de_linked)
 
-    plt_dict = same_de.bar_plot(de_linked, pids)
+    plt_dict = same_de.bar_plot(de_linked, pids, figsize=(3, 4))
     plt_dict['fig'].tight_layout()
+    plt.setp(common.get_children_recursive(plt_dict['fig'], plt.Text), fontsize=12)
     plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_full_list_directions.png"), dpi=200)
+
+    # full list linked through TSS
+    de_linked = dict([
+        (
+            pid,
+            de_res_s1[pid].loc[de_res_s1[pid]['Gene Symbol'].isin(joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid][['dmr_%s' % t for t in relations_tss]].any(axis=1)].gene)]
+        ) for pid in pids
+    ])
+
+    de_by_direction = same_de.count_de_by_direction(de_linked)
+
+    plt_dict = same_de.bar_plot(de_linked, pids, figsize=(3, 4))
+    plt_dict['fig'].tight_layout()
+    plt.setp(common.get_children_recursive(plt_dict['fig'], plt.Text), fontsize=12)
+    plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_full_list_tss_directions.png"), dpi=200)
 
     # patient-specific DMRs linked to genes
     spec_ix = setops.specific_features(*[dmr_res_all[pid].keys() for pid in pids])
@@ -161,7 +180,8 @@ if __name__ == '__main__':
 
     de_by_direction_spec = same_de.count_de_by_direction(de_linked_spec)
 
-    plt_dict = same_de.bar_plot(de_linked_spec, pids)
+    plt_dict = same_de.bar_plot(de_linked_spec, pids, figsize=(3, 4))
+    plt.setp(common.get_children_recursive(plt_dict['fig'], plt.Text), fontsize=12)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "de_specific_linked_syngeneic_full_list_directions.png"), dpi=200)
 
@@ -227,10 +247,6 @@ if __name__ == '__main__':
                 fn,
                 chr_prefix=chr_prefix
             )
-
-        # bar chart showing DMR direction
-        plt_dict = addd.dm_direction_bar_plot(this_results, groups[grp])
-        plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s.png" % grp), dpi=200)
 
         # combine with DE to assess bias (if any)
         this_genes = sorted(
@@ -335,11 +351,22 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "de_logfc_genes_from_dmr_group_intersection.png"), dpi=200)
 
+    # this is for DMR groups
 
     # generate scatter plots of joint DE and DMR for the two DMR groups
-    # FIXME: this is hard coded to the number of patients in each group. Sloppy.
-    fig, axs = plt.subplots(nrows=2, ncols=6, sharex=True, sharey=True)
+    # run fisher's test at the same time
+    ct_all = {}
+    ct_tss = {}
+    fisher_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    fisher_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
+
+    ncol = max([len(t) for t in groups.values()])
+    nrow = len(groups)
+
+    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
     big_ax = common.add_big_ax_to_subplot_fig(fig)
+
+    xmin = xmax = ymin = ymax = 0
 
     subplots_filled = set()
     for i, grp in enumerate(groups):
@@ -347,17 +374,208 @@ if __name__ == '__main__':
             subplots_filled.add((i, j))
             ax = axs[i, j]
             this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
-            ax.scatter(this_joint.de_logFC, this_joint.dmr_median_delta, c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()])
+            x = this_joint.de_logFC
+            y = this_joint.dmr_median_delta
+            xmin = min(xmin, x.min())
+            xmax = max(xmax, x.max())
+            ymin = min(ymin, y.min())
+            ymax = max(ymax, y.max())
+
+            ax.scatter(
+                x,
+                y,
+                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
+                alpha=0.6
+            )
+
+            # fishers test
+            ct_all[pid] = basic.construct_contingency(x.values, y.values)
+            fisher_all.loc[pid] = stats.fisher_exact(ct_all[pid])
+
+            ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
+            ax.scatter(
+                this_joint.de_logFC.loc[ix],
+                this_joint.dmr_median_delta.loc[ix],
+                c='none',
+                edgecolor='k',
+                linewidth=0.5,
+                alpha=0.6
+            )
+            # fishers test
+            ct_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
+            fisher_tss.loc[pid] = stats.fisher_exact(ct_tss[pid])
+
             ax.axhline(0., c='k', linestyle='--')
             ax.axvline(0., c='k', linestyle='--')
             ax.set_title(pid)
     big_ax.set_xlabel(r'DE logFC')
     big_ax.set_ylabel(r'DMR median $\Delta M$')
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
+    # fig.tight_layout()
 
     for i in range(2):
         for j in range(6):
             if (i, j) not in subplots_filled:
                 axs[i, j].set_visible(False)
-    axs[0,0].set_ylim([-7, 7])
+    axs[0,0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
+    axs[0,0].set_ylim([np.floor(ymin), np.ceil(ymax)])
     fig.savefig(os.path.join(outdir, "de_dmr_scatter_from_dmr_groups.png"), dpi=200)
+
+    # run again for all DE/DMRs
+    # generate scatter plots of joint DE and DMR for the two DMR groups
+    # run fisher's test at the same time
+    ct_all = {}
+    ct_tss = {}
+    fisher_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    fisher_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
+
+    ncol = max([len(t) for t in groups.values()])
+    nrow = len(groups)
+
+    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+
+    xmin = xmax = ymin = ymax = 0
+
+    subplots_filled = set()
+    for i, grp in enumerate(groups):
+        for j, pid in enumerate(groups[grp]):
+            subplots_filled.add((i, j))
+            ax = axs[i, j]
+            this_joint = joint_de_dmr_s1[pid]
+            x = this_joint.de_logFC
+            y = this_joint.dmr_median_delta
+            xmin = min(xmin, x.min())
+            xmax = max(xmax, x.max())
+            ymin = min(ymin, y.min())
+            ymax = max(ymax, y.max())
+
+            ax.scatter(
+                x,
+                y,
+                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
+                alpha=0.6
+            )
+
+            # fishers test
+            ct_all[pid] = basic.construct_contingency(x.values, y.values)
+            fisher_all.loc[pid] = stats.fisher_exact(ct_all[pid])
+
+            ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
+            ax.scatter(
+                this_joint.de_logFC.loc[ix],
+                this_joint.dmr_median_delta.loc[ix],
+                c='none',
+                edgecolor='k',
+                linewidth=0.5,
+                alpha=0.6
+            )
+            # fishers test
+            ct_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
+            fisher_tss.loc[pid] = stats.fisher_exact(ct_tss[pid])
+
+            ax.axhline(0., c='k', linestyle='--')
+            ax.axvline(0., c='k', linestyle='--')
+            ax.set_title(pid)
+    big_ax.set_xlabel(r'DE logFC')
+    big_ax.set_ylabel(r'DMR median $\Delta M$')
+    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
+    # fig.tight_layout()
+
+    for i in range(2):
+        for j in range(6):
+            if (i, j) not in subplots_filled:
+                axs[i, j].set_visible(False)
+    axs[0,0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
+    axs[0,0].set_ylim([np.floor(ymin), np.ceil(ymax)])
+    fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
+
+    # plot summarising the P values and % concordance in each patient and all/TSS
+    plogp_cmap = plt.get_cmap('Reds')
+    plogp_norm = colors.Normalize(vmin=0., vmax=40.)
+    plogp_sm = plt.cm.ScalarMappable(cmap=plogp_cmap, norm=plogp_norm)
+
+    pct_to_size = lambda t: t ** 2 / 20.
+
+    x = range(len(pids))
+    y_fun = lambda t: [t] * len(pids)
+
+    fig, ax = plt.subplots(figsize=(5, 2.))
+    pct_conc_all = dict([
+        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_all.items()
+    ])
+    ax.scatter(
+        x,
+        y_fun(0),
+        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_all['p']],
+        s=[pct_to_size(pct_conc_all[pid]) for pid in pids],
+        edgecolor='k',
+    )
+    pct_conc_tss = dict([
+        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss.items()
+    ])
+    ax.scatter(
+        x,
+        y_fun(1),
+        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_tss['p']],
+        s=[pct_to_size(pct_conc_tss[pid]) for pid in pids],
+        edgecolor='k',
+    )
+    ax.grid('off')
+    ax.set_facecolor('w')
+    ax.set_ylim([-.5, 1.5])
+    ax.set_xticks(x)
+    ax.set_xticklabels(pids, fontsize=12, rotation=90)
+    ax.set_yticks(range(2))
+    ax.set_yticklabels(['All', 'TSS'], fontsize=12)
+
+    plogp_sm.set_array(fisher_all['p'].values)
+    cbar = fig.colorbar(plogp_sm)
+    cbar.set_label(r'$-\log_{10}(p)$')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary.png"), dpi=200)
+
+    # flip it
+
+    x = range(len(pids))
+    y_fun = lambda t: [t] * len(pids)
+
+    fig, ax = plt.subplots(figsize=(2.3, 4.))
+    pct_conc_all = dict([
+        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_all.items()
+    ])
+    ax.scatter(
+        y_fun(0),
+        x,
+        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_all['p']],
+        s=[pct_to_size(pct_conc_all[pid]) for pid in pids],
+        edgecolor='k',
+    )
+    pct_conc_tss = dict([
+        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss.items()
+    ])
+    ax.scatter(
+        y_fun(1),
+        x,
+        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_tss['p']],
+        s=[pct_to_size(pct_conc_tss[pid]) for pid in pids],
+        edgecolor='k',
+    )
+    ax.grid('off')
+    ax.set_facecolor('w')
+    ax.set_xlim([-.5, 1.5])
+    ax.set_yticks(x)
+    ax.set_yticklabels(pids, fontsize=12)
+    ax.set_xticks(range(2))
+    ax.set_xticklabels(['All', 'TSS'], fontsize=12)
+
+    plogp_sm.set_array(fisher_all['p'].values)
+    cbar = fig.colorbar(plogp_sm)
+    cbar.set_label(r'$-\log_{10}(p)$')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary.png"), dpi=200)
+
+
+
+
+

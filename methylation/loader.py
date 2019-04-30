@@ -458,20 +458,8 @@ def load_illumina_methylation450_annotation():
 class IlluminaHumanMethylationLoader(loader.SingleFileLoader):
     row_indexed = True
 
-    def __init__(self, norm_method='swan', *args, **kwargs):
-        self.norm_method = norm_method
+    def __init__(self, *args, **kwargs):
         super(IlluminaHumanMethylationLoader, self).__init__(*args, **kwargs)
-
-    def get_inputs(self):
-        if self.norm_method is None:
-            self.input_files = os.path.join(self.base_dir, 'beta_raw.csv.gz')
-        elif self.norm_method.lower() in NORM_METHODS:
-            self.input_files = os.path.join(self.base_dir, 'beta_%s.csv.gz' % self.norm_method.lower())
-        else:
-            raise AttributeError("Unrecognised norm_method %s. Options are (%s)." % (
-                self.norm_method,
-                ', '.join(str(t) for t in NORM_METHODS)
-            ))
 
     def load_one_file(self, fn):
         return pd.read_csv(fn, header=0, index_col=0)
@@ -534,11 +522,13 @@ def load_by_patient(
     objs = []
     for ldr, smp in by_loader.items():
         base_dir = os.path.join(project_dirs[ldr], 'beta')
+        data_fn = os.path.join(base_dir, 'beta_%s.csv.gz' % ('raw' if norm_method is None else norm_method))
         meta_fn = os.path.join(project_dirs[ldr], 'sources.csv')
 
         objs.append(
             cls(
-                base_dir=base_dir,
+                # base_dir=base_dir,
+                data_fn=data_fn,
                 meta_fn=meta_fn,
                 samples=smp,
                 norm_method=norm_method,

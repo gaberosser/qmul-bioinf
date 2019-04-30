@@ -1,7 +1,7 @@
 from rnaseq import gsva, loader
 import pandas as pd
 from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
-from plotting import venn
+from plotting import venn, common
 
 import os
 import references
@@ -319,8 +319,8 @@ if __name__ == "__main__":
     """
     rnaseq_type = 'gliovis'
     remove_idh1 = True
-    # tam_signature_source = 'bowman'
-    tam_signature_source = 'muller'
+    tam_signature_source = 'bowman'
+    # tam_signature_source = 'muller'
     mtor_source = 'kegg_msigdb'  # ('kegg', 'pid', 'biocarta')
     class_method = 'wang'
     # class_method = 'verhaak'
@@ -513,3 +513,72 @@ if __name__ == "__main__":
     dict_both_uniform['fig'].tight_layout()
     dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.png"), dpi=200)
     dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.pdf"))
+
+
+    def get_slope_and_pval(plot_dict, col_order=None):
+        """
+        Extract the slope and pvalue of the linear regression results
+        :param col_order: if supplied, this gives the order of the index in the returned DataFrames.
+        :param plot_dict: Dictionary of input data.
+        Keys will be used in the results. Values are the dict output from scatter_plot_with_linregress
+        :return: Two pd.DataFrame objects: s, p
+        """
+        if col_order is None:
+            col_order = plot_dict.values()[0]['statsmodels'].keys()
+        s = pd.DataFrame(index=plot_dict.keys(), columns=col_order)
+        p = s.copy()
+
+        for k, v in plot_dict.items():
+            s.loc[k] = [v['statsmodels'][t].params[-1] for t in col_order]
+            p.loc[k] = [v['statsmodels'][t].f_pvalue for t in col_order]
+
+        return s, p
+
+
+    # summary plot with all information
+    alpha = 0.01
+    slope_cmap = plt.get_cmap('RdBu_r')
+    slope_norm = common.MidpointNormalize(vmin=-.5, vmax=1.2, midpoint=0.)
+    slope_sm = plt.cm.ScalarMappable(cmap=slope_cmap, norm=slope_norm)
+
+    group_list_extended = list(group_list) + ['All']
+
+    for_plot = collections.OrderedDict([
+        ('MG-BMDM', dict_both),
+        ('mTOR-BMDM', dict_bmdm),
+        ('mTOR-MG', dict_mg)
+    ])
+
+    s, p = get_slope_and_pval(
+        for_plot,
+        col_order=group_list_extended,
+    )
+
+    p_to_size = lambda t: min(150., 45 - 12 * np.log10(t))
+
+    x = range(len(group_list_extended))
+    y_fun = lambda t: [t] * len(group_list_extended)
+
+    fig, ax = plt.subplots(figsize=(6, 2.4))
+    for i, k in enumerate(s.index):
+        ax.scatter(
+            x,
+            y_fun(i),
+            color=[slope_sm.to_rgba(t) for t in s.loc[k]],
+            s=[p_to_size(t) for t in p.loc[k]],
+            edgecolor='k',
+            linewidth=[.5 if t > alpha else 1.5 for t in p.loc[k]]
+        )
+    ax.grid('off')
+    ax.set_facecolor('w')
+    ax.set_xticks(x)
+    ax.set_xticklabels(group_list_extended)
+    ax.set_yticks(range(p.shape[0]))
+    ax.set_yticklabels(p.index)
+
+    slope_sm.set_array(s.values)
+    cbar = fig.colorbar(slope_sm)
+    cbar.set_label('Slope')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "correlation_summary.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "correlation_summary.pdf"))
