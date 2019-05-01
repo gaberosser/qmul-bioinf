@@ -1,5 +1,5 @@
 from plotting import bar, common, venn
-from methylation import dmr
+from methylation import dmr, annotation_gene_to_ensembl
 from rnaseq import loader as rnaseq_loader
 import pandas as pd
 from stats import basic
@@ -23,6 +23,77 @@ from integrator import rnaseq_methylationarray
 
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
 logger = log.get_console_logger()
+
+
+def de_dmr_concordance_scatter(de, dm, groups, de_edge=None, dm_edge=None,
+                               group_colours=consts.METHYLATION_DIRECTION_COLOURS):
+    """
+
+    :param de:
+    :param dm:
+    :param groups:
+    :param de_edge, dm_edge: If supplied, both must be specified. These provide a subset of the data in de and dm
+    that will be highlighted on the plots with a black outline. Typically used to highlight DMR / TSS overlap.
+    :param group_colours:
+    :return:
+    """
+    a = de_edge is None
+    b = dm_edge is None
+    if a != b:
+        raise AttributeError("Must specify either both of de_edge and dm_edge or neither.")
+
+    ncol = max([len(t) for t in groups.values()])
+    nrow = len(groups)
+
+    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+
+    xmin = xmax = ymin = ymax = 0
+
+    subplots_filled = set()
+    for i, grp in enumerate(groups):
+        for j, pid in enumerate(groups[grp]):
+            subplots_filled.add((i, j))
+            ax = axs[i, j]
+            x = de[pid]
+            y = dm[pid]
+            xmin = min(xmin, x.min())
+            xmax = max(xmax, x.max())
+            ymin = min(ymin, y.min())
+            ymax = max(ymax, y.max())
+
+            ax.scatter(
+                x,
+                y,
+                c=group_colours[grp.lower()],
+                alpha=0.6
+            )
+            if not a:
+                xm = de_edge[pid]
+                ym = dm_edge[pid]
+                ax.scatter(
+                    xm,
+                    ym,
+                    c='none',
+                    edgecolor='k',
+                    linewidth=0.5,
+                    alpha=0.6
+                )
+            ax.axhline(0., c='k', linestyle='--')
+            ax.axvline(0., c='k', linestyle='--')
+            ax.set_title(pid)
+    big_ax.set_xlabel(r'DE logFC')
+    big_ax.set_ylabel(r'DMR median $\Delta M$')
+    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
+
+    for i in range(2):
+        for j in range(6):
+            if (i, j) not in subplots_filled:
+                axs[i, j].set_visible(False)
+    axs[0, 0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
+    axs[0, 0].set_ylim([np.floor(ymin), np.ceil(ymax)])
+
+    return fig, axs
 
 
 if __name__ == '__main__':
@@ -433,6 +504,10 @@ if __name__ == '__main__':
     ct_tss = {}
     fisher_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
     fisher_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    corr_all = {}
+    corr_tss = {}
+
+    ## TODO: can we use de_dmr_concordance_scatter() to generate the plots?
 
     ncol = max([len(t) for t in groups.values()])
     nrow = len(groups)
@@ -465,6 +540,7 @@ if __name__ == '__main__':
             # fishers test
             ct_all[pid] = basic.construct_contingency(x.values, y.values)
             fisher_all.loc[pid] = stats.fisher_exact(ct_all[pid])
+            corr_all[pid] = stats.spearmanr(x.values, y.values)
 
             ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
             ax.scatter(
@@ -478,6 +554,7 @@ if __name__ == '__main__':
             # fishers test
             ct_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
             fisher_tss.loc[pid] = stats.fisher_exact(ct_tss[pid])
+            corr_tss[pid] = stats.spearmanr(x.loc[ix].values, y.loc[ix].values)
 
             ax.axhline(0., c='k', linestyle='--')
             ax.axvline(0., c='k', linestyle='--')
@@ -501,6 +578,8 @@ if __name__ == '__main__':
     ct_tss_specific = {}
     fisher_all_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
     fisher_tss_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
+
+    ## TODO: can we use de_dmr_concordance_scatter() to generate the plots?
 
     ncol = max([len(t) for t in groups.values()])
     nrow = len(groups)
@@ -655,6 +734,7 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary.png"), dpi=200)
 
     # alternative: line plot
+    ## TODO: move to function (including flipped version)
 
     x = range(len(pids))
     y_fun = lambda t: [t] * len(pids)
@@ -744,32 +824,63 @@ if __name__ == '__main__':
     gs.update(left=0.2, bottom=0.1, right=0.72, top=0.95, hspace=0.12)
     fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary_2_flip.png"), dpi=200)
 
+    # rather than requiring DMR and DE, will we get a better idea working with DMR and looking at logFC
+    # (regardless of whether the gene is DE or not)
 
-
-    pct_conc_tss = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss.items()
+    specific_sets = setops.specific_sets(pids)
+    vs, vc = setops.venn_from_arrays(*[dmr_res_all[pid].keys() for pid in pids])
+    specific_features = dict([
+        (pid, sorted(vs[specific_sets[pid]])) for pid in pids
     ])
-    ax.scatter(
-        x,
-        y_fun(1),
-        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_tss['p']],
-        s=[pct_to_size(pct_conc_tss[pid]) for pid in pids],
-        edgecolor='k',
+
+    logfc_vs_median_delta_all = {}
+    logfc_vs_median_delta_tss = {}
+
+    logfc_vs_median_delta_specific_all = {}
+    logfc_vs_median_delta_specific_tss = {}
+
+    def get_logfc_vs_median_delta(dmr_res, de_res, dmr_relations=None):
+        if dmr_relations is not None and not hasattr(dmr_relations, '__iter__'):
+            dmr_relations = [dmr_relations]
+        if dmr_relations is not None:
+            # filter to include only the provided relations
+            dmr_res = dmr_res.loc[dmr_res[dmr_relations].any(axis=1)]
+
+        ens_ix = annotation_gene_to_ensembl.gene_to_ens(dmr_res.gene)
+        x = de_res.reindex(ens_ix.dropna().values)['logFC']
+        y = dmr_res.loc[~ens_ix.isnull().values].median_delta
+        y = y[~x.isnull().values]
+        x = x.dropna()
+
+        return x, y
+
+    for pid in pids:
+        tbl = dmr_res_s1[pid].to_table(include='significant', expand=True)
+        logfc_vs_median_delta_all[pid] = get_logfc_vs_median_delta(tbl, de_res_full_s1[pid])
+        logfc_vs_median_delta_tss[pid] = get_logfc_vs_median_delta(tbl, de_res_full_s1[pid], dmr_relations=relations_tss)
+        logfc_vs_median_delta_specific_all[pid] = get_logfc_vs_median_delta(
+            tbl.loc[tbl.cluster_id.isin(specific_features[pid])],
+            de_res_full_s1[pid]
+        )
+        logfc_vs_median_delta_specific_tss[pid] = get_logfc_vs_median_delta(
+            tbl.loc[tbl.cluster_id.isin(specific_features[pid])],
+            de_res_full_s1[pid],
+            dmr_relations=relations_tss
+        )
+
+    fig, axs = de_dmr_concordance_scatter(
+        dict([(pid, logfc_vs_median_delta_all[pid][0]) for pid in pids]),
+        dict([(pid, logfc_vs_median_delta_all[pid][1]) for pid in pids]),
+        groups,
+        de_edge=dict([(pid, logfc_vs_median_delta_tss[pid][0]) for pid in pids]),
+        dm_edge=dict([(pid, logfc_vs_median_delta_tss[pid][1]) for pid in pids]),
     )
-    ax.grid('off')
-    ax.set_facecolor('w')
-    ax.set_ylim([-.5, 1.5])
-    ax.set_xticks(x)
-    ax.set_xticklabels(pids, fontsize=12, rotation=90)
-    ax.set_yticks(range(2))
-    ax.set_yticklabels(['All', 'TSS'], fontsize=12)
 
-    plogp_sm.set_array(fisher_all['p'].values)
-    cbar = fig.colorbar(plogp_sm)
-    cbar.set_label(r'$-\log_{10}(p)$')
-    fig.tight_layout()
 
-    # is this more concordant than randomly selected DE/DMRs?
+
+
+
+
 
 
 

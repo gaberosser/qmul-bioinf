@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from methylation import dmr, annotation_gene_to_ensembl
+from methylation import annotation_gene_to_ensembl
 
 
 ## TODO: test this
