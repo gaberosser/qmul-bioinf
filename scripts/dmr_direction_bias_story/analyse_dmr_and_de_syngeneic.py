@@ -876,6 +876,13 @@ if __name__ == '__main__':
         dm_edge=dict([(pid, logfc_vs_median_delta_tss[pid][1]) for pid in pids]),
     )
 
+    fig, axs = de_dmr_concordance_scatter(
+        dict([(pid, logfc_vs_median_delta_specific_all[pid][0]) for pid in pids]),
+        dict([(pid, logfc_vs_median_delta_specific_all[pid][1]) for pid in pids]),
+        groups,
+        de_edge=dict([(pid, logfc_vs_median_delta_specific_tss[pid][0]) for pid in pids]),
+        dm_edge=dict([(pid, logfc_vs_median_delta_specific_tss[pid][1]) for pid in pids]),
+    )
 
 
 
