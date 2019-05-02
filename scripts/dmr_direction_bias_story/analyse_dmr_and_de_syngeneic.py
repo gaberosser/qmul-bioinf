@@ -884,9 +884,105 @@ if __name__ == '__main__':
         dm_edge=dict([(pid, logfc_vs_median_delta_specific_tss[pid][1]) for pid in pids]),
     )
 
+    # are the genes associated with patient-specific DMRs significantly more concordant than the full list?
+    # base our analysis on permutations and the odds ratio
+    n_iter = 1000
+    logfc_vs_median_perm = {}
+    logfc_vs_median_actual = {}
+    n_samples = dict([
+        (pid, len(logfc_vs_median_delta_specific_all[pid][0])) for pid in pids
+    ])
+    for pid in pids:
+        x1, y1 = logfc_vs_median_delta_specific_all[pid]
+        n = x1.size
+        # ct1 = basic.construct_contingency(x1.values, y1.values)
+        # logfc_vs_median_actual[pid] = basic.odds_ratio(ct1)
+        logfc_vs_median_actual[pid] = ((x1 < 0).values != (y1 < 0).values).sum() / float(n)
+        ix = range(logfc_vs_median_delta_all[pid][0].size)
+        logfc_vs_median_perm[pid] = []
+        for i in range(n_iter):
+            this_ix = np.random.permutation(ix)[:n]
+            x2 = logfc_vs_median_delta_all[pid][0].iloc[this_ix]
+            y2 = logfc_vs_median_delta_all[pid][1].iloc[this_ix]
+            # this_ct = basic.construct_contingency(x2.values, y2.values)
+            # logfc_vs_median_perm[pid].append(basic.odds_ratio(this_ct))
+            logfc_vs_median_perm[pid].append(((x2 < 0).values != (y2 < 0).values).sum() / float(n))
 
+    # plot it
+    fig, axs = plt.subplots(ncols=1, nrows=len(pids), sharex=True, figsize=(3.5, 6.))
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    for i, pid in enumerate(pids):
+        ax = axs[i]
+        ax.hist(
+            logfc_vs_median_perm[pid],
+            np.linspace(0, 1, n_samples[pid]),
+            color=consts.METHYLATION_DIRECTION_COLOURS[groups_inv[pid].lower()]
+        )
+        ax.axvline(logfc_vs_median_actual[pid], c='k', linestyle='--')
+        ax.yaxis.set_ticks([])
+        ax.set_ylabel(pid)
+    axs[-1].set_xlabel('Concordance')
+    big_ax.set_ylabel('Density')
+    fig.subplots_adjust(bottom=0.1, left=0.15, top=0.98, right=0.98, hspace=0.13)
+    fig.savefig(os.path.join(outdir, "concordance_specific_vs_all_permutation.png"), dpi=200)
 
+    # permutation test: pick # specific DMRs from the list at random
+    dmr_res_tbl = dict([
+        (pid, dmr_res_s1[pid].to_table(include='all', skip_geneless=False, expand=False)) for pid in pids
+    ])
+    n_cluster = dmr_res_tbl.values()[0].shape[0]
+    n_iter = 1000
 
+    dmr_spec_direction_perm = []
+    for i in range(n_iter):
+        # reassign DMR cluster IDs
+        new_ix = np.random.permutation(n_cluster) + 1
+        this_perm = {}
+        for pid in pids:
+            this_tbl = dmr_res_tbl[pid].copy()
+            this_tbl.index = new_ix
+            this_perm[pid] = this_tbl.loc[specific_features[pid], 'median_delta'].values
+        dmr_spec_direction_perm.append(this_perm)
+
+    dmr_spec_direction_actual = dict([
+        (pid, dmr_res_tbl[pid].loc[specific_features[pid], 'median_delta'].values) for pid in pids
+    ])
+
+    # plot it and calculate p values
+    dmr_spec_direction_perm_pvals = {}
+    pct_hyper_func = lambda pid: [(x[pid] > 0).sum() / float(x[pid].size) * 100. for x in dmr_spec_direction_perm]
+
+    fig, axs = plt.subplots(ncols=1, nrows=len(pids), sharex=True, figsize=(3.5, 6.))
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    for i, pid in enumerate(pids):
+        u = dmr_spec_direction_actual[pid]
+        n = u.size
+        t = pct_hyper_func(pid)
+        u = (u > 0).sum() / float(n) * 100.
+
+        p_lo = (np.array(t) <= u).sum() / float(n_iter)
+        p_hi = (np.array(t) >= u).sum() / float(n_iter)
+        dmr_spec_direction_perm_pvals[pid] = min(p_lo, p_hi)
+
+        ax = axs[i]
+        k = stats.gaussian_kde(t)
+        x = np.linspace(0, 100, 200)
+        y = k.evaluate(x)
+        ax.fill_between(
+            x,
+            y,
+            facecolor=consts.METHYLATION_DIRECTION_COLOURS[groups_inv[pid].lower()],
+            edgecolor='k',
+            linewidth=1.,
+        )
+        ax.axvline(u, c='k', linestyle='--')
+        ax.yaxis.set_ticks([])
+        ax.set_ylabel(pid)
+    axs[-1].set_xlabel('% DMRs hypermethylated')
+    axs[-1].set_xlim([0, 100])
+    big_ax.set_ylabel('Density')
+    fig.subplots_adjust(bottom=0.1, left=0.15, top=0.98, right=0.95, hspace=0.13)
+    fig.savefig(os.path.join(outdir, "specific_dmr_direction_permutations.png"), dpi=200)
 
 
 

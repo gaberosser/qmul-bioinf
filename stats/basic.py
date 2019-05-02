@@ -8,6 +8,16 @@ def construct_contingency(x, y):
     ])
 
 
+def odds_ratio(ct):
+    """
+    Calculate the odds ratio from the supplied contingency table
+    :param ct:
+    :return:
+    """
+    a = np.array(ct).astype(float)
+    return a[0, 0] * a[1, 1] / (a[1, 0] * a[0, 1])
+
+
 def ecdf_func(x):
     x = np.sort(x)
     n = float(x.size)
