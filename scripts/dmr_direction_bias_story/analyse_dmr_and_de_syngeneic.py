@@ -96,6 +96,170 @@ def de_dmr_concordance_scatter(de, dm, groups, de_edge=None, dm_edge=None,
     return fig, axs
 
 
+def scatterplot_pvalues_concordance(
+        pvals,
+        concords,
+        pct_to_size_func=None,
+        cmap=plt.get_cmap('Reds'),
+        vmin=None,
+        vmax=None,
+        ax=None,
+):
+    """
+    Plot summarising pvalue and concordance level simultaneously using marker size (concordance) and colour (pval).
+    :param pvals: DataFrame. Index and columns will be used for ticklabels. Suggest using -log10
+    :param concords: DataFrame, must match pvals
+    :param pct_to_size_func:
+    :param cmap: cmap used to represent
+    :param vmin: For pvalue shading. If not supplied, min of data will be used
+    :param vmax: For pvalue shading. If not supplied, max of data will be used
+    :return:
+    """
+    if sorted(pvals.index) != sorted(concords.index):
+        raise AttributeError("Index of pvals and concords must match")
+    if sorted(pvals.columns) != sorted(concords.columns):
+        raise AttributeError("Columns of pvals and concords must match")
+
+    concords = concords.loc[pvals.index, pvals.columns]
+
+    if pct_to_size_func is None:
+        pct_to_size_func = lambda t: t ** 2 / 20.
+
+    if vmin is None:
+        vmin = pvals.values.min()
+    if vmax is None:
+        vmax = pvals.values.max()
+
+    ny, nx = pvals.shape
+
+    if ax is None:
+        figsize = (nx, ny * 0.5)
+        fig, ax = plt.subplots(figsize=figsize)
+        ax_supplied = False
+    else:
+        ax_supplied = True
+        fig = ax.figure
+
+    plogp_norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    plogp_sm = plt.cm.ScalarMappable(cmap=cmap, norm=plogp_norm)
+
+    x = np.tile(np.arange(nx), (ny, 1)).flatten()
+    y = np.tile(np.arange(ny)[:, None], (1, nx)).flatten()
+
+    c = [plogp_sm.to_rgba(t) for t in pvals.values.flatten()]
+    s = [pct_to_size_func(t) for t in concords.values.flatten()]
+
+    ax.scatter(x, y, c=c, s=s, edgecolor='k')
+    ax.grid('off')
+    ax.set_facecolor('w')
+    ax.set_ylim([-.5, ny - .5])
+    ax.set_xlim([-.5, nx - .5])
+    ax.set_xticks(range(nx))
+    ax.set_yticks(range(ny))
+
+    ax.set_xticklabels(pvals.columns, fontsize=12, rotation=90)
+    ax.set_yticklabels(pvals.index, fontsize=12)
+
+    plogp_sm.set_array(pvals)
+    cbar = fig.colorbar(plogp_sm)
+    if not ax_supplied:
+        ax.xaxis.tick_top()
+        fig.tight_layout()
+
+    return {
+        'fig': fig,
+        'ax': ax,
+        'cbar': cbar
+    }
+
+
+def line_plot_pvalues_concordance(
+        pvals,
+        concords,
+        cmap=plt.get_cmap('Reds'),
+        vmin=None,
+        vmax=None,
+):
+    """
+    Plot summarising pvalue and concordance level simultaneously using position (concordance) and colour (pval).
+    Hard coded into vertical orientation (TODO: make this a parameter??)
+    :param pvals: DataFrame. Index and columns will be used for ticklabels. Suggest using -log10
+    :param concords: DataFrame, must match pvals
+    :param pct_to_size_func:
+    :param cmap: cmap used to represent
+    :param vmin: For pvalue shading. If not supplied, min of data will be used
+    :param vmax: For pvalue shading. If not supplied, max of data will be used
+    :return:
+    """
+    if sorted(pvals.index) != sorted(concords.index):
+        raise AttributeError("Index of pvals and concords must match")
+    if sorted(pvals.columns) != sorted(concords.columns):
+        raise AttributeError("Columns of pvals and concords must match")
+
+    concords = concords.loc[pvals.index, pvals.columns]
+
+    if vmin is None:
+        vmin = pvals.values.min()
+    if vmax is None:
+        vmax = pvals.values.max()
+
+    ny, nx = pvals.shape
+    markers = common.get_best_marker_map(nx)
+
+    gs = plt.GridSpec(nrows=nx, ncols=1, height_ratios=[1, 19])
+    fig = plt.figure(figsize=(1.5 * nx, .5 * ny))
+    ax = fig.add_subplot(gs[1])
+    ax.invert_yaxis()
+
+    cax = fig.add_subplot(gs[0])
+
+    plogp_norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    plogp_sm = plt.cm.ScalarMappable(cmap=cmap, norm=plogp_norm)
+
+    for i, col in enumerate(concords.columns):
+        ax.scatter(
+            concords[col],
+            range(ny),
+            c=[plogp_sm.to_rgba(t) for t in pvals[col].values],
+            s=60,
+            edgecolor='k',
+            marker=markers[i]
+        )
+
+    ax.set_xlabel('% concordance', fontsize=12)
+    ax.set_yticks(range(ny))
+    ax.set_yticklabels(pvals.index, fontsize=12)
+    ax.set_xlim([50, 100])
+    plogp_sm.set_array(pvals)
+    fig.colorbar(plogp_sm, cax=cax, orientation='horizontal')
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(r'$-\log_{10}(p)$')
+
+    type_attrs = {
+        'class': 'line',
+        'linestyle': 'none',
+        'markeredgecolor': 'k',
+        'markeredgewidth': 1.,
+        'markerfacecolor': 'none',
+        'markersize': 8
+    }
+
+    leg_dict = {}
+    for i, col in enumerate(pvals.columns):
+        leg_dict[col] = dict(type_attrs)
+        leg_dict[col].update({'marker': markers[i]})
+
+    common.add_custom_legend(ax, leg_dict, loc_outside=True, loc_outside_horiz='right')
+    gs.update(left=0.2, bottom=0.1, right=0.72, top=0.95, hspace=0.12)
+
+    return {
+        'fig': fig,
+        'ax': ax,
+        'gs': gs,
+        'cax': cax
+    }
+
+
 if __name__ == '__main__':
     """
     Use the DMR bias results to lookup into DE results (and vice versa?)
@@ -116,6 +280,12 @@ if __name__ == '__main__':
     chr_prefix = True
 
     relations_tss = ['TSS1500', 'TSS200']
+
+    groups = {
+        'Hypo': ['019', '030', '031', '017'],
+        'Hyper': ['018', '050', '054', '061', '026', '052']
+    }
+    group_ind = setops.groups_to_ind(pids, groups)
 
     subgroups = consts.SUBGROUPS
     subgroups_ind = setops.groups_to_ind(pids, subgroups)
@@ -222,7 +392,8 @@ if __name__ == '__main__':
     plt.setp(common.get_children_recursive(plt_dict['fig'], plt.Text), fontsize=12)
     plt_dict['fig'].savefig(os.path.join(outdir, "de_linked_syngeneic_full_list_tss_directions.png"), dpi=200)
 
-    # patient-specific DMRs linked to genes
+    # patient-specific DMRs linked to DE genes
+
     spec_ix = setops.specific_features(*[dmr_res_all[pid].keys() for pid in pids])
     dm_specific = dict([
         (
@@ -256,13 +427,129 @@ if __name__ == '__main__':
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "de_specific_linked_syngeneic_full_list_directions.png"), dpi=200)
 
-    # hypo/hyper DMRs in the hypo group linked (SEPARATELY) to DE
 
-    groups = {
-        'Hypo': ['019', '030', '031', '017'],
-        'Hyper': ['018', '050', '054', '061', '026', '052']
-    }
-    group_ind = setops.groups_to_ind(pids, groups)
+    # assess concordance: full list, DE and DMR
+    ct_all = {}
+    fisher_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    corr_all = {}
+    for_plot_all = {}
+
+    ct_tss = {}
+    fisher_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    corr_tss = {}
+    for_plot_tss = {}
+
+    for pid in pids:
+        this_joint = joint_de_dmr_s1[pid]
+        x = this_joint.de_logFC
+        y = this_joint.dmr_median_delta
+
+        for_plot_all[pid] = (x, y)
+
+        # fishers test
+        ct_all[pid] = basic.construct_contingency(x.values, y.values)
+        fisher_all.loc[pid] = stats.fisher_exact(ct_all[pid])
+        corr_all[pid] = stats.spearmanr(x.values, y.values)
+
+        ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
+        for_plot_tss[pid] = (x.loc[ix], y.loc[ix])
+
+        # fishers test
+        ct_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
+        fisher_tss.loc[pid] = stats.fisher_exact(ct_tss[pid])
+        corr_tss[pid] = stats.spearmanr(x.loc[ix].values, y.loc[ix].values)
+
+    fig, axs = de_dmr_concordance_scatter(
+        dict([(pid, for_plot_all[pid][0]) for pid in pids]),
+        dict([(pid, for_plot_all[pid][1]) for pid in pids]),
+        groups,
+        de_edge=dict([(pid, for_plot_tss[pid][0]) for pid in pids]),
+        dm_edge=dict([(pid, for_plot_tss[pid][1]) for pid in pids]),
+    )
+
+    fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
+
+    pvals = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    pvals.loc[:, 'All'] = -np.log10(fisher_all['p'].astype(float))
+    pvals.loc[:, 'TSS'] = -np.log10(fisher_tss['p'].astype(float))
+
+    concords = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    concords.loc[:, 'All'] = pd.Series(dict([
+        (pid, (ct_all[pid][1, 0] + ct_all[pid][0, 1]) / float(ct_all[pid].sum()) * 100.) for pid in pids
+    ]))
+    concords.loc[:, 'TSS'] = pd.Series(dict([
+        (pid, (ct_tss[pid][1, 0] + ct_tss[pid][0, 1]) / float(ct_tss[pid].sum()) * 100.) for pid in pids
+    ]))
+
+    plt_dict = scatterplot_pvalues_concordance(pvals, concords, vmin=0., vmax=40.)
+    plt_dict['cbar'].set_label(r'$-\log_{10}(p)$')
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_scatter_full_dmr_de_genes.png"), dpi=200)
+
+    plt_dict = line_plot_pvalues_concordance(pvals, concords, vmin=0., vmax=40.)
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_line_full_dmr_de_genes.png"), dpi=200)
+
+
+
+    # same again for patient-specific DE and DMR
+
+    venn_set_dedmr, venn_ct_dedmr = setops.venn_from_arrays(*[joint_de_dmr_s1[pid].index for pid in pids])
+    specific_sets = setops.specific_sets(pids)
+
+    ct_all_specific = {}
+    ct_tss_specific = {}
+    fisher_all_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
+    fisher_tss_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
+
+    for_plot_specific_all = {}
+    for_plot_specific_tss = {}
+
+    for pid in pids:
+        this_joint = joint_de_dmr_s1[pid].loc[venn_set_dedmr[specific_sets[pid]]]
+        x = this_joint.de_logFC
+        y = this_joint.dmr_median_delta
+        for_plot_specific_all[pid] = (x, y)
+
+        ct_all_specific[pid] = basic.construct_contingency(x.values, y.values)
+        fisher_all_specific.loc[pid] = stats.fisher_exact(ct_all_specific[pid])
+
+        ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
+        for_plot_specific_tss[pid] = (x.loc[ix], y.loc[ix])
+
+        ct_tss_specific[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
+        fisher_tss_specific.loc[pid] = stats.fisher_exact(ct_tss_specific[pid])
+
+    fig, axs = de_dmr_concordance_scatter(
+        dict([(pid, for_plot_specific_all[pid][0]) for pid in pids]),
+        dict([(pid, for_plot_specific_all[pid][1]) for pid in pids]),
+        groups,
+        de_edge=dict([(pid, for_plot_specific_tss[pid][0]) for pid in pids]),
+        dm_edge=dict([(pid, for_plot_specific_tss[pid][1]) for pid in pids]),
+    )
+
+    fig.savefig(os.path.join(outdir, "de_dmr_specific_scatter.png"), dpi=200)
+
+    pvals = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    pvals.loc[:, 'All'] = -np.log10(fisher_all_specific['p'].astype(float))
+    pvals.loc[:, 'TSS'] = -np.log10(fisher_tss_specific['p'].astype(float))
+
+    concords = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    concords.loc[:, 'All'] = pd.Series(dict([
+        (pid, (ct_all_specific[pid][1, 0] + ct_all_specific[pid][0, 1]) / float(ct_all_specific[pid].sum()) * 100.) for pid in pids
+    ]))
+    concords.loc[:, 'TSS'] = pd.Series(dict([
+        (pid, (ct_tss_specific[pid][1, 0] + ct_tss_specific[pid][0, 1]) / float(ct_tss_specific[pid].sum()) * 100.) for pid in pids
+    ]))
+
+    plt_dict = scatterplot_pvalues_concordance(pvals, concords, vmin=0., vmax=5.)
+    plt_dict['cbar'].set_label(r'$-\log_{10}(p)$')
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_scatter_specific_dmr_de_genes.png"), dpi=200)
+
+    plt_dict = line_plot_pvalues_concordance(pvals, concords, vmin=0., vmax=5.)
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_line_specific_dmr_de_genes.png"), dpi=200)
+
+
     # upset plotting colours
     subgroup_set_colours = {
         'Hypo full': '#427425',
@@ -429,400 +716,56 @@ if __name__ == '__main__':
     fisher_gs_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
     fisher_gs_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
 
-    ncol = max([len(t) for t in groups.values()])
-    nrow = len(groups)
+    for_plot_gs_all = {}
+    for_plot_gs_tss = {}
 
-    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
-    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    for pid in pids:
+        this_grp = groups_inv[pid]
+        this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[this_grp])]
+        x = this_joint.de_logFC
+        y = this_joint.dmr_median_delta
+        for_plot_gs_all[pid] = (x, y)
 
-    xmin = xmax = ymin = ymax = 0
+        # fishers test
+        ct_gs_all[pid] = basic.construct_contingency(x.values, y.values)
+        fisher_gs_all.loc[pid] = stats.fisher_exact(ct_gs_all[pid])
 
-    subplots_filled = set()
-    for i, grp in enumerate(groups):
-        for j, pid in enumerate(groups[grp]):
-            subplots_filled.add((i, j))
-            ax = axs[i, j]
-            this_joint = joint_de_dmr_s1[pid].loc[joint_de_dmr_s1[pid].cluster_id.isin(dmr_groups[grp])]
-            x = this_joint.de_logFC
-            y = this_joint.dmr_median_delta
-            xmin = min(xmin, x.min())
-            xmax = max(xmax, x.max())
-            ymin = min(ymin, y.min())
-            ymax = max(ymax, y.max())
+        ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
+        for_plot_gs_tss[pid] = (x.loc[ix], y.loc[ix])
 
-            ax.scatter(
-                x,
-                y,
-                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
-                alpha=0.6
-            )
+        # fishers test
+        ct_gs_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
+        fisher_gs_tss.loc[pid] = stats.fisher_exact(ct_gs_tss[pid])
 
-            # fishers test
-            ct_gs_all[pid] = basic.construct_contingency(x.values, y.values)
-            fisher_gs_all.loc[pid] = stats.fisher_exact(ct_gs_all[pid])
-
-            ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
-            ax.scatter(
-                this_joint.de_logFC.loc[ix],
-                this_joint.dmr_median_delta.loc[ix],
-                c='none',
-                edgecolor='k',
-                linewidth=0.5,
-                alpha=0.6
-            )
-            # fishers test
-            ct_gs_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
-            fisher_gs_tss.loc[pid] = stats.fisher_exact(ct_gs_tss[pid])
-
-            ax.axhline(0., c='k', linestyle='--')
-            ax.axvline(0., c='k', linestyle='--')
-            ax.set_title(pid)
-    big_ax.set_xlabel(r'DE logFC')
-    big_ax.set_ylabel(r'DMR median $\Delta M$')
-    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
-    # fig.tight_layout()
-
-    for i in range(2):
-        for j in range(6):
-            if (i, j) not in subplots_filled:
-                axs[i, j].set_visible(False)
-    axs[0,0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
-    axs[0,0].set_ylim([np.floor(ymin), np.ceil(ymax)])
+    fig, axs = de_dmr_concordance_scatter(
+        dict([(pid, for_plot_gs_all[pid][0]) for pid in pids]),
+        dict([(pid, for_plot_gs_all[pid][1]) for pid in pids]),
+        groups,
+        de_edge=dict([(pid, for_plot_gs_tss[pid][0]) for pid in pids]),
+        dm_edge=dict([(pid, for_plot_gs_tss[pid][1]) for pid in pids]),
+    )
     fig.savefig(os.path.join(outdir, "de_dmr_scatter_from_dmr_groups.png"), dpi=200)
 
-    pct_conc_gs_all = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_gs_all.items()
-    ])
-    pct_conc_gs_tss = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_gs_tss.items()
-    ])
+    pvals = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    pvals.loc[:, 'All'] = -np.log10(fisher_gs_all['p'].astype(float))
+    pvals.loc[:, 'TSS'] = -np.log10(fisher_gs_tss['p'].astype(float))
 
-    # run again for all DE/DMRs
-    # generate scatter plots of joint DE and DMR for the two DMR groups
-    # run fisher's test at the same time
-    ct_all = {}
-    ct_tss = {}
-    fisher_all = pd.DataFrame(index=pids, columns=['odds', 'p'])
-    fisher_tss = pd.DataFrame(index=pids, columns=['odds', 'p'])
-    corr_all = {}
-    corr_tss = {}
+    concords = pd.DataFrame(index=pids, columns=['All', 'TSS'])
+    concords.loc[:, 'All'] = pd.Series(dict([
+        (pid, (ct_gs_all[pid][1, 0] + ct_gs_all[pid][0, 1]) / float(ct_gs_all[pid].sum()) * 100.) for pid in pids
+    ]))
+    concords.loc[:, 'TSS'] = pd.Series(dict([
+        (pid, (ct_gs_tss[pid][1, 0] + ct_gs_tss[pid][0, 1]) / float(ct_gs_tss[pid].sum()) * 100.) for pid in pids
+    ]))
 
-    ## TODO: can we use de_dmr_concordance_scatter() to generate the plots?
+    plt_dict = scatterplot_pvalues_concordance(pvals, concords, vmin=0., vmax=2.)
+    plt_dict['cbar'].set_label(r'$-\log_{10}(p)$')
+    plt_dict['fig'].tight_layout()
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_scatter_gs_dmr_de_genes.png"), dpi=200)
 
-    ncol = max([len(t) for t in groups.values()])
-    nrow = len(groups)
+    plt_dict = line_plot_pvalues_concordance(pvals, concords, vmin=0., vmax=2.)
+    plt_dict['fig'].savefig(os.path.join(outdir, "fisher_p_concordance_line_gs_dmr_de_genes.png"), dpi=200)
 
-    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
-    big_ax = common.add_big_ax_to_subplot_fig(fig)
-
-    xmin = xmax = ymin = ymax = 0
-
-    subplots_filled = set()
-    for i, grp in enumerate(groups):
-        for j, pid in enumerate(groups[grp]):
-            subplots_filled.add((i, j))
-            ax = axs[i, j]
-            this_joint = joint_de_dmr_s1[pid]
-            x = this_joint.de_logFC
-            y = this_joint.dmr_median_delta
-            xmin = min(xmin, x.min())
-            xmax = max(xmax, x.max())
-            ymin = min(ymin, y.min())
-            ymax = max(ymax, y.max())
-
-            ax.scatter(
-                x,
-                y,
-                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
-                alpha=0.6
-            )
-
-            # fishers test
-            ct_all[pid] = basic.construct_contingency(x.values, y.values)
-            fisher_all.loc[pid] = stats.fisher_exact(ct_all[pid])
-            corr_all[pid] = stats.spearmanr(x.values, y.values)
-
-            ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
-            ax.scatter(
-                this_joint.de_logFC.loc[ix],
-                this_joint.dmr_median_delta.loc[ix],
-                c='none',
-                edgecolor='k',
-                linewidth=0.5,
-                alpha=0.6
-            )
-            # fishers test
-            ct_tss[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
-            fisher_tss.loc[pid] = stats.fisher_exact(ct_tss[pid])
-            corr_tss[pid] = stats.spearmanr(x.loc[ix].values, y.loc[ix].values)
-
-            ax.axhline(0., c='k', linestyle='--')
-            ax.axvline(0., c='k', linestyle='--')
-            ax.set_title(pid)
-    big_ax.set_xlabel(r'DE logFC')
-    big_ax.set_ylabel(r'DMR median $\Delta M$')
-    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
-
-    for i in range(2):
-        for j in range(6):
-            if (i, j) not in subplots_filled:
-                axs[i, j].set_visible(False)
-    axs[0,0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
-    axs[0,0].set_ylim([np.floor(ymin), np.ceil(ymax)])
-    fig.savefig(os.path.join(outdir, "de_dmr_scatter.png"), dpi=200)
-
-    # same again for patient-specific DE/DMR
-    venn_set_dedmr, venn_ct_dedmr = setops.venn_from_arrays(*[joint_de_dmr_s1[pid].index for pid in pids])
-    specific_sets = setops.specific_sets(pids)
-    ct_all_specific = {}
-    ct_tss_specific = {}
-    fisher_all_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
-    fisher_tss_specific = pd.DataFrame(index=pids, columns=['odds', 'p'])
-
-    ## TODO: can we use de_dmr_concordance_scatter() to generate the plots?
-
-    ncol = max([len(t) for t in groups.values()])
-    nrow = len(groups)
-
-    fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharex=True, sharey=True, figsize=(1.14 * ncol, 1.8 * nrow))
-    big_ax = common.add_big_ax_to_subplot_fig(fig)
-
-    xmin = xmax = ymin = ymax = 0
-
-    subplots_filled = set()
-    for i, grp in enumerate(groups):
-        for j, pid in enumerate(groups[grp]):
-            subplots_filled.add((i, j))
-            ax = axs[i, j]
-            this_joint = joint_de_dmr_s1[pid].loc[venn_set_dedmr[specific_sets[pid]]]
-            x = this_joint.de_logFC
-            y = this_joint.dmr_median_delta
-            xmin = min(xmin, x.min())
-            xmax = max(xmax, x.max())
-            ymin = min(ymin, y.min())
-            ymax = max(ymax, y.max())
-
-            ax.scatter(
-                x,
-                y,
-                c=consts.METHYLATION_DIRECTION_COLOURS[grp.lower()],
-                alpha=0.6
-            )
-
-            # fishers test
-            ct_all_specific[pid] = basic.construct_contingency(x.values, y.values)
-            fisher_all_specific.loc[pid] = stats.fisher_exact(ct_all_specific[pid])
-
-            ix = (this_joint[['dmr_%s' % t for t in relations_tss]]).any(axis=1)
-            ax.scatter(
-                this_joint.de_logFC.loc[ix],
-                this_joint.dmr_median_delta.loc[ix],
-                c='none',
-                edgecolor='k',
-                linewidth=0.5,
-                alpha=0.6
-            )
-            # fishers test
-            ct_tss_specific[pid] = basic.construct_contingency(x.loc[ix].values, y.loc[ix].values)
-            fisher_tss_specific.loc[pid] = stats.fisher_exact(ct_tss_specific[pid])
-
-            ax.axhline(0., c='k', linestyle='--')
-            ax.axvline(0., c='k', linestyle='--')
-            ax.set_title(pid)
-    big_ax.set_xlabel(r'DE logFC')
-    big_ax.set_ylabel(r'DMR median $\Delta M$')
-    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.15, top=0.93, hspace=0.2, wspace=0.05)
-
-    for i in range(2):
-        for j in range(6):
-            if (i, j) not in subplots_filled:
-                axs[i, j].set_visible(False)
-    axs[0,0].set_xlim([np.floor(xmin * 1.05), np.ceil(xmax * 1.05)])
-    axs[0,0].set_ylim([np.floor(ymin), np.ceil(ymax)])
-    fig.savefig(os.path.join(outdir, "de_dmr_specific_scatter.png"), dpi=200)
-
-    pct_conc_all_specific = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_all_specific.items()
-    ])
-    pct_conc_tss_specific = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss_specific.items()
-    ])
-
-    # plot summarising the P values and % concordance in each patient and all/TSS
-    plogp_cmap = plt.get_cmap('Reds')
-    plogp_norm = colors.Normalize(vmin=0., vmax=40.)
-    plogp_sm = plt.cm.ScalarMappable(cmap=plogp_cmap, norm=plogp_norm)
-
-    pct_to_size = lambda t: t ** 2 / 20.
-
-    x = range(len(pids))
-    y_fun = lambda t: [t] * len(pids)
-
-    fig, ax = plt.subplots(figsize=(5, 2.))
-    pct_conc_all = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_all.items()
-    ])
-    ax.scatter(
-        x,
-        y_fun(0),
-        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_all['p']],
-        s=[pct_to_size(pct_conc_all[pid]) for pid in pids],
-        edgecolor='k',
-    )
-    pct_conc_tss = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss.items()
-    ])
-    ax.scatter(
-        x,
-        y_fun(1),
-        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_tss['p']],
-        s=[pct_to_size(pct_conc_tss[pid]) for pid in pids],
-        edgecolor='k',
-    )
-    ax.grid('off')
-    ax.set_facecolor('w')
-    ax.set_ylim([-.5, 1.5])
-    ax.set_xticks(x)
-    ax.set_xticklabels(pids, fontsize=12, rotation=90)
-    ax.set_yticks(range(2))
-    ax.set_yticklabels(['All', 'TSS'], fontsize=12)
-
-    plogp_sm.set_array(fisher_all['p'].values)
-    cbar = fig.colorbar(plogp_sm)
-    cbar.set_label(r'$-\log_{10}(p)$')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary.png"), dpi=200)
-
-    # flip it
-
-    x = range(len(pids))
-    y_fun = lambda t: [t] * len(pids)
-
-    fig, ax = plt.subplots(figsize=(2.3, 4.))
-    pct_conc_all = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_all.items()
-    ])
-    ax.scatter(
-        y_fun(0),
-        x,
-        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_all['p']],
-        s=[pct_to_size(pct_conc_all[pid]) for pid in pids],
-        edgecolor='k',
-    )
-    pct_conc_tss = dict([
-        (k, (v[1, 0] + v[0, 1]) / float(v.sum()) * 100.) for k, v in ct_tss.items()
-    ])
-    ax.scatter(
-        y_fun(1),
-        x,
-        color=[plogp_sm.to_rgba(-np.log10(t)) for t in fisher_tss['p']],
-        s=[pct_to_size(pct_conc_tss[pid]) for pid in pids],
-        edgecolor='k',
-    )
-    ax.grid('off')
-    ax.set_facecolor('w')
-    ax.set_xlim([-.5, 1.5])
-    ax.set_yticks(x)
-    ax.set_yticklabels(pids, fontsize=12)
-    ax.set_xticks(range(2))
-    ax.set_xticklabels(['All', 'TSS'], fontsize=12)
-
-    plogp_sm.set_array(fisher_all['p'].values)
-    cbar = fig.colorbar(plogp_sm)
-    cbar.set_label(r'$-\log_{10}(p)$')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary.png"), dpi=200)
-
-    # alternative: line plot
-    ## TODO: move to function (including flipped version)
-
-    x = range(len(pids))
-    y_fun = lambda t: [t] * len(pids)
-
-    gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[19, 1])
-    fig = plt.figure(figsize=(5., 2.))
-    ax_bottom = fig.add_subplot(gs[:, 0])
-    cax = fig.add_subplot(gs[:, 1])
-
-    ax_bottom.scatter(
-        x,
-        [pct_conc_all[p] for p in pids],
-        color=plogp_sm.to_rgba(-(np.log10(fisher_all.loc[pids, 'p'].astype(float)))),
-        s=60,
-        edgecolor='k',
-        marker='s',
-    )
-    ax_bottom.scatter(
-        x,
-        [pct_conc_tss[p] for p in pids],
-        color=plogp_sm.to_rgba(-(np.log10(fisher_tss.loc[pids, 'p'].astype(float)))),
-        s=60,
-        edgecolor='k',
-        marker='o',
-    )
-    ax_bottom.set_ylabel('% concordance', fontsize=12)
-    ax_bottom.set_xticks(x)
-    ax_bottom.set_xticklabels(pids, fontsize=12, rotation=90)
-
-    ax_bottom.set_ylim([50, 100])
-    fig.colorbar(plogp_sm, cax=cax)
-    cax.set_ylabel(r'$-\log_{10}(p)$')
-    gs.update(left=0.15, right=0.9, bottom=0.22, top=0.97, wspace=0.05)
-    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary_2.png"), dpi=200)
-
-    # flip it
-
-    gs = plt.GridSpec(nrows=2, ncols=1, height_ratios=[1, 19])
-    fig = plt.figure(figsize=(3., 5.))
-    ax = fig.add_subplot(gs[1])
-    cax = fig.add_subplot(gs[0])
-
-    ax.invert_yaxis()
-
-    ax.scatter(
-        [pct_conc_all[p] for p in pids],
-        x,
-        color=plogp_sm.to_rgba(-(np.log10(fisher_all.loc[pids, 'p'].astype(float)))),
-        s=60,
-        edgecolor='k',
-        marker='s',
-    )
-    ax.scatter(
-        [pct_conc_tss[p] for p in pids],
-        x,
-        color=plogp_sm.to_rgba(-(np.log10(fisher_tss.loc[pids, 'p'].astype(float)))),
-        s=60,
-        edgecolor='k',
-        marker='o',
-    )
-    ax.set_xlabel('% concordance', fontsize=12)
-    ax.set_yticks(x)
-    ax.set_yticklabels(pids, fontsize=12)
-    ax.set_xlim([50, 100])
-    fig.colorbar(plogp_sm, cax=cax, orientation='horizontal')
-    # cax.xaxis.tick_top()
-    cax.xaxis.set_label_position('top')
-
-    cax.set_xlabel(r'$-\log_{10}(p)$')
-    type_attrs = {
-        'class': 'line',
-        'linestyle': 'none',
-        'markeredgecolor': 'k',
-        'markeredgewidth': 1.,
-        'markerfacecolor': 'none',
-        'markersize': 8
-    }
-
-    leg_dict = {
-        'All': dict(type_attrs),
-        'TSS': dict(type_attrs),
-    }
-    leg_dict['All'].update({'marker': 's'})
-    leg_dict['TSS'].update({'marker': 'o'})
-
-    common.add_custom_legend(ax, leg_dict, loc_outside=True, loc_outside_horiz='right')
-    gs.update(left=0.2, bottom=0.1, right=0.72, top=0.95, hspace=0.12)
-    fig.savefig(os.path.join(outdir, "fisher_p_and_concordance_summary_2_flip.png"), dpi=200)
 
     # rather than requiring DMR and DE, will we get a better idea working with DMR and looking at logFC
     # (regardless of whether the gene is DE or not)
@@ -875,6 +818,7 @@ if __name__ == '__main__':
         de_edge=dict([(pid, logfc_vs_median_delta_tss[pid][0]) for pid in pids]),
         dm_edge=dict([(pid, logfc_vs_median_delta_tss[pid][1]) for pid in pids]),
     )
+    fig.savefig(os.path.join(outdir, "logfc_dmr_scatter.png"), dpi=200)
 
     fig, axs = de_dmr_concordance_scatter(
         dict([(pid, logfc_vs_median_delta_specific_all[pid][0]) for pid in pids]),
@@ -884,8 +828,13 @@ if __name__ == '__main__':
         dm_edge=dict([(pid, logfc_vs_median_delta_specific_tss[pid][1]) for pid in pids]),
     )
 
+    fig.savefig(os.path.join(outdir, "logfc_dmr_specific_scatter.png"), dpi=200)
+
     # are the genes associated with patient-specific DMRs significantly more concordant than the full list?
-    # base our analysis on permutations and the odds ratio
+    # base our analysis on permutations and concordance %
+
+    ## TODO: move this to a function and run it also on DE/DMR analysis (this is all gene/DMR analysis)
+
     n_iter = 1000
     logfc_vs_median_perm = {}
     logfc_vs_median_actual = {}
