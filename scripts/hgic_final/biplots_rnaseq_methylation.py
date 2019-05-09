@@ -9,10 +9,11 @@ import collections
 import os
 
 from rnaseq import loader, filter, general
+from methylation import loader as methylation_loader, process
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
 from utils import output, log, setops, excel
-from stats import decomposition
+from stats import decomposition, transformations
 import references
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
 
@@ -364,9 +365,14 @@ if __name__ == '__main__':
     de_res = pd.read_excel(fn_de_res, index_col=0)
 
     # load data for iNSC and GBM (Salmon TPM)
-    obj = loader.load_by_patient(consts.PIDS, source='salmon')
-    obj.filter_by_sample_name(consts.S1_RNASEQ_SAMPLES_GIC + consts.S1_RNASEQ_SAMPLES_INSC)
-    obj.meta.insert(0, 'patient_id', obj.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
+    rna_obj = loader.load_by_patient(consts.PIDS, source='salmon')
+    rna_obj.filter_by_sample_name(consts.S1_RNASEQ_SAMPLES_GIC + consts.S1_RNASEQ_SAMPLES_INSC)
+    rna_obj.meta.insert(0, 'patient_id', rna_obj.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
+
+    # load methylation data
+    meth_obj = methylation_loader.load_by_patient(consts.PIDS, include_control=False)
+    meth_obj.filter_by_sample_name(consts.S1_METHYL_SAMPLES_GIC + consts.S1_METHYL_SAMPLES_INSC)
+    meth_obj.meta.insert(0, 'patient_id', meth_obj.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     cmap = common.get_best_cmap(len(consts.PIDS))
     scatter_colours = dict(zip(consts.PIDS, cmap))
@@ -379,10 +385,12 @@ if __name__ == '__main__':
     # scaling parameter applied during SVD
     scale_preserved = 0.05
 
-    sample_colours = obj.meta.patient_id.map(scatter_colours.get).to_dict()
-    sample_markers = obj.meta.type.map(scatter_markers.get).to_dict()
+    ######## RNA-Seq ########
 
-    dat = filter.filter_by_cpm(obj.data, min_n_samples=2)
+    sample_colours = rna_obj.meta.patient_id.map(scatter_colours.get).to_dict()
+    sample_markers = rna_obj.meta.type.map(scatter_markers.get).to_dict()
+
+    dat = filter.filter_by_cpm(rna_obj.data, min_n_samples=2)
     # TODO: include VST or similar here
     dat = np.log(dat + eps)
     # copy of dat with gene symbols
@@ -393,22 +401,21 @@ if __name__ == '__main__':
 
     # recreate Sven's original (unweighted) plot
     # we're not going to use this, it's just for validation / reproducibility
-    fig, ax, _ = plot_biplot(
-        dat,
-        obj.meta,
-        (0, 1),
-        scatter_colours,
-        scatter_markers,
-        annotate_features_radius=0.4,
-        include_weighting=False,
-        scale=10.
-    )
-    fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated_unweighted.png" % (0, 1)), dpi=200)
+    # fig, ax, _ = plot_biplot(
+    #     dat,
+    #     rna_obj.meta,
+    #     (0, 1),
+    #     scatter_colours,
+    #     scatter_markers,
+    #     annotate_features_radius=0.4,
+    #     include_weighting=False,
+    #     scale=10.
+    # )
+    # fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated_unweighted.png" % (0, 1)), dpi=200)
 
     # dict to store 'selected' genes for later use
-    selected_by_quantile_mean_logfc = {}
-    selected_by_quantile_separate_logfc = {}
-    selected_by_quantile_gene_only_all = {}
+    rna_selected_by_quantile_mean_logfc = {}
+    rna_selected_by_quantile_separate_logfc = {}
 
     svd_res = decomposition.svd_for_biplot(dat, feat_axis=0, scale_preserved=scale_preserved)
 
@@ -421,7 +428,7 @@ if __name__ == '__main__':
             this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
 
             # mean logFC
-            selected_by_quantile_mean_logfc[dim] = extract_gois(
+            rna_selected_by_quantile_mean_logfc[dim] = extract_gois(
                 this_feat,
                 de_res,
                 quantile,
@@ -430,7 +437,7 @@ if __name__ == '__main__':
 
             # separate logFC
             # remove non-significant results
-            selected_by_quantile_separate_logfc[dim] = extract_gois(
+            rna_selected_by_quantile_separate_logfc[dim] = extract_gois(
                 this_feat,
                 de_res,
                 quantile,
@@ -441,7 +448,7 @@ if __name__ == '__main__':
         selection_radius = selection_radii_for_plotting[first_dim]
         fig, ax, res = plot_biplot(
             dat,
-            obj.meta,
+            rna_obj.meta,
             dims_pair,
             scatter_colours,
             scatter_markers,
@@ -452,7 +459,7 @@ if __name__ == '__main__':
 
         fig, ax, res = plot_biplot(
             dat,
-            obj.meta,
+            rna_obj.meta,
             dims_pair,
             scatter_colours,
             scatter_markers,
@@ -483,20 +490,20 @@ if __name__ == '__main__':
 
     # export lists for IPA
 
-    ix_all = sorted(setops.reduce_union(*[t.index for t in selected_by_quantile_mean_logfc.values()]))
+    ix_all = sorted(setops.reduce_union(*[t.index for t in rna_selected_by_quantile_mean_logfc.values()]))
 
     ipa_mean_logfc = pd.DataFrame(index=ix_all)
-    for k, v in selected_by_quantile_mean_logfc.items():
+    for k, v in rna_selected_by_quantile_mean_logfc.items():
         ipa_mean_logfc.insert(0, "pc_%s_logFC" % '-'.join([str(t+1) for t in k]), v)
     ipa_mean_logfc.to_excel(os.path.join(outdir, "for_ipa_mean_logfc.xlsx"))
 
     # for separated data, combine single and paired PC for maximum efficiency
     for first_dim in dims:
         dims_pair = (first_dim, first_dim + 1)
-        ix_all = setops.reduce_union(*[selected_by_quantile_separate_logfc[k].index for k in [(first_dim,), dims_pair]])
+        ix_all = setops.reduce_union(*[rna_selected_by_quantile_separate_logfc[k].index for k in [(first_dim,), dims_pair]])
         this_df = pd.DataFrame(index=ix_all)
         for k in [(first_dim,), dims_pair]:
-            tt = selected_by_quantile_separate_logfc[k].copy()
+            tt = rna_selected_by_quantile_separate_logfc[k].copy()
             tt = tt.loc[:, tt.columns.str.contains('logFC')]
             tt.columns = tt.columns.str.replace('_logFC', '_%s_logFC' % '-'.join([str(t+1) for t in k]))
             this_df = pd.concat((this_df, tt), axis=1, sort=True)
@@ -512,3 +519,63 @@ if __name__ == '__main__':
             this_ens = get_topmost_quantile_by_loading(this_feat, quantile).intersection(de_res.index)
             for_export[the_key] = de_res.loc[this_ens]
     excel.pandas_to_excel(for_export, os.path.join(outdir, "full_de_syngeneic_only_filtered_by_biplot.xlsx"))
+
+    ######## DNA methylation ########
+
+    sample_colours = meth_obj.meta.patient_id.map(scatter_colours.get).to_dict()
+    sample_markers = meth_obj.meta.type.map(scatter_markers.get).to_dict()
+
+    dat = process.m_from_beta(meth_obj.data)
+
+    probe_prop = 0.01
+
+    # dict to store 'selected' probes for later use
+    meth_selected_by_quantile_mean_logfc = {}
+    meth_selected_by_quantile_separate_logfc = {}
+    meth_selected_by_quantile_gene_only_all = {}
+
+    svd_res = decomposition.svd_for_biplot(dat, feat_axis=0, scale_preserved=scale_preserved)
+
+    # downsample features (probes) at random for plotting purposes
+    probe_ix = dat.index.to_native_types()
+    np.random.shuffle(probe_ix)
+    probe_ix = probe_ix[:int(len(probe_ix) * probe_prop)]
+
+    for first_dim in dims:
+        dims_pair = (first_dim, first_dim + 1)
+
+        # extract gene lists for pathway analysis
+        for dim in [(first_dim,), dims_pair]:
+            this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
+
+        fig, ax, res = plot_biplot(
+            dat,
+            meth_obj.meta,
+            dims_pair,
+            scatter_colours,
+            scatter_markers,
+            scale=0.05,
+            loading_idx=probe_ix
+        )
+        fig.savefig(os.path.join(outdir, "methylation_pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
+
+        # if publish_plotly:
+        #     size_scaling = [
+        #         [0.1, selection_radius],
+        #         [2., 10.]
+        #     ]
+        #     feature_text = dat_with_gs['Gene Symbol']
+        #     sample_text = dat.columns
+        #     rad = (np.array(zip(*[svd_res['feat_dat'][i + 1] for i in dims_pair])) ** 2).sum(axis=1) ** .5
+        #     to_annotate = rad > selection_radius
+        #     p1 = generate_plotly_plot(
+        #         svd_res,
+        #         filename="pca_biplot_dims_%d-%d" % tuple(t + 1 for t in dims_pair),
+        #         feature_size_scaling=size_scaling,
+        #         feature_text=feature_text,
+        #         sample_text=sample_text,
+        #         sample_colours=sample_colours,
+        #         sample_markers=sample_markers,
+        #         feature_text_mask=~to_annotate,
+        #         components=tuple(i + 1 for i in dims_pair),
+        #     )

@@ -227,7 +227,8 @@ if __name__ == '__main__':
     Here we create a Cytoscape session for the visualisation of the IPA (and GO?) pathways identified as enriched
     in each patient. We'll be comparing between patients, hence it's a 'Strategy 1' approach.
     """
-    generate_animation = True
+    # generate_animation = True
+    generate_animation = False
 
     # set a minimum pval for pathways to be used
     alpha = 0.01
@@ -335,6 +336,16 @@ if __name__ == '__main__':
             v['name_vis_2'] = ''
             v['z_2'] = 5.
 
+    # 3. Top N pathways only
+    to_label = sorted(mean_plogp, key=lambda x: -mean_plogp[x])[:label_top_n_nodes]
+    for k, v in gg.nodes.iteritems():
+        if k in to_label:
+            v['name_vis_3'] = k
+            v['z_3'] = 10.
+        else:
+            v['name_vis_3'] = ''
+            v['z_3'] = 5.
+
     this_net = cy_session.add_networkx_graph(gg, name=gg.name)
 
     cyto_nets[gg.name] = this_net
@@ -375,6 +386,11 @@ if __name__ == '__main__':
     this_net.passthrough_node_label('name_vis_2')
     this_net._create_passthrough_mapping('z_2', 'NODE_Z_LOCATION', col_type='Double')
     this_net.export_png(os.path.join(outdir, "cytoscape_de_network_selected_node_labels.png"), height=2000)
+
+    # label version 3
+    this_net.passthrough_node_label('name_vis_3')
+    this_net._create_passthrough_mapping('z_3', 'NODE_Z_LOCATION', col_type='Double')
+    this_net.export_png(os.path.join(outdir, "cytoscape_de_network_topn_node_labels.png"), height=2000)
 
     #######################################################
     # DM

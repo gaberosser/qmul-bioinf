@@ -46,7 +46,7 @@ if __name__ == "__main__":
     mtor_source = 'kegg_msigdb'  # ('kegg', 'pid', 'biocarta')
 
     # significance cutoff
-    alpha = 0.01
+    alpha = 0.05
 
     # load mTOR signatures
     mtor_gs_dict = ttm.mtor_signature_dict()
@@ -88,6 +88,14 @@ if __name__ == "__main__":
     # run ssGSEA then Z transform the results
     es = gsva.ssgsea(rnaseq_dat, genesets)
     es_z = ttm.z_transform(es, axis=1)
+
+    # export
+    for_export = es_z.transpose()
+    for_export.insert(for_export.shape[1], 'Tumour anatomy (approx)', obj.meta.structure_abbreviation.replace(re.compile(r'-.*'), ''))
+    for_export.insert(for_export.shape[1], 'Tumour anatomy (full)', obj.meta.structure_abbreviation)
+    for_export.insert(for_export.shape[1], 'Tumour anatomy (full description)', obj.meta.structure_name)
+    for_export.to_excel(os.path.join(outdir, "ivygap_signature_scores_and_subgroups.xlsx"))
+
 
     # boxplots showing signature scores in the different niches
     bplot = {}
@@ -150,62 +158,68 @@ if __name__ == "__main__":
 
     group_list_extended = list(group_list) + ['All']
 
-    s = pd.DataFrame(index=['MG-BMDM', 'mTOR-BMDM', 'mTOR-MG'], columns=group_list_extended)
-    p = s.copy()
+    for_plot = collections.OrderedDict([
+        # ('MG-BMDM', dict_both),
+        ('mTOR-BMDM', dict_bmdm),
+        ('mTOR-MG', dict_mg)
+    ])
 
-    s.loc['MG-BMDM'] = [dict_both['statsmodels'][k].params[-1] for k in group_list_extended]
-    s.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].params[-1] for k in group_list_extended]
-    s.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].params[-1] for k in group_list_extended]
+    s, p = ttm.get_slope_and_pval(
+        for_plot,
+        col_order=group_list_extended,
+    )
 
-    p.loc['MG-BMDM'] = [dict_both['statsmodels'][k].f_pvalue for k in group_list_extended]
-    p.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].f_pvalue for k in group_list_extended]
-    p.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].f_pvalue for k in group_list_extended]
+    # s = pd.DataFrame(index=['MG-BMDM', 'mTOR-BMDM', 'mTOR-MG'], columns=group_list_extended)
+    # p = s.copy()
 
-    p_to_size = lambda t: min(150., 45 - 12 * np.log10(t))
+    # s.loc['MG-BMDM'] = [dict_both['statsmodels'][k].params[-1] for k in group_list_extended]
+    # s.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].params[-1] for k in group_list_extended]
+    # s.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].params[-1] for k in group_list_extended]
 
-    x = range(len(group_list))
-    y_fun = lambda t: [t] * len(group_list)
+    # p.loc['MG-BMDM'] = [dict_both['statsmodels'][k].f_pvalue for k in group_list_extended]
+    # p.loc['mTOR-BMDM'] = [dict_bmdm['statsmodels'][k].f_pvalue for k in group_list_extended]
+    # p.loc['mTOR-MG'] = [dict_mg['statsmodels'][k].f_pvalue for k in group_list_extended]
+
+    # p_to_size = lambda t: min(150., 45 - 12 * np.log10(t))
+    p_to_size = lambda t: min(500., 100 + 20 * np.log10(t) ** 2)
+
+    x = range(len(group_list_extended))
+    y_fun = lambda t: [t] * len(group_list_extended)
 
     fig, ax = plt.subplots(figsize=(6, 2.4))
-    ax.scatter(
-        x,
-        y_fun(0),
-        color=[slope_sm.to_rgba(t) for t in s.loc['MG-BMDM']],
-        s=[p_to_size(t) for t in p.loc['MG-BMDM']],
-        edgecolor='k',
-        linewidth=[.5 if t > alpha else 1.5 for t in p.loc['MG-BMDM']]
-    )
-    ax.scatter(
-        x,
-        y_fun(1),
-        color=[slope_sm.to_rgba(t) for t in s.loc['mTOR-BMDM']],
-        s=[p_to_size(t) for t in p.loc['mTOR-BMDM']],
-        edgecolor='k',
-        linewidth=[.5 if t > alpha else 1.5 for t in p.loc['mTOR-BMDM']]
-    )
-    ax.scatter(
-        x,
-        y_fun(2),
-        color=[slope_sm.to_rgba(t) for t in s.loc['mTOR-MG']],
-        s=[p_to_size(t) for t in p.loc['mTOR-MG']],
-        edgecolor='k',
-        linewidth=[.5 if t > alpha else 1.5 for t in p.loc['mTOR-MG']]
-    )
+    for i, k in enumerate(s.index):
+        ax.scatter(
+            x,
+            y_fun(i),
+            color=[slope_sm.to_rgba(t) for t in s.loc[k]],
+            s=[p_to_size(t) for t in p.loc[k]],
+            edgecolor='k',
+            linewidth=[.5 if t > alpha else 1.5 for t in p.loc[k]]
+        )
     ax.grid('off')
     ax.set_facecolor('w')
     ax.set_xticks(x)
-    ax.set_xticklabels(group_list)
+    ax.set_xticklabels(p.columns)
     ax.set_yticks(range(p.shape[0]))
     ax.set_yticklabels(p.index)
+    ax.set_ylim([-0.5, p.shape[0] - 0.5])
 
     slope_sm.set_array(s.values)
     cbar = fig.colorbar(slope_sm)
     cbar.set_label('Slope')
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "correlation_summary.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "correlation_summary.pdf"))
+
+    fig.savefig(os.path.join(outdir, "ivygap_correlation_summary.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "ivygap_correlation_summary.pdf"))
 
     plt.close('all')
+
+    # alternative: line plot
+    plt_dict = ttm.line_plot_pvalues_slope(p, s, alpha=alpha)
+    plt_dict['fig'].set_size_inches([6., 2.5])
+    plt_dict['gs'].update(bottom=0.23, top=0.9, hspace=0.4, right=0.75)
+    plt_dict['fig'].savefig(os.path.join(outdir, "ivygap_correlation_summary_line.png"), dpi=200)
+    plt_dict['fig'].savefig(os.path.join(outdir, "ivygap_correlation_summary_line.pdf"))
 
     # bespoke analysis using individual genes from the mTOR pathway rather than the whole signature
     mtor_genes = [

@@ -6,7 +6,7 @@ from plotting import venn, common
 import os
 import references
 import datetime
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, colors
 from mpl_toolkits.mplot3d import Axes3D
 import statsmodels.api as sm
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
@@ -18,6 +18,106 @@ from utils import setops, output, log
 from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 
 logger = log.get_console_logger()
+
+def line_plot_pvalues_slope(
+        pvals,
+        slopes,
+        cmap=plt.get_cmap('Reds'),
+        alpha=None,
+        log_scale=True,
+        vmin=None,
+        vmax=None,
+):
+    """
+    Plot summarising pvalue and correlation slope simultaneously using position (slope) and colour (pval).
+    Hard coded into vertical orientation (TODO: make this a parameter??)
+    :param pvals: DataFrame. Index and columns will be used for ticklabels. Suggest using -log10
+    :param slopes: DataFrame, must match pvals
+    :param pct_to_size_func:
+    :param cmap: cmap used to represent
+    :param alpha: If supplied, highlight all results with p < alpha.
+    :param log_scale: If True (default), convert p values to -log10 scale.
+    :param vmin: For pvalue shading. If not supplied, min of data will be used
+    :param vmax: For pvalue shading. If not supplied, max of data will be used
+    :return:
+    """
+    if sorted(pvals.index) != sorted(slopes.index):
+        raise AttributeError("Index of pvals and concords must match")
+    if sorted(pvals.columns) != sorted(slopes.columns):
+        raise AttributeError("Columns of pvals and concords must match")
+
+    if alpha is None:
+        alpha = -1.
+
+    signif = pvals < alpha
+
+    if log_scale:
+        pvals = -np.log10(pvals.astype(float))
+
+    slopes = slopes.loc[pvals.index, pvals.columns]
+
+    if vmin is None:
+        vmin = pvals.values.min()
+    if vmax is None:
+        vmax = pvals.values.max()
+
+    ny, nx = pvals.shape
+    markers = common.get_best_marker_map(nx)
+
+    gs = plt.GridSpec(nrows=2, ncols=1, height_ratios=[1, 19])
+    fig = plt.figure(figsize=(1.5 * nx, .5 * ny))
+    ax = fig.add_subplot(gs[1])
+    ax.invert_yaxis()
+
+    cax = fig.add_subplot(gs[0])
+
+    plogp_norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    plogp_sm = plt.cm.ScalarMappable(cmap=cmap, norm=plogp_norm)
+
+    for i, col in enumerate(slopes.columns):
+        ew = [1.5 if t else 0.7 for t in signif[col].values]
+        ax.scatter(
+            slopes[col],
+            range(ny),
+            c=[plogp_sm.to_rgba(t) for t in pvals[col].values],
+            s=60,
+            edgecolor='k',
+            linewidths=ew,
+            marker=markers[i]
+        )
+
+    ax.set_xlabel('Slope', fontsize=12)
+    ax.set_yticks(range(ny))
+    ax.set_yticklabels(pvals.index, fontsize=12)
+    # ax.set_xlim([50, 100])
+    plogp_sm.set_array(pvals)
+    fig.colorbar(plogp_sm, cax=cax, orientation='horizontal')
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(r'$-\log_{10}(p)$')
+
+    type_attrs = {
+        'class': 'line',
+        'linestyle': 'none',
+        'markeredgecolor': 'k',
+        'markeredgewidth': 1.,
+        'markerfacecolor': 'none',
+        'markersize': 8
+    }
+
+    leg_dict = {}
+    for i, col in enumerate(pvals.columns):
+        leg_dict[col] = dict(type_attrs)
+        leg_dict[col].update({'marker': markers[i]})
+
+    common.add_custom_legend(ax, leg_dict, loc_outside=True, loc_outside_horiz='right')
+    gs.update(left=0.2, bottom=0.1, right=0.72, top=0.95, hspace=0.12)
+
+    return {
+        'fig': fig,
+        'ax': ax,
+        'gs': gs,
+        'cax': cax
+    }
 
 
 kegg_mtor_from_msigdb = [
@@ -238,6 +338,26 @@ def scatter_plot_with_linregress(x, y, group_list=None, groups=None):
     }
 
 
+def get_slope_and_pval(plot_dict, col_order=None):
+    """
+    Extract the slope and pvalue of the linear regression results
+    :param col_order: if supplied, this gives the order of the index in the returned DataFrames.
+    :param plot_dict: Dictionary of input data.
+    Keys will be used in the results. Values are the dict output from scatter_plot_with_linregress
+    :return: Two pd.DataFrame objects: s, p
+    """
+    if col_order is None:
+        col_order = plot_dict.values()[0]['statsmodels'].keys()
+    s = pd.DataFrame(index=plot_dict.keys(), columns=col_order)
+    p = s.copy()
+
+    for k, v in plot_dict.items():
+        s.loc[k] = [v['statsmodels'][t].params[-1] for t in col_order]
+        p.loc[k] = [v['statsmodels'][t].f_pvalue for t in col_order]
+
+    return s, p
+
+
 def plot_signature_vs_gene(dat, es, the_gene, geneset_name, ax=None):
     the_expr = dat.loc[the_gene]
     # Z transform the signature scores for this gene set
@@ -340,6 +460,21 @@ if __name__ == "__main__":
     genesets['mTOR'] = mtor_geneset
 
     outdir = output.unique_output_dir()
+
+    # export all signatures to a file
+
+    from utils import dictionary
+
+    all_gs_dict = dictionary.nested_dict_to_flat(tam_gs_dict)
+    all_gs_dict[('mTOR',)] = mtor_geneset
+
+    for_export = pd.DataFrame(index=range(max((len(t) for t in all_gs_dict.values()))), columns=[])
+    for k, v in all_gs_dict.items():
+        the_key = '_'.join(k)
+        for_export.loc[range(len(v)), the_key] = sorted(v)
+    for_export.fillna('', inplace=True)
+    for_export = for_export.sort_index(axis=1)
+    for_export.to_excel(os.path.join(outdir, "gene_sets.xlsx"), index=False)
 
     # Venn diagram showing various mTOR signature options and overlap between them
     fig, ax = plt.subplots()
@@ -453,6 +588,12 @@ if __name__ == "__main__":
     es = gsva.ssgsea(rnaseq_dat, genesets)
     es_z = z_transform(es, axis=1)
 
+    # export
+    for_export = es_z.transpose()
+    for_export.insert(for_export.shape[1], 'Verhaak classification', rnaseq_meta.loc[for_export.index, 'expression_subclass'])
+    for_export.insert(for_export.shape[1], 'Wang classification', rnaseq_meta.loc[for_export.index, 'wang_classification'])
+    for_export.to_excel(os.path.join(outdir, "tcga_signature_scores_and_subgroups.xlsx"))
+
     # boxplot by subgroup
     if class_method == 'verhaak':
         groups = rnaseq_meta.expression_subclass
@@ -514,27 +655,6 @@ if __name__ == "__main__":
     dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.png"), dpi=200)
     dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.pdf"))
 
-
-    def get_slope_and_pval(plot_dict, col_order=None):
-        """
-        Extract the slope and pvalue of the linear regression results
-        :param col_order: if supplied, this gives the order of the index in the returned DataFrames.
-        :param plot_dict: Dictionary of input data.
-        Keys will be used in the results. Values are the dict output from scatter_plot_with_linregress
-        :return: Two pd.DataFrame objects: s, p
-        """
-        if col_order is None:
-            col_order = plot_dict.values()[0]['statsmodels'].keys()
-        s = pd.DataFrame(index=plot_dict.keys(), columns=col_order)
-        p = s.copy()
-
-        for k, v in plot_dict.items():
-            s.loc[k] = [v['statsmodels'][t].params[-1] for t in col_order]
-            p.loc[k] = [v['statsmodels'][t].f_pvalue for t in col_order]
-
-        return s, p
-
-
     # summary plot with all information
     alpha = 0.01
     slope_cmap = plt.get_cmap('RdBu_r')
@@ -544,7 +664,7 @@ if __name__ == "__main__":
     group_list_extended = list(group_list) + ['All']
 
     for_plot = collections.OrderedDict([
-        ('MG-BMDM', dict_both),
+        # ('MG-BMDM', dict_both),
         ('mTOR-BMDM', dict_bmdm),
         ('mTOR-MG', dict_mg)
     ])
@@ -554,7 +674,8 @@ if __name__ == "__main__":
         col_order=group_list_extended,
     )
 
-    p_to_size = lambda t: min(150., 45 - 12 * np.log10(t))
+    # p_to_size = lambda t: min(150., 45 - 15 * np.log10(t))
+    p_to_size = lambda t: min(500., 100 + 10 * np.log10(t) ** 2)
 
     x = range(len(group_list_extended))
     y_fun = lambda t: [t] * len(group_list_extended)
@@ -575,10 +696,17 @@ if __name__ == "__main__":
     ax.set_xticklabels(group_list_extended)
     ax.set_yticks(range(p.shape[0]))
     ax.set_yticklabels(p.index)
+    ax.set_ylim([-.5, p.shape[0] - 0.5])
 
     slope_sm.set_array(s.values)
     cbar = fig.colorbar(slope_sm)
     cbar.set_label('Slope')
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "correlation_summary.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "correlation_summary.pdf"))
+    fig.savefig(os.path.join(outdir, "tcga_correlation_summary.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "tcga_correlation_summary.pdf"))
+
+    plt_dict = line_plot_pvalues_slope(p, s, alpha=.05)
+    plt_dict['fig'].set_size_inches([6., 2.5])
+    plt_dict['gs'].update(bottom=0.23, top=0.9, hspace=0.4, right=0.75)
+    plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line.png"), dpi=200)
+    plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line.pdf"))

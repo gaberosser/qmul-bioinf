@@ -335,6 +335,7 @@ def pathway_involvement_heatmap_by_p(
         'cax': cax,
         'cbar': cbar,
         'eax': eax,
+        'gs': gs
     }
 
 
@@ -741,6 +742,9 @@ if __name__ == '__main__':
         dedm_comp_names,
         count_cmap='Purples',
     )
+    curr_size = plot_dict['figure'].get_size_inches()
+    plot_dict['figure'].set_size_inches((curr_size[0], 2.5 + (curr_size[1] - 2.5) / float(de_all_p.shape[0]) * dedm_all_p.shape[0]))
+    plot_dict['gs'].update(bottom=0.2)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.tiff"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_sum_logp.pdf"), dpi=200)
@@ -755,6 +759,9 @@ if __name__ == '__main__':
         dedm_comp_names,
         count_cmap='Purples',
     )
+    curr_size = plot_dict['figure'].get_size_inches()
+    plot_dict['figure'].set_size_inches((curr_size[0], 2.5 + (curr_size[1] - 2.5) / float(de_all_p.shape[0]) * dedm_all_p.shape[0]))
+    plot_dict['gs'].update(bottom=0.2)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.png"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.tiff"), dpi=200)
     plot_dict['figure'].savefig(os.path.join(outdir_dedm, "heatmap_all_pathways_order_mean_logp.pdf"), dpi=200)

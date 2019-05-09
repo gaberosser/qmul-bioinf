@@ -338,7 +338,8 @@ def biplot(
     include_weighting=True,
     sample_colours=None,
     sample_markers=None,
-    highlight_feature_radius=None
+    highlight_feature_radius=None,
+    loading_idx=None,
 ):
     """
 
@@ -349,6 +350,8 @@ def biplot(
     :param sample_colours:
     :param sample_markers:
     :param highlight_feature_radius:
+    :param loading_idx: If set (default: None), limit the loadings being plot to those in this index. NB. this does NOT
+    affect the calculation of the SVD, it's purely for the plot.
     :return:
     """
     if preserve_distance not in ('samples', 'features'):
@@ -386,6 +389,11 @@ def biplot(
 
     feat_x = res['feat_dat'][plot_dims[0] + 1]
     feat_y = res['feat_dat'][plot_dims[1] + 1]
+
+    if loading_idx is not None:
+        feat_x = feat_x[loading_idx]
+        feat_y = feat_y[loading_idx]
+
     sample_x = res['sample_dat'][plot_dims[0] + 1]
     sample_y = res['sample_dat'][plot_dims[1] + 1]
     u = res['u']
