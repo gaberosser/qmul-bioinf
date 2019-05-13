@@ -204,6 +204,10 @@ def adjust_text_radial_plus_repulsion(
     if ax is None:
         ax = plt.gca()
 
+    if add_line and only_draw_if_non_intersecting:
+        r = get_renderer(ax.get_figure())
+        bboxes_orig = get_bboxes(texts, r, ax=ax)
+
     # record original positions
     orig_pos = [t.get_position() for t in texts]
     dx = None
@@ -246,8 +250,12 @@ def adjust_text_radial_plus_repulsion(
             # check (2): is the new location still intersecting the original position?
             if only_draw_if_non_intersecting:
                 this_bbox = bboxes[i]
-                if this_bbox.contains(*xy):
+                this_bbox_orig = bboxes_orig[i]
+                if this_bbox.overlaps(this_bbox_orig):
                     continue
+                ## FIXME: this isn't checking intersection
+                # if this_bbox.contains(*xy):
+                #     continue
 
             ax.plot(
                 [xy[0], new_x],

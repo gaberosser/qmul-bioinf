@@ -1,8 +1,7 @@
 import numpy as np
+from scipy import stats
 from matplotlib import pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import StandardScaler
-from adjustText import adjust_text
 import pandas as pd
 import itertools
 import collections
@@ -12,7 +11,7 @@ from rnaseq import loader, filter, general
 from methylation import loader as methylation_loader, process
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log, setops, excel
+from utils import output, log, setops, excel, dictionary
 from stats import decomposition, transformations
 import references
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
@@ -131,8 +130,7 @@ def plot_biplot(
         dims,
         scatter_colours,
         scatter_markers,
-        annotate_features_radius=None,
-        annotate_features_quantile=None,
+        annotate_features=None,
         adjust_annotation=True,
         adjust_annotation_kwargs=None,
         **kwargs
@@ -148,11 +146,6 @@ def plot_biplot(
     :param **kwargs: Passed to pca.biplot()
     :return:
     """
-    if annotate_features_radius is not None and annotate_features_quantile is not None:
-        raise AttributeError("Supply EITHER annotate_features_radius OR annotate_features_quantile.")
-
-    if annotate_features_quantile is not None:
-        assert 0 < annotate_features_quantile < 1, "annotate_features_quantile must be between 0 and 1 (not inclusive)."
 
     if adjust_annotation_kwargs is None:
         adjust_annotation_kwargs = {}
@@ -221,24 +214,12 @@ def plot_biplot(
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
 
-    selected = None
-
-    if annotate_features_radius is not None:
-        # annotate most influential genes
-        selected = pca.highlight_biplot_features(feat_x, feat_y, annotate_features_radius, ax)
-
-    if annotate_features_quantile is not None:
-        rad = (feat_x ** 2 + feat_y ** 2) ** .5
-        cut = sorted(rad)[int(len(rad) * annotate_features_quantile)]
-        selected = rad >= cut
-
-    if selected is not None:
-        genes_selected = dat.index[selected]
-        symbols_selected = references.ensembl_to_gene_symbol(genes_selected)
+    if annotate_features is not None:
+        symbols_selected = references.ensembl_to_gene_symbol(annotate_features)
 
         # add gene symbol annotations
         text_handles = []
-        for ix, gs in zip(np.where(selected)[0], symbols_selected):
+        for ix, gs in zip(annotate_features, symbols_selected):
             if not pd.isnull(gs):
                 text_handles.append(ax.text(feat_x[ix], feat_y[ix], gs, zorder=10))
         # rearrange them to avoid overlaps
@@ -248,35 +229,61 @@ def plot_biplot(
     return fig, ax, res
 
 
+def inverse_covariance_projection(feat_dat):
+    """
+    Project data into the covariance representation (square rooting weights) then return the Euclidean norm.
+    Key idea: quantify the distance from the origin of data points in 2D where there is some clear covariance structure.
+    :param feat_dat: 2D matrix, either N x 1 (in which case the transformation is trivial) or N x 2.
+    :return:
+    """
+    # distance based on projection into covariance matrix
+    x = np.array(feat_dat)
+    # centre
+    xm = x.mean(axis=0)
+    x0 = x - xm
+
+    n = x.shape[1]
+    cov = np.cov(x0.transpose())
+    if n == 1:
+        y = cov ** -0.5 * x0
+        dist = y.squeeze()
+    elif n == 2:
+        A = np.linalg.cholesky(cov)
+        y = np.linalg.solve(A, x0.T)
+        dist = (y.T ** 2).sum(axis=1) ** .5
+    else:
+        raise ValueError("Input data must be an N x 1 or N x 2 matrix (or similar).")
+
+    if isinstance(feat_dat, pd.DataFrame):
+        dist = pd.Series(dist, index=feat_dat.index)
+    return dist
+
+
 def get_topmost_quantile_by_loading(feat_dat, quantile):
     feat_dat = pd.DataFrame(feat_dat)
 
     # extract gene lists for pathway analysis
     rad = (feat_dat ** 2).sum(axis=1) ** .5
     val = np.quantile(rad, quantile)
-    return dat.index[rad >= val]
+    return feat_dat.index[rad >= val]
 
 
-def extract_gois(feat_dat, de_res, quantile, mean_logfc=True, alpha=None):
+def extract_gois(loading_scale, de_res, quantile, mean_logfc=True, alpha=None):
     """
-    Extract genes of interest from the SVD representation, based on an upper quantile of highest loadings.
+    Extract genes of interest based on an upper quantile of highest loadings.
     These are then combined with DE data.
     The selection is based on the Euclidean distance from the origin across all included component loadings.
-    :param feat_dat: pandas DataFrame (or castable to one), with genes on the rows and however many components required
-    on the columns.
+    :param loading_scale: pandas Series (or castable to one), with entries corresponding to features (genes) and
+    representing a summary (e.g. L2 norm) of the magnitude.
     :param de_res:
     :param quantile:
     :param mean_logfc:
     :param alpha:
     :return:
     """
-    # feat_dat = pd.DataFrame(feat_dat)
-
-    # extract gene lists for pathway analysis
-    # rad = (feat_dat ** 2).sum(axis=1) ** .5
-    # val = np.quantile(rad, quantile)
-    # ens = dat.index[rad >= val]
-    ens = get_topmost_quantile_by_loading(feat_dat, quantile)
+    val = np.quantile(loading_scale, quantile)
+    ens = pd.Series(loading_scale).index[loading_scale >= val]
+    # ens = get_topmost_quantile_by_loading(feat_dat, quantile)
     dif = ens.difference(de_res.index)
     if len(dif):
         logger.warning(
@@ -333,6 +340,13 @@ if __name__ == '__main__':
     https://stackoverflow.com/questions/39216897/plot-pca-loadings-and-loading-in-biplot-in-sklearn-like-rs-autoplot
     """
     outdir = output.unique_output_dir()
+    outdir_rna = os.path.join(outdir, "rnaseq")
+    outdir_meth = os.path.join(outdir, "methylation")
+    outdir_joint = os.path.join(outdir, "joint")
+    for d in [outdir_rna, outdir_meth, outdir_joint]:
+        if not os.path.exists(d):
+            os.makedirs(d)
+
     publish_plotly = True
     pids = consts.PIDS
 
@@ -347,6 +361,10 @@ if __name__ == '__main__':
 
     # dimensions (components) to investigate
     dims = [0, 1, 2]
+
+    # number of genes / probes to select in biplots
+    top_n_features_rna = 40
+    top_n_features_meth = 40
 
     selection_radii_for_plotting = {
         0: 0.6,
@@ -390,14 +408,15 @@ if __name__ == '__main__':
     sample_colours = rna_obj.meta.patient_id.map(scatter_colours.get).to_dict()
     sample_markers = rna_obj.meta.type.map(scatter_markers.get).to_dict()
 
-    dat = filter.filter_by_cpm(rna_obj.data, min_n_samples=2)
-    # TODO: include VST or similar here
-    dat = np.log(dat + eps)
+    dat_rna = filter.filter_by_cpm(rna_obj.data, min_n_samples=2)
+
+    dat_rna = np.log(dat_rna + eps)
+    # dat_rna = transformations.variance_stabilizing_transform(dat_rna)
     # copy of dat with gene symbols
-    dat_with_gs = dat.copy()
-    general.add_gene_symbols_to_ensembl_data(dat_with_gs)
+    dat_with_gs_rna = dat_rna.copy()
+    general.add_gene_symbols_to_ensembl_data(dat_with_gs_rna)
     # fill back in with ENS where no gene symbol is available
-    dat_with_gs.loc[dat_with_gs['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs.index[dat_with_gs['Gene Symbol'].isnull()]
+    dat_with_gs_rna.loc[dat_with_gs_rna['Gene Symbol'].isnull(), 'Gene Symbol'] = dat_with_gs_rna.index[dat_with_gs_rna['Gene Symbol'].isnull()]
 
     # recreate Sven's original (unweighted) plot
     # we're not going to use this, it's just for validation / reproducibility
@@ -417,7 +436,7 @@ if __name__ == '__main__':
     rna_selected_by_quantile_mean_logfc = {}
     rna_selected_by_quantile_separate_logfc = {}
 
-    svd_res = decomposition.svd_for_biplot(dat, feat_axis=0, scale_preserved=scale_preserved)
+    svd_res = decomposition.svd_for_biplot(dat_rna, feat_axis=0, scale_preserved=scale_preserved)
 
     for first_dim in dims:
         dims_pair = (first_dim, first_dim + 1)
@@ -425,11 +444,12 @@ if __name__ == '__main__':
 
         # extract gene lists for pathway analysis
         for dim in [(first_dim,), dims_pair]:
-            this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
+            this_feat = svd_res['feat_dat'][[t + 1 for t in dim]]
+            this_dist = inverse_covariance_projection(this_feat)
 
             # mean logFC
             rna_selected_by_quantile_mean_logfc[dim] = extract_gois(
-                this_feat,
+                this_dist,
                 de_res,
                 quantile,
                 alpha=alpha
@@ -438,42 +458,43 @@ if __name__ == '__main__':
             # separate logFC
             # remove non-significant results
             rna_selected_by_quantile_separate_logfc[dim] = extract_gois(
-                this_feat,
+                this_dist,
                 de_res,
                 quantile,
                 mean_logfc=False,
                 alpha=alpha
             )
 
-        selection_radius = selection_radii_for_plotting[first_dim]
+        # selection_radius = selection_radii_for_plotting[first_dim]
+        ix = this_dist.sort_values(ascending=False).index[:top_n_features_rna]
         fig, ax, res = plot_biplot(
-            dat,
+            dat_rna,
             rna_obj.meta,
             dims_pair,
             scatter_colours,
             scatter_markers,
-            annotate_features_radius=selection_radius,
+            annotate_features=this_dist.sort_values(ascending=False).index[:top_n_features_rna],
             scale=0.05
         )
-        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
+        fig.savefig(os.path.join(outdir_rna, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
 
         fig, ax, res = plot_biplot(
-            dat,
+            dat_rna,
             rna_obj.meta,
             dims_pair,
             scatter_colours,
             scatter_markers,
             scale=0.05
         )
-        fig.savefig(os.path.join(outdir, "pca_biplot_dims_%d-%d_unannotated.png" % dims_pair), dpi=200)
+        fig.savefig(os.path.join(outdir_rna, "pca_biplot_dims_%d-%d_unannotated.png" % dims_pair), dpi=200)
 
         if publish_plotly:
             size_scaling = [
                 [0.1, selection_radius],
                 [2., 10.]
             ]
-            feature_text = dat_with_gs['Gene Symbol']
-            sample_text = dat.columns
+            feature_text = dat_with_gs_rna['Gene Symbol']
+            sample_text = dat_rna.columns
             rad = (np.array(zip(*[svd_res['feat_dat'][i + 1] for i in dims_pair])) ** 2).sum(axis=1) ** .5
             to_annotate = rad > selection_radius
             p1 = generate_plotly_plot(
@@ -507,7 +528,7 @@ if __name__ == '__main__':
             tt = tt.loc[:, tt.columns.str.contains('logFC')]
             tt.columns = tt.columns.str.replace('_logFC', '_%s_logFC' % '-'.join([str(t+1) for t in k]))
             this_df = pd.concat((this_df, tt), axis=1, sort=True)
-        this_df.to_excel(os.path.join(outdir, "for_ipa_separate_logfc_pc%d.xlsx" % (first_dim + 1)))
+        this_df.to_excel(os.path.join(outdir_rna, "for_ipa_separate_logfc_pc%d.xlsx" % (first_dim + 1)))
 
     # combine with DE results and export to table
     for_export = {}
@@ -518,7 +539,7 @@ if __name__ == '__main__':
             this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
             this_ens = get_topmost_quantile_by_loading(this_feat, quantile).intersection(de_res.index)
             for_export[the_key] = de_res.loc[this_ens]
-    excel.pandas_to_excel(for_export, os.path.join(outdir, "full_de_syngeneic_only_filtered_by_biplot.xlsx"))
+    excel.pandas_to_excel(for_export, os.path.join(outdir_rna, "full_de_syngeneic_only_filtered_by_biplot.xlsx"))
 
     ######## DNA methylation ########
 
@@ -544,10 +565,6 @@ if __name__ == '__main__':
     for first_dim in dims:
         dims_pair = (first_dim, first_dim + 1)
 
-        # extract gene lists for pathway analysis
-        for dim in [(first_dim,), dims_pair]:
-            this_feat = svd_res['feat_dat'][[i + 1 for i in dim]]
-
         fig, ax, res = plot_biplot(
             dat,
             meth_obj.meta,
@@ -557,25 +574,68 @@ if __name__ == '__main__':
             scale=0.05,
             loading_idx=probe_ix
         )
-        fig.savefig(os.path.join(outdir, "methylation_pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
+        fig.savefig(os.path.join(outdir_meth, "pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
 
-        # if publish_plotly:
-        #     size_scaling = [
-        #         [0.1, selection_radius],
-        #         [2., 10.]
-        #     ]
-        #     feature_text = dat_with_gs['Gene Symbol']
-        #     sample_text = dat.columns
-        #     rad = (np.array(zip(*[svd_res['feat_dat'][i + 1] for i in dims_pair])) ** 2).sum(axis=1) ** .5
-        #     to_annotate = rad > selection_radius
-        #     p1 = generate_plotly_plot(
-        #         svd_res,
-        #         filename="pca_biplot_dims_%d-%d" % tuple(t + 1 for t in dims_pair),
-        #         feature_size_scaling=size_scaling,
-        #         feature_text=feature_text,
-        #         sample_text=sample_text,
-        #         sample_colours=sample_colours,
-        #         sample_markers=sample_markers,
-        #         feature_text_mask=~to_annotate,
-        #         components=tuple(i + 1 for i in dims_pair),
-        #     )
+    # hypothesis: PC2 identifies subgroups
+    subgroups = consts.SUBGROUPS
+    subgroups_inv = dictionary.complement_dictionary_of_iterables(subgroups, squeeze=True)
+    groups = meth_obj.meta.patient_id.apply(subgroups_inv.get)
+
+    colours = dict([(k, consts.SUBGROUP_SET_COLOURS["%s partial" % k]) for k in groups.unique()])
+
+    ix = meth_obj.meta.type == 'GBM'
+
+    for dim in range(1, 4):
+
+        fig, ax = plt.subplots(figsize=(6.5, 3.2))
+        sns.boxplot(svd_res['sample_dat'][dim].loc[ix], y=groups[ix], ax=ax, palette=colours)
+        sns.swarmplot(
+            svd_res['sample_dat'][dim].loc[ix],
+            y=groups[ix],
+            ax=ax,
+            color='0.3',
+            edgecolor='k',
+            linewidth=1.0,
+            alpha=0.5
+        )
+        ax.set_ylabel('Subgroup')
+        ax.set_xlabel('PC%d' % dim)
+        fig.tight_layout()
+
+        x = svd_res['sample_dat'][dim].loc[(meth_obj.meta.type == 'GBM') & (groups == 'RTK I')]
+        y = svd_res['sample_dat'][dim].loc[(meth_obj.meta.type == 'GBM') & (groups == 'RTK II')]
+
+        u_test = stats.mannwhitneyu(x, y)
+        print "MWU test of PC%d value (RTK I vs RTK II): p=%.3e" % (dim, u_test.pvalue)
+
+        fig.savefig(os.path.join(outdir_meth, "PC%d_vs_subgroup.png" % dim), dpi=200)
+
+    # similar, but now focus on the features (probes)
+    # for each PC, get the top N probes by absolute loading and test distribution
+    top_n_probe = 10
+
+    # fig, axs = plt.subplots(nrows=top_n_probe, ncols=3, sharex=True, figsize=(11, 9))
+
+    for dim in range(1, 4):
+        this_feat = svd_res['feat_dat'][dim]
+        ix2 = this_feat.abs().sort_values(ascending=False).index[:top_n_probe]
+        ix2 = this_feat.loc[ix2].sort_values().index
+        x = dat.loc[ix2, ix]
+
+        fig, axs = plt.subplots(nrows=top_n_probe, figsize=(3.5, 6.5), sharex=True)
+        for i, k in enumerate(ix2):
+            ax = axs[i]
+            sns.boxplot(x.loc[k], y=groups[ix], ax=ax, palette=colours)
+            sns.swarmplot(
+                x.loc[k],
+                y=groups[ix],
+                ax=ax,
+                color='0.3',
+                edgecolor='k',
+                linewidth=1.0,
+                alpha=0.5
+            )
+            ax.set_ylabel(k, fontsize=8)
+            ax.xaxis.label.set_visible(False)
+        ax.set_xlabel('PC%d' % dim)
+        fig.subplots_adjust(bottom=0.06, top=0.98, left=0.2, right=0.98, hspace=0.1)
