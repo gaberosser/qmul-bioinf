@@ -1,11 +1,13 @@
 import numpy as np
 from scipy import stats
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, ticker
 import seaborn as sns
 import pandas as pd
 import itertools
 import collections
 import os
+from statsmodels.sandbox.stats import multicomp
+import scikit_posthocs as sp
 
 from rnaseq import loader, filter, general
 from methylation import loader as methylation_loader, process
@@ -445,7 +447,7 @@ if __name__ == '__main__':
         # extract gene lists for pathway analysis
         for dim in [(first_dim,), dims_pair]:
             this_feat = svd_res['feat_dat'][[t + 1 for t in dim]]
-            this_dist = inverse_covariance_projection(this_feat)
+            this_dist = inverse_covariance_projection(this_feat).abs()
 
             # mean logFC
             rna_selected_by_quantile_mean_logfc[dim] = extract_gois(
@@ -613,8 +615,24 @@ if __name__ == '__main__':
     # similar, but now focus on the features (probes)
     # for each PC, get the top N probes by absolute loading and test distribution
     top_n_probe = 10
+    kruskal_res = {}
+    dunn_res = {}
 
-    # fig, axs = plt.subplots(nrows=top_n_probe, ncols=3, sharex=True, figsize=(11, 9))
+    # it'll be useful to have a list of pairwise group comparisons
+    pairwise_combinations = list(itertools.combinations(groups.unique(), 2))
+    # and we'll keep the groups in a pre-defined order to help with plotting
+    group_order = sorted(groups.unique())
+    group_order_ind = dict([(k, group_order.index(k)) for k in group_order])
+
+    # colours for p values
+    from decimal import Decimal
+    pval_colours = collections.OrderedDict([
+        (Decimal('0.05'), '#ccccff'),
+        (Decimal('0.01'), '#3333ff'),
+        (Decimal('0.001'), '#000099')
+    ])
+
+    gs = plt.GridSpec(nrows=top_n_probe, ncols=2, width_ratios=[9, 1])
 
     for dim in range(1, 4):
         this_feat = svd_res['feat_dat'][dim]
@@ -622,20 +640,280 @@ if __name__ == '__main__':
         ix2 = this_feat.loc[ix2].sort_values().index
         x = dat.loc[ix2, ix]
 
-        fig, axs = plt.subplots(nrows=top_n_probe, figsize=(3.5, 6.5), sharex=True)
+        this_kruskal_res = {}
+        this_dunn_res = {}
+
+        fig = plt.figure(figsize=(4.5, 8.3))
+        axs = []
+        axs_ind = []
+        sharex = None
+        # fig, axs = plt.subplots(nrows=top_n_probe, figsize=(3.5, 8.3), sharex=True)
+
         for i, k in enumerate(ix2):
-            ax = axs[i]
-            sns.boxplot(x.loc[k], y=groups[ix], ax=ax, palette=colours)
+            # Kruskal-Wallis (non-parametric test for equality of medians)
+            a = x.loc[k].groupby(groups[ix])
+            s, p = stats.kruskal(*a.apply(list))  # TODO: is there a built-in method to achieve this 'tolist' call?
+            this_kruskal_res[k] = p
+            if p < alpha:
+                # run pairwise tests
+                the_df = pd.DataFrame({'value': x.loc[k], 'group': groups[ix]})
+                this_dunn_res[k] = sp.posthoc_dunn(the_df, val_col='value', group_col='group', p_adjust='holm')
+
+            # ax = axs[i]
+            ax = fig.add_subplot(gs[i, 0], sharex=sharex)
+            sharex = ax
+            axs.append(ax)
+
+            sns.boxplot(x.loc[k], y=groups[ix], ax=ax, palette=colours, order=group_order)
             sns.swarmplot(
                 x.loc[k],
                 y=groups[ix],
+                order=group_order,
                 ax=ax,
                 color='0.3',
                 edgecolor='k',
                 linewidth=1.0,
-                alpha=0.5
+                alpha=0.5,
+                size=4.
             )
-            ax.set_ylabel(k, fontsize=8)
+
+            # add statistical comparison if any results are significant
+            if p < alpha:
+                this_pw = collections.OrderedDict([
+                    (tup, this_dunn_res[k].loc[tup[0], tup[1]]) for tup in pairwise_combinations
+                ])
+                if any([t < alpha for t in this_pw.values()]):
+                    ax_ind = fig.add_subplot(gs[i, 1], sharey=ax)
+                    axs_ind.append(ax_ind)
+                    for j, (tup, pp) in enumerate(this_pw.items()):
+                        if pp < alpha:
+                            the_colour = [v2 for k2, v2 in pval_colours.items() if pp < k2][-1]
+                            this_y = [group_order_ind[k2] for k2 in tup]
+                            ax_ind.scatter(
+                                [j, j],
+                                this_y,
+                                marker='o',
+                                facecolor=the_colour,
+                                edgecolor='k',
+                                linewidth=0.5,
+                                zorder=10
+                            )
+                            ax_ind.plot([j, j], this_y, linestyle='-', color='k', linewidth=1.0, zorder=9)
+                            ax_ind.grid('off')
+                            ax_ind.set_facecolor('none')
+                            ax_ind.set_xlim([-0.5, len(group_order) - 0.5])
+                            ax_ind.xaxis.set_visible(False)
+                            ax_ind.yaxis.set_visible(False)
+
+            ax.set_ylabel(k, fontsize=9)
             ax.xaxis.label.set_visible(False)
-        ax.set_xlabel('PC%d' % dim)
-        fig.subplots_adjust(bottom=0.06, top=0.98, left=0.2, right=0.98, hspace=0.1)
+
+        kruskal_res[dim] = this_kruskal_res
+        dunn_res[dim] = this_dunn_res
+
+        [plt.setp(ax.xaxis.get_ticklabels(), visible=False) for ax in axs[:-1]]
+        axs[-1].xaxis.label.set_visible(True)
+        axs[-1].set_xlabel('M value')
+        # fig.subplots_adjust(bottom=0.04, top=0.99, left=0.2, right=0.98, hspace=0.1)
+        gs.update(bottom=0.07, top=0.99, left=0.2, right=0.97, hspace=0.1, wspace=0.03)
+        fig.savefig(os.path.join(outdir_meth, "boxplot_top%d_probes_PC%d.png" % (top_n_probe, dim)), dpi=200)
+
+    # generate standalone legend
+    legend_dict = collections.OrderedDict([
+        ("p < %s" % str(k), {'class': 'patch', 'edgecolor': 'k', 'facecolor': v, 'linewidth': 1.})
+        for k, v in pval_colours.items()
+    ])
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+    fig.set_facecolor('w')
+    common.add_custom_legend(ax, legend_dict, loc='center')
+    fig.set_size_inches((1.2, 1.))
+    fig.savefig(os.path.join(outdir_meth, "pvalue_shading_legend.png"), dpi=200)
+    fig.savefig(os.path.join(outdir_meth, "pvalue_shading_legend.tiff"), dpi=200)
+
+    # run through the top 1% of probes by MAD (across GIC only) and get the KW results in each case.
+    top_proportion = 0.01
+    mad = transformations.median_absolute_deviation(dat.loc[:, ix]).sort_values(ascending=False)
+    top_probes_by_mad = mad.index[:int(mad.size * top_proportion)]
+
+    kruskal_top_probes = {}
+    for k in top_probes_by_mad:
+        x = dat.loc[k, ix].groupby(groups[ix])
+        kruskal_top_probes[k] = stats.kruskal(*x.apply(list))
+
+    _, kruskal_top_probes_fdr, _, alpha_bonf = multicomp.multipletests([t.pvalue for t in kruskal_top_probes.values()], method='fdr_bh')
+
+    print "Of the top %d probes (by MAD across GIC), %d of them show significant differences between the subgroups " \
+          "(FDR < %.3f)" % (
+        len(top_probes_by_mad),
+        (kruskal_top_probes_fdr < alpha).sum(),
+        alpha
+    )
+
+    ######## Combined RNA-Seq and DNA methylation ########
+
+    # TODO: get rid of this?? it's pretty rubbish.
+    if False:
+
+        # let's start simple
+        # the idea here is to combine the information and regenerate the biplot with each sample represented by
+        # a vector containing both gene expression and DNA methylation values
+
+        # use the top N probes with the highest MAD across all samples, where N is the number of genes with expression
+        # quantified
+        mad = transformations.median_absolute_deviation(dat).sort_values(ascending=False)
+
+        # we need to rename a few columns for compatibility
+        # choose to rename the RNA data so we can reuse the previously defined marker colours, etc.
+        rename_map = {
+            'DURA031_NSC_N44_P3': 'DURA031_NSC_N44F_P3',
+            'DURA061_NSC_N1_P3': 'DURA061_NSC_N1_P3n4',
+            'GBM030_P9n10': 'GBM030_P9'
+        }
+
+        dat_rna_rename = dat_rna.copy()
+        dat_rna_rename.columns = [rename_map.get(t, t) for t in dat_rna_rename.columns]
+
+        dat_comb = pd.concat([
+            dat_rna_rename[dat.columns],
+            # dat.loc[mad.index[:dat_rna.shape[0]]]
+            dat
+        ], axis=0)
+
+        svd_res = decomposition.svd_for_biplot(dat_comb, feat_axis=0, scale_preserved=scale_preserved)
+
+        for first_dim in dims:
+            dims_pair = (first_dim, first_dim + 1)
+
+            fig, ax, res = plot_biplot(
+                dat_comb,
+                meth_obj.meta,
+                dims_pair,
+                scatter_colours,
+                scatter_markers,
+                scale=0.05,
+                loading_idx=np.concatenate([dat_rna.index, probe_ix])
+            )
+            fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
+
+    ######## Using DMRs to identify a subset of genes ########
+
+    # The idea here is to reduce the number of genes by filtering first to include only those that are associated with
+    # a DMR. Then we repeat the biplot with gene expression to see if that identifies different targets.
+
+    from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd
+    from methylation import dmr, annotation_gene_to_ensembl
+
+    sample_colours = rna_obj.meta.patient_id.map(scatter_colours.get).to_dict()
+    sample_markers = rna_obj.meta.type.map(scatter_markers.get).to_dict()
+
+    # load DMR data
+    norm_method_s1 = 'swan'
+    dmr_params = consts.DMR_PARAMS
+    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+
+    anno = methylation_loader.load_illumina_methylationepic_annotation()
+
+    # use a hash on the PIDs and parameters to ensure we're looking for the right results
+    dmr_hash_dict = dict(dmr_params)
+    dmr_hash_dict['norm_method'] = norm_method_s1
+
+    # load DMR results
+    the_hash = tsgd.dmr_results_hash(meth_obj.meta.index.tolist(), dmr_hash_dict)
+    filename = 'dmr_results_paired_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DMR_LOAD_DIR, filename)
+
+    if os.path.isfile(fn):
+        logger.info("Loading pre-computed DMR results from %s", fn)
+        dmr_res_s1 = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
+    else:
+        raise Exception("Unable to locate pre-existing results.")
+
+    # extract full (all significant) results
+    dmr_res_sign = dict([
+        (pid, dmr_res_s1[pid].to_table(include='significant', expand=True)) for pid in pids
+    ])
+
+    svd_res = decomposition.svd_for_biplot(dat_rna, feat_axis=0, scale_preserved=scale_preserved)
+
+    # get gene name link to ENS ID
+    dm_genes = dict([(pid, dmr_res_sign[pid].gene.values) for pid in pids])
+    dm_ens = dict([
+        (pid, set(annotation_gene_to_ensembl.gene_to_ens(arr).dropna().values)) for pid, arr in dm_genes.items()
+    ])
+    all_gene_names = setops.reduce_union(*dm_genes.values())
+    gene_to_ens = annotation_gene_to_ensembl.gene_to_ens(all_gene_names).dropna()
+
+    # extract gene lists for pathway analysis
+    # just do this for the first pair
+    this_feat = svd_res['feat_dat'][[1, 2]]
+    this_dist = inverse_covariance_projection(this_feat).abs().sort_values(ascending=False)
+
+    ix1 = this_dist.index[:top_n_features_rna]
+    ix2 = ix1.intersection(gene_to_ens.values)
+
+    fig, ax, res = plot_biplot(
+        dat_rna,
+        rna_obj.meta,
+        [0, 1],
+        scatter_colours,
+        scatter_markers,
+        annotate_features=ix1,
+        scale=0.05
+    )
+
+    # this might be madness, but I'm going to add pie charts to all annotated genes with matching DMRs
+    # this requires a second (overlaid) axis and a mapping
+    ax2 = ax.twinx()
+    ax2.xaxis.set_visible(False)
+    ax2.yaxis.set_visible(False)
+    ax2.set_aspect('equal')
+    ax2_lims = ax2.axis()
+
+    ax_lim = ax.get_ylim()
+    ax2_ylim = ax2_lims[2:]
+
+    ## FIXME: this doesn't work
+    ax2_y_map = lambda y: (y - ax_lim[0]) * (ax2_ylim[1] - ax2_ylim[0]) + ax2_ylim[0]
+    radius = 0.03
+    to_annotate_x = []
+    to_annotate_y = []
+
+    for ftr in ix1:
+        if ftr in ix2:
+            # pie membership
+            this_membership = [1 if ftr in dm_ens[pid] else 0 for pid in pids]
+            centre = [
+                this_feat.loc[ftr].values[0],
+                ax2_y_map(this_feat.loc[ftr].values[1])
+            ]
+            ax2.pie(
+                this_membership,
+                center=centre,
+                radius=radius,
+                colors=[scatter_colours[pid] for pid in pids]
+            )
+        else:
+            to_annotate_x.append(this_feat.loc[ftr, 1])
+            to_annotate_y.append(this_feat.loc[ftr, 2])
+
+    # ax2.set_xlim(ax.get_xlim())
+
+    # fix grid and tickers
+    ax.xaxis.set_major_locator(ticker.FixedLocator([0]))
+    ax.yaxis.set_major_locator(ticker.FixedLocator([0]))
+
+    ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.2))
+    ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.2))
+
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+
+    ax.xaxis.set_minor_formatter(ticker.ScalarFormatter())
+    ax.yaxis.set_minor_formatter(ticker.ScalarFormatter())
+
+    fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
+
+
+
