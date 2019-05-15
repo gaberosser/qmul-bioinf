@@ -4,6 +4,13 @@ from utils import log
 logger = log.get_console_logger()
 
 
+try:
+    from shapely import geometry
+    SHAPELY_PRESENT = True
+except ImportError:
+    SHAPELY_PRESENT = False
+
+
 def get_renderer(fig):
     try:
         return fig.canvas.get_renderer()
@@ -179,8 +186,9 @@ def adjust_text_radial_plus_repulsion(
     origin=(0, 0),
     n_iter_max=15,
     tol=1e-4,
+    min_line_length=0.05,
     lineprops=None,
-    only_draw_if_non_intersecting=True,
+    draw_below_intersection_prop=0.1,
     constrain_to_ax_limits=False
 ):
     # TODO: would like to add repulsion between text and points, too
@@ -188,11 +196,17 @@ def adjust_text_radial_plus_repulsion(
 
     :param texts:
     :param alpha:
-    :param add_line:
+    :param add_line: If True (default), add lines to show where the annotations point. If False, this overrides any
+    other option relating to the appearance of lines.
     :param origin:
     :param n_iter_max:
     :param tol: The value of the L1 norm of all overlap vectors at which we consider the job done. This will depend upon
     the scale of the plot. TODO: could select it automatically based on a heuristic?
+    :param min_line_length: The minimum length of a line, below which it isn't plotted. This is overridden by
+    only_draw_if_non_intersecting.
+    :param draw_below_intersection_prop: Don't draw lines when the proportion of the new text bounding box overlapping
+    with the old is below this value. Set to None or 1. to disable this option. Set to 0 if any intersection at all
+    should prevent line drawing.
     :return:
     """
     if add_line and lineprops is None:
@@ -204,7 +218,10 @@ def adjust_text_radial_plus_repulsion(
     if ax is None:
         ax = plt.gca()
 
-    if add_line and only_draw_if_non_intersecting:
+    if draw_below_intersection_prop >= 1:
+        draw_below_intersection_prop = None
+
+    if add_line and draw_below_intersection_prop is not None:
         r = get_renderer(ax.get_figure())
         bboxes_orig = get_bboxes(texts, r, ax=ax)
 
@@ -235,27 +252,59 @@ def adjust_text_radial_plus_repulsion(
         logger.warning("Failed to converge after %d iterations", n_iter_max)
 
     if add_line:
-        if only_draw_if_non_intersecting:
-            r = get_renderer(ax.get_figure())
+        if draw_below_intersection_prop is not None:
             bboxes = get_bboxes(texts, r, ax=ax)
 
         for i, (xy, ddx, ddy) in enumerate(zip(orig_pos, dx, dy)):
             # check (1): is the line long enough to be worth drawing?
-            if np.abs(np.array([ddx, ddy])).sum() < tol:
+            if np.abs(np.array([ddx, ddy])).sum() < min_line_length:
                 continue
 
-            new_x = xy[0] + ddx
-            new_y = xy[1] + ddy
-
             # check (2): is the new location still intersecting the original position?
-            if only_draw_if_non_intersecting:
+            if draw_below_intersection_prop is not None:
                 this_bbox = bboxes[i]
                 this_bbox_orig = bboxes_orig[i]
-                if this_bbox.overlaps(this_bbox_orig):
+
+                if draw_below_intersection_prop == 0 and this_bbox.overlaps(this_bbox_orig):
                     continue
-                ## FIXME: this isn't checking intersection
-                # if this_bbox.contains(*xy):
-                #     continue
+                else:
+                    overlap = this_bbox.intersection(this_bbox, this_bbox_orig)
+                    if overlap is not None:
+                        a0 = this_bbox.height * this_bbox.width
+                        a1 = overlap.height * overlap.width
+                        if (a1 / a0) > draw_below_intersection_prop:
+                            continue
+
+            if SHAPELY_PRESENT:
+                this_bbox = bboxes[i]
+                # central coordinates
+                cx, cy = get_midpoint(this_bbox)
+                line = geometry.LineString([xy, [cx, cy]])
+                x0, y0, w, h = this_bbox.bounds
+                rect = geometry.Polygon([
+                    [x0, y0],
+                    [x0, y0 + h],
+                    [x0 + w, y0 + h],
+                    [x0 + w, y0],
+                    [x0, y0]
+                ])
+                if not rect.intersects(line):
+                    # why would this happen? rounding error?
+                    # use the default anchor position
+                    new_x = xy[0] + ddx
+                    new_y = xy[1] + ddy
+                else:
+                    iline = rect.intersection(line)
+                    # decide which intersection to use
+                    dd = dict([
+                        (geometry.LineString([xy, u]).length, u) for u in iline.coords
+                    ])
+                    new_x, new_y = dd[min(dd.keys())]
+
+            else:
+                logger.warn("No shapely library present; lines will be drawn from the default anchor point.")
+                new_x = xy[0] + ddx
+                new_y = xy[1] + ddy
 
             ax.plot(
                 [xy[0], new_x],

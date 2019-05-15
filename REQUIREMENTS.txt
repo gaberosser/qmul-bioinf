@@ -8,3 +8,10 @@ ipython
 matplotlib_venn
 statsmodels
 python-pptx
+Shapely
+scikit-posthocs
+urllib3
+py2cytoscape
+plotly
+openpyxl
+networkx

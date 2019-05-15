@@ -212,7 +212,7 @@ def plot_biplot(
 
     res['legend_dict'] = legend_dict
 
-    common.add_custom_legend(ax, legend_dict, loc_outside=True)
+    res['legend_handles'] = common.add_custom_legend(ax, legend_dict, loc_outside=True)
     fig.tight_layout()
     fig.subplots_adjust(right=0.8)
 
@@ -227,6 +227,8 @@ def plot_biplot(
         # rearrange them to avoid overlaps
         if adjust_annotation:
             adjuster.adjust_text_radial_plus_repulsion(text_handles, **adjust_annotation_kwargs)
+
+        res['text_handles'] = text_handles
 
     return fig, ax, res
 
@@ -399,7 +401,7 @@ if __name__ == '__main__':
 
     scatter_markers = {
         'GBM': 's',
-        'iNSC': 'o'
+        'iNSC': '^'
     }
 
     # scaling parameter applied during SVD
@@ -476,8 +478,10 @@ if __name__ == '__main__':
             scatter_colours,
             scatter_markers,
             annotate_features=this_dist.sort_values(ascending=False).index[:top_n_features_rna],
-            scale=0.05
+            scale=0.05,
+            adjust_annotation_kwargs={'draw_below_intersection_prop': .3, 'min_line_length': 0.01}
         )
+        ax.legend(loc='center left', bbox_to_anchor=(1.05, 0.5), handles=res['legend_handles'])
         fig.savefig(os.path.join(outdir_rna, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
 
         fig, ax, res = plot_biplot(
@@ -488,6 +492,7 @@ if __name__ == '__main__':
             scatter_markers,
             scale=0.05
         )
+        ax.legend(loc='center left', bbox_to_anchor=(1.05, 0.5), handles=res['legend_handles'])
         fig.savefig(os.path.join(outdir_rna, "pca_biplot_dims_%d-%d_unannotated.png" % dims_pair), dpi=200)
 
         if publish_plotly:
@@ -781,6 +786,10 @@ if __name__ == '__main__':
             dat
         ], axis=0)
 
+        probe_ix = dat.index.to_native_types()
+        np.random.shuffle(probe_ix)
+        probe_ix = probe_ix[:dat_rna_rename.shape[0]]
+
         svd_res = decomposition.svd_for_biplot(dat_comb, feat_axis=0, scale_preserved=scale_preserved)
 
         for first_dim in dims:
@@ -793,9 +802,44 @@ if __name__ == '__main__':
                 scatter_colours,
                 scatter_markers,
                 scale=0.05,
-                loading_idx=np.concatenate([dat_rna.index, probe_ix])
+                loading_idx=[]
             )
-            fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
+            # overplot with different colours for RNA and meth
+            a = svd_res['feat_dat'][first_dim + 1]
+            b = svd_res['feat_dat'][first_dim + 2]
+
+            # split into two so the zorder is random
+            a_rna = a[a.index.str.startswith('ENS')]
+            b_rna = b[b.index.str.startswith('ENS')]
+            a_meth = a.loc[probe_ix]
+            b_meth = b.loc[probe_ix]
+            midpoint = int(a_rna.shape[0])
+
+            ax.scatter(
+                a_rna.iloc[:midpoint],
+                b_rna.iloc[:midpoint],
+                s=10,
+                c='b',
+                alpha=0.2,
+                zorder=1
+            )
+            ax.scatter(
+                a_meth,
+                b_meth,
+                s=10,
+                c='r',
+                alpha=0.2,
+                zorder=2
+            )
+            ax.scatter(
+                a_rna.iloc[midpoint:],
+                b_rna.iloc[midpoint:],
+                s=10,
+                c='b',
+                alpha=0.2,
+                zorder=3
+            )
+            fig.savefig(os.path.join(outdir_joint, "concatenated_pca_biplot_dims_%d-%d.png" % dims_pair), dpi=200)
 
     ######## Using DMRs to identify a subset of genes ########
 
@@ -845,75 +889,69 @@ if __name__ == '__main__':
     all_gene_names = setops.reduce_union(*dm_genes.values())
     gene_to_ens = annotation_gene_to_ensembl.gene_to_ens(all_gene_names).dropna()
 
-    # extract gene lists for pathway analysis
-    # just do this for the first pair
-    this_feat = svd_res['feat_dat'][[1, 2]]
-    this_dist = inverse_covariance_projection(this_feat).abs().sort_values(ascending=False)
+    # generate plots: biplot from gene expression with methylation overlaid
 
-    ix1 = this_dist.index[:top_n_features_rna]
-    ix2 = ix1.intersection(gene_to_ens.values)
+    for first_dim in range(3):
+        this_feat = svd_res['feat_dat'][[first_dim + 1, first_dim + 2]]
+        this_dist = inverse_covariance_projection(this_feat).abs().sort_values(ascending=False)
 
-    fig, ax, res = plot_biplot(
-        dat_rna,
-        rna_obj.meta,
-        [0, 1],
-        scatter_colours,
-        scatter_markers,
-        annotate_features=ix1,
-        scale=0.05
-    )
+        ix1 = this_dist.index[:top_n_features_rna]
+        ix2 = ix1.intersection(gene_to_ens.values)
 
-    # this might be madness, but I'm going to add pie charts to all annotated genes with matching DMRs
-    # this requires a second (overlaid) axis and a mapping
-    ax2 = ax.twinx()
-    ax2.xaxis.set_visible(False)
-    ax2.yaxis.set_visible(False)
-    ax2.set_aspect('equal')
-    ax2_lims = ax2.axis()
+        dims_pair = [first_dim, first_dim + 1]
 
-    ax_lim = ax.get_ylim()
-    ax2_ylim = ax2_lims[2:]
+        fig, ax, res = plot_biplot(
+            dat_rna,
+            rna_obj.meta,
+            dims_pair,
+            scatter_colours,
+            scatter_markers,
+            annotate_features=ix1,
+            scale=0.05,
+            adjust_annotation_kwargs={'draw_below_intersection_prop': .3, 'min_line_length': 0.01}
+        )
+        # enlarge a bit
+        fig.set_size_inches([9.2, 6.5])
+        # shift the legend over a bit
+        ax.legend(loc='center left', bbox_to_anchor=(1.05, 0.5), handles=res['legend_handles'])
 
-    ## FIXME: this doesn't work
-    ax2_y_map = lambda y: (y - ax_lim[0]) * (ax2_ylim[1] - ax2_ylim[0]) + ax2_ylim[0]
-    radius = 0.03
-    to_annotate_x = []
-    to_annotate_y = []
+        # this might be madness, but I'm going to add pie charts to all annotated genes with matching DMRs
+        # use custom markers for this
 
-    for ftr in ix1:
-        if ftr in ix2:
-            # pie membership
-            this_membership = [1 if ftr in dm_ens[pid] else 0 for pid in pids]
-            centre = [
-                this_feat.loc[ftr].values[0],
-                ax2_y_map(this_feat.loc[ftr].values[1])
-            ]
-            ax2.pie(
-                this_membership,
-                center=centre,
-                radius=radius,
-                colors=[scatter_colours[pid] for pid in pids]
-            )
-        else:
-            to_annotate_x.append(this_feat.loc[ftr, 1])
-            to_annotate_y.append(this_feat.loc[ftr, 2])
+        to_annotate_x = []
+        to_annotate_y = []
+        weights = []
+        xy = []
 
-    # ax2.set_xlim(ax.get_xlim())
+        for ftr in ix1:
+            if ftr in ix2:
+                # pie membership
+                this_membership = [1 if ftr in dm_ens[pid] else 0 for pid in pids]
+                weights.append(this_membership)
+                xy.append(this_feat.loc[ftr].values)
+            else:
+                to_annotate_x.append(this_feat.loc[ftr, first_dim + 1])
+                to_annotate_y.append(this_feat.loc[ftr, first_dim + 2])
 
-    # fix grid and tickers
-    ax.xaxis.set_major_locator(ticker.FixedLocator([0]))
-    ax.yaxis.set_major_locator(ticker.FixedLocator([0]))
+        colours = [scatter_colours[pid] for pid in pids]
 
-    ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.2))
-    ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.2))
+        scatter.scatter_with_pies(xy, weights, colours_arr=colours, ax=ax, zorder=9)
+        ax.scatter(to_annotate_x, to_annotate_y, c='0.3',  s=15, alpha=0.7)
 
-    ax.xaxis.set_major_formatter(ticker.NullFormatter())
-    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+        # fix grid and tickers
+        ax.xaxis.set_major_locator(ticker.FixedLocator([0]))
+        ax.yaxis.set_major_locator(ticker.FixedLocator([0]))
 
-    ax.xaxis.set_minor_formatter(ticker.ScalarFormatter())
-    ax.yaxis.set_minor_formatter(ticker.ScalarFormatter())
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.2))
+        ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.2))
 
-    fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d_annotated.png" % dims_pair), dpi=200)
+        ax.xaxis.set_major_formatter(ticker.NullFormatter())
+        ax.yaxis.set_major_formatter(ticker.NullFormatter())
+
+        ax.xaxis.set_minor_formatter(ticker.ScalarFormatter())
+        ax.yaxis.set_minor_formatter(ticker.ScalarFormatter())
+
+        fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d_annotated.png" % tuple(dims_pair)), dpi=200)
 
 
 
