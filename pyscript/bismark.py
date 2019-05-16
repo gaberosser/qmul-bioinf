@@ -67,7 +67,7 @@ class BismarkPEApocrita(BismarkSgeRequirements, BismarkPEBase, jobs.PEFastqFileI
     pass
 
 
-class BismarkMultilanePEApocrita(BismarkSgeRequirements, BismarkPEBase, jobs.PEFastqFileIteratorMixin):
+class BismarkMultilanePEApocrita(BismarkSgeRequirements, BismarkPEBase, jobs.PEFastqBartsMultiLaneMixin):
     pass
 
 
