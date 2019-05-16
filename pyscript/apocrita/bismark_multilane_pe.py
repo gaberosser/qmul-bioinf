@@ -9,4 +9,4 @@ from pyscript import bismark
 
 
 if __name__ == "__main__":
-    bismark.bismark_run('pe_bash')
+    bismark.bismark_run('pe_multilane_apocrita')
