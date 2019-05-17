@@ -180,16 +180,21 @@ bismark_genome_preparation path/to/fasta_dir
 
 Note that we point to the containing directory, not the fasta file itself. This will generate a subdirectory with the name `Bisulfite_Genome` in the fasta directory.
 
-Aligning to the reference:
+Aligning to the reference is performed as follows. This can be passed fastq files from multiple lanes in one go, in which case it works on all of them to generate a single bam file.
+
 ```bash
-bismark path/to/fasta_dir -o <output_dir> -p <num_threads> -B <output_prefix> -1 path/to/reads_1.fastq[.gz] -2 path/to.reads_2.fastq[.gz]
+bismark path/to/fasta_dir -o <output_dir> -p <num_threads> -B <output_prefix> -1 /path/to/lane_1/read_1.fastq[.gz],/path/to/lane2/read_1.fastq[.gz],... -2 /path/to/lane_1/read_2.fastq[.gz],/path/to/lane_2/read_2.fastq[.gz],...
 ```
 
-The output files for each pair of reads will be located in a subdirectory, `output_dir/output_prefix`. Each subdirectory will contain a bam file. At this point we need to merge bams corresponding to multiple lanes of the same run. `samtools cat` is a quick option that preserves the required order (sorted by read name).
+The output files for each pair of reads will be located in a subdirectory, `output_dir/output_prefix`. Each subdirectory will contain a bam file. 
+
+If `bismark` was run on each lane separately, at this point we need to merge bams corresponding to multiple lanes of the same run. `samtools cat` is a quick option that preserves the required order (sorted by read name).
 
 ```bash
 samtools cat sample1_lane1.bam sample1_lane2.bam ... > sample1.bam
 ```
+
+I would recommend running `bismark` with multiple lanes in one go, unless you think there's some important lane-specific effect to investigate.
 
 Finally, we will extract the actual methylation state estimates:
 
@@ -212,6 +217,15 @@ It's a bit annoying that we only find out about problems at this stage, because 
 ```bash
 bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedGraph --ignore_r2 2 --ignore_3prime_r2 2 sample1.bam
 ```
+
+The two steps (`bismark` followed by `bismark_methylation_extractor`) are automated in the following python scripts:
+
+```bash
+python bioinf/pyscript/apocrita/trim_galore_pe.py --rrbs
+```
+
+This script also accepts the optional arguments `--ignore_r2 <int>` and `--ignore_3prime_r2`. If only the second step (`bismark_methylation_extractor`) is required, this can be specified using the argument `--extract_only`, in which case it is assumed that bam files have already been generated.
+
 
 ## ChIP-Seq
 ### Typical experimental parameters
