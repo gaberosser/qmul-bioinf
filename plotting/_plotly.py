@@ -8,7 +8,8 @@ logger = log.get_console_logger()
 
 MATPLOTLIB_TO_PLOTLY_MARKERS = {
     'o': 'circle',
-    's': 'square'
+    's': 'square',
+    '^': 'triangle-up'
 }
 
 
