@@ -954,4 +954,49 @@ if __name__ == '__main__':
         fig.savefig(os.path.join(outdir_joint, "pca_biplot_dims_%d-%d_annotated.png" % tuple(dims_pair)), dpi=200)
 
 
+    # Lookup DM status in GOIs (not really part of this work, but related)
+    # genes of interest
+    gois = [
+        'C1orf61',
+        'RAMP1',
+        'SCG2',
+        'PMP2',
+        'METTL7B',
+        'MLC1',
+        'ST8SIA5',
+        'CRABP1',
+        'MSX2',
+        'KRT19',
+        'KRT8',
+        'KRT18',
+        'NFIX'
+    ]
+    g_to_cluster = {}
+    for g in gois:
+        search = [k for k, v in dmr_res_s1.clusters.iteritems() if g in set([t[0] for t in v.genes])]
+        if len(search) == 0:
+            logger.warn("Unable to find gene %s in the DMR data.", g)
+        elif len(search) == 1:
+            g_to_cluster[g] = search[0]
+        else:
+            logger.warn("Gene %s maps to %d clusters. Skip for now?", g, len(search))
+
+    fig, axs = plt.subplots(nrows=int(np.ceil(len(g_to_cluster) / 3.)), ncols=3, sharex=True, sharey=True)
+    axs_unseen = list(axs.flat)
+    for i, g in enumerate(g_to_cluster):
+        ax = axs.flat[i]
+        axs_unseen.pop(axs_unseen.index(ax))
+        x = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_logFC')].squeeze()
+        x.index = x.index.str.replace('_logFC', '')
+        y = [
+            dmr_res_s1[pid].results[g_to_cluster[g]]['median_change'] for pid in x.index
+        ]
+        y = pd.Series(y, index=x.index)
+        ax.scatter(x.values, y.values, c=[consts.PATIENT_COLOURS[pid] for pid in x.index])
+        ax.axhline(0., color='k', linestyle='--', linewidth=1.0)
+        ax.axvline(0., color='k', linestyle='--', linewidth=1.0)
+    for ax in axs_unseen:
+        ax.set_visible(False)
+
+
 
