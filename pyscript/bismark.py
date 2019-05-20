@@ -34,7 +34,7 @@ class BismarkPEBase(jobs.ArrayJob):
     
     title = 'bismark'
     required_args = ['read_dir', 'threads', 'index_dir']
-    bme_args = ['ignore_r2', 'ignore_3prime_r2']
+    bme_args = ['--ignore', 'ignore_r2', '--ignore_3prime', 'ignore_3prime_r2']
     optional_args = ['extract_only'] + bme_args
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
@@ -118,7 +118,9 @@ def bismark_run(run_type):
     optional.add_argument("--include", help="List of filestems to include (comma separated)")
     optional.add_argument("--exclude", help="List of filestems to exclude (comma separated)")
     optional.add_argument("--extract_only", help="Only run the second step, bismark_methylation_extractor", action='store_true', default=False)
+    optional.add_argument("--ignore", help="Ignore the specified number of bases from the 5' end of R1.", type=int)
     optional.add_argument("--ignore_r2", help="Ignore the specified number of bases from the 5' end of R2.", type=int)
+    optional.add_argument("--ignore_3prime", help="Ignore the specified number of bases from the 3' end of R1.", type=int)
     optional.add_argument("--ignore_3prime_r2", help="Ignore the specified number of bases from the 3' end of R2.", type=int)
 
     required.add_argument("-i", "--index_dir", help="Directory of pre-computed Bismark index", required=True)
