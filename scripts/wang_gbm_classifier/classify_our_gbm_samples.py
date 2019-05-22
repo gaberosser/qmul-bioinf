@@ -183,6 +183,8 @@ if __name__ == '__main__':
 
     for k in export_p:
         the_key = '_'.join(k)
-        to_export[the_key] = pd.concat((export_p[k], export_ss[k]), axis=1)
+        this = export_p[k].copy()
+        this.insert(this.shape[1], 'Simplicity score', export_ss[k])
+        to_export[the_key] = this
     excel.pandas_to_excel(to_export, os.path.join(outdir, "wang_results.xlsx"))
 
