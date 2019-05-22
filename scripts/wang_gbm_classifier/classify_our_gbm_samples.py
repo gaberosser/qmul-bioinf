@@ -185,6 +185,8 @@ if __name__ == '__main__':
         the_key = '_'.join(k)
         this = export_p[k].copy()
         this.insert(this.shape[1], 'Simplicity score', export_ss[k])
+        if k[0] == 'ffpe':
+            this.insert(this.shape[1], 'Patient ID', nh_id_to_patient_id(this.index))
         to_export[the_key] = this
     excel.pandas_to_excel(to_export, os.path.join(outdir, "wang_results.xlsx"))
 
