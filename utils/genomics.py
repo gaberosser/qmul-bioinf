@@ -70,6 +70,26 @@ class GtfAnnotation(gffutils.FeatureDB):
         if self.logger is not None:
             self.logger.info(*args)
 
+    def feature_search(self, value, feature_type='gene', key='gene_name', region=None, strand=None):
+        """
+        Perform a search amongst a feature type to identify an element with the supplied (key, value) in its
+        attributes. Optionally limit to a region.
+        :param value:
+        :param feature_type:
+        :param key:
+        :param region:
+        :return:
+        """
+        it = self.features_of_type(
+            feature_type,
+            limit=region,
+            strand=strand,
+
+        )
+        for t in it:
+            if t.attributes.get(key, [None])[0] == value:
+                yield t
+
 
 def get_reference_genome_directory(tax_id, version):
     if tax_id == 9606:

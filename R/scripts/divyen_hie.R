@@ -1,6 +1,9 @@
 source('_settings.R')
+source('io/output.R')
 require(ggplot2)
 require(glmnet)
+require(ggfortify)
+
 
 nanMedian <- function(x) {
   x<-as.numeric(as.character(x)) #first convert each column into numeric if it is from factor
@@ -49,6 +52,7 @@ plotDecisionBoundary <- function(fit, coeffx, coeffy, values, outcomes, xlab=NUL
   points(values[outcomes, coeffx], values[outcomes, coeffy], col='green', pch=19)
 }
 
+output.dir <- getOutputDir('divyen_hie')
 
 fn <- file.path(data.dir, 'divyen_shah', 'cleaned_data_feb_2018.csv')
 dat <- read.csv(fn)
@@ -77,20 +81,35 @@ y[y == 1] <- 'Unfav'
 y[y == 2] <- 'Fav'
 y <- as.factor(y)
 
-values <- dat[, c(peak_cols, trough_cols)]
-colSd <- apply(values, 2, function (x) sd(na.omit(x)))
-colMn <- apply(values, 2, function (x) mean(na.omit(x)))
-values <- imputeMissing(values)
+values_missing <- dat[, c(peak_cols, trough_cols)]
+colSd <- apply(values_missing, 2, function (x) sd(na.omit(x)))
+colMn <- apply(values_missing, 2, function (x) mean(na.omit(x)))
+values <- imputeMissing(values_missing)
 values_standard <- data.frame(t(apply(values, 1, function (x) (x - colMn) / colSd)))
 
 plt.given <- data.frame(Platelets=rep(F, nrow(dat)), row.names = rownames(dat))
 plt.given[grep('Platelets', dat$Blood.product), 'Platelets'] <- T
 
-X <- data.frame(values, plt.given, batch=batch, outcome=y == 'Unfav')
-Xs <- data.frame(values_standard, plt.given, batch=batch, outcome=y == 'Unfav')
+X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav')
+Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav')
+
+#' Preamble: check for batch effects between the four units
+#' Do this on data without imputation of missing values
+X_missing <- data.frame(values_missing, Unit=batch)
+p_anova <- list()
+for (col in c(peak_cols, trough_cols)) {
+  mod <- aov(X_missing[,col] ~ X[,'Unit'])
+  p_anova[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
+}
+
+#' Preamble: PCA plot to test for batch effect
+res_pca <- prcomp(X[,c(peak_cols, trough_cols)], scale=T)
+theme_update(text = element_text(size=12))
+autoplot(pc, data=X, colour='Unit', label.colour='Unit', size=2)
+ggsave(file.path(output.dir, "batch_pca.png"), width=5, height = 3)
 
 # 1:  variable selection
-# We have too many variables to model them all without overfitting. Let's run lasso regression to shrink the  number involved
+# We have too many variables to model them all without overfitting. Let's run lasso regression to shrink the number involved
 xx <- model.matrix(outcome ~ Hb.peak + Plt.peak + Neutrophil.peak + 
                      Lymphocyte.peak + INR.peak + Urea.peak + Creatinine.peak + 
                      ALT.peak + CRP.peak + Plt.trough, data=Xs)

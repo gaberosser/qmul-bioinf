@@ -5,8 +5,11 @@ dir.create(out.dir, showWarnings = FALSE)
 
 
 getOutputDir <- function(name) {
-  name.num <- '{base}.{n}'
-  name.num <- sub('{base}', name, name.num, fixed=T)
+  today <- Sys.Date()
+  date_str <- format(today, format="%Y-%m-%d")
+  
+  name.num <- paste(name, date_str, '{n}', sep = '.')
+
   i <- 0
   ff <- file.path(out.dir, sub('{n}', i, name.num, fixed=T))
   while (file.exists(ff)) {

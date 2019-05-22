@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import stats
-from matplotlib import pyplot as plt, ticker
+from matplotlib import pyplot as plt, ticker, patches, collections as plt_collections
 import seaborn as sns
 import pandas as pd
 import itertools
@@ -13,7 +13,7 @@ from rnaseq import loader, filter, general
 from methylation import loader as methylation_loader, process
 from scripts.hgic_final import consts
 from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log, setops, excel, dictionary
+from utils import output, log, setops, excel, dictionary, genomics
 from stats import decomposition, transformations
 import references
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
@@ -974,29 +974,294 @@ if __name__ == '__main__':
     g_to_cluster = {}
     for g in gois:
         search = [k for k, v in dmr_res_s1.clusters.iteritems() if g in set([t[0] for t in v.genes])]
-        if len(search) == 0:
-            logger.warn("Unable to find gene %s in the DMR data.", g)
-        elif len(search) == 1:
-            g_to_cluster[g] = search[0]
+        # restrict to TSS-linked genes
+        clusters = []
+        for cid in search:
+            this_res = [t[1] for t in dmr_res_s1.clusters[cid].genes if t[0] == g and 'TSS' in t[1]]
+            if len(this_res) > 0:
+                clusters.append(cid)
+        if len(clusters) == 0:
+            logger.warn("Unable to find gene %s in the DMR data (with TSS linkage).", g)
+            # do we have a non-TSS linked cluster?
+            if len(search) == 1:
+                logger.warn("We have a non-TSS match so will use that.")
+                g_to_cluster[g] = search[0]
+        elif len(clusters) == 1:
+            g_to_cluster[g] = clusters[0]
         else:
             logger.warn("Gene %s maps to %d clusters. Skip for now?", g, len(search))
 
-    fig, axs = plt.subplots(nrows=int(np.ceil(len(g_to_cluster) / 3.)), ncols=3, sharex=True, sharey=True)
+
+    def one_de_dm_scatter(
+        de_vals,
+        de_sign,
+        dm_vals,
+        dm_sign,
+        ax=None,
+        colours=consts.PATIENT_COLOURS,
+    ):
+        if ax is None:
+            ax = plt.gca()
+        # edge colour: based on DMR significance
+        ec = pd.Series(
+            ['k' if dm_sign[pid] else 'none' for pid in de_vals.index],
+            index=de_vals.index
+        )
+        # marker: based on DE significance
+        marker = pd.Series(
+            ['o' if de_sign[pid] else 's' for pid in de_vals.index],
+            index=de_vals.index
+        )
+        for m in marker.unique():
+            ix = marker == m
+            # colour: based on patient ID
+            the_colours = [colours[pid] for pid in ix.index[ix]]
+            ax.scatter(
+                de_vals.loc[ix].values,
+                dm_vals.loc[ix].values,
+                c=the_colours,
+                edgecolors=ec.loc[ix],
+                marker=m,
+                linewidth=1.
+            )
+        return ax
+
+
+    def add_de_dm_scatter_legend(ax, colours=consts.PATIENT_COLOURS, pids=consts.PIDS):
+        legend_dict_patient = collections.OrderedDict([
+            (pid, {'class': 'patch', 'edgecolor': 'k', 'facecolor': colours[pid], 'linewidth': 1.})
+            for pid in pids
+        ])
+        legend_dict_sign_de = collections.OrderedDict([
+            ('DE', {'class': 'line', 'markerfacecolor': 'k', 'linewidth': 0., 'marker': 'o'}),
+            ('Not DE', {'class': 'line', 'markerfacecolor': 'k', 'linewidth': 0., 'marker': 's'}),
+        ])
+        legend_dict_sign_dm = collections.OrderedDict([
+            ('DM',
+             {'class': 'line', 'markeredgecolor': 'none', 'markerfacecolor': '0.5', 'linewidth': 0., 'marker': 'o'}),
+            ('Not DM', {'class': 'line', 'markeredgecolor': 'k', 'markeredgewidth': 1.0, 'markerfacecolor': '0.5',
+                        'linewidth': 0., 'marker': 'o'}),
+        ])
+        legend_dict = collections.OrderedDict([
+            ('Patient', legend_dict_patient),
+            ('#DE', legend_dict_sign_de),
+            ('#DM', legend_dict_sign_dm)
+        ])
+        return common.add_custom_legend(ax, legend_dict, loc_outside=True, fontsize=12)
+
+
+    this_alpha = 0.01
+    nrows = int(np.ceil(len(g_to_cluster) / 3.))
+    fig, axs = plt.subplots(
+        nrows=nrows,
+        ncols=3,
+        sharex=True,
+        sharey=False,
+        figsize=(6, 1.5 * nrows),
+                            )
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
     axs_unseen = list(axs.flat)
     for i, g in enumerate(g_to_cluster):
         ax = axs.flat[i]
         axs_unseen.pop(axs_unseen.index(ax))
-        x = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_logFC')].squeeze()
-        x.index = x.index.str.replace('_logFC', '')
-        y = [
-            dmr_res_s1[pid].results[g_to_cluster[g]]['median_change'] for pid in x.index
-        ]
-        y = pd.Series(y, index=x.index)
-        ax.scatter(x.values, y.values, c=[consts.PATIENT_COLOURS[pid] for pid in x.index])
+        de_vals = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_logFC')].squeeze()
+        de_vals.index = de_vals.index.str.replace('_logFC', '')
+        dm_vals = pd.Series(
+            [dmr_res_s1[pid].results[g_to_cluster[g]]['median_change'] for pid in de_vals.index],
+            index=de_vals.index
+        )
+        de_sign = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_FDR')].squeeze() < this_alpha
+        de_sign.index = de_sign.index.str.replace('_FDR', '')
+        dm_sign = pd.Series(
+            [dmr_res_s1[pid].results[g_to_cluster[g]].get('rej_h0', False) for pid in de_vals.index],
+            index=de_vals.index
+        )
+        one_de_dm_scatter(de_vals, de_sign, dm_vals, dm_sign, ax=ax)
+
         ax.axhline(0., color='k', linestyle='--', linewidth=1.0)
         ax.axvline(0., color='k', linestyle='--', linewidth=1.0)
+        ax.set_title(g, fontsize=12)
     for ax in axs_unseen:
         ax.set_visible(False)
+
+    big_ax.set_xlabel('DE logFC', fontsize=12)
+    big_ax.set_ylabel(r'DMR median $\Delta M$', fontsize=12)
+
+    # add legend
+    add_de_dm_scatter_legend(big_ax)
+
+    fig.subplots_adjust(left=0.1, right=0.77, top=0.95, bottom=0.08, hspace=0.25)
+    fig.savefig(os.path.join(outdir_joint, "gois_de_dmr.png"), dpi=200)
+
+    # What about the remaining GOIs that don't have DMRs associated with them?
+    # We can run the probe-level analysis instead?
+    # In fact, let's run that on all GOIs
+    remaining_gois = sorted(set(gois).difference(g_to_cluster))
+
+    gtf_fn = os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh37', 'gtf',
+                          'Homo_sapiens.GRCh37.87.gtf.gz')
+    db = genomics.GtfAnnotation(gtf_fn)
+    constitutive_features = {'exon', 'five_prime_utr', 'three_prime_utr'}
+
+    for g in gois:
+        # only use probes retained in our data
+        probe_ids = anno.index[anno.UCSC_RefGene_Name.str.join(',').str.contains(g)].intersection(dat.index)
+        logger.info("Gene %s is associated with %d probes on the array.", g, len(probe_ids))
+        probe_locs = anno.loc[probe_ids, 'MAPINFO'].sort_values()
+        probe_ids = probe_locs.index
+        chrom = anno.loc[probe_ids[0], 'CHR']
+        the_genes = list(db.feature_search(g, region=(chrom, probe_locs.min(), probe_locs.max())))
+        if len(the_genes) != 1:
+            logger.warn("No. records of gene %s found in the GTF file: %d. Skipping.", g, len(the_genes))
+            continue
+        the_gene = the_genes[0]
+
+        # get transcripts and exons (for plotting)
+        the_transcripts = list(db.children(the_gene, featuretype='transcript'))
+        logger.info("Gene %s has %d transcripts.", g, len(the_transcripts))
+        the_exons = collections.OrderedDict()
+        for t in the_transcripts:
+            the_exons[t.id] = list(db.children(t, featuretype=constitutive_features))
+
+        # plot the tracks
+        track_height = 0.8
+
+        gs = plt.GridSpec(nrows=2, ncols=len(probe_ids), height_ratios=[4, 1])
+        fig = plt.figure(figsize=(11., 3.))
+
+        big_ax = fig.add_subplot(gs[0, :])
+        big_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+        big_ax.set_facecolor('none')
+        big_ax.grid(False)
+
+        track_ax = fig.add_subplot(gs[1, 1:-1])
+
+        xmin = 1e12
+        xmax = -1
+        edge_buffer = 500.
+
+        for i, (k, v) in enumerate(the_exons.items()):
+            v = sorted(v, key=lambda x: x.start)
+            if len(v) > 0:
+                x0 = v[0].start
+                this_patches = []
+                for t in v:
+                    the_patch = patches.Rectangle(
+                        (t.start - 0.5, i - track_height * 0.5),
+                        t.stop - t.start + 0.5,
+                        track_height,
+                        edgecolor='k',
+                        linewidth=.75,
+                        facecolor='k' if t.featuretype in {'exon'} else 'w',
+                        zorder=15
+                    )
+                    this_patches.append(the_patch)
+                    xmin = min(xmin, t.start - edge_buffer)
+                    xmax = max(xmax, t.stop + edge_buffer)
+                x1 = t.stop
+            track_ax.add_collection(plt_collections.PatchCollection(this_patches, match_original=True, zorder=20))
+            track_ax.plot([x0, x1], [i, i], color='k', linestyle='-', linewidth=2., zorder=15)
+
+        xmin = min(xmin, probe_locs.min() - edge_buffer * 0.5)
+        xmax = max(xmax, probe_locs.max() + edge_buffer * 0.5)
+
+        track_ax.set_xlim([xmin, xmax])
+        track_ax.set_ylim([-track_height, len(the_exons) - 1 + track_height])
+
+        # go back through and add directions
+        # we'll assume all directions are the same across transcripts (FIXME!)
+        k, v = the_exons.items()[0]
+        v = sorted(v, key=lambda x: x.start)
+        if len(set([t.strand for t in v])) != 1:
+            logger.warn("Gene %s, transcript %s: constituent elements are on multiple strands?", g, k)
+        else:
+            if v[0].strand == '+':
+                txt0 = "5'"
+                txt1 = "3'"
+            else:
+                txt1 = "5'"
+                txt0 = "3'"
+            midy = (len(the_exons) - 1.) * 0.5
+            track_ax.text(xmin + edge_buffer * 0.5, midy, txt0, horizontalalignment='right', va='center', fontsize=12)
+            track_ax.text(xmax - edge_buffer * 0.5, midy, txt1, horizontalalignment='left', va='center', fontsize=12)
+
+        track_ax.set_xlabel('Chromosome %s' % chrom)
+        track_probe_lines = [track_ax.axvline(loc, c='b', lw=1., zorder=25) for loc in probe_locs]
+
+
+        # add methylation data on second set of axes
+        # only include probes that are in the data
+        sharey = None
+        sharex = None
+        scatter_axs = []
+        miny = 1e9
+        maxy = -1
+        the_probes = dat.index.intersection(probe_ids)
+        the_probes = anno.loc[the_probes, 'MAPINFO'].sort_values().index
+        for i, probe_id in enumerate(the_probes):
+            loc = anno.loc[probe_id, 'MAPINFO']
+            ax = fig.add_subplot(gs[0, i], sharey=sharey, sharex=sharex)
+            sharey = ax
+            sharex = ax
+            track_ax.axvline(loc, c='k', lw=1.)
+            scatter_axs.append(ax)
+
+            # DE logFC and significance as before (simple lookup)
+            de_vals = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_logFC')].squeeze()
+            de_vals.index = de_vals.index.str.replace('_logFC', '')
+            de_sign = de_res.loc[de_res['Gene Symbol'] == g, de_res.columns.str.contains('_FDR')].squeeze() < this_alpha
+            de_sign.index = de_sign.index.str.replace('_FDR', '')
+
+            # DM: can't perform a lookup so we'll have to use mean delta value for each probe
+            dm_vals = pd.Series(index=de_vals.index)
+            dm_sign = pd.Series(False, index=de_vals.index)
+            for pid in de_vals.index:
+                ix_gic = (meth_obj.meta.type == 'GBM') & (meth_obj.meta.patient_id == pid)
+                ix_insc = (meth_obj.meta.type == 'iNSC') & (meth_obj.meta.patient_id == pid)
+                dm_vals[pid] = dat.loc[probe_id, ix_gic].mean() - dat.loc[probe_id, ix_insc].mean()
+
+            miny = min(miny, dm_vals.min())
+            maxy = max(maxy, dm_vals.max())
+
+            one_de_dm_scatter(de_vals, de_sign, dm_vals, dm_sign, ax=ax)
+            ax.axhline(0, c='k', lw=1.0, ls='--')
+            ax.axvline(0, c='k', lw=1.0, ls='--')
+
+        scatter_axs[0].set_ylim([miny, maxy])
+        scatter_axs[0].set_xlim([-.2, 10.2])
+        scatter_axs[0].set_xticks([0, 5, 10])
+
+        for ax in scatter_axs[1:]:
+            plt.setp(ax.yaxis.get_ticklabels(), visible=False)
+
+        gs.update(bottom=0.17, left=0.06, right=0.98, hspace=0.6, top=0.98, wspace=0.1)
+        plt.draw()
+
+        # can we draw connecting lines??
+        for ax, probe_id in zip(scatter_axs, the_probes):
+            loc = anno.loc[probe_id, 'MAPINFO']
+            # display coordinates
+            pixel_coords_0 = track_ax.transData.transform([loc, track_ax.get_ylim()[1]])
+            pixel_coords_1 = ax.transAxes.transform([0.5, 0.])
+            # axis coordinates
+            ax_coords_0 = ax.transData.inverted().transform(pixel_coords_0)
+            ax_coords_1 = ax.transData.inverted().transform(pixel_coords_1)
+
+            l = ax.plot(
+                [ax_coords_0[0], ax_coords_1[0]],
+                [ax_coords_0[1], ax_coords_1[1]],
+                linestyle='-',
+                color='b',
+                alpha=0.3,
+                linewidth=2.0,
+                clip_on=False,
+                zorder=100
+            )
+
+        track_ax.yaxis.set_visible(False)
+        big_ax.set_ylabel(r'Methylation: mean $\Delta M$')
+        big_ax.set_xlabel(r'Expression: log fold change')
+        fig.savefig(os.path.join(outdir_joint, "de_logfc_probe_dm_%s.png" % g), dpi=200)
 
 
 
