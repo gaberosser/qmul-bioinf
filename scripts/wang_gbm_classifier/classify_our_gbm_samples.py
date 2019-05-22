@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
-from rnaseq import gsea, general, loader
-from load_data import rnaseq_data
-from utils.output import unique_output_dir
-from settings import OUTPUT_DIR
+from rnaseq import gsea, loader
+from utils import output, dictionary, excel
 import os
 import references
 from matplotlib import pyplot as plt
 import seaborn as sns
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
+from scripts.hgic_final import consts
 
 
 SRC_MAP = {
@@ -17,7 +17,12 @@ SRC_MAP = {
 }
 
 
-def prepare_gct_files_hgic(pids='all', outdir=None):
+def nh_id_to_patient_id(arr):
+    nh_id = pd.Index(arr).str.replace(r'(_?)(DEF|SP).*', '')
+    return [NH_ID_TO_PATIENT_ID_MAP[t.replace('_', '-')] for t in nh_id]
+
+
+def prepare_gct_files_hgic(pids=consts.ALL_PIDS, outdir=None):
     """
     Prepare the GCT files required to perform classification of the hGIC samples:
     - hGIC FFPE
@@ -26,179 +31,28 @@ def prepare_gct_files_hgic(pids='all', outdir=None):
     In all cases, use FPKM units (cufflinks), TPM (salmon) and CPM (STAR).
     Use gene symbols as these are contained in the signatures.
     """
-    ## FIXME: finish!
     if outdir is None:
-        outdir = unique_output_dir("gct_files_for_wang")
+        outdir = output.unique_output_dir()
+
+    infiles = []
 
     loaded = {}
     for typ in ('cell_culture', 'ffpe'):
         for src in ('star', 'salmon', 'star/cufflinks'):
-            this_dat = loader.load_by_patient(pids, type=typ, source=src, include_control=False)
-            this_dat.meta = this_dat.meta.loc[~this_dat.meta.index.str.contains('DURA')]
-            this_dat.data = this_dat.data.loc[:, this_dat.meta.index]
-            loaded.setdefault(typ, {})[src] = this_dat
-
-    for typ in ('cell_culture', 'ffpe'):
-        for src in ('star', 'salmon', 'star/cufflinks'):
-            this_dat = loaded[typ][src]
+            this_obj = loader.load_by_patient(pids, type=typ, source=src, include_control=False)
+            this_obj.filter_samples(this_obj.meta.type == 'GBM')
+            if typ == 'ffpe':
+                # restrict to the 'best' versions (there are some duplicates where we tried twice)
+                this_obj.filter_by_sample_name(consts.FFPE_RNASEQ_SAMPLES_ALL)
             this_dat = references.translate_quantification_resolving_duplicates(
-                this_dat.data,
+                this_obj.data,
                 'Ensembl Gene ID',
-                'Approved Symbol',
+                'Approved Symbol'
             )
+            loaded.setdefault(typ, {})[src] = this_dat
             fn = os.path.join(outdir, "%s_%s.gct" % (SRC_MAP[src], typ))
             gsea.data_to_gct(this_dat, fn)
-
-    # combine
-    for src in ('star', 'salmon', 'star/cufflinks'):
-        this_dat1 = loaded['cell_culture'][src].data
-        this_dat2 = loaded['ffpe'][src].data
-        this_dat = pd.concat((this_dat1, this_dat2), axis=1)
-        this_dat = references.translate_quantification_resolving_duplicates(
-            this_dat,
-            'Ensembl Gene ID',
-            'Approved Symbol',
-        )
-        fn = os.path.join(outdir, "%s_%s.gct" % (SRC_MAP[src], 'all'))
-        gsea.data_to_gct(this_dat, fn)
-
-    infiles = []
-
-    # FFPE
-    ffpe_dat = rnaseq_data.load_salmon_by_patient_id('all', type='ffpe', include_control=False, units=units)
-    # transcript -> gene
-    ffpe_dat = general.ensembl_transcript_quant_to_gene(ffpe_dat)
-    # ensembl -> gene symbol
-    ffpe_dat = references.translate_quantification_resolving_duplicates(
-        ffpe_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_ffpe_tpm.gct")
-    gsea.data_to_gct(ffpe_dat, fn)
-    infiles.append(fn)
-
-    # GIC
-    gic_dat = rnaseq_data.load_salmon_by_patient_id('all', type='cell_culture', include_control=False, units=units)
-    # only keep GBM lines
-    gic_dat = gic_dat.loc[:, gic_dat.columns.str.contains('GBM')]
-    # transcript -> gene
-    gic_dat = general.ensembl_transcript_quant_to_gene(gic_dat)
-    # ensembl -> gene symbol
-    gic_dat = references.translate_quantification_resolving_duplicates(
-        gic_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_cc_tpm.gct")
-    gsea.data_to_gct(gic_dat, fn)
-    infiles.append(fn)
-
-    # 3) Combined
-    dat = gsea.combine_gct_files(*infiles)
-    fn = os.path.join(outdir, "gbm_ffpe_and_cc_tpm.gct")
-    gsea.data_to_gct(dat, fn)
-    infiles.append(fn)
-
-    return infiles
-
-
-def prepare_gct_files_salmon(outdir=None, units='tpm'):
-    """
-    Prepare the GCT files required to perform classification:
-    - Our GBM FFPE and cell culture samples
-    - TCGA RNA-Seq cohort
-    - Both combined
-    In all cases, use FPKM units and gene symbols, as these are used by Wang
-    """
-    if outdir is None:
-        outdir = unique_output_dir("gct_files_for_wang")
-
-    infiles = []
-
-    # FFPE
-    ffpe_dat = rnaseq_data.load_salmon_by_patient_id('all', type='ffpe', include_control=False, units=units)
-    # transcript -> gene
-    ffpe_dat = general.ensembl_transcript_quant_to_gene(ffpe_dat)
-    # ensembl -> gene symbol
-    ffpe_dat = references.translate_quantification_resolving_duplicates(
-        ffpe_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_ffpe_tpm.gct")
-    gsea.data_to_gct(ffpe_dat, fn)
-    infiles.append(fn)
-
-    # GIC
-    gic_dat = rnaseq_data.load_salmon_by_patient_id('all', type='cell_culture', include_control=False, units=units)
-    # only keep GBM lines
-    gic_dat = gic_dat.loc[:, gic_dat.columns.str.contains('GBM')]
-    # transcript -> gene
-    gic_dat = general.ensembl_transcript_quant_to_gene(gic_dat)
-    # ensembl -> gene symbol
-    gic_dat = references.translate_quantification_resolving_duplicates(
-        gic_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_cc_tpm.gct")
-    gsea.data_to_gct(gic_dat, fn)
-    infiles.append(fn)
-
-    # 3) Combined
-    dat = gsea.combine_gct_files(*infiles)
-    fn = os.path.join(outdir, "gbm_ffpe_and_cc_tpm.gct")
-    gsea.data_to_gct(dat, fn)
-    infiles.append(fn)
-
-    return infiles
-
-
-def prepare_gct_files_star(outdir=None):
-    """
-    Prepare the GCT files required to perform classification:
-    - Our GBM FFPE and cell culture samples
-    - TCGA RNA-Seq cohort
-    - Both combined
-    In all cases, use FPKM units and gene symbols, as these are used by Wang
-    """
-    if outdir is None:
-        outdir = unique_output_dir("gct_files_for_wang")
-
-    infiles = []
-
-    # FFPE
-    ffpe_dat = rnaseq_data.load_by_patient('all', type='ffpe', include_control=False)
-    # ensembl -> gene symbol
-    ffpe_dat = references.translate_quantification_resolving_duplicates(
-        ffpe_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_ffpe_counts.gct")
-    gsea.data_to_gct(ffpe_dat, fn)
-    infiles.append(fn)
-
-    # GIC
-    gic_dat = rnaseq_data.load_by_patient('all', type='cell_culture', include_control=False)
-    # only keep GBM lines
-    gic_dat = gic_dat.loc[:, gic_dat.columns.str.contains('GBM')]
-    # ensembl -> gene symbol
-    gic_dat = references.translate_quantification_resolving_duplicates(
-        gic_dat,
-        'Ensembl Gene ID',
-        'Approved Symbol',
-    )
-    fn = os.path.join(outdir, "gbm_cc_counts.gct")
-    gsea.data_to_gct(gic_dat, fn)
-    infiles.append(fn)
-
-    # 3) Combined
-    dat = gsea.combine_gct_files(*infiles)
-    fn = os.path.join(outdir, "gbm_ffpe_and_cc_counts.gct")
-    gsea.data_to_gct(dat, fn)
-    infiles.append(fn)
+            infiles.append(fn)
 
     return infiles
 
@@ -293,41 +147,24 @@ def contingency_table(new, previous, vals=None, val_func=np.mean):
 
 if __name__ == '__main__':
     alpha = 0.05
-    outdir = unique_output_dir("wang_classification")
+    outdir = output.unique_output_dir("wang_classification")
     n_perm = 1000
 
     ## TODO: tidy up and use the new function
 
     # prepare data
-    # gct_files = prepare_gct_files_salmon(outdir=outdir)
-    gct_files = prepare_gct_files_star(outdir=outdir)
+    gct_files = prepare_gct_files_hgic(outdir=outdir)
 
-    outdir = '/home/gabriel/python_outputs/gct_files_for_wang.0/'
-
-    for typ in ('cell_culture', 'ffpe', 'all'):
+    for typ in ('cell_culture', 'ffpe'):
         for src in ('star', 'salmon', 'star/cufflinks'):
             fn = os.path.join(outdir, "%s_%s.gct" % (SRC_MAP[src], typ))
             gct_files.append(fn)
             gsea.wang_ssgsea_classification(fn)
 
-    # run the algorithm on them
-    p_res = []
-    ss_res = []
-
-    for fn in gct_files:
-        # gsea.wang_ssgsea_classification(fn, n_perm)
-
-        the_dir, the_stem = os.path.split(fn)
-        outfn = os.path.join(the_dir, "p_result_%s.txt" % the_stem)
-        if not os.path.exists(outfn):
-            continue
-        p_res.append(load_pvalue_results(outfn))
-        ss_res.append(simplicity_score(p_res[-1]))
-
     p_res = {}
     ss_res = {}
 
-    for typ in ('cell_culture', 'ffpe', 'all'):
+    for typ in ('cell_culture', 'ffpe'):
         for src in ('star', 'salmon', 'star/cufflinks'):
             fn = os.path.join(outdir, "%s_%s.gct" % (SRC_MAP[src], typ))
             the_dir, the_stem = os.path.split(fn)
@@ -338,13 +175,14 @@ if __name__ == '__main__':
             p_res.setdefault(typ, {})[SRC_MAP[src]] = this_pres
             ss_res.setdefault(typ, {})[SRC_MAP[src]] = simplicity_score(this_pres)
 
+    # export
+    # easiest way is to flatten the dictionary, then combine
+    export_p = dictionary.nested_dict_to_flat(p_res)
+    export_ss = dictionary.nested_dict_to_flat(ss_res)
+    to_export = {}
 
-    # indir = os.path.join(OUTPUT_DIR, 'wang_classification')
-    # fn = os.path.join(indir, 'p_result_gbm_cc_and_ffpe_fpkm.gct.txt')
-    # pvals_ours = load_pvalue_results(fn)
-    # ss_ours = simplicity_score(pvals_ours)
-    # nm_ours = (pvals_ours < alpha).sum(axis=1)
-    # cls_ours = pd.Series(index=pvals_ours.index)
-    # min_idx = np.argmin(pvals_ours.values, axis=1)
-    # cls_ours.loc[nm_ours == 1] = pvals_ours.columns[min_idx[nm_ours == 1]]
-    # cls_ours.loc[nm_ours > 1] = 'Multi'
+    for k in export_p:
+        the_key = '_'.join(k)
+        to_export[the_key] = pd.concat((export_p[k], export_ss[k]), axis=1)
+    excel.pandas_to_excel(to_export, os.path.join(outdir, "wang_results.xlsx"))
+

@@ -15,7 +15,6 @@ import numpy as np
 import collections
 from scipy import stats
 from utils import setops, output, log
-from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 
 logger = log.get_console_logger()
 
@@ -442,8 +441,8 @@ if __name__ == "__main__":
     tam_signature_source = 'bowman'
     # tam_signature_source = 'muller'
     mtor_source = 'kegg_msigdb'  # ('kegg', 'pid', 'biocarta')
-    class_method = 'wang'
-    # class_method = 'verhaak'
+    # class_method = 'wang'
+    class_method = 'verhaak'
     # toggle allowing more than one class to be used
     allow_multiple_classes = False
 
