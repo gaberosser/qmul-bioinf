@@ -22,6 +22,8 @@ NORM_METHODS = {
     'funnorm'
 }
 
+METHYLATION_DIR = os.path.join(DATA_DIR_NON_GIT, 'methylation')
+
 project_dirs = {
     "2016-06-10_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner'),
     "2016-09-21_dutt": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-09-21_dutt'),
@@ -648,24 +650,21 @@ def load_by_sample_name(
 
 
 def load_reference(ref_names, norm_method='pbc', samples=None):
-    ## TODO: support specifying samples in input?
-    # ensure ref names are in a list (or iterable)
     if not hasattr(ref_names, '__iter__'):
         ref_names = [ref_names]
 
     objs = []
     for rid in ref_names:
-        base_dir = project_dirs[rid]
+        base_dir = os.path.join(METHYLATION_DIR, rid)
         if not os.path.isdir(base_dir):
             raise ValueError("Directory %s for ref %s does not exist." % (base_dir, rid))
 
-        beta_dir = os.path.join(base_dir, 'beta')
         meta_fn = os.path.join(base_dir, 'sources.csv')
+        data_fn = os.path.join(base_dir, 'beta', 'beta_%s.csv.gz' % norm_method)
         ldr = IlluminaHumanMethylationLoader(
-            base_dir=beta_dir,
+            data_fn,
             meta_fn=meta_fn,
             batch_id=rid,
-            norm_method=norm_method,
         )
         objs.append(ldr)
 
@@ -750,8 +749,9 @@ def gse31848(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE31848",
         norm_method=norm_method,

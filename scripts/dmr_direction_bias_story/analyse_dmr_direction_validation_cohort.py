@@ -111,7 +111,7 @@ if __name__ == "__main__":
     our_obj.meta.insert(0, 'patient_id', our_obj.meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     # load validation data
-    val_obj = loader.load_reference('gse92462_450k', norm_method=norm_method)
+    val_obj = loader.load_reference('GSE92462_450k', norm_method=norm_method)
     # filter
     val_obj.filter_samples(val_obj.meta.type.isin(['GBM (GSC)', 'NSC']))
 

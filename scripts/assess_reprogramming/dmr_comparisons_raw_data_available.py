@@ -256,7 +256,7 @@ if __name__ == "__main__":
 
     # Encode EPIC data
     encode_epic_obj = loader.load_reference(
-        'encode_epic',
+        'ENCODE_EPIC',
         norm_method=norm_method,
         samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90']
     )
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     # nazor_obj = loader.load_reference('gse31848', norm_method=norm_method)
 
     # GSE110544 (Banovich et al.; iPSC lines) (EPIC)
-    banov_obj = loader.load_reference('gse110544', norm_method=norm_method)
+    banov_obj = loader.load_reference('GSE110544', norm_method=norm_method)
     banov_obj.meta.insert(1, 'array_type', 'EPIC')
 
     # combine all data

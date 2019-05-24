@@ -392,7 +392,7 @@ if __name__ == "__main__":
     external_ref_strandedness_de = ['u']
 
     if include_external_dm_refs:
-        external_ref_names_dm = ['gse38216']
+        external_ref_names_dm = ['GSE38216']
         external_ref_samples_dm = ['H9 NPC 1', 'H9 NPC 2']
     else:
         external_ref_names_dm = None

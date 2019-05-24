@@ -13,6 +13,8 @@ import subprocess
 import re
 import multiprocessing as mp
 from settings import LOCAL_DATA_DIR
+import hgic_consts
+
 from utils import log
 _logger = log.get_console_logger()
 
@@ -91,19 +93,41 @@ class GtfAnnotation(gffutils.FeatureDB):
                 yield t
 
 
-def get_reference_genome_directory(tax_id, version):
-    if tax_id == 9606:
-        if version is None:
-            return os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'human', 'ensembl', 'GRCh38.p10.release90')
-        else:
-            raise NotImplementedError("Not yet supporting multiple versions.")
-    elif tax_id == 10090:
-        if version is None:
-            return os.path.join(LOCAL_DATA_DIR, 'reference_genomes', 'mouse', 'ensembl', 'GRCm38.p5.r88')
-        else:
-            raise NotImplementedError("Not yet supporting multiple versions.")
-    else:
+def get_reference_genome_directory(tax_id, version='default'):
+    if tax_id not in hgic_consts.REFERENCE_GENOME_DIRECTORIES:
         raise ValueError("Unsupported tax_id: %d" % tax_id)
+    out = hgic_consts.REFERENCE_GENOME_DIRECTORIES[tax_id][version]
+    if not os.path.isdir(out):
+        raise IOError("Directory not found: %s. Check hgic_consts.REFERENCE_GENOME_DIRECTORIES." % out)
+    return out
+
+
+def get_reference_genome_gtf(tax_id, version='default', ext='.gtf.gz'):
+    if tax_id not in hgic_consts.REFERENCE_GENOME_GTFS:
+        raise ValueError("Unsupported tax_id: %d" % tax_id)
+    out = hgic_consts.REFERENCE_GENOME_GTFS[tax_id][version] + ext
+    if not os.path.isfile(out):
+        raise IOError("File not found: %s. Check hgic_consts.REFERENCE_GENOME_GTFS and extension." % out)
+    return out
+
+
+def get_gene_transcripts(
+    gene_name,
+    tax_id=9606,
+    version='default',
+    constitutive_features=('exon', 'five_prime_utr', 'three_prime_utr'),
+    region=None
+):
+    """
+    Get all requested features relating to a specifiec gene.
+    :param gene_name:
+    :param tax_id:
+    :param version:
+    :param constitutive_features:
+    :param region: If supplied, this is a 3 element tuple passed to `feature_search` to speed up the search for the
+    gene. (chrom, start_coord, end_coord)
+    :return:
+    """
 
 
 def reference_genome_chrom_lengths(tax_id=9606, version=None, fn=None):

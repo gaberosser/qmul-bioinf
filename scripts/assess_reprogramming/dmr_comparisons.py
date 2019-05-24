@@ -298,7 +298,7 @@ if __name__ == "__main__":
 
     # Encode EPIC data
     encode_epic_obj = loader.load_reference(
-        'encode_epic',
+        'ENCODE_EPIC',
         norm_method=norm_method,
         samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90']
     )

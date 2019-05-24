@@ -1,3 +1,7 @@
+import os
+from settings import LOCAL_DATA_DIR
+
+
 NH_ID_TO_PATIENT_ID_MAP = {
     'NH15-1661': '017',
     'NH15-1877': '018',
@@ -14,3 +18,30 @@ NH_ID_TO_PATIENT_ID_MAP = {
 }
 
 PATIENT_ID_TO_NH_ID_MAP = dict([t[::1] for t in NH_ID_TO_PATIENT_ID_MAP.items()])
+
+REFERENCE_GENOMES_BASEDIR = os.path.join(LOCAL_DATA_DIR, 'reference_genomes')
+
+REFERENCE_GENOME_DIRECTORIES = {
+    9606: {
+        'default': os.path.join(REFERENCE_GENOMES_BASEDIR, 'human', 'ensembl', 'GRCh38.p10.release90'),
+        'GRCh37': os.path.join(REFERENCE_GENOMES_BASEDIR, 'human', 'ensembl', 'GRCh37'),
+        'GRCh38': os.path.join(REFERENCE_GENOMES_BASEDIR, 'human', 'ensembl', 'GRCh38.p10.release90'),
+    },
+    10090: {
+        'default': os.path.join(REFERENCE_GENOMES_BASEDIR, 'mouse', 'ensembl', 'GRCm38.p5.r88'),
+        'GRCm38': os.path.join(REFERENCE_GENOMES_BASEDIR, 'mouse', 'ensembl', 'GRCm38.p5.r88'),
+    },
+}
+
+
+REFERENCE_GENOME_GTFS = {
+    9606: {
+        'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['default'], 'gtf', 'Homo_sapiens.GRCh38.90'),
+        'GRCh37': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['GRCh37'], 'gtf', 'Homo_sapiens.GRCh37.87'),
+        'GRCh38': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['GRCh38'], 'gtf', 'Homo_sapiens.GRCh38.90'),
+    },
+    10090: {
+        'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['default'], 'gtf', 'Mus_musculus.GRCm38.88'),
+        'GRCm38': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['GRCm38'], 'gtf', 'Mus_musculus.GRCm38.88'),
+    },
+}

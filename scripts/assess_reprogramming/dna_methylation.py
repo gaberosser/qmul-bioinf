@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
     # Encode EPIC data
     encode_epic_obj = loader.load_reference(
-        'encode_epic',
+        'ENCODE_EPIC',
         norm_method=norm_method,
         samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90']
     )
@@ -232,11 +232,15 @@ if __name__ == "__main__":
     # encode_epic_obj = loader.encode_epic(norm_method=norm_method, samples=['H7 hESC', 'GM23248', 'GM23338', 'IMR-90'])
 
     # Encode 450K data
-    encode_450k_obj = loader.encode_450k(norm_method=norm_method, samples=['H1 hESC'])
+    encode_450k_obj = loader.load_reference(
+        'ENCODE_450K',
+        norm_method=norm_method,
+        samples=['H1 hESC']
+    )
     encode_450k_obj.meta.insert(1, 'array_type', '450K')
 
     # Zimmerlin et al. (450K, 3 x hESC samples)
-    zimmerlin_obj = loader.gse65214(norm_method=norm_method)
+    zimmerlin_obj = loader.load_reference('GSE65214', norm_method=norm_method)
     zimmerlin_obj.batch_id = 'Zimmerlin et al.'
     zimmerlin_obj.meta.insert(1, 'array_type', '450K')
 
