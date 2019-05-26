@@ -111,23 +111,63 @@ def get_reference_genome_gtf(tax_id, version='default', ext='.gtf.gz'):
     return out
 
 
-def get_gene_transcripts(
-    gene_name,
+def get_reference_genome_fasta(tax_id, version='default', ext='.fa.gz'):
+    """
+
+    :param tax_id:
+    :param version:
+    :param ext: The expected file extension. If this is iterable, we go through it and return the first one found.
+    :return:
+    """
+    if not hasattr(ext, '__iter__'):
+        ext = [ext]
+
+    if tax_id not in hgic_consts.REFERENCE_GENOME_FA:
+        raise ValueError("Unsupported tax_id: %d" % tax_id)
+
+    base = hgic_consts.REFERENCE_GENOME_FA[tax_id][version]
+    for e in ext:
+        out = base + e
+        if os.path.isfile(out):
+            return out
+    raise IOError("File not found with base: %s. Check hgic_consts.REFERENCE_GENOME_FA and extension(s)." % base)
+
+
+def get_features_from_gtf(
+    feature_name,
+    parent_feature_type='gene',
+    child_feature_type='transcript',
     tax_id=9606,
     version='default',
-    constitutive_features=('exon', 'five_prime_utr', 'three_prime_utr'),
+    include_features=('exon', 'five_prime_utr', 'three_prime_utr'),
     region=None
 ):
     """
-    Get all requested features relating to a specifiec gene.
-    :param gene_name:
+    Get all requested child features relating to a specific parent feature.
+    For example, get all transcripts relating to a specific gene.
+    :param feature_name:
+    :param parent_feature_type:
+    :param child_feature_type:
     :param tax_id:
     :param version:
-    :param constitutive_features:
+    :param include_features:
     :param region: If supplied, this is a 3 element tuple passed to `feature_search` to speed up the search for the
     gene. (chrom, start_coord, end_coord)
     :return:
     """
+    gtf_fn = get_reference_genome_gtf(tax_id=tax_id, version=version)
+    db = GtfAnnotation(gtf_fn)
+    parents = db.feature_search(feature_name, feature_type=parent_feature_type, region=region)
+    res = {}
+
+    for p in parents:
+        children = db.children(p, featuretype=child_feature_type)
+        this_res = {}
+        for t in children:
+            this_res[t] = list(db.children(t, featuretype=include_features))
+        res[p] = this_res
+
+    return res
 
 
 def reference_genome_chrom_lengths(tax_id=9606, version=None, fn=None):

@@ -33,7 +33,6 @@ REFERENCE_GENOME_DIRECTORIES = {
     },
 }
 
-
 REFERENCE_GENOME_GTFS = {
     9606: {
         'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['default'], 'gtf', 'Homo_sapiens.GRCh38.90'),
@@ -43,5 +42,17 @@ REFERENCE_GENOME_GTFS = {
     10090: {
         'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['default'], 'gtf', 'Mus_musculus.GRCm38.88'),
         'GRCm38': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['GRCm38'], 'gtf', 'Mus_musculus.GRCm38.88'),
+    },
+}
+
+REFERENCE_GENOME_FA = {
+    9606: {
+        'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['default'], 'fa', 'Homo_sapiens.GRCh38.dna.primary_assembly'),
+        'GRCh37': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['GRCh37'], 'fa', 'Homo_sapiens.GRCh37.dna.primary_assembly'),
+        'GRCh38': os.path.join(REFERENCE_GENOME_DIRECTORIES[9606]['GRCh38'], 'fa', 'Homo_sapiens.GRCh38.dna.primary_assembly'),
+    },
+    10090: {
+        'default': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['default'], 'fa', 'Mus_musculus.GRCm38.dna.primary_assembly'),
+        'GRCm38': os.path.join(REFERENCE_GENOME_DIRECTORIES[10090]['GRCm38'], 'fa', 'Mus_musculus.GRCm38.dna.primary_assembly'),
     },
 }
