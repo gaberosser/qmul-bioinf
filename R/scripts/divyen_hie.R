@@ -1,5 +1,6 @@
 source('_settings.R')
 source('io/output.R')
+source('plotting/heatmap.R')
 require(ggplot2)
 require(glmnet)
 require(ggfortify)
@@ -52,11 +53,43 @@ plotDecisionBoundary <- function(fit, coeffx, coeffy, values, outcomes, xlab=NUL
   points(values[outcomes, coeffx], values[outcomes, coeffy], col='green', pch=19)
 }
 
+prepareData <- function(dat, value_cols) {
+  batch <- as.factor(substr(as.vector(dat$Study.No), 1, 2))
+  
+  y <- dat$Outcome
+  y[y == 1] <- 'Unfav'
+  y[y == 2] <- 'Fav'
+  y <- as.factor(y)
+  
+  plt.given <- data.frame(Platelets=rep(F, nrow(dat)), row.names = rownames(dat))
+  plt.given[grep('Platelets', dat$Blood.product), 'Platelets'] <- T
+  
+  mec <- dat$Meconium.Aspiration == 'Y'
+  
+  values_missing <- dat[, value_cols]
+  colSd <- apply(values_missing, 2, function (x) sd(na.omit(x)))
+  colMn <- apply(values_missing, 2, function (x) mean(na.omit(x)))
+  values <- imputeMissing(values_missing)
+  values_standard <- data.frame(t(apply(values, 1, function (x) (x - colMn) / colSd)))
+  
+  X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
+  Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
+  X_missing <- data.frame(values_missing, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
+  
+  list(
+    X=X,
+    Xs=Xs,
+    X_missing=X_missing
+  )
+}
+
 output.dir <- getOutputDir('divyen_hie')
 
 fn <- file.path(data.dir, 'divyen_shah', 'cleaned_data_feb_2018.csv')
 dat <- read.csv(fn)
-batch <- as.factor(substr(as.vector(dat$Study.No), 1, 2))
+
+fn.full <- file.path(data.dir, 'divyen_shah', 'cleaned_data_full_cohort_feb_2018.csv')
+dat.full <- read.csv(fn.full)
 
 biomarkers <- c(    
 'Hb',
@@ -75,38 +108,64 @@ biomarkers <- c(
 
 peak_cols <- paste(biomarkers, 'peak', sep='.')
 trough_cols <- c("Plt.trough")
+all_cols <- c(peak_cols, trough_cols)
 
-y <- dat$Outcome
-y[y == 1] <- 'Unfav'
-y[y == 2] <- 'Fav'
-y <- as.factor(y)
+# values_missing <- dat[, c(peak_cols, trough_cols)]
+# colSd <- apply(values_missing, 2, function (x) sd(na.omit(x)))
+# colMn <- apply(values_missing, 2, function (x) mean(na.omit(x)))
+# values <- imputeMissing(values_missing)
+# values_standard <- data.frame(t(apply(values, 1, function (x) (x - colMn) / colSd)))
 
-values_missing <- dat[, c(peak_cols, trough_cols)]
-colSd <- apply(values_missing, 2, function (x) sd(na.omit(x)))
-colMn <- apply(values_missing, 2, function (x) mean(na.omit(x)))
-values <- imputeMissing(values_missing)
-values_standard <- data.frame(t(apply(values, 1, function (x) (x - colMn) / colSd)))
+# X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav')
+# Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav')
 
-plt.given <- data.frame(Platelets=rep(F, nrow(dat)), row.names = rownames(dat))
-plt.given[grep('Platelets', dat$Blood.product), 'Platelets'] <- T
+#' Do this on data without imputation of missing values
+# X_missing <- data.frame(values_missing, Unit=batch)
 
-X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav')
-Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav')
+prep_dat <- prepareData(dat, all_cols)
+X <- prep_dat[['X']]
+Xs <- prep_dat[['Xs']]
+X_missing <- prep_dat[['X_missing']]
+
+prep_dat.full <- prepareData(dat.full, all_cols)
+X.full <- prep_dat.full[['X']]
+Xs.full <- prep_dat.full[['Xs']]
+X_missing.full <- prep_dat.full[['X_missing']]
 
 #' Preamble: check for batch effects between the four units
-#' Do this on data without imputation of missing values
-X_missing <- data.frame(values_missing, Unit=batch)
 p_anova <- list()
+p_anova_post_imputation <- list()
 for (col in c(peak_cols, trough_cols)) {
-  mod <- aov(X_missing[,col] ~ X[,'Unit'])
+  mod <- aov(X_missing[,col] ~ X_missing[,'Unit'])
   p_anova[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
+  mod <- aov(X[,col] ~ X[,'Unit'])
+  p_anova_post_imputation[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
 }
 
 #' Preamble: PCA plot to test for batch effect
 res_pca <- prcomp(X[,c(peak_cols, trough_cols)], scale=T)
 theme_update(text = element_text(size=12))
-autoplot(pc, data=X, colour='Unit', label.colour='Unit', size=2)
+autoplot(res_pca, data=X, colour='Unit', label.colour='Unit', size=2)
 ggsave(file.path(output.dir, "batch_pca.png"), width=5, height = 3)
+
+#' 1: Decide on exclusions
+#' Candidates are: blood products (platelets), meconium aspiration
+#' Let's use a heatmap first
+outcome_row <- ifelse(X.full$outcome, 'green4', 'palegreen')
+platelet_row <- ifelse(X.full$Platelets, 'red3', 'salmon')
+mec_row <- ifelse(X.full$meconium, 'navyblue', 'lightskyblue')
+rlab <- t(cbind(outcome_row, platelet_row, mec_row))
+rownames(rlab) <- c("Outcome group", "Platelets given?", "Meconium aspiration")
+heatmap.3(
+  t(Xs.full[, all_cols]), 
+  ColSideColors = t(rlab), 
+  ColSideColorsSize = 5,
+  keysize = 1.2,
+  KeyValueName = 'Standardized value',
+  symbreaks = F,
+  dendrogram = "col"
+  
+)
 
 # 1:  variable selection
 # We have too many variables to model them all without overfitting. Let's run lasso regression to shrink the number involved
