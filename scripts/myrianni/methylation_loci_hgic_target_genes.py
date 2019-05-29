@@ -96,8 +96,7 @@ if __name__ == '__main__':
                     if t.get('rej_h0', False):
                         this_dmrs.setdefault(k, {})[pid] = t
 
-        # TODO: if we have several patients, may want a better order?
-        patients_involved = sorted(setops.reduce_union(*[t.keys() for t in this_dmrs.values()]))
+        # patients_involved = sorted(setops.reduce_union(*[t.keys() for t in this_dmrs.values()]))
 
         # nrows = len(patients_involved) + 1  # one ax for each patient plus one for the track
         nrows = len(consts.PIDS) + 1  # one ax for each patient plus one for the track

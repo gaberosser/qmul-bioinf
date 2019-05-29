@@ -4,6 +4,7 @@ source('plotting/heatmap.R')
 require(ggplot2)
 require(glmnet)
 require(ggfortify)
+require(NMF)
 
 
 nanMedian <- function(x) {
@@ -142,6 +143,9 @@ for (col in c(peak_cols, trough_cols)) {
   p_anova_post_imputation[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
 }
 
+p_anova <- p.adjust(p_anova, method='BH')
+p_anova_post_imputation <- p.adjust(p_anova_post_imputation, method='BH')
+
 #' Preamble: PCA plot to test for batch effect
 res_pca <- prcomp(X[,c(peak_cols, trough_cols)], scale=T)
 theme_update(text = element_text(size=12))
@@ -151,28 +155,77 @@ ggsave(file.path(output.dir, "batch_pca.png"), width=5, height = 3)
 #' 1: Decide on exclusions
 #' Candidates are: blood products (platelets), meconium aspiration
 #' Let's use a heatmap first
-outcome_row <- ifelse(X.full$outcome, 'green4', 'palegreen')
-platelet_row <- ifelse(X.full$Platelets, 'red3', 'salmon')
-mec_row <- ifelse(X.full$meconium, 'navyblue', 'lightskyblue')
-rlab <- t(cbind(outcome_row, platelet_row, mec_row))
-rownames(rlab) <- c("Outcome group", "Platelets given?", "Meconium aspiration")
-heatmap.3(
-  t(Xs.full[, all_cols]), 
-  ColSideColors = t(rlab), 
-  ColSideColorsSize = 5,
-  keysize = 1.2,
-  KeyValueName = 'Standardized value',
-  symbreaks = F,
-  dendrogram = "col"
-  
+
+# aheatmap from the NMF package
+outcome_row <- ifelse(X.full$outcome, 'Unfavourable', 'Favourable')
+platelet_row <- ifelse(X.full$Platelets, 'Y', 'N')
+mec_row <- ifelse(X.full$meconium, 'Y', 'N')
+ann_col <- data.frame(cbind(outcome_row, platelet_row, mec_row))
+colnames(ann_col) <-c("Outcome group", "Platelets given?", "Meconium aspiration")
+ann_colours <- list()
+ann_colours[["Outcome group"]] <- c('grey80', 'black')
+ann_colours[["Platelets given?"]] <- c('cadetblue2', 'darkblue')
+ann_colours[["Meconium aspiration"]] <- c('springgreen', 'darkgreen')
+
+png(filename = file.path(output.dir, "hclust_full.png"), width=7, height=4, units = "in", res = 300)
+aheatmap(
+  t(Xs.full[, all_cols]),
+  distfun = 'pearson',
+  hclustfun = 'average',
+  Rowv = F,
+  scale = 'none',
+  annCol = ann_col,
+  annColors = ann_colours,
+  labCol = NA
 )
+dev.off()
+
+# custom heatmap function by Obi Griffith (heatmap.3)
+
+# outcome_row <- ifelse(X.full$outcome, 'green4', 'palegreen')
+# platelet_row <- ifelse(X.full$Platelets, 'red3', 'salmon')
+# mec_row <- ifelse(X.full$meconium, 'navyblue', 'lightskyblue')
+# rlab <- t(cbind(outcome_row, platelet_row, mec_row))
+# rownames(rlab) <- c("Outcome group", "Platelets given?", "Meconium aspiration")
+# mydist = function(c) {dist(c,method="euclidean")}
+# myclust = function(c) {hclust(c, method="average")}
+# 
+# heatmap.3(
+#   t(Xs.full[, all_cols]), 
+#   ColSideColors = t(rlab), 
+#   ColSideColorsSize = 5,
+#   keysize = 1.2,
+#   KeyValueName = 'Standardized value',
+#   symbreaks = F,
+#   dendrogram = "col",
+#   hclustfun = myclust,
+#   distfun = mydist
+# )
+
+#' ANOVA for each of these
+anova.mec <- list()
+anova.blood <- list()
+
+for (col in c(peak_cols, trough_cols)) {
+  mod <- aov(X.full[,col] ~ X.full[,'meconium'])
+  anova.mec[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
+  mod <- aov(X.full[,col] ~ X.full[,'Platelets'])
+  anova.blood[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
+}
+
+anova.mec <- p.adjust(anova.mec, method='BH')
+anova.blood <- p.adjust(anova.blood, method='BH')
+
+png(file.path(output.dir, "meconium_crp.png"), width = 3, height= 4, units = 'in', res = 300)
+ggplot(X.full, aes(x=meconium, y=CRP.peak)) + geom_boxplot() + xlab('Meconium aspiration?') + ylab('CRP peak')
+dev.off()
 
 # 1:  variable selection
 # We have too many variables to model them all without overfitting. Let's run lasso regression to shrink the number involved
 xx <- model.matrix(outcome ~ Hb.peak + Plt.peak + Neutrophil.peak + 
                      Lymphocyte.peak + INR.peak + Urea.peak + Creatinine.peak + 
                      ALT.peak + CRP.peak + Plt.trough, data=Xs)
-yy <- as.integer(y == 'Unfav')
+yy <- as.integer(Xs$outcome)
 
 # since this is stochastic, run it several times
 n.lasso <- 100
@@ -202,9 +255,9 @@ for (i in seq(1, n.lasso)) {
 coef.values <- coef.values[rownames(coef.count)[coef.count > n.lasso / 2]]
 
 longform <- do.call(rbind, lapply(names(coef.values), function (x) {data.frame(coef=coef.values[[x]], name=x)}))
+png(file.path(output.dir, 'coefficient_value_histogram.png'), width=4, height = 3.5, units='in', res = 300)
 ggplot(longform, aes(coef, fill=name)) + geom_histogram(alpha=0.4, position = 'identity') + xlab('Coefficient value') + ylab('Frequency') + labs(fill='Biomarker')
-ggsave('coefficient_value_histogram.png', device='png', dpi=300)
-
+dev.off()
 
 lasso.cv <- cv.glmnet(xx, yy, alpha=1, family="binomial", nfolds = 10)
 plot(lasso.cv)
