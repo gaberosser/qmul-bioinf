@@ -116,7 +116,7 @@ if __name__ == "__main__":
         os.makedirs(bed_outdir)
 
     # same output directory for remaining results
-    outfile = os.path.split(bam_fn)[-1].replace('.sorted.bam', '.coverage.pkl')
+    outfile = re.sub(r'(\.sorted)\.bam', ".coverage.pkl", os.path.split(bam_fn)[-1])
     outfn = os.path.join(outdir, outfile)
     fcounts_outfn = os.path.join(
         outdir,
