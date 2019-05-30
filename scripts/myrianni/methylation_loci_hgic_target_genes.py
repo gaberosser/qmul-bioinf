@@ -23,18 +23,22 @@ if __name__ == '__main__':
 
     CELL_TYPE_MARKER_MAP = {
         'GBM': 'o',
-        'iNSC': '^'
+        'iNSC': 'o'
     }
     CELL_TYPE_COLOUR_MAP = {
-        'GBM': 'k',
-        'iNSC': 'w'
+        'GBM': 'r',
+        'iNSC': 'b'
     }
     CELL_TYPE_ALPHA_MAP = {
-        'GBM': 1,
-        'iNSC': 0.4
+        'GBM': 0.7,
+        'iNSC': 0.6
     }
     CELL_TYPE_ZORDER_MAP = {
         'GBM': 19,
+        'iNSC': 20
+    }
+    CELL_TYPE_SIZE_MAP = {
+        'GBM': 25,
         'iNSC': 20
     }
 
@@ -67,9 +71,12 @@ if __name__ == '__main__':
         raise Exception("Unable to locate pre-existing results.")
 
     gois = ['PTGER4']
+    rois = {
+        'PTGER4': [[40679018, 40682333]]  # dmr_res_s1.clusters[5877].coord_range
+    }
     tax_id = 9606
     genome_version = 'GRCh37'
-    fa_fn = genomics.get_reference_genome_fasta(tax_id, version=genome_version)
+    fa_fn = genomics.get_reference_genome_fasta(tax_id, version=genome_version, ext=['.fa', '.fa.bgz'])
     for g in gois:
         feat_res = genomics.get_features_from_gtf(g, tax_id=tax_id, version=genome_version)
         for i, (ftr, x) in enumerate(feat_res.items()):
@@ -103,12 +110,19 @@ if __name__ == '__main__':
         gs = plt.GridSpec(nrows=nrows, ncols=1)
         fig = plt.figure(figsize=(8, 6))
         track_ax = fig.add_subplot(gs[-1])
+        sharex = None
         genomic_plots.plot_gene_transcripts(feat_res, ax=track_ax)
-        # dm_axs = dict([(pid, fig.add_subplot(gs[i], sharex=track_ax)) for i, pid in enumerate(patients_involved)])
-        dm_axs = dict([(pid, fig.add_subplot(gs[i], sharex=track_ax)) for i, pid in enumerate(consts.PIDS)])
+        dm_axs = {}
+        for i, pid in enumerate(consts.PIDS):
+            dm_axs[pid] = fig.add_subplot(gs[i], sharex=sharex)
+            sharex = dm_axs[pid]
+
+        # keep tabs on all probes involved in DMRs (they may be outside of the region)
+        probes_in_dmrs = set()
 
         for cid, d1 in this_dmrs.items():
             pc = this_clusters[cid]
+            probes_in_dmrs.update(pc.pids)
             for pid, d2 in d1.items():
                 this_ax = dm_axs[pid]
                 # bar showing DMR coverage and delta
@@ -117,7 +131,7 @@ if __name__ == '__main__':
                     pc.coord_range[1] - pc.coord_range[0],
                     left=pc.coord_range[0],
                     height=d2['median_change'],
-                    color=consts.PATIENT_COLOURS[pid],
+                    color=consts.METHYLATION_DIRECTION_COLOURS['hyper' if d2['median_change'] > 0 else 'hypo'],
                     align='edge',
                     zorder=15,
                     edgecolor='k',
@@ -125,8 +139,12 @@ if __name__ == '__main__':
                 )
 
         # scatter showing individual probe values
-        ix = (anno.CHR == ftr.chrom) & (anno.MAPINFO >= ftr.start) & (anno.MAPINFO <= ftr.stop)
+        ix = (
+            (anno.CHR == ftr.chrom) & (anno.MAPINFO >= ftr.start) & (anno.MAPINFO <= ftr.stop)
+        ) | (anno.index.isin(probes_in_dmrs))
         this_probe_ids = anno.loc[anno.index[ix].intersection(mdat.index), 'MAPINFO'].sort_values().index
+        ymin = 0
+        ymax = 0
         for pid in consts.PIDS:
             this_ax = dm_axs[pid]
             for col, x in mdat.loc[this_probe_ids, meth_obj.meta.patient_id == pid].iteritems():
@@ -137,9 +155,26 @@ if __name__ == '__main__':
                     c=CELL_TYPE_COLOUR_MAP[the_typ],
                     marker=CELL_TYPE_MARKER_MAP[the_typ],
                     zorder=CELL_TYPE_ZORDER_MAP[the_typ],
-                    alpha=CELL_TYPE_ALPHA_MAP[the_typ]
+                    alpha=CELL_TYPE_ALPHA_MAP[the_typ],
+                    s=CELL_TYPE_SIZE_MAP[the_typ],
+                    edgecolor='k',
+                    linewidth=0.5
                 )
+                ymin = min(x.values.min(), ymin)
+                ymax = max(x.values.max(), ymax)
+                this_ax.set_ylabel(pid)
 
+        dm_axs[consts.PIDS[-1]].xaxis.set_ticklabels([])
 
+        [ax.set_ylim([ymin * 1.05, ymax * 1.05]) for ax in dm_axs.values()]
+
+        gs.update(top=0.98, left=0.07, right=0.97, bottom=0.09, hspace=0.15)
+        fig.savefig(os.path.join(outdir, "%s_mvalues.png" % g), dpi=300)
+
+        if g in rois:
+            for i, (x0, x1) in enumerate(rois[g]):
+                track_ax.set_xlim([x0 - 200, x1 + 200])
+                dm_axs.values()[0].set_xlim([x0 - 200, x1 + 200])
+                fig.savefig(os.path.join(outdir, "%s_mvalues_roi_%d.png" % (g, i + 1)), dpi=300)
 
 
