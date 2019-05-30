@@ -106,6 +106,9 @@ if __name__ == "__main__":
     if not os.path.isfile(bam_fn):
         raise ValueError("Unable to find BAM file %s" % bam_fn)
 
+    bam_dir = os.path.split(bam_fn)[0]
+    outdir = output.unique_output_dir("rrbs_fragment_analysis", root_output_dir=bam_dir)
+
     # fixed output directory for BED regions
     bed_outdir = os.path.join(output.OUTPUT_DIR, "rrbs_theor_fragments")
     if not os.path.exists(bed_outdir):
@@ -113,25 +116,21 @@ if __name__ == "__main__":
         os.makedirs(bed_outdir)
 
     # same output directory for remaining results
-    outdir = bed_outdir
     outfile = os.path.split(bam_fn)[-1].replace('.sorted.bam', '.coverage.pkl')
     outfn = os.path.join(outdir, outfile)
     fcounts_outfn = os.path.join(
         outdir,
-        os.path.split(bam_fn)[-1].replace('.sorted.bam', '.mspi_fragments.counts')
+        re.sub(r'(\.sorted)\.bam', '.mspi_fragments.counts', os.path.split(bam_fn)[-1])
     )
     depth_outfn = os.path.join(
         outdir,
-        os.path.split(bam_fn)[-1].replace('.sorted.bam', '.cpg_coverage.gz')
+        re.sub(r'(\.sorted)\.bam', '.cpg_coverage.gz', os.path.split(bam_fn)[-1])
     )
 
     logger.info("Output pickle file %s", outfn)
     logger.info("Output featureCount file %s", fcounts_outfn)
 
     chroms = [str(t) for t in range(1, 20)]
-
-    # input directory for BAM files
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
 
     # reference fasta file - may not be needed if we have already got the required BED files
     fa_fn = os.path.join(
@@ -161,13 +160,22 @@ if __name__ == "__main__":
     else:
         logger.info("Using existing SAF file %s", ccgg_saf_fn)
 
-    # CpG coverage
-    logger.info("Calling samtools depth to get CpG coverage")
-    cmd = "samtools depth -a -b {cg_bed_fn} {bam_fn} | gzip > {outfn}".format(
+    # check whether BAM is sorted
+    cmd = ""
+    if genomics.bam_is_sorted(bam_fn):
+        logger.info("BAM file %s is unsorted; we'll sort before running samtools depth.", bam_fn)
+        cmd = "samtools depth -a -b {cg_bed_fn} {bam_fn}"
+    else:
+        cmd += "samtools sort {bam_fn} | samtools depth -a -b {cg_bed_fn}"
+    cmd += " | gzip > {outfn}"
+    cmd = cmd.format(
         cg_bed_fn=cg_bed_fn,
         bam_fn=bam_fn,
         outfn=depth_outfn
     )
+
+    # CpG coverage
+    logger.info("Calling samtools depth to get CpG coverage")
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     stdout, stderr = p.communicate()
     logger.info("Stdout: %s", stdout)

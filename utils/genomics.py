@@ -435,7 +435,7 @@ def get_mean_insert_size_pe_subsample(
 
 def estimate_number_of_bam_reads(fn, bytes=10000000):
     """
-    Estimate the number of reads in a BAM file based on the first N bytes (or exactly, if an idex is available).
+    Estimate the number of reads in a BAM file based on the first N bytes (or exactly, if an index is available).
     This is an underestimation, as the header is included (but should be a minor factor).
     Adapted from https://www.biostars.org/p/1890/
     :param fn:
@@ -644,3 +644,22 @@ def estimate_gc_content_from_bam(
     for rd in it:
         seq = rd.split('\t')[9]
         yield gc_fraction_from_sequence(seq)
+
+
+def bam_is_sorted(bam_fn):
+    """
+    Infer whether the specified BAM file is sorted.
+    The quickest way to do this is attempt to index the file and check for an error from samtools.
+    :param bam_fn:
+    :return:
+    """
+    cmd = (
+        "samtools", "index", bam_fn
+    )
+    _logger.info(' '.join(cmd))
+    p = subprocess.Popen(
+        ' '.join(cmd),
+        shell=True
+    )
+    rc = p.wait()
+    return rc == 0

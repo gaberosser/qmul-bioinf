@@ -34,7 +34,7 @@ class BismarkPEBase(jobs.ArrayJob):
     
     title = 'bismark'
     required_args = ['read_dir', 'threads', 'index_dir']
-    bme_args = ['--ignore', 'ignore_r2', '--ignore_3prime', 'ignore_3prime_r2']
+    bme_args = ['--ignore', '--ignore_r2', '--ignore_3prime', '--ignore_3prime_r2']
     optional_args = ['extract_only'] + bme_args
     parameters = [
         # format: (name as it appears in bash script, bash check or None)

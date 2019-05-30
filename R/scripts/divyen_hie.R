@@ -92,6 +92,11 @@ dat <- read.csv(fn)
 fn.full <- file.path(data.dir, 'divyen_shah', 'cleaned_data_full_cohort_feb_2018.csv')
 dat.full <- read.csv(fn.full)
 
+colours <- c(
+  fav="royalblue4",
+  unfav="red3"
+)
+
 biomarkers <- c(    
 'Hb',
 'Plt',
@@ -164,6 +169,7 @@ ann_col <- data.frame(cbind(outcome_row, platelet_row, mec_row))
 colnames(ann_col) <-c("Outcome group", "Platelets given?", "Meconium aspiration")
 ann_colours <- list()
 ann_colours[["Outcome group"]] <- c('grey80', 'black')
+# ann_colours[["Outcome group"]] <- c(colours$fav, colours$unfav)
 ann_colours[["Platelets given?"]] <- c('cadetblue2', 'darkblue')
 ann_colours[["Meconium aspiration"]] <- c('springgreen', 'darkgreen')
 
@@ -217,7 +223,8 @@ anova.mec <- p.adjust(anova.mec, method='BH')
 anova.blood <- p.adjust(anova.blood, method='BH')
 
 png(file.path(output.dir, "meconium_crp.png"), width = 3, height= 4, units = 'in', res = 300)
-ggplot(X.full, aes(x=meconium, y=CRP.peak)) + geom_boxplot() + xlab('Meconium aspiration?') + ylab('CRP peak')
+ggplot(X.full, aes(x=meconium, y=CRP.peak)) + geom_boxplot() + ylab('CRP peak') + xlab(NULL) + 
+  scale_x_discrete(labels=c("TRUE"="Meconium aspiration", "FALSE"="Normal"))
 dev.off()
 
 # 1:  variable selection
@@ -261,7 +268,7 @@ dev.off()
 
 lasso.cv <- cv.glmnet(xx, yy, alpha=1, family="binomial", nfolds = 10)
 plot(lasso.cv)
-coef(lasso.cv, s=lasso.cv$lambda.min)
+print(coef(lasso.cv, s=lasso.cv$lambda.min))
 
 # Compare two simple models (plus the null)
 fit.null <- glm(outcome ~ 1, data=Xs, family=binomial())
@@ -275,6 +282,8 @@ anova(fit.null, fit.simple2, test='Chisq')
 anova(fit.simple1, fit.simple2, test='Chisq')
 
 # let's plot the decision boundary for the simplest (2 factor) model
+colSd <- apply(X[, all_cols], 2, function (x) sd(na.omit(x)))
+colMn <- apply(X[, all_cols], 2, function (x) mean(na.omit(x)))
 b0 <- coef(fit.simple1)[['(Intercept)']]
 b_peak <- coef(fit.simple1)[['Plt.peak']]
 b_trough <- coef(fit.simple1)[['Plt.trough']]
@@ -290,7 +299,8 @@ fit_x <- c(0, 300)
 fit_y = incpt + slope * fit_x
 plot(fit_x, fit_y, type = "l", pch=22, lty=2, col="red", lwd=2, ylim=c(0, 650), xlim=c(0, 300),
      xlab="Plt trough", ylab="Plt peak")
-points(values$Plt.trough[y == 'Fav'], values$Plt.peak[y == 'Fav'], col='dodgerblue2', pch=19)
+points(X$Plt.trough[!X$outcome], X$Plt.peak[!X$outcome], col='dodgerblue2', pch=19)
+points(X$Plt.trough[X$outcome], X$Plt.peak[X$outcome], col='green', pch=19)
 points(values$Plt.trough[y == 'Unfav'], values$Plt.peak[y == 'Unfav'], col='green', pch=19)
 # highlight cases where platelets were given
 points(values$Plt.trough[X$Platelets], values$Plt.peak[X$Platelets], col='black', pch=1)

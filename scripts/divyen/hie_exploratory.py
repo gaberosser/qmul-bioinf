@@ -82,6 +82,11 @@ if __name__ == "__main__":
     outdir = unique_output_dir("hie_results", reuse_empty=True)
     dat = load_cleaned_data()
 
+    outcome_colours = {
+        'unfav': '#CD0000',
+        'fav': '#27408B'
+    }
+
     biomarkers = dat.loc[:, (
         BIOMARKER_PEAK_COLS
         + BIOMARKER_TROUGH_COLS
@@ -244,21 +249,22 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(outdir, 'linregress_value_with_age.pdf'))
 
     jitter = 0.2
+    figsize = (9.7, 6.4)
     if nvar % 2 == 0:
-        fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=(12, 8))
+        fig, axs = plt.subplots(nrows=2, ncols=nvar / 2, sharex=True, figsize=figsize)
     else:
-        fig, axs = plt.subplots(nrows=2, ncols=(nvar + 1) / 2, sharex=True, figsize=(12, 8))
-    axs = axs.flat
+        fig, axs = plt.subplots(nrows=2, ncols=(nvar + 1) / 2, sharex=True, figsize=figsize)
+    axs = list(axs.flatten()[::-1])
 
     for i, c in enumerate(peaks_dat.columns):
-        ax = axs[i]
+        ax = axs.pop()
 
         this_dat = dat.loc[:, [c, 'Outcome']]
         this_dat.loc[this_dat.loc[:, 'Outcome'] == 1, 'Outcome'] = 'Unfavourable'
         this_dat.loc[this_dat.loc[:, 'Outcome'] == 2, 'Outcome'] = 'Favourable'
 
         sns.boxplot(data=this_dat, x='Outcome', y=c, ax=ax, color='w')
-        sns.swarmplot(data=this_dat, x='Outcome', y=c, ax=ax)
+        sns.swarmplot(data=this_dat, x='Outcome', y=c, ax=ax, palette=[outcome_colours['fav'], outcome_colours['unfav']])
 
         # ax.scatter(scat[:, 0], scat[:, 1], c=scat[:, 2], cmap='RdBu')
 
@@ -271,8 +277,16 @@ if __name__ == "__main__":
         if ylim[0] < 0:
             ylim[0] = 0.
             ax.set_ylim(ylim)
+
     # fig.subplots_adjust(left=0.025, right=0.99, wspace=0.4, bottom=0.2)
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    big_ax.set_ylabel("Hours of life at time of measurement", labelpad=10)
+
     fig.tight_layout()
+    # hide remainder - must happen after tight_layout
+    for ax in axs:
+        ax.set_visible(False)
+
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'box_whisker_plus_scatter.pdf'))
 
@@ -355,8 +369,8 @@ if __name__ == "__main__":
                 x = peaks_dat.loc[:, col_lbl]
                 y = peaks_dat.loc[:, row_lbl]
                 z = outcomes
-                ax.scatter(x[z == 2], y[z == 2], color='b', s=ms, alpha=0.6, label='Favourable')
-                ax.scatter(x[z == 1], y[z == 1], color='g', s=ms, alpha=0.6, label='Unfavourable')
+                ax.scatter(x[z == 2], y[z == 2], color=outcome_colours['fav'], s=ms, alpha=0.6, label='Favourable')
+                ax.scatter(x[z == 1], y[z == 1], color=outcome_colours['unfav'], s=ms, alpha=0.6, label='Unfavourable')
                 ax.grid(False)
             else:
                 ax.grid(False)
