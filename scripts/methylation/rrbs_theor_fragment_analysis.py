@@ -106,7 +106,7 @@ if __name__ == "__main__":
     if not os.path.isfile(bam_fn):
         raise ValueError("Unable to find BAM file %s" % bam_fn)
 
-    bam_dir = os.path.split(bam_fn)[0]
+    bam_dir = os.path.split(os.path.abspath(bam_fn))[0]
     outdir = output.unique_output_dir("rrbs_fragment_analysis", root_output_dir=bam_dir)
 
     # fixed output directory for BED regions

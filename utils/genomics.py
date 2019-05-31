@@ -649,7 +649,8 @@ def estimate_gc_content_from_bam(
 def bam_is_sorted(bam_fn):
     """
     Infer whether the specified BAM file is sorted.
-    The quickest way to do this is attempt to index the file and check for an error from samtools.
+    The quickest way to do this (?) is attempt to index the file and check for an error from samtools.
+    TODO: apparently, if samtools has the module `stats` available (>= v1.4), this can also be used.
     :param bam_fn:
     :return:
     """
@@ -659,6 +660,8 @@ def bam_is_sorted(bam_fn):
     _logger.info(' '.join(cmd))
     p = subprocess.Popen(
         ' '.join(cmd),
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
         shell=True
     )
     rc = p.wait()
