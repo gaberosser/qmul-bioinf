@@ -116,15 +116,15 @@ if __name__ == "__main__":
         os.makedirs(bed_outdir)
 
     # same output directory for remaining results
-    outfile = re.sub(r'(\.sorted)\.bam', ".coverage.pkl", os.path.split(bam_fn)[-1])
+    outfile = re.sub(r'(\.sorted)?\.bam', ".coverage.pkl", os.path.split(bam_fn)[-1])
     outfn = os.path.join(outdir, outfile)
     fcounts_outfn = os.path.join(
         outdir,
-        re.sub(r'(\.sorted)\.bam', '.mspi_fragments.counts', os.path.split(bam_fn)[-1])
+        re.sub(r'(\.sorted)?\.bam', '.mspi_fragments.counts', os.path.split(bam_fn)[-1])
     )
     depth_outfn = os.path.join(
         outdir,
-        re.sub(r'(\.sorted)\.bam', '.cpg_coverage.gz', os.path.split(bam_fn)[-1])
+        re.sub(r'(\.sorted)?\.bam', '.cpg_coverage.gz', os.path.split(bam_fn)[-1])
     )
 
     logger.info("Output pickle file %s", outfn)
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         logger.info("BAM file %s is unsorted; we'll sort before running samtools depth.", bam_fn)
         cmd = "samtools depth -a -b {cg_bed_fn} {bam_fn}"
     else:
-        cmd += "samtools sort {bam_fn} | samtools depth -a -b {cg_bed_fn}"
+        cmd += "samtools sort {bam_fn} | samtools depth -a -b {cg_bed_fn} -"
     cmd += " | gzip > {outfn}"
     cmd = cmd.format(
         cg_bed_fn=cg_bed_fn,
