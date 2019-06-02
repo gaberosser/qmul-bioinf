@@ -108,11 +108,6 @@ if __name__ == "__main__":
         *dat['Gestational Age'].groupby(outcomes).apply(lambda x: x.values)
     )
 
-    
-
-
-
-
     ## 1) Correlation between variables
     corr = X.corr(method='spearman')
     fig = plt.figure(figsize=(6.7, 5.5))
@@ -191,9 +186,10 @@ if __name__ == "__main__":
     if not b_sign:
         print "No significant differences detected between batches (one-way ANOVA)"
 
-    # t test
+    # t test or MWU
     # look for differences in the distribution of individual variables between outcomes
     p_ttest = {}
+    p_mwu = {}
 
     for col in peaks_dat.columns:
         this_dat = peaks_dat.loc[:, col].groupby(outcomes).apply(lambda x: list(x.dropna()))
@@ -205,9 +201,8 @@ if __name__ == "__main__":
                 continue
             else:
                 args.append(t)
-        this_res = stats.ttest_ind(*args)
-        p_ttest[col] = this_res.pvalue
-
+        p_ttest[col] = stats.ttest_ind(*args).pvalue
+        p_mwu[col] = stats.mannwhitneyu(*args).pvalue
 
     # does peak/trough value correlate with age?
     val_age_corr = {
@@ -258,6 +253,15 @@ if __name__ == "__main__":
 
     for i, c in enumerate(peaks_dat.columns):
         ax = axs.pop()
+        this_pval = p_mwu[c]
+        if this_pval < 0.001:
+            ttl = "%s (***)" % c
+        elif this_pval < 0.01:
+            ttl = "%s (**)" % c
+        elif this_pval < 0.05:
+            ttl = "%s (*)" % c
+        else:
+            ttl = c
 
         this_dat = dat.loc[:, [c, 'Outcome']]
         this_dat.loc[this_dat.loc[:, 'Outcome'] == 1, 'Outcome'] = 'Unfavourable'
@@ -270,7 +274,7 @@ if __name__ == "__main__":
 
         ax.xaxis.label.set_visible(False)
         ax.yaxis.label.set_visible(False)
-        ax.set_title(c)
+        ax.set_title(ttl)
         plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
         # ax.set_xticklabels(['Fav', 'Unfav'], rotation=45)
         ylim = list(ax.get_ylim())

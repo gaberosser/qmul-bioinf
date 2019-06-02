@@ -67,15 +67,17 @@ prepareData <- function(dat, value_cols) {
   
   mec <- dat$Meconium.Aspiration == 'Y'
   
+  culture <- dat$Culture == 'Y'
+  
   values_missing <- dat[, value_cols]
   colSd <- apply(values_missing, 2, function (x) sd(na.omit(x)))
   colMn <- apply(values_missing, 2, function (x) mean(na.omit(x)))
   values <- imputeMissing(values_missing)
   values_standard <- data.frame(t(apply(values, 1, function (x) (x - colMn) / colSd)))
   
-  X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
-  Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
-  X_missing <- data.frame(values_missing, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec)
+  X <- data.frame(values, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec, culture=culture)
+  Xs <- data.frame(values_standard, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec, culture=culture)
+  X_missing <- data.frame(values_missing, plt.given, Unit=batch, outcome=y == 'Unfav', meconium=mec, culture=culture)
   
   list(
     X=X,
@@ -154,7 +156,7 @@ p_anova_post_imputation <- p.adjust(p_anova_post_imputation, method='BH')
 #' Preamble: PCA plot to test for batch effect
 res_pca <- prcomp(X[,c(peak_cols, trough_cols)], scale=T)
 theme_update(text = element_text(size=12))
-autoplot(res_pca, data=X, colour='Unit', label.colour='Unit', size=2)
+plt <- autoplot(res_pca, data=X, colour='Unit', label.colour='Unit', size=2)
 ggsave(file.path(output.dir, "batch_pca.png"), width=5, height = 3)
 
 #' 1: Decide on exclusions
@@ -165,13 +167,16 @@ ggsave(file.path(output.dir, "batch_pca.png"), width=5, height = 3)
 outcome_row <- ifelse(X.full$outcome, 'Unfavourable', 'Favourable')
 platelet_row <- ifelse(X.full$Platelets, 'Y', 'N')
 mec_row <- ifelse(X.full$meconium, 'Y', 'N')
+unit_row <- X.full$Unit
 ann_col <- data.frame(cbind(outcome_row, platelet_row, mec_row))
-colnames(ann_col) <-c("Outcome group", "Platelets given?", "Meconium aspiration")
+ann_col$Unit <- unit_row
+colnames(ann_col) <-c("Outcome group", "Platelets given?", "Meconium aspiration", "Unit")
 ann_colours <- list()
 ann_colours[["Outcome group"]] <- c('grey80', 'black')
 # ann_colours[["Outcome group"]] <- c(colours$fav, colours$unfav)
 ann_colours[["Platelets given?"]] <- c('cadetblue2', 'darkblue')
 ann_colours[["Meconium aspiration"]] <- c('springgreen', 'darkgreen')
+ann_colours[["Unit"]] <- c('#F8766D', '#7CAE00', '#00BFC4', '#C77CFF')  # AS HM RL SU
 
 png(filename = file.path(output.dir, "hclust_full.png"), width=7, height=4, units = "in", res = 300)
 aheatmap(
@@ -186,44 +191,26 @@ aheatmap(
 )
 dev.off()
 
-# custom heatmap function by Obi Griffith (heatmap.3)
+#' MWU test for each of these
 
-# outcome_row <- ifelse(X.full$outcome, 'green4', 'palegreen')
-# platelet_row <- ifelse(X.full$Platelets, 'red3', 'salmon')
-# mec_row <- ifelse(X.full$meconium, 'navyblue', 'lightskyblue')
-# rlab <- t(cbind(outcome_row, platelet_row, mec_row))
-# rownames(rlab) <- c("Outcome group", "Platelets given?", "Meconium aspiration")
-# mydist = function(c) {dist(c,method="euclidean")}
-# myclust = function(c) {hclust(c, method="average")}
-# 
-# heatmap.3(
-#   t(Xs.full[, all_cols]), 
-#   ColSideColors = t(rlab), 
-#   ColSideColorsSize = 5,
-#   keysize = 1.2,
-#   KeyValueName = 'Standardized value',
-#   symbreaks = F,
-#   dendrogram = "col",
-#   hclustfun = myclust,
-#   distfun = mydist
-# )
+p.mec <- list()
+p.blood <- list()
 
-#' ANOVA for each of these
-anova.mec <- list()
-anova.blood <- list()
+# add mec or culture column
+X.full$mec_culture <- X.full$meconium | X.full$culture
 
 for (col in c(peak_cols, trough_cols)) {
-  mod <- aov(X.full[,col] ~ X.full[,'meconium'])
-  anova.mec[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
-  mod <- aov(X.full[,col] ~ X.full[,'Platelets'])
-  anova.blood[[col]] <- summary(mod)[[1]][["Pr(>F)"]][1]
+  mod <- wilcox.test(X.full[,col] ~ X.full[,'mec_culture'])
+  p.mec[[col]] <- mod$p.value
+  mod <- wilcox.test(X.full[,col] ~ X.full[,'Platelets'])
+  p.blood[[col]] <- mod$p.value
 }
 
-anova.mec <- p.adjust(anova.mec, method='BH')
-anova.blood <- p.adjust(anova.blood, method='BH')
+p.mec <- p.adjust(p.mec, method='BH')
+p.blood <- p.adjust(p.blood, method='BH')
 
-png(file.path(output.dir, "meconium_crp.png"), width = 3, height= 4, units = 'in', res = 300)
-ggplot(X.full, aes(x=meconium, y=CRP.peak)) + geom_boxplot() + ylab('CRP peak') + xlab(NULL) + 
+png(file.path(output.dir, "mec_culture_crp.png"), width = 3, height= 4, units = 'in', res = 300)
+ggplot(X.full, aes(x=mec_culture, y=CRP.peak)) + geom_boxplot() + ylab('CRP peak') + xlab(NULL) + 
   scale_x_discrete(labels=c("TRUE"="Meconium aspiration", "FALSE"="Normal"))
 dev.off()
 
@@ -297,14 +284,19 @@ slope <- -(s_peak * b_trough) / (s_trough * b_peak)
 
 fit_x <- c(0, 300)
 fit_y = incpt + slope * fit_x
-plot(fit_x, fit_y, type = "l", pch=22, lty=2, col="red", lwd=2, ylim=c(0, 650), xlim=c(0, 300),
+plot(fit_x, fit_y, type = "l", pch=22, lty=2, col="black", lwd=2, ylim=c(0, 650), xlim=c(0, 300),
      xlab="Plt trough", ylab="Plt peak")
-points(X$Plt.trough[!X$outcome], X$Plt.peak[!X$outcome], col='dodgerblue2', pch=19)
-points(X$Plt.trough[X$outcome], X$Plt.peak[X$outcome], col='green', pch=19)
-points(values$Plt.trough[y == 'Unfav'], values$Plt.peak[y == 'Unfav'], col='green', pch=19)
+points(X$Plt.trough[!X$outcome], X$Plt.peak[!X$outcome], col='royalblue3', pch=19)
+points(X$Plt.trough[X$outcome], X$Plt.peak[X$outcome], col=colours[['unfav']], pch=19)
 # highlight cases where platelets were given
-points(values$Plt.trough[X$Platelets], values$Plt.peak[X$Platelets], col='black', pch=1)
-legend("topleft", legend = c("Decision boundary", "Favourable", "Unfavourable", "Given platelets"), lty=c(2, 0, 0, 0), pch=c(-1, 19, 19, 1), col=c("red", "dodgerblue2", "green", "black"), bty='n')
+points(X$Plt.trough[X$Platelets], X$Plt.peak[X$Platelets], col='black', pch=1, lwd=2)
+
+legend(
+  "topleft", 
+  legend = c("Decision boundary", "Favourable", "Unfavourable", "Given platelets"), 
+  lty=c(2, 0, 0, 0), 
+  pch=c(-1, 19, 19, 1), 
+  col=c('black', colours[['unfav']], "royalblue3", "black"), bty='n')
 
 # now test whether the cohort that were given platelets should be excluded
 # scatterplot with linear regression fit
