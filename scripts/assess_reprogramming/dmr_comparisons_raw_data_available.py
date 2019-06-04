@@ -51,7 +51,7 @@ def compute_dmr_clusters(anno, dmr_params):
         coords = anno.loc[anno.CHR == cc, 'MAPINFO'].sort_values()
         this_clust = dmr.identify_cluster(coords, dmr_params['n_min'], dmr_params['d_max'])
 
-        for cl in this_clust.values():
+        for cl in this_clust:
             clusters.append(
                 dmr.ProbeCluster(cl, anno, cluster_id=cid, chr=cc)
             )

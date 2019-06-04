@@ -47,6 +47,9 @@ def plot_pca(
         ax=ax,
         **kwargs
     )
+    # Update: from Seaborn v 0.9.0, the legend appears with a frame by default, but this doesn't look good.
+    leg = ax.get_legend()
+    leg.set_frame_on(False)
 
     ax.set_xlabel("PCA component %s (%.1f%%)" % (components[0] + 1, variance_explained[components[0]]))
     ax.set_ylabel("PCA component %s (%.1f%%)" % (components[1] + 1, variance_explained[components[1]]))
@@ -81,8 +84,30 @@ def hc_plot_dendrogram_vary_n_gene(
             vertical=False,
             metric=metric
         )
+        # Update: from Seaborn 0.9.0 the default behaviour shows an axis frame, but this is ugly.
+        d['dendrogram_ax'].set_frame_on(False)
+        d['dendrogram_ax'].set_xticks([])
+        d['dendrogram_ax'].set_yticks([])
+
         fig_dict[ng] = d
     return fig_dict
+
+
+def limit_samples_of_type(ldr, type='iPSC', n_keep=6):
+    """
+    Utility function to reduce the number of samples of a certain type in a Loader object.
+    This is helpful to reduce the number of iPSC being included in a given dataset (default operation).
+    NB changes are made in-place.
+    :param ldr:
+    :param type:
+    :param n_keep:
+    :return:
+    """
+    ix = (
+        ldr.meta.index.isin(ldr.meta.index[ldr.meta.type == type][:n_keep]) |
+        (ldr.meta.type != type)
+    )
+    ldr.filter_samples(ix)
 
 
 
@@ -90,6 +115,7 @@ if __name__ == "__main__":
     norm_method = 'bmiq'
     # norm_method = 'swan'
     n_hipsci = 12
+    n_ref_ipsc = 6
     # qn_method = 'median'
     qn_method = None
 
@@ -114,40 +140,53 @@ if __name__ == "__main__":
 
     patient_obj = loader.load_by_patient(pids, norm_method=norm_method, samples=our_samples)
 
+    # Nazor et al.: 6 ESC, 22 iPSC
     nazor_ldr = loader.load_reference('GSE31848', norm_method=norm_method)
     ix = nazor_ldr.meta.index.str.contains(r'(ES__WA)|(iPS__HDF)')
     ix = ix & (~nazor_ldr.meta.index.str.contains(r'HDF51IPS7'))  # this sample is an outlier, so remove it now
     nazor_ldr.filter_samples(ix)
+    # reduce the iPSC count
+    limit_samples_of_type(nazor_ldr, n_keep=n_ref_ipsc)
+
 
     # Zhou et al.: lots of samples here, but we'll only keep 2 x ESC lines
     zhou_ldr = loader.load_reference('GSE92462_450K', norm_method=norm_method)
     ix = zhou_ldr.meta.index.str.contains(r'^H[19]ES')
     zhou_ldr.filter_samples(ix)
 
-    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=n_hipsci, array_type='epic')
+    hip_epic_ldr = loader.hipsci(norm_method=norm_method, n_sample=n_ref_ipsc, array_type='epic')
     ## FIXME: this is required to avoid a BUG where the meta column gets renamed to batch_1 in all other loaders
     hip_epic_ldr.meta.drop('batch', axis=1, inplace=True)
     hip_epic_ldr.batch_id = 'HipSci'
 
     # Weltner et al. (E-MTAB-6194)
     e6194_ldr = loader.load_reference('E-MTAB-6194', norm_method=norm_method)
-    ix = ~e6194_ldr.meta.cell_line.isin([
-        'NA07057',
-        'HCT116',
-        'HEL46.11',
-        'CCD-1112Sk (CRL-2429)'
-    ])
+    ix = e6194_ldr.meta.type.isin(['ESC', 'iPSC', 'FB']) & (~e6194_ldr.meta.index.str.contains('HEL46'))
     e6194_ldr.filter_samples(ix)
+    limit_samples_of_type(e6194_ldr, n_keep=n_ref_ipsc)
+
+    # Banovich et al (GSE110544)
+    banov_ldr = loader.load_reference('GSE110544', norm_method=norm_method)
+    banov_ldr.meta.insert(1, 'array_type', 'EPIC')
+    banov_ldr.meta.insert(1, 'type', banov_ldr.meta['cell type'])
+    # limit to 6 samples
+    limit_samples_of_type(banov_ldr, n_keep=n_ref_ipsc)
+
+    # Kim et al. (GSE38216)
+    kim_ldr = loader.load_reference('GSE38216', norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2'])
+    # correct cell type
+    kim_ldr.meta.loc[:, 'type'] = 'ESC'
 
     refs = collections.OrderedDict([
-        ('Kim et al.', loader.load_reference('GSE38216', norm_method=norm_method, samples=['H9 ESC 1', 'H9 ESC 2'])),
+        ('Kim et al.', kim_ldr),
         ('Zimmerlin et al.', loader.load_reference('GSE65214', norm_method=norm_method)),
         ('Nazor et al.', nazor_ldr),
         ('Encode EPIC', loader.load_reference('ENCODE_EPIC', norm_method=norm_method, samples=['GM23338', 'H7 hESC', 'Astrocyte'])),
         ('Encode 450k', loader.load_reference('ENCODE_450k', norm_method=norm_method)),
         ('Zhou et al.', zhou_ldr),
         ('Hipsci EPIC', hip_epic_ldr),
-        ('Weltner et al.', e6194_ldr)
+        ('Weltner et al.', e6194_ldr),
+        ('Banovich et al.', banov_ldr)
     ])
     refs['Encode EPIC'].batch_id = 'ENCODE'
     refs['Encode 450k'].batch_id = 'ENCODE'
@@ -159,7 +198,8 @@ if __name__ == "__main__":
         'GSE31848': 'Nazor et al.',
         'GSE92462_450K': 'Zhou et al.',
         'GSE60274': 'Kurscheid et al.',
-        'E-MTAB-6194': 'Weltner et al.'
+        'E-MTAB-6194': 'Weltner et al.',
+        'GSE110544': 'Banovich et al.'
     }
 
     to_aggr = [
@@ -167,11 +207,11 @@ if __name__ == "__main__":
         ('ES__WA09_', 'H9 ESC'),
         ('ES__WA07_', 'H7 ESC'),
         ('22_H9_', 'H9 ESC'),
-        ('HEL139.2_', 'HEL139.2'),
-        ('HEL139.5_', 'HEL139.5'),
-        ('HEL139.8_', 'HEL139.8'),
-        ('HEL140.1_', 'HEL140.1'),
-        ('HEL141.1_', 'HEL141.1'),
+        # ('HEL139.2_', 'HEL139.2'),
+        # ('HEL139.5_', 'HEL139.5'),
+        # ('HEL139.8_', 'HEL139.8'),
+        # ('HEL140.1_', 'HEL140.1'),
+        # ('HEL141.1_', 'HEL141.1'),
 
     ]
     for i in range(1, 15):
@@ -241,7 +281,7 @@ if __name__ == "__main__":
         ax=ax
     )
     # increase legend font size
-    ax.figure.subplots_adjust(left=0.12, right=0.75, top=0.98)
+    ax.figure.subplots_adjust(left=0.12, right=0.74, top=0.98)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.tiff"), dpi=200)
 
@@ -264,13 +304,13 @@ if __name__ == "__main__":
     row_colours_all.loc[obj.meta.type == 'NSC', 'Cell type'] = cell_line_colours['NSC']
     row_colours_all.loc[obj.meta.type == 'iPSC', 'Cell type'] = cell_line_colours['iPSC (this study)']
     row_colours_all.loc[obj.meta.type == 'ESC', 'Cell type'] = cell_line_colours['ESC']
-    row_colours_all.loc[obj.meta.type == 'PSC', 'Cell type'] = cell_line_colours['ESC']
 
     # specific cases that are not iPSC
     row_colours_all.loc[row_colours_all.index.str.contains('GM23338'), 'Cell type'] = cell_line_colours['ESC']
     row_colours_all.loc[row_colours_all.index.str.contains(r'iPS_', 'Cell type')] = cell_line_colours['iPSC']
     row_colours_all.loc[row_colours_all.index.str.contains('HPSI'), 'Cell type'] = cell_line_colours['iPSC']
     row_colours_all.loc[row_colours_all.index.str.contains('HEL1'), 'Cell type'] = cell_line_colours['iPSC']
+    row_colours_all.loc[row_colours_all.index.str.contains(r'^NA1'), 'Cell type'] = cell_line_colours['iPSC']
 
     study_cmap = common.get_best_cmap(len(obj.meta.batch.unique()))
     study_colours = dict(zip(
@@ -323,8 +363,8 @@ if __name__ == "__main__":
         vmin=-10,
         vmax=10
     )
-    common.add_custom_legend(gc.ax_heatmap, leg_dict, loc_outside=True, fontsize=14)
-    gc.fig.set_size_inches((9.4, 8.))
+    common.add_custom_legend(gc.ax_heatmap, leg_dict, loc_outside=True, fontsize=14, frameon=False)
+    gc.fig.set_size_inches((9.4, 8.5))
     # reduce cbar ticks
     cbar = gc.ax_heatmap.collections[0].colorbar
     cbar.set_ticks([-8, 0, 8])
@@ -334,8 +374,14 @@ if __name__ == "__main__":
     gc.cax.yaxis.set_ticks_position('left')
     gc.cax.set_title('M value')
 
+    # move the legend down a little
+    leg = gc.ax_heatmap.get_legend()
+    bb = leg.get_bbox_to_anchor().inverse_transformed(leg.axes.transAxes)
+    bb.y0 -= 0.08
+    leg.set_bbox_to_anchor(bb)
+
     gc.gs.set_height_ratios([0.16, 0.04, 0.08, 0.8])
-    gc.gs.update(right=0.76, left=0.04, bottom=0.3, wspace=0., top=0.96)
+    gc.gs.update(right=0.73, left=0.04, bottom=0.3, wspace=0., top=0.96)
 
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb.png"), dpi=200)
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb.tiff"), dpi=200)

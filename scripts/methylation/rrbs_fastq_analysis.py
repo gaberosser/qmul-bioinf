@@ -24,18 +24,36 @@ def get_first_n(fn, n=3):
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir("rrbs_fastq_analysis")
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
-    fq_pattern = "GC-CV-7163-{sid}_S{sid}_L{0:03d}_{rid}.fastq.gz"
-    lanes = range(1, 5)
-    samples = range(1, 7)
+    # basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
+    # fq_pattern = "GC-CV-7163-{sid}_S{sid}_L{0:03d}_{rid}.fastq.gz"
+    # sample_names = [
+    #     'eNSC3',
+    #     'eNSC5',
+    #     'eNSC6',
+    #     'mDura3Human',
+    #     'mDura5Human',
+    #     'mDura6Human',
+    # ]
+
+    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-8176-b')
+    fq_pattern = "{sid}-GC-CV-8176/{sid}-GC-CV-8176_S{sid}_L{0:03d}_R{rid}_001.fastq.gz"
     sample_names = [
-        'eNSC3',
-        'eNSC5',
-        'eNSC6',
-        'mDura3Human',
-        'mDura5Human',
-        'mDura6Human',
+        'm3_choi_1',
+        'm3_choi_2',
+        'm6_gibco_1',
+        'm6_gibco_2',
+        'm5_gibco_1',
+        'm5_gibco_2',
+        'm3_gibco_1',
+        'm3_gibco_2',
+        'm6_choi_1',
+        'm6_choi_2',
+        'm5_choi_1',
+        'm5_choi_2',
     ]
+
+    lanes = range(1, 5)
+    samples = range(1, len(sample_names) + 1)
 
     first3 = {}
     jobs = {}
@@ -60,8 +78,9 @@ if __name__ == '__main__':
     # first 3 bp distribution
 
     for rid in [1, 2]:
-
-        fig, axs = plt.subplots(2, 3, sharey=True, figsize=(9, 5))
+        ncol = min(3, len(sample_names))
+        nrow = int(np.ceil(len(sample_names) / float(ncol)))
+        fig, axs = plt.subplots(nrows=nrow, ncols=ncol, sharey=True, figsize=(3 * ncol, 2.5 * nrow))
         for s in samples:
             i = s - 1
             ax = axs.flat[i]
