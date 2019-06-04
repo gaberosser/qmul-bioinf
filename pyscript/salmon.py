@@ -15,7 +15,7 @@ class SalmonSgeRequirements(sge.ApocritaArrayJobMixin):
 
     @property
     def runtime_mins(self):
-        return 60
+        return 240
 
 
 class SalmonPEBase(jobs.ArrayJob):
