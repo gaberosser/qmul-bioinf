@@ -349,7 +349,7 @@ if __name__ == "__main__":
 
     fdr = 0.01
 
-    colours = {
+    colour_by_direction = {
         'Hypermethylated': '#e09191',  # red
         'Hypomethylated': '#91e097',  # green
     }
@@ -621,7 +621,7 @@ if __name__ == "__main__":
                 )
                 ax.scatter(this_x, this_y, facecolor='none', edgecolor='k', linewidths=1., s=40, marker='o', zorder=5)
                 ax.set_xticks([])
-                plt.setp(bplot['boxes'], facecolor=colours[k3])
+                plt.setp(bplot['boxes'], facecolor=colour_by_direction[k3])
 
     axs_hyper[0, 0].set_ylim([0, ymax['Hypermethylated'] * 1.1])
     axs_hypo[0, 0].set_ylim([0, ymax['Hypomethylated'] * 1.1])
@@ -1155,7 +1155,15 @@ if __name__ == "__main__":
         ax = axs[i]
         this = df.loc[:, df.columns.str.contains(typ)].transpose()
         this.index = ['De novo', 'Residual']
-        bar.stacked_bar_chart(this, colours=plot_colours[typ], ax=ax, width=0.8, ec='k', lw=1.0)
+        bar.stacked_bar_chart(
+            this,
+            colours=plot_colours[typ],
+            ax=ax,
+            width=0.8,
+            ec='k',
+            lw=1.0,
+            legend_kws={'loc': 'upper right', 'frameon': False}
+        )
         ax.set_ylabel('%s DMRs' % ('Hypomethylated' if typ == 'hypo' else 'Hypermethylated'))
         plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
 
@@ -1272,6 +1280,27 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.png" % chosen_one), dpi=200)
         fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.tiff" % chosen_one), dpi=200)
 
-        # 3. scatter: iNSC - ESC vs NSC - ESC
-        # disabling this for now, because the reference NSC we are using is actually just a commercially available
-        # reprogrammed line.
+    # New plots for the Dumas paper
+    # TODO: move these to a separate module if straightforward
+    # Quantify feature membership of core iPSC-ESC (ours)
+    vs_hyper, vc_hyper = setops.venn_from_arrays(*core_hyper[k_our_ipsc].values(), set_labels=core_hyper[k_our_ipsc].keys())
+    vs_hypo, vc_hypo = setops.venn_from_arrays(*core_hypo[k_our_ipsc].values(), set_labels=core_hypo[k_our_ipsc].keys())
+    qfm_hyper = setops.quantify_feature_membership(vc_hyper)
+    qfm_hypo = setops.quantify_feature_membership(vc_hypo)
+
+    fig = plt.figure(figsize=(5, 3.5))
+    ax = fig.add_subplot(111)
+    bar.grouped_bar_chart(
+        [qfm_hyper, qfm_hypo],
+        ax=ax,
+        colours=[colour_by_direction['Hypermethylated'], colour_by_direction['Hypomethylated']],
+        edgecolor='k',
+        linewidth=1.,
+        labels=['Hypermethylation', 'Hypomethylation']
+    )
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=0)
+    ax.set_xlabel('Number of patients sharing DMR')
+    ax.set_ylabel('Frequency')
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.png"), dpi=200)

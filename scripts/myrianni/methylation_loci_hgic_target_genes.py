@@ -7,7 +7,8 @@ probes that are most deregulated.
 """
 import os
 from matplotlib import pyplot as plt
-
+import pysam
+import pandas as pd
 
 from utils import output, genomics, log, setops
 from plotting import genomics as genomic_plots
@@ -20,6 +21,7 @@ logger = log.get_console_logger()
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir()
+    edge_buffer_bp = 1500
 
     CELL_TYPE_MARKER_MAP = {
         'GBM': 'o',
@@ -178,3 +180,42 @@ if __name__ == '__main__':
                 fig.savefig(os.path.join(outdir, "%s_mvalues_roi_%d.png" % (g, i + 1)), dpi=300)
 
 
+
+        # by request, create a file containing coord, seq and indicating the probe locations
+        the_ftr = [k for k in feat_res.keys() if k.featuretype == 'gene']
+        if len(the_ftr) != 1:
+            raise NotImplementedError("We require exactly one gene feature for this next step")
+        the_ftr = the_ftr[0]
+        # expand and take the sequence
+        ff = pysam.Fastafile(fa_fn)
+        the_seq = ff.fetch('5', the_ftr.start - edge_buffer_bp - 1, the_ftr.stop + edge_buffer_bp)
+        # the_seq = the_ftr.sequence(fa_fn)
+
+        the_coords = range(the_ftr.start - edge_buffer_bp, the_ftr.stop + edge_buffer_bp + 1)
+        if the_ftr.strand == '-':
+            logger.warn("FIXME: wheck the implementation of reverse-stranded genes")
+            the_coords = the_coords[::-1]
+        ix = (
+            (anno.CHR == the_ftr.chrom) & (anno.MAPINFO >= the_ftr.start) & (anno.MAPINFO <= the_ftr.stop)
+        ) | (anno.index.isin(probes_in_dmrs))
+        this_probe_ids = anno.loc[anno.index[ix].intersection(mdat.index), 'MAPINFO'].sort_values().index
+        this_probe_coords = anno.loc[this_probe_ids, 'MAPINFO']
+        this_probe_indicator = [0] * len(the_coords)
+        for i, cc in enumerate(the_coords):
+            if cc in this_probe_coords.values:
+                this_probe_indicator[i] = 1
+
+        # create a pd DataFrame for export
+        for_export = pd.DataFrame(index=the_coords, dtype=str)
+        for_export.insert(0, 'sequence', [t for t in the_seq])
+        for_export.insert(1, 'probe', this_probe_indicator)
+        i = 2
+        for pid in consts.PIDS:
+            this_mdat = mdat.loc[this_probe_ids, meth_obj.meta.patient_id == pid]
+            for col, vals in this_mdat.iteritems():
+                t = pd.Series(index=the_coords)
+                t.loc[this_probe_coords.values] = vals.values
+                for_export.insert(i, col, t)
+                i += 1
+
+        for_export.to_excel(os.path.join(outdir, "sequence_coords_probes_values.xlsx"))

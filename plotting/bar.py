@@ -116,7 +116,7 @@ def multi_grouped_bar_chart(dict_of_series_lists, width=0.8, figsize=None, equal
     return fig, axs
 
 
-def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None, lw=None):
+def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None, lw=None, legend_kws=None):
     """
     Plot a stacked bar chart. Each group is a row in the matrix y. The number of columns in y is equal to the length
     of x.
@@ -138,6 +138,9 @@ def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None,
         raise ValueError("If supplied, colours must have the same length as the number of rows in y.")
     colours = pd.Series(colours, index=y.index)
 
+    if legend_kws is None:
+        legend_kws = {}
+
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111)
@@ -158,7 +161,7 @@ def stacked_bar_chart(y, ax=None, colours=None, width=0.9, legend=True, ec=None,
         ax.bar(x, tot, width=width, color='none', edgecolor=ec, linewidth=lw, zorder=10)
 
     if legend:
-        ax.legend()
+        ax.legend(**legend_kws)
 
     ax.set_xticks(x)
     ax.set_xticklabels(y.columns)
