@@ -1304,3 +1304,5 @@ if __name__ == "__main__":
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.png"), dpi=200)
+
+    # Combine with gene expression / DE to determine if there is any effect
