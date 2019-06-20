@@ -233,7 +233,7 @@ if __name__ == "__main__":
 
     # Encode 450K data
     encode_450k_obj = loader.load_reference(
-        'ENCODE_450K',
+        'ENCODE_450k',
         norm_method=norm_method,
         samples=['H1 hESC']
     )

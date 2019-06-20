@@ -1272,9 +1272,32 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.png" % chosen_one), dpi=200)
         fig.savefig(os.path.join(outdir, "ipsc_vs_insc_vs_esc_classified_clusters_%s.tiff" % chosen_one), dpi=200)
 
-        # 3. scatter: iNSC - ESC vs NSC - ESC
-        # disabling this for now, because the reference NSC we are using is actually just a commercially available
-        # reprogrammed line.
+    # New plots for the Dumas paper
+    # TODO: move these to a separate module if straightforward
+    # Quantify feature membership of core iPSC-ESC (ours)
+    vs_hyper, vc_hyper = setops.venn_from_arrays(*core_hyper[k_our_ipsc].values(), set_labels=core_hyper[k_our_ipsc].keys())
+    vs_hypo, vc_hypo = setops.venn_from_arrays(*core_hypo[k_our_ipsc].values(), set_labels=core_hypo[k_our_ipsc].keys())
+    qfm_hyper = setops.quantify_feature_membership(vc_hyper)
+    qfm_hypo = setops.quantify_feature_membership(vc_hypo)
+
+    fig = plt.figure(figsize=(5, 3.5))
+    ax = fig.add_subplot(111)
+    bar.grouped_bar_chart(
+        [qfm_hyper, qfm_hypo],
+        ax=ax,
+        colours=[colour_by_direction['Hypermethylated'], colour_by_direction['Hypomethylated']],
+        edgecolor='k',
+        linewidth=1.,
+        labels=['Hypermethylation', 'Hypomethylation']
+    )
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=0)
+    ax.set_xlabel('Number of patients sharing DMR')
+    ax.set_ylabel('Frequency')
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.png"), dpi=200)
+
+    # Combine with gene expression / DE to determine if there is any effect
 
     # compare our iPSC-ESC with the list of variable genes (at the level of DNA meth) reported by
     # Bock et al. (Cell 2011)

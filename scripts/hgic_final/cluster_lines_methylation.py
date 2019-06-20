@@ -135,13 +135,13 @@ if __name__ == "__main__":
 
     patient_obj = loader.load_by_patient(pids, norm_method=norm_method, samples=our_samples)
 
-    nazor_ldr = loader.gse31848(norm_method=norm_method)
+    nazor_ldr = loader.load_reference('GSE31848', norm_method=norm_method)
     ix = nazor_ldr.meta.index.str.contains(r'(ES__WA)|(iPS__HDF)')
     ix = ix & (~nazor_ldr.meta.index.str.contains(r'HDF51IPS7'))  # this sample is an outlier, so remove it now
     nazor_ldr.filter_samples(ix)
 
     # Zhou et al.: lots of samples here, but we'll only keep 2 x ESC lines
-    zhou_ldr = loader.gse92462_450k(norm_method=norm_method)
+    zhou_ldr = loader.load_reference('GSE92462_450K', norm_method=norm_method)
     ix = zhou_ldr.meta.index.str.contains(r'^H[19]ES')
     zhou_ldr.filter_samples(ix)
 
@@ -150,7 +150,8 @@ if __name__ == "__main__":
     hip_epic_ldr.meta.drop('batch', axis=1, inplace=True)
 
     # Weltner et al. (E-MTAB-6194)
-    e6194_ldr = loader.e_mtab_6194(norm_method=norm_method)
+    e6194_ldr = loader.load_reference('E-MTAB-6194', norm_method=norm_method)
+    # ix = e6194_ldr.meta.type.isin(['ESC', 'iPSC', 'FB'])
     ix = ~e6194_ldr.meta.cell_line.isin([
         'NA07057',
         'HCT116',

@@ -183,7 +183,7 @@ def dendrogram_with_colours(
         if ngroup == 1 and len(legend_labels) != 1:
             legend_labels = {col_colours.columns[0]: legend_labels}
 
-    cc_ax.set_axis_bgcolor(fig.get_facecolor())
+    cc_ax.set_facecolor(fig.get_facecolor())
 
 
     # plot dendrogram
@@ -227,21 +227,25 @@ def dendrogram_with_colours(
         yax = cc_ax.yaxis
         xrot = 90
         yrot = 0
+        ylabels = col_colours.columns[::-1]
+        xlabels = r['ivl']
     else:
         xax = cc_ax.yaxis
         xax.tick_right()
         yax = cc_ax.xaxis
         xrot = 0
         yrot = 90
+        ylabels = col_colours.columns
+        xlabels = r['ivl'][::-1]
 
     if show_labels:
         xax.set_ticks(np.arange(nsample) + 0.5)
-        xax.set_ticklabels(r['ivl'], rotation=xrot)
+        xax.set_ticklabels(xlabels, rotation=xrot)
     else:
         xax.set_ticks([])
 
     yax.set_ticks(np.arange(ngroup) + 0.5)
-    yax.set_ticklabels(col_colours.columns[::-1], rotation=yrot)
+    yax.set_ticklabels(ylabels, rotation=yrot)
 
     if legend_labels is not None:
         # draw legend outside of the main axis
@@ -391,12 +395,26 @@ def plot_clustermap(
     cg.ax_heatmap.yaxis.label.set_visible(False)
     cg.ax_heatmap.xaxis.label.set_visible(False)
     if show_gene_labels:
+        # Changed from seaborn 0.9.0: not all y ticklabels are shown
+        # raise NotImplementedError("We need to manually add y ticklabels. The order needs to be checked based on dend output.")
+        cg.ax_heatmap.yaxis.set_ticks(range(dat.shape[0]))
+        cg.ax_heatmap.yaxis.set_ticklabels(
+            dat.index[cg.dendrogram_row.dendrogram['leaves'][::-1]]
+        )
         plt.setp(
             cg.ax_heatmap.yaxis.get_ticklabels(),
             rotation=0,
         )
     else:
         cg.ax_heatmap.yaxis.set_ticklabels([])
+
+    # Changed from seaborn 0.9.0: not all x ticklabels are shown
+    # Changed from seaborn 0.9.0: spines are visible by default
+    cg.ax_heatmap.xaxis.set_ticks(np.arange(dat.shape[1]) + 0.5)
+    cg.ax_heatmap.xaxis.set_ticklabels(
+        dat.columns[cg.dendrogram_col.dendrogram['leaves']]
+    )
+    cg.ax_heatmap.tick_params(axis='both', which='both', length=0)
 
     if rotate_xticklabels:
         plt.setp(cg.ax_heatmap.xaxis.get_ticklabels(), rotation=90)

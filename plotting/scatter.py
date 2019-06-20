@@ -155,7 +155,8 @@ def scatter_with_colour_and_markers(
         elif legend:
             ax.legend(handles=for_legend)
 
-    if (legend is not None) and (legend != False):
+    # if (legend is not None) and (legend != False):
+    elif (legend is not None) and (legend != False):
         if legend == 'outside':
             common.legend_outside_axes(ax)
         elif isinstance(legend, str):

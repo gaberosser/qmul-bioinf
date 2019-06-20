@@ -18,11 +18,11 @@ class MACS2CallPeaksSgeRequirements(sge.ApocritaArrayJobMixin):
 class MACS2BdgCmpSgeRequirements(sge.ApocritaArrayJobMixin):
     @property
     def ram_per_core(self):
-        return "4G"
+        return "8G"
 
     @property
     def runtime_mins(self):
-        return 120
+        return 60
 
 
 class MACS2CallPeaksBase(jobs.ArrayJob):

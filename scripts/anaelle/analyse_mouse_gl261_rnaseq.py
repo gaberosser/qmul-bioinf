@@ -2,7 +2,7 @@ from utils import output, excel
 from plotting import common, rnaseq, clustering
 from sklearn.decomposition import PCA
 from stats import transformations
-from rnaseq import loader, differential_expression, filter
+from rnaseq import loader, differential_expression, filter, general
 
 import os
 import pandas as pd
@@ -32,6 +32,14 @@ if __name__ == '__main__':
     # load our data
     obj_star = loader.load_references('wtchg_p190202', alignment_subdir='mouse', tax_id=10090)
     obj_salmon = loader.load_references('wtchg_p190202', alignment_subdir='mouse', source='salmon', tax_id=10090)
+
+    # dump to file for sharing
+    dat = obj_salmon.data.copy()
+    general.add_gene_symbols_to_ensembl_data(dat, tax_id=10090)
+    dat.to_excel(os.path.join(outdir, 'salmon_tpm_all_data.xlsx'))
+    dat = obj_star.data.copy()
+    general.add_gene_symbols_to_ensembl_data(dat, tax_id=10090)
+    dat.to_excel(os.path.join(outdir, 'star_counts_all_data.xlsx'))
 
     # load Bowman data
 
@@ -63,7 +71,7 @@ if __name__ == '__main__':
         p=p
     )
 
-    for i, col in enumerate(dat.columns):
+    for i, col in enumerate(log_dat.columns):
         ax.text(pc_dat[i, 0], pc_dat[i, 1], col)
 
     ax.figure.set_size_inches(5.9, 4.8)
@@ -106,10 +114,9 @@ if __name__ == '__main__':
 
     de_res.to_csv(os.path.join(outdir, "de_res_full.csv"))
 
-    # try removing one Rheb case
-    # no real reason to justify this at present
-    if False:
-        ix = obj_star.data.columns != 'KO_Rheb_74'
+    # try removing one WT case where the Rheb level is low
+    if True:
+        ix = ~obj_star.data.columns.isin(['WT_76'])
         dat = filter.filter_by_cpm(obj_star.data.loc[:, ix], min_cpm=min_cpm, min_n_samples=2)
 
         the_groups = obj_star.meta.treatment.str.replace('Rheb KO', 'Rheb_KO')[ix]  # group names must be valid in R
@@ -124,3 +131,4 @@ if __name__ == '__main__':
             lfc=min_logfc,
             return_full=True
         )
+        de_res_2.to_csv(os.path.join(outdir, "de_res_minus_wt76_full.csv"))
