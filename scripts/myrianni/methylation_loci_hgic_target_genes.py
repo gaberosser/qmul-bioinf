@@ -72,14 +72,19 @@ if __name__ == '__main__':
     else:
         raise Exception("Unable to locate pre-existing results.")
 
-    gois = ['PTGER4']
+    gois = ['PTGER4', 'NTRK2']
     rois = {
-        'PTGER4': [[40679018, 40682333]]  # dmr_res_s1.clusters[5877].coord_range
+        'PTGER4': [[40679018, 40682333]],  # dmr_res_s1.clusters[5877].coord_range
+        'NTRK2': [[87283670, 87287300]]
     }
     tax_id = 9606
     genome_version = 'GRCh37'
     fa_fn = genomics.get_reference_genome_fasta(tax_id, version=genome_version, ext=['.fa', '.fa.bgz'])
     for g in gois:
+        this_clusters = dict([
+            (k, v) for k, v in dmr_res_s1.clusters.items() if len([x for x in v.genes if x[0] == g])
+        ])
+
         feat_res = genomics.get_features_from_gtf(g, tax_id=tax_id, version=genome_version)
         for i, (ftr, x) in enumerate(feat_res.items()):
             # get sequence
@@ -95,19 +100,18 @@ if __name__ == '__main__':
                 (ftr.start <= x.coord_range[0] <= ftr.stop) or \
                 (ftr.start <= x.coord_range[1] <= ftr.stop) or \
                 (x.coord_range[0] < ftr.start and x.coord_range[1] > ftr.stop)
-            this_clusters = dict([
-                (k, v) for k, v in dmr_res_s1.clusters.items() if v.chr == ftr.chrom and check_intersection(v)
-            ])
-            this_dmrs = {}
-            for k, v in this_clusters.items():
-                for pid in dmr_res_s1.iterkeys():
-                    t = dmr_res_s1[pid].results[k]
-                    if t.get('rej_h0', False):
-                        this_dmrs.setdefault(k, {})[pid] = t
+            this_clusters.update(
+                dict([
+                    (k, v) for k, v in dmr_res_s1.clusters.items() if v.chr == ftr.chrom and check_intersection(v)
+                ])
+            )
+        this_dmrs = {}
+        for k, v in this_clusters.items():
+            for pid in dmr_res_s1.iterkeys():
+                t = dmr_res_s1[pid].results[k]
+                if t.get('rej_h0', False):
+                    this_dmrs.setdefault(k, {})[pid] = t
 
-        # patients_involved = sorted(setops.reduce_union(*[t.keys() for t in this_dmrs.values()]))
-
-        # nrows = len(patients_involved) + 1  # one ax for each patient plus one for the track
         nrows = len(consts.PIDS) + 1  # one ax for each patient plus one for the track
         gs = plt.GridSpec(nrows=nrows, ncols=1)
         fig = plt.figure(figsize=(8, 6))
@@ -218,4 +222,4 @@ if __name__ == '__main__':
                 for_export.insert(i, col, t)
                 i += 1
 
-        for_export.to_excel(os.path.join(outdir, "sequence_coords_probes_values.xlsx"))
+        for_export.to_excel(os.path.join(outdir, "%s_sequence_coords_probes_values.xlsx" % g))
