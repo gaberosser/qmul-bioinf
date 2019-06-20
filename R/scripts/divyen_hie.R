@@ -287,7 +287,7 @@ fit_y = incpt + slope * fit_x
 png(file.path(output.dir, "final_model_decision_boundary.png"), width = 5, height=5, units = 'in', res = 300)
 plot(fit_x, fit_y, type = "l", pch=22, lty=2, col="black", lwd=2, ylim=c(0, 650), xlim=c(0, 300),
      xlab="Plt trough", ylab="Plt peak")
-points(X$Plt.trough[!X$outcome], X$Plt.peak[!X$outcome], col='royalblue3', pch=19)
+points(X$Plt.trough[!X$outcome], X$Plt.peak[!X$outcome], col=colours[['fav']], pch=19)
 points(X$Plt.trough[X$outcome], X$Plt.peak[X$outcome], col=colours[['unfav']], pch=19)
 # highlight cases where platelets were given
 points(X$Plt.trough[X$Platelets], X$Plt.peak[X$Platelets], col='black', pch=1, lwd=2)
@@ -297,23 +297,10 @@ legend(
   legend = c("Decision boundary", "Favourable", "Unfavourable", "Given platelets"), 
   lty=c(2, 0, 0, 0), 
   pch=c(-1, 19, 19, 1), 
-  col=c('black', colours[['unfav']], "royalblue3", "black"), 
+  col=c('black', colours[['fav']], colours[['unfav']], "black"), 
   bty='n'
   )
 dev.off()
-
-# now test whether the cohort that were given platelets should be excluded
-# scatterplot with linear regression fit
-fit.lm <- lm(Plt.peak ~ Plt.trough, data=X[!X$Platelets,])
-fit_x <- c(0, 300)
-fit_y <- coef(fit.lm)[[1]] + coef(fit.lm)[[2]] * fit_x
-plot.new()
-plot(fit_x, fit_y, type="l", pch=22, lty=2, col="red", lwd=2, xlim=c(0, 300), ylim=c(0, 650), xlab="Plt trough", ylab="Plt peak")
-points(values$Plt.trough[y == 'Fav'], values$Plt.peak[y == 'Fav'], col='dodgerblue2', pch=19)
-points(values$Plt.trough[y == 'Unfav'], values$Plt.peak[y == 'Unfav'], col='green', pch=19)
-# highlight cases where platelets were given
-points(values$Plt.trough[X$Platelets], values$Plt.peak[X$Platelets], col='black', pch=1)
-legend("topleft", legend = c("Favourable", "Unfavourable", "Given platelets"), lty=c(0, 0, 0), pch=c(19, 19, 1), col=c("dodgerblue2", "green", "black"), bty='n')
 
 # box and scatter
 plot.new()

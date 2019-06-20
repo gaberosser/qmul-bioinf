@@ -1,4 +1,5 @@
 import os
+import collections
 
 import numpy as np
 import pandas as pd
@@ -258,16 +259,28 @@ if __name__ == "__main__":
     ax.set_xticks(range(len(cols)))
     ax.set_xticklabels(cols, rotation=90, fontsize=14)
     plt.setp(ax.yaxis.get_ticklabels(), fontsize=14)
-    import collections
-    common.add_custom_legend()
-    leg_dict = collections.OrderedDict([
-        ## TODO: finish!
-        ('All', {'class': 'patch', 'facecolor': None})
-    ])
+    ax.set_ylabel('Regression slope', fontsize=14)
 
+    leg_entry_fun = lambda x: {
+        'class': 'patch',
+        'edgecolor': 'none',
+        'linewidth': 1.5,
+        'facecolor': x
+    }
 
+    leg_dict = collections.OrderedDict()
+    leg_dict['#colours'] = collections.OrderedDict()
+    leg_dict['#pvalue'] = collections.OrderedDict()
+    leg_dict['#colours']['All'] = leg_entry_fun('0.3')
+    leg_dict['#colours']['Favourable'] = leg_entry_fun(outcome_colours['fav'])
+    leg_dict['#colours']['Unfavourable'] = leg_entry_fun(outcome_colours['unfav'])
+    leg_dict['#pvalue']['p < %.2f' % p_threshold] = leg_entry_fun('none')
+    leg_dict['#pvalue']['p < %.2f' % p_threshold]['edgecolor'] = 'k'
+    common.add_custom_legend(ax, leg_dict, fontsize=14, loc='lower right')
 
-    raise StopIteration
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, 'linregress_value_with_age_bar.png'), dpi=200)
+    fig.savefig(os.path.join(outdir, 'linregress_value_with_age_bar.pdf'))
 
     jitter = 0.2
     figsize = (9.7, 6.4)
