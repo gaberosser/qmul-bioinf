@@ -1275,3 +1275,19 @@ if __name__ == "__main__":
         # 3. scatter: iNSC - ESC vs NSC - ESC
         # disabling this for now, because the reference NSC we are using is actually just a commercially available
         # reprogrammed line.
+
+    # compare our iPSC-ESC with the list of variable genes (at the level of DNA meth) reported by
+    # Bock et al. (Cell 2011)
+    bock_var_genes = [
+        'TF', 'CAT', 'CD14', 'S100A6', 'LEFTY2', 'MEG3', 'DAZL'
+    ]
+    bock_overlap = {}
+    for g in bock_var_genes:
+        this = []
+        for k, v in ipsc_esc_core['ours'].items():
+            t = v.loc[v.genes.str.contains(g), ['median_delta_encode', 'median_delta_e6194', 'genes']]
+            if len(t) > 0:
+                t.insert(0, 'cluster_id', t.index)
+                t.index = [k] * t.shape[0]
+            this.append(t)
+        bock_overlap[g] = pd.concat(this, axis=0)

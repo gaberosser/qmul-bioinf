@@ -323,8 +323,8 @@ if __name__ == "__main__":
     for c in the_list_mo.columns:
         l = orth.loc[genelist_mo[c]]
         n_matched = l.dropna().size
-        print "Geneset %s. Found %d orthologous genes in human from a mouse list S4 of length %d. %d dropped." % (
-            c, n_matched, l.size, l.isnull().sum()
+        print "Geneset %s. Found %d orthologous genes in human from a mouse list %s of length %d. %d dropped." % (
+            c, n_matched, list_name, l.size, l.isnull().sum()
         )
         the_list_hu[c] = l.dropna().values
 
@@ -332,9 +332,10 @@ if __name__ == "__main__":
         this_geneset = set(the_list_hu[c].tolist()).intersection(rnaseq_dat.index)
         removed = set(the_list_hu[c].tolist()).difference(rnaseq_dat.index)
         if len(removed):
-            print "%d genes were removed from RNA-Seq geneset S4 %s as they are not found in the expression data. " \
+            print "%d genes were removed from RNA-Seq geneset %s %s as they are not found in the expression data. " \
                   "%d remaining of original %d.\n" % (
                       len(removed),
+                      list_name,
                       c,
                       len(this_geneset),
                       the_list_mo[c].dropna().size

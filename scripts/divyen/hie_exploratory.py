@@ -11,7 +11,7 @@ from sklearn.preprocessing import Imputer
 
 from settings import GIT_LFS_DATA_DIR
 from utils.output import unique_output_dir
-from plotting import common
+from plotting import common, bar
 
 BIOMARKERS = [
     'Hb',
@@ -242,6 +242,32 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'linregress_value_with_age.png'), dpi=200)
     fig.savefig(os.path.join(outdir, 'linregress_value_with_age.pdf'))
+
+    # grouped bar chart
+    colours = ['0.3', outcome_colours['fav'], outcome_colours['unfav']]
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    width = 0.2
+    gap = 0.05
+    for i, c in enumerate(cols):
+        slope_dat = [val_age_corr[t][c].slope for t in ['all', 'fav', 'unfav']]
+        edges = ['none' if val_age_corr[t][c].pvalue > p_threshold else 'k' for t in ['all', 'fav', 'unfav']]
+        x = [i - 1.5 * width - gap, i - .5 * width, i + .5*width + gap]
+        y = slope_dat
+        ax.bar(x, y, color=colours, edgecolor=edges, linewidth=1.5, width=width)
+    ax.set_xticks(range(len(cols)))
+    ax.set_xticklabels(cols, rotation=90, fontsize=14)
+    plt.setp(ax.yaxis.get_ticklabels(), fontsize=14)
+    import collections
+    common.add_custom_legend()
+    leg_dict = collections.OrderedDict([
+        ## TODO: finish!
+        ('All', {'class': 'patch', 'facecolor': None})
+    ])
+
+
+
+    raise StopIteration
 
     jitter = 0.2
     figsize = (9.7, 6.4)
