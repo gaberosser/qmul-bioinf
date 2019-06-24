@@ -80,13 +80,23 @@ prepareData <- function(dat, value_cols) {
   )
 }
 
+correct_data <- function(dat) {
+  dat$Chest.Compressions <- grepl('Y', dat$Chest.Compressions)
+  dat$Resp.support.10.mins <- grepl('Y', dat$Resp.support.10.mins, ignore.case = T)
+  dat
+}
+
 output.dir <- getOutputDir('divyen_hie_summary_table')
 
 fn <- file.path(data.dir, 'divyen_shah', 'cleaned_data_feb_2018.csv')
 dat <- read.csv(fn)
+dat <- correct_data(dat)
 
 fn.full <- file.path(data.dir, 'divyen_shah', 'cleaned_data_full_cohort_feb_2018.csv')
 dat.full <- read.csv(fn.full)
+dat.full <- correct_data(dat.full)
+
+# apply corrections
 
 biomarkers <- c(    
   'Hb',
@@ -114,6 +124,7 @@ prep_dat.full <- prepareData(dat.full, all_cols)
 X.full <- prep_dat.full[['X']]
 
 get_binary_summary <- function(dat, colname, value) {
+  #' P value is computed using Fisher's exact test
   summ <- table(dat[[colname]], dat$Outcome)
   colnames(summ) <- c('unfav', 'fav')
   summ_rowsum <- rowSums(summ)
@@ -133,7 +144,42 @@ get_binary_summary <- function(dat, colname, value) {
   list(
     fav=str_fav,
     unfav=str_unfav,
-    fisherp=ft$p.value
+    p=ft$p.value
   )
 }
 
+get_continuous_summary <- function(dat, colname, num_dp=1) {
+  #' P value is computed using MWU test
+  this_dat <- dat[[colname]]
+  fav_dat <- this_dat[dat$Outcome == 2]
+  unfav_dat <- this_dat[dat$Outcome == 1]
+  q_fav <- quantile(fav_dat, na.rm = T)
+  q_unfav <- quantile(unfav_dat, na.rm = T)
+  base_str <- paste0("%.", num_dp, "f (%.", num_dp, "f - %.", num_dp, "f)")
+  # "%.1f (%.1f - %.1f)"
+  str_fav <- sprintf(base_str, q_fav[['50%']], q_fav[['25%']], q_fav[['75%']])
+  str_unfav <- sprintf(base_str, q_unfav[['50%']], q_unfav[['25%']], q_unfav[['75%']])
+  mwu <- wilcox.test(fav_dat, unfav_dat, exact=F)  # cannot compute exact p value with ties
+  list(
+    fav=str_fav,
+    unfav=str_unfav,
+    p=mwu$p.value
+  )
+}
+
+# full summary
+lookup = list(
+  "Male infants (%)"=c("binary", "Gender", "MALE"),
+  "Gestational age"=c("cont", "Gestational.Age", 1),
+  "Birth weight"=c("cont", "Birth.Weight", 0),
+  "Apgar score at 10 minutes"=c("cont", "Apgar.score.10.minutes", 1),
+  "Chest compressions (%)"=c("binary", "Chest.Compressions", T),
+  "Respiratory support at 10 minutes (%)"=c("binary", "Resp.support.10.mins", T),
+  "Worst pH"=c("cont", "Worst.Cord.Gas..Ph.", 1),
+  "Worst base deficit"=c("cont", "Worst.Cord.Gas..base.deficit.", 1),
+  "Suspected clinical seizures (%)"=c("binary", "Seizure", "Y"),
+  "Age at MRI (days)"=c("cont", "Day.of.MRI", 0),
+  "Duration of admission (days)"=c("cont", "Duration.of.admission", 0)
+)
+
+a <- lapply(lookup, function(x) {if (x[1] == 'cont') {get_continuous_summary(dat.full, x[2], x[3])} else {get_binary_summary(dat.full, x[2], x[3])}})
