@@ -461,7 +461,6 @@ if __name__ == "__main__":
     outdir = output.unique_output_dir()
 
     # export all signatures to a file
-
     from utils import dictionary
 
     all_gs_dict = dictionary.nested_dict_to_flat(tam_gs_dict)

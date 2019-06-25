@@ -155,15 +155,16 @@ get_continuous_summary <- function(dat, colname, num_dp=1) {
   unfav_dat <- this_dat[dat$Outcome == 1]
   q_fav <- quantile(fav_dat, na.rm = T)
   q_unfav <- quantile(unfav_dat, na.rm = T)
-  base_str <- paste0("%.", num_dp, "f (%.", num_dp, "f - %.", num_dp, "f)")
-  # "%.1f (%.1f - %.1f)"
+  base_str <- paste0("%.", num_dp, "f (%.", num_dp, "f, %.", num_dp, "f)")
   str_fav <- sprintf(base_str, q_fav[['50%']], q_fav[['25%']], q_fav[['75%']])
   str_unfav <- sprintf(base_str, q_unfav[['50%']], q_unfav[['25%']], q_unfav[['75%']])
   mwu <- wilcox.test(fav_dat, unfav_dat, exact=F)  # cannot compute exact p value with ties
+  t <- t.test(fav_dat, unfav_dat)
   list(
     fav=str_fav,
     unfav=str_unfav,
     p=mwu$p.value
+    # p=t$p.value
   )
 }
 
@@ -182,4 +183,15 @@ lookup = list(
   "Duration of admission (days)"=c("cont", "Duration.of.admission", 0)
 )
 
-a <- lapply(lookup, function(x) {if (x[1] == 'cont') {get_continuous_summary(dat.full, x[2], x[3])} else {get_binary_summary(dat.full, x[2], x[3])}})
+a <- lapply(lookup, function(x) {
+  if (x[1] == 'cont') {
+    x <- get_continuous_summary(dat.full, x[2], x[3])
+    } else {
+      x <- get_binary_summary(dat.full, x[2], x[3])
+    }
+  unlist(x)
+  })
+
+tbl <- t(data.frame(a))
+rownames(tbl) <- names(lookup)
+colnames(tbl) <- c("Favourable", "Unfavourable", "p value")

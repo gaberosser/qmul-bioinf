@@ -317,16 +317,27 @@ if __name__ == "__main__":
     orth = orth.iloc[:, 0]
 
     # use this to generate human gene lists
+    # also keep a copy for export
+    for_export = []
     the_list_hu = {}
     rna_list_hu = {}
 
     for c in the_list_mo.columns:
-        l = orth.loc[genelist_mo[c]]
+        this_export = pd.DataFrame(genelist_mo[c], columns=['Mouse %s' % c])
+        l = orth.reindex(genelist_mo[c])
         n_matched = l.dropna().size
         print "Geneset %s. Found %d orthologous genes in human from a mouse list %s of length %d. %d dropped." % (
             c, n_matched, list_name, l.size, l.isnull().sum()
         )
         the_list_hu[c] = l.dropna().values
+        this_export.insert(1, 'Human %s' % c, l.values)
+        this_export = this_export.sort_values(by=['Human %s' % c, 'Mouse %s' % c]).reset_index(drop=True)
+        for_export.append(this_export)
+
+    # compile and export list
+    for_export = pd.concat(for_export, axis=1)
+    for_export.to_excel(os.path.join(outdir, "bmdm_mg_gene_signatures.xlsx"), index=False)
+
 
     for c in the_list_hu:
         this_geneset = set(the_list_hu[c].tolist()).intersection(rnaseq_dat.index)
@@ -352,6 +363,11 @@ if __name__ == "__main__":
             mtor_geneset.remove(t)
 
     rna_list_hu['mTOR'] = mtor_geneset
+
+    # export supplementary tables
+    to_export = the_list_mo.copy()
+    to_export.columns = ['Mouse BMDM', 'Mouse MG']
+
 
     all_genes_in_set = setops.reduce_union(*the_list_hu.values())
 

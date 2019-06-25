@@ -411,10 +411,13 @@ if __name__ == '__main__':
         ax = axs[i]
         this = df.loc[:, df.columns.str.contains(typ)].transpose()
         this.index = ['De novo', 'Residual']
+        new_cols = this.columns.str.replace('_ours', '').str.replace('_', '').str.replace('kogut', ' (Kogut et al.)')
+        this.columns = new_cols
         bar.stacked_bar_chart(this, colours=plot_colours[typ], ax=ax, width=0.8, ec='k', lw=1.0)
         # df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
         ax.set_ylabel('%s DE genes' % ('Downregulated' if typ == 'hypo' else 'Upregulated'))
         plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
+        ax.get_legend().set_frame_on(False)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "number_de_residual_denovo.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "number_de_residual_denovo.tiff"), dpi=200)

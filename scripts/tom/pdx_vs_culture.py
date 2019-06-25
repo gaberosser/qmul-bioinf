@@ -2,7 +2,7 @@ from methylation import loader, process, dmr
 from scripts.hgic_final import consts
 import hgic_consts
 from stats import transformations
-from plotting import clustering, common, scatter
+from plotting import clustering, common, scatter, adjuster
 from utils import output
 
 import multiprocessing as mp
@@ -19,7 +19,8 @@ def hc_plot_dendrogram(
         row_colours,
         mad = None,
         n_ftr=3000,
-        metric='correlation'
+        metric='correlation',
+        **kwargs
 ):
     """
     For each value in n_gene_arr, plot a dendrogram showing the result of hierarchical clustering of the data using
@@ -29,15 +30,17 @@ def hc_plot_dendrogram(
     :param n_gene_arr: The values to test
     :return:
     """
+    if 'fig_kws' not in kwargs:
+        kwargs['fig_kws'] = {'figsize': (5.5, 10)}
     if mad is None:
         mad = transformations.median_absolute_deviation(data).sort_values(ascending=False)
     the_dat = data.loc[mad.index[:n_ftr]]
     fig_dict = clustering.dendrogram_with_colours(
         the_dat,
         row_colours,
-        fig_kws={'figsize': (5.5, 10)},
         vertical=False,
-        metric=metric
+        metric=metric,
+        **kwargs
     )
     return fig_dict
 
@@ -148,6 +151,11 @@ if __name__ == "__main__":
 
     # convert to M values
     mdat = process.m_from_beta(obj.data)
+    mdat_019 = mdat.loc[:, obj.meta.patient_id == '019']
+
+    # extract meta for convenience
+    meta = obj.meta
+    meta_019 = obj.meta.loc[mdat_019.columns]
 
     row_colours_all = pd.DataFrame('white', index=mdat.columns, columns=['Type', 'Patient'])
     row_colours_all.loc[:, 'Type'] = obj.meta.descriptor.apply(descriptor_colours.get)
@@ -192,6 +200,31 @@ if __name__ == "__main__":
         ), dpi=200
     )
 
+    # Again, again! But with only 019 samples this time
+    row_colours = row_colours_all.loc[mdat_019.columns, ['Type']]
+    plt_dict = hc_plot_dendrogram(
+        mdat_019,
+        row_colours,
+        n_ftr=clust_n_ftr,
+        metric=clustering_metric,
+        fig_kws={'figsize': (4, 6)}
+    )
+    plt_dict['dendrogram_ax'].set_frame_on(False)
+
+    common.add_custom_legend(
+        plt_dict['col_colour_ax'],
+        leg_dict['Type'],
+        loc_outside=True,
+        loc_outside_horiz='right',
+        frameon=False,
+        loc_outside_vert='top',
+        bbox_to_anchor=(13.5, 1.)
+    )
+    gs = plt_dict['gridspec']
+    gs.update(right=0.36, bottom=0.1)
+
+    plt_dict['fig'].savefig(os.path.join(outdir, "dendrogram_019_only.png"), dpi=200)
+
     # PCA, all samples
     cmap = collections.OrderedDict([
         (pid, pid_colours[pid]) for pid in consts.PIDS
@@ -199,21 +232,20 @@ if __name__ == "__main__":
 
     mmap = pd.Series(
         common.FILLED_MARKERS[n_desc],
-        index=obj.meta.descriptor.unique()
+        index=meta.descriptor.unique()
     )
 
     fig = plt.figure(figsize=(6.4, 4.8))
     ax = fig.add_subplot(111)
     p, ax = plot_pca(
         mdat,
-        obj.meta.patient_id,
+        meta.patient_id,
         colour_map=cmap,
         marker_subgroups=obj.meta.descriptor,
         marker_map=mmap,
         ax=ax
     )
 
-    # increase legend font size
     leg = ax.get_legend()
     leg.set_frame_on(False)
     ax.figure.subplots_adjust(left=0.12, right=0.75, top=0.98)
@@ -230,19 +262,84 @@ if __name__ == "__main__":
     this_coords = p.transform(
         mdat.loc[:, to_annot.keys()].transpose()
     )
+    anno = []
     for k, v in to_annot.items():
         this_coords = p.transform(mdat.loc[:, [k]].transpose())
-        ax.annotate(v, this_coords[0, :2])
+        anno.append(ax.annotate(v, this_coords[0, :2]))
     ax.set_xlim([-800, 1400])
     ax.figure.savefig(os.path.join(outdir, "all_samples_pca_annotated.png"), dpi=200)
 
+    # annotate all remaining GIC to determine whetehr passages are consistent
+    [t.remove() for t in anno]
+    anno = []
+    for k in meta.index[meta.type == 'GBM']:
+        this_str = meta.loc[k, 'passage']
+        if not pd.isnull(this_str):
+            this_coords = p.transform(mdat.loc[:, [k]].transpose())
+            anno.append(ax.annotate(obj.meta.loc[k, 'passage'], this_coords[0, :2], fontsize=14))
+    plt.draw()  # must have rendered plot before adjusting
+    adjuster.adjust_text_radial_plus_repulsion(anno)
+    ax.figure.savefig(os.path.join(outdir, "all_samples_pca_annotated_with_passage_numbers.png"), dpi=200)
+
+    # same PCA definition, but only the 019 samples, so we can expand the view
+    fig = plt.figure(figsize=(6.4, 4.8))
+    ax = fig.add_subplot(111)
+    p, ax = plot_pca(
+        mdat_019,
+        meta_019.patient_id,
+        p=p,
+        colour_map=cmap,
+        marker_subgroups=meta_019.descriptor,
+        marker_map=mmap,
+        ax=ax
+    )
+
+    leg = ax.get_legend()
+    leg.set_frame_on(False)
+    ax.figure.subplots_adjust(left=0.12, right=0.75, top=0.98)
+
+    ax.figure.savefig(os.path.join(outdir, "all_samples_pca_019_only.png"), dpi=200)
+
+    anno = []
+    for k in meta_019.index:
+        this_coords = p.transform(mdat_019.loc[:, [k]].transpose())
+        anno.append(ax.annotate(k, this_coords[0, :2]))
+
+    ax.figure.savefig(os.path.join(outdir, "all_samples_pca_019_only_annotated.png"), dpi=200)
+
     # Again, again! But this time we compute the PCs with only 019 lines, then transform the remaining lines
     # using the same PCs
-    mdat_019 = mdat.loc[:, obj.meta.patient_id == '019']
 
     p = PCA()
     pca_data = p.fit_transform(mdat_019.transpose())
     variance_explained = p.explained_variance_ratio_ * 100.
+
+    fig = plt.figure(figsize=(6.4, 4.8))
+    ax = fig.add_subplot(111)
+    ax = scatter.scatter_with_colour_and_markers(
+        pca_data[:, [0, 1]],
+        colour_subgroups=obj.meta.loc[mdat_019.columns, 'patient_id'],
+        colour_map=cmap,
+        marker_subgroups=obj.meta.loc[mdat_019.columns, 'descriptor'],
+        marker_map=mmap,
+        ax=ax,
+    )
+
+    ax.set_xlabel("PCA component %s (%.1f%%)" % (1, variance_explained[0]))
+    ax.set_ylabel("PCA component %s (%.1f%%)" % (2, variance_explained[1]))
+    leg = ax.get_legend()
+    leg.set_frame_on(False)
+    fig.subplots_adjust(left=0.12, right=0.75, top=0.98)
+
+    fig.savefig(os.path.join(outdir, "pca_019_only.png"), dpi=200)
+
+    for i, col in enumerate(mdat_019.columns):
+        this_coords = pca_data[i, :2]
+        ax.annotate(col, this_coords)
+
+    fig.savefig(os.path.join(outdir, "pca_019_only_annotated.png"), dpi=200)
+
+    # overlay all data points, projected into the same 019-only transformation
 
     all_pca_data = p.transform(mdat.transpose())
 
