@@ -7,6 +7,7 @@ from utils import output
 
 import multiprocessing as mp
 import pandas as pd
+import numpy as np
 from scipy import stats
 from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
@@ -365,8 +366,31 @@ if __name__ == "__main__":
         this_coords = all_pca_data[mdat.columns == k, :2]
         ax.annotate(v, this_coords[0, :2])
 
-    # ax.set_xlim([-800, 1400])
     ax.figure.savefig(os.path.join(outdir, "pca_based_on_019_only_annotated.png"), dpi=200)
+
+    # Identify 'passage aging' probes: most variable between earlier and later passages
+
+    # Usable samples: drop 019 3+6 as this includes passages either side of 4
+    this_samples = meta.index[meta.descriptor == 'In vitro GIC'].drop('GBM019_P3n6')
+    this_passages = meta.loc[this_samples, 'passage'].str.split(';').apply(
+        lambda x: np.mean([float(t) for t in x])
+    )
+    # for each probe, run a paired t test (WSRT is much slower)
+    # to do this, separate each patient line into early and late (in the same order)
+    g = this_passages.groupby(meta.loc[this_samples, 'patient_id'])
+    early = g.idxmin().sort_index()
+    late = g.idxmax()[early.index]
+
+    mdat_e = mdat[early.values]
+    mdat_l = mdat[late.values]
+
+    ttest_paired = stats.ttest_rel(mdat_e, mdat_l, axis=1)
+    # take top N probes by pvalue
+    n_probes = 1000
+    the_probes = mdat_e.index[np.argsort(ttest_paired.pvalue)[:n_probes]]
+
+    # how do these vary between GIC019 late and GIC019 ex vivo?
+    ## TODO
 
     # DMR analysis
     dmr_params = consts.DMR_PARAMS
