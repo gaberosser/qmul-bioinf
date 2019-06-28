@@ -372,6 +372,9 @@ if __name__ == "__main__":
 
     # Usable samples: drop 019 3+6 as this includes passages either side of 4
     this_samples = meta.index[meta.descriptor == 'In vitro GIC'].drop('GBM019_P3n6')
+    # this_samples = meta.index[
+    #     (meta.descriptor == 'In vitro GIC') & (meta.patient_id != '019')
+    # ]
     this_passages = meta.loc[this_samples, 'passage'].str.split(';').apply(
         lambda x: np.mean([float(t) for t in x])
     )
@@ -384,13 +387,33 @@ if __name__ == "__main__":
     mdat_e = mdat[early.values]
     mdat_l = mdat[late.values]
 
-    ttest_paired = stats.ttest_rel(mdat_e, mdat_l, axis=1)
     # take top N probes by pvalue
     n_probes = 1000
+
+    # idea: run the paired T test as a leave-one-out cross validation
+    ttest_xv = {}
+    top_probes_xv = {}
+    for pid in consts.PIDS:
+        this_e = mdat_e.loc[:, meta.loc[mdat_e.columns, 'patient_id'] != pid]
+        this_l = mdat_l.loc[:, meta.loc[mdat_l.columns, 'patient_id'] != pid]
+        ttest_xv[pid] = stats.ttest_rel(this_e, this_l, axis=1)
+        top_probes_xv[pid] = this_e.index[np.argsort(ttest_xv[pid].pvalue)[:n_probes]]
+
+    ttest_paired = stats.ttest_rel(mdat_e, mdat_l, axis=1)
+
     the_probes = mdat_e.index[np.argsort(ttest_paired.pvalue)[:n_probes]]
+    the_signs = np.sign(ttest_paired.statistic[np.argsort(ttest_paired.pvalue)][:n_probes])
 
     # how do these vary between GIC019 late and GIC019 ex vivo?
-    ## TODO
+    # NB a POSITIVE statistic means the M value DECREASES in late relative to early.
+    mdat_019_e = mdat['GBM019_P4']
+    mdat_019_l = mdat['GBM019Luc_P12']
+    mdat_019_exvivo = mdat.loc[:, ['GBM019Luc_P3_PDX1', 'GBM019Luc_P2_PDX2']]
+
+    e_minus_l = pd.Series(mdat_019_e.values - mdat_019_l.values, index=mdat.index)
+    exvivo_minus_l = mdat_019_exvivo.subtract(mdat_019_l.values, axis=0)
+
+    raise StopIteration
 
     # DMR analysis
     dmr_params = consts.DMR_PARAMS

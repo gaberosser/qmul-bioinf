@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import os
 import re
-from utils import output, log, setops
+import collections
+from utils import output, log, setops, excel
 from utils.string_manipulation import make_tuple
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -115,29 +116,29 @@ def classify_de_residual_denovo(core_tbl, parental, exclude=None):
 
         if exclude is not None:
             this_tbl = this_tbl.loc[this_tbl.index.difference(exclude)]
-        mean_median_delta = this_tbl.loc[:, this_tbl.columns.str.contains('logFC_')].mean(axis=1)
+        mean_logfc = this_tbl.loc[:, this_tbl.columns.str.contains('logFC_')].mean(axis=1)
 
         # look for the same DMRs in the parental comparison
         this_par = parental[k1]
         p_ix = this_par.index.intersection(this_tbl.index)
-        mmd_lookup = mean_median_delta.loc[p_ix]
+        mlfc_lookup = mean_logfc.loc[p_ix]
 
         res[k1] = this_tbl.copy()
         clas = pd.Series('partial', index=this_tbl.index)
 
         # de novo: DM in (A vs B) AND (A vs C) with same direction
-        ix = (mmd_lookup > 0.) & (this_par.loc[p_ix, 'logFC'] > 0.)
-        clas.loc[ix.index[ix]] = 'hyper_de_novo'
-        ix = (mmd_lookup < 0.) & (this_par.loc[p_ix, 'logFC'] < 0.)
-        clas.loc[ix.index[ix]] = 'hypo_de_novo'
+        ix = (mlfc_lookup > 0.) & (this_par.loc[p_ix, 'logFC'] > 0.)
+        clas.loc[ix.index[ix]] = 'up_de_novo'
+        ix = (mlfc_lookup < 0.) & (this_par.loc[p_ix, 'logFC'] < 0.)
+        clas.loc[ix.index[ix]] = 'down_de_novo'
 
         # residual: DM in (A vs B) AND NOT in (A vs C)
         not_p_ix = ~this_tbl.index.isin(this_par.index)
-        mmd_lookup = mean_median_delta.loc[not_p_ix]
-        ix = (mmd_lookup > 0)
-        clas.loc[ix.index[ix]] = 'hyper_residual'
-        ix = (mmd_lookup < 0)
-        clas.loc[ix.index[ix]] = 'hypo_residual'
+        mlfc_lookup = mean_logfc.loc[not_p_ix]
+        ix = (mlfc_lookup > 0)
+        clas.loc[ix.index[ix]] = 'up_residual'
+        ix = (mlfc_lookup < 0)
+        clas.loc[ix.index[ix]] = 'down_residual'
 
         res[k1].insert(2, 'classification', clas)
 
@@ -402,12 +403,12 @@ if __name__ == '__main__':
     # combine these results to generate bar charts
     set_colours_hypo = ['#b2df8a', '#33a02c']
     set_colours_hyper = ['#fb9a99', '#e31a1c']
-    plot_colours = {'hypo': set_colours_hypo[::-1], 'hyper': set_colours_hyper[::-1]}
+    plot_colours = {'down': set_colours_hypo[::-1], 'up': set_colours_hyper[::-1]}
 
     df = core_de_classified_count.transpose()
 
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(4.5, 5.))
-    for i, typ in enumerate(['hyper', 'hypo']):
+    for i, typ in enumerate(['up', 'down']):
         ax = axs[i]
         this = df.loc[:, df.columns.str.contains(typ)].transpose()
         this.index = ['De novo', 'Residual']
@@ -415,7 +416,7 @@ if __name__ == '__main__':
         this.columns = new_cols
         bar.stacked_bar_chart(this, colours=plot_colours[typ], ax=ax, width=0.8, ec='k', lw=1.0)
         # df.loc[:, df.columns.str.contains(typ)].plot.bar(stacked=True, colors=plot_colours[typ], ax=ax, width=0.9)
-        ax.set_ylabel('%s DE genes' % ('Downregulated' if typ == 'hypo' else 'Upregulated'))
+        ax.set_ylabel('%s DE genes' % ('Downregulated' if typ == 'down' else 'Upregulated'))
         plt.setp(ax.xaxis.get_ticklabels(), rotation=90)
         ax.get_legend().set_frame_on(False)
     fig.tight_layout()
@@ -424,8 +425,9 @@ if __name__ == '__main__':
 
     # check in DMRs
     dmrs_classified = {}
-    de_dmr_classified = {}
+    dedmr_results = {}
     both_genes = {}
+
     for pid in pids:
         fn = os.path.join(dmr_indir, "iPSC%s_classified_dmrs.csv" % pid)
         if os.path.exists(fn):
@@ -440,33 +442,83 @@ if __name__ == '__main__':
                 dmr_genes = setops.reduce_union(*dmr_genes) if len(dmr_genes) else []
                 both_genes[pid] = set(de_genes).intersection(dmr_genes)
 
+                if len(both_genes[pid]):
+                    # DE
+                    the_de_res = this_de_res.loc[this_de_res['Gene Symbol'].isin(both_genes[pid])]
+                    the_de_res = the_de_res.loc[:, ~the_de_res.columns.str.contains('Direction')]
+                    the_de_res.set_index('Gene Symbol', inplace=True)  # TODO: may break if there are duplicates?
+
+                    # DMR
+                    the_dmr_res = this_dmr.loc[this_dmr.genes.astype(str).str.contains('|'.join(both_genes[pid]))]
+                    # 'unfold' by gene, group by gene, take mean
+                    ix = reduce(lambda x, y: x + y, [[(i, t) for t in row.genes] for i, row in the_dmr_res.iterrows()])
+                    the_dmr_res_unfold = {}
+                    for i, row in the_dmr_res.iterrows():
+                        for g in row.genes:
+
+                            the_dmr_res_unfold["%d_%s" % (i, g)] = row.copy()
+                            the_dmr_res_unfold["%d_%s" % (i, g)].loc['G'] = g
+                    the_dmr_res_unfold = pd.DataFrame(the_dmr_res_unfold).transpose()
+                    # reduce to numeric types and aggregate by gene
+                    the_dmr_res_unfold_num = the_dmr_res_unfold.loc[
+                                             :,
+                                             the_dmr_res_unfold.columns.str.contains(r'(median_delta|padj)')
+                                             ].astype(float)
+                    the_dmr_res_by_gene = the_dmr_res_unfold_num.groupby(the_dmr_res_unfold.G).mean()
+                    # combine classifications: keep consistent classifications, otherwise drop them
+                    gb = the_dmr_res_unfold.classification.groupby(the_dmr_res_unfold.G)
+                    the_dmr_res_class_by_gene = gb.apply(lambda x: x.unique()[0] if len(x.unique()) == 1 else "N/A")
+                    the_dmr_res_by_gene.insert(0, 'classification', the_dmr_res_class_by_gene)
+
+                    # combine results
+                    dmr_comparisons = [('encode', 'ESC line 1'), ('e6194', 'ESC line 2')]
+                    de_comparisons = [('encode', 'ESC line 1'), ('cacchiarelli', 'ESC line 2')]
+                    this = {}
+                    for g, de_row in the_de_res.iterrows():
+                        dm_row = the_dmr_res_by_gene.loc[g]
+                        the_row = [de_row['classification']] + \
+                                  [de_row['FDR_ESC_%s' % t[0]] for t in de_comparisons] + \
+                                  [de_row['logFC_ESC_%s' % t[0]] for t in de_comparisons]
+                        the_row += [dm_row['classification']] + \
+                                   [dm_row['padj_%s' % t[0]] for t in dmr_comparisons] + \
+                                   [dm_row['median_delta_%s' % t[0]] for t in dmr_comparisons]
+                        this[g] = the_row
+                    dedmr_results[pid] = pd.DataFrame(this).transpose()
+                    dedmr_results[pid].columns = pd.MultiIndex.from_arrays([
+                        ['DE'] * 5 + ['DMR'] * 5,
+                        ['Classification', 'FDR ESC line 1', 'FDR ESC line 2', 'logFC ESC line 1', 'logFC ESC line 2'] \
+                        + ['Classification', 'FDR ESC line 1', 'FDR ESC line 2', 'Median delta M ESC line 1', 'Median delta M ESC line 2']
+                    ])
+
                 print "Patient %s: %d in DE and DMR." % (pid, len(both_genes[pid]))
+
+    # report: how many genes are DE and DMR across all lines?
+    logger.info(
+        "In total, %d unique genes are DE and DMR across all %d lines. "
+        "Of these, %d are shared across all lines.",
+        len(setops.reduce_union(*both_genes.values())),
+        len(both_genes),
+        len(setops.reduce_intersection(*both_genes.values()))
+    )
+
+    # output these in tabular form
+    # add a sheet of explanation
+    to_export = collections.OrderedDict()
+    to_export['Explanation'] = pd.Series(collections.OrderedDict(
+        [
+            ('DE ESC line 1', 'ENCODE H1 ESC (%d replicates)' % the_groups.value_counts()['ESC_encode']),
+            ('DE ESC line 2', 'Cacchiarelli et al. (%d lines)' % the_groups.value_counts()['ESC_cacchiarelli']),
+            ('DMR ESC line 1', 'ENCODE H7 ESC (no replicates)'),
+            ('DMR ESC line 2', 'Weltner et al. H9 (3 replicates)'),
+        ],
+    ), name='All comparisons are stated as iPSC - ESC.')
+    to_export.update(collections.OrderedDict([(pid, dedmr_results[pid]) for pid in pids if pid in dedmr_results]))
+
+    excel.pandas_to_excel(to_export, os.path.join(outdir, "DE_DMR_results_combined.xlsx"))
+
 
     # more nuanced approach: check the correlation between DMRs and corresponding genes at the level of median delta M
     # and logFC.
-
-    # to speed things up, we need a one-off link between DMRs and genes
-    # dmr_id_to_ens = {}
-    #
-    # from methylation import dmr, loader as methylation_loader
-    # import references
-    #
-    # anno = methylation_loader.load_illumina_methylationepic_annotation()
-    # cat = references.conversion_table(type='all').set_index('Approved Symbol')
-    # fn = os.path.join(dmr_indir, 'our_ipsc_vs_esc.pkl')
-    #
-    # dmr_res = dmr.DmrResultCollection.from_pickle(fn, anno=anno)
-    # for cl_id, pc in dmr_res.clusters.items():
-    #     if len(pc.genes) > 0:
-    #         try:
-    #             dmr_id_to_ens[cl_id] = cat.loc[pc.genes, 'Ensembl Gene ID'].dropna()
-    #         except KeyError:
-    #             pass
-    #
-    # ens_to_dmr_id = {}
-    # for cl_id, s in dmr_id_to_ens.items():
-    #     for e in s.values:
-    #         ens_to_dmr_id.setdefault(e, []).append(cl_id)
 
     de_logfc = {}
     dmr_median_delta = {}
@@ -542,7 +594,10 @@ if __name__ == '__main__':
     # test: are these DMRs significantly more concordant with DE than randomly chosen ones??
     # statistic to use: rsq of weighted linear regression
     # This will replace the statistics reported by WLS (to some extent)
-    ## TODO!
+
+    # to make this work. we need the FULL list of regions, whether DM or not
+    dmr_full_indir = os.path.join(output.OUTPUT_DIR, "assess_reprog_alt1_apocrita", "results")
+
 
     n_perm = 1000
     rsq_true = {}
@@ -558,6 +613,7 @@ if __name__ == '__main__':
         wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
         rsq_true[pid] = rsq_true
 
-        # now repeat for randomly-selected genes
+        # now repeat for randomly-selected genes (no need for significant DM, just use whatever the delta M value is)
+
 
 
