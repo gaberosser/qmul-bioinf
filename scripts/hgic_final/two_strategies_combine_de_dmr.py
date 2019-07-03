@@ -440,6 +440,37 @@ if __name__ == "__main__":
     export_to_ipa(data_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "de_dmr_significant_for_ipa.xlsx"))
     export_to_ipa(data_concordant_s1, pids).to_excel(os.path.join(outdir_s1_ipa, "concordant_de_dmr_significant_for_ipa.xlsx"))
 
+    # out of interest, how does this compare to the alternative approach where we require patient-specific DE and DMR
+    # separately, then look for concordance/matching?
+
+    # start with concordant results (data_s1_concordant)
+    venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member_concordant)
+
+    # repeat with the other approach
+    vs_dm, vc_dm = setops.venn_from_arrays(*[dmr_res_s1[pid].results_significant.keys() for pid in pids])
+    vs_de, vc_de = setops.venn_from_arrays(*[de_res_s1[pid]['Gene Symbol'].dropna() for pid in pids])
+    ps_dm = dict([
+        (pid, vs_dm[v]) for pid, v in setops.specific_sets(pids).items()
+    ])
+    ps_dm_genes = {}
+    for pid, cids in ps_dm.items():
+        ps_dm_genes[pid] = sorted(setops.reduce_union(*[[t[0] for t in dmr_res_s1.clusters[c].genes] for c in cids]))
+    ps_de = dict([
+        (pid, vs_de[v]) for pid, v in setops.specific_sets(pids).items()
+    ])
+
+    ps_de_dm = {}
+    for pid in pids:
+        this_genes = set(ps_de[pid]).intersection(ps_dm_genes[pid])
+        this_clusters = []
+        for c in ps_dm[pid]:
+            this = [t[0] for t in dmr_res_s1.clusters[c].genes]
+            if len(this_genes.intersection(this)):
+                this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
+        ps_de_dm[pid] = joint_de_dmr_concordant_s1[pid].reindex(this_clusters).dropna(axis=0, how='all')
+
+
+
     ##################
     ### STRATEGY 2 ###
     ##################

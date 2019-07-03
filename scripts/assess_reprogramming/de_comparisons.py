@@ -699,9 +699,8 @@ if __name__ == '__main__':
                 fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s_permutation.tiff" % pid), dpi=200)
 
     # now use the permutation outcomes as a null hypothesis
-    # generate a few summary plots to show the outcome
-
     # proportion of hits that are concordant
+
     conc_true = dict([
         (pid, (np.sign(dm_true[pid]) != np.sign(de_true[pid])).sum() / float(de_true[pid].shape[0]) * 100.) for pid in dm_true
     ])
@@ -731,5 +730,14 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "permutation_test_pct_concordant.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "permutation_test_pct_concordant.tiff"), dpi=200)
 
-    # slope of linear fit
+    # slope and significance of linear fit (just observed values)
+    to_plot = pd.Series([wls_true[pid].params['x'] for pid in sorted(wls_true.keys())], index=sorted(wls_true.keys()))
+    to_plot_pvals = pd.Series([wls_true[pid].pvalues['x'] for pid in to_plot.index], index=to_plot.index)
+    fig = plt.figure(figsize=(5.3, 3.5))
+    ax = fig.add_subplot(111)
+    to_plot.plot.bar(color='lightblue', edgecolor='k', linewidth=[0 if t > 0.05 else 1.5 for t in to_plot_pvals], ax=ax)
+    ax.set_ylabel('Linear regression slope')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "concordance_linear_regression_slope.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "concordance_linear_regression_slope.tiff"), dpi=200)
 
