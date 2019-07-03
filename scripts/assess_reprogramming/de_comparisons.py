@@ -516,12 +516,26 @@ if __name__ == '__main__':
 
     excel.pandas_to_excel(to_export, os.path.join(outdir, "DE_DMR_results_combined.xlsx"))
 
+    def aggregate_dm_results_by_gene(dmr_res, genes):
+        delta_m = {}
+        fdr = {}
+
+        for g in genes:
+            this_ix = dmr_res.index[dmr_res.genes.apply(lambda x: g in x)]
+            delta_m[g] = dmr_res.loc[this_ix, dmr_res.columns.str.contains('median_delta')].mean(axis=0)
+            fdr[g] = dmr_res.loc[this_ix, dmr_res.columns.str.contains('padj')].mean(axis=0)
+
+        delta_m = pd.DataFrame(delta_m).transpose().sort_index()
+        fdr = pd.DataFrame(fdr).transpose().loc[delta_m.index]
+
+        return delta_m, fdr
 
     # more nuanced approach: check the correlation between DMRs and corresponding genes at the level of median delta M
     # and logFC.
 
     de_logfc = {}
     dmr_median_delta = {}
+    dmr_fdr = {}
 
     for pid in pids:
         fn = os.path.join(dmr_indir, "iPSC%s_classified_dmrs.csv" % pid)
@@ -539,12 +553,7 @@ if __name__ == '__main__':
             common_ix = sorted(setops.reduce_intersection(*[t.index for t in this_de_full.values()]))
             common_gs = this_de_full.values()[0].loc[common_ix, 'Gene Symbol']
 
-            this_dmr_dm = {}
-
-            for g in common_gs:
-                this_ix = this_dmr.index[this_dmr.genes.apply(lambda x: g in x)]
-                this_dmr_dm[g] = this_dmr.loc[this_ix, this_dmr.columns.str.contains('median_delta')].mean(axis=0)
-            dmr_median_delta[pid] = pd.DataFrame(this_dmr_dm).transpose().sort_index()
+            dmr_median_delta[pid], dmr_fdr[pid]= aggregate_dm_results_by_gene(this_dmr, common_gs)
 
             this_logfc = pd.concat(
                 (this_de_full[r].loc[common_ix, 'logFC'] for r in ref_labels),
@@ -558,38 +567,24 @@ if __name__ == '__main__':
     # scatterplot (one per patient)
     import statsmodels.formula.api as sm
 
-    for pid in pids:
-        if pid in de_logfc:
+    def wls_plot(x, y, dx, dy, wls_fit, ax=None):
+        if ax is None:
             fig = plt.figure(figsize=(5, 4))
             ax = fig.add_subplot(111)
-            this_de = de_logfc[pid].mean(axis=1)
-            this_dm = dmr_median_delta[pid].mean(axis=1)
-            ax.scatter(this_dm, this_de, edgecolor='k', facecolor='royalblue', zorder=2)
+            ax.scatter(x, y, edgecolor='k', facecolor='royalblue', zorder=2)
             ax.errorbar(
-                this_dm,
-                this_de,
-                xerr=dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values / 2.,
-                yerr=de_logfc[pid].diff(axis=1).dropna(axis=1).values / 2.,
+                x,
+                y,
+                xerr=np.abs(dx) / 2.,
+                yerr=np.abs(dy) / 2.,
                 ls='none',
                 color='royalblue',
                 zorder=1
             )
-            ws = pd.DataFrame({'x': this_dm, 'y': this_de})
-            xerr = dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values
-            yerr = de_logfc[pid].diff(axis=1).dropna(axis=1).values
-            weights = pd.Series(((xerr ** 2 + yerr ** 2) ** -.5).flatten(), index=ws.index)
-            wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
-            print "Patient %s" % pid
-            print wls_fit.summary()
-            ax.plot(ws.x, wls_fit.predict(), color='darkgray', linewidth=1.5)
+            ax.plot(x, wls_fit.predict(), color='darkgray', linewidth=1.5)
             ax.axhline(0, linestyle='--', color='k', linewidth=1.)
             ax.axvline(0, linestyle='--', color='k', linewidth=1.)
-            ax.set_xlabel(r'Methylation median $\Delta M$')
-            ax.set_ylabel(r'Gene expression $\log_2$ fold change')
-            fig.tight_layout()
-            fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.png" % pid), dpi=200)
-            fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.tiff" % pid), dpi=200)
-
+        return ax
 
     # test: are these DMRs significantly more concordant with DE than randomly chosen ones??
     # statistic to use: rsq of weighted linear regression
@@ -597,11 +592,25 @@ if __name__ == '__main__':
 
     # to make this work. we need the FULL list of regions, whether DM or not
     dmr_full_indir = os.path.join(output.OUTPUT_DIR, "assess_reprog_alt1_apocrita", "results")
-
+    dmr_in_filenames_h7 = dict([
+        (pid, "iPSC%s-ESCH7 hESC.csv" % pid) for pid in de_logfc
+    ])
+    dmr_in_filenames_h9 = dict([
+        (pid, "iPSC%s-ESCH9_p50.csv" % pid) for pid in de_logfc
+    ])
 
     n_perm = 1000
-    rsq_true = {}
-    rsq_permute = {}
+    dm_true = {}
+    dm_permute = {}
+    de_true = {}
+    de_permute = {}
+
+    wls_true = {}
+    wls_permute = {}
+
+    def filter_dm(res):
+        ix = res.genes.apply(make_tuple).apply(len) > 0
+        return res.loc[ix]
 
     for pid in de_logfc:
         this_de = de_logfc[pid].mean(axis=1)
@@ -610,10 +619,117 @@ if __name__ == '__main__':
         xerr = dmr_median_delta[pid].diff(axis=1).dropna(axis=1).values
         yerr = de_logfc[pid].diff(axis=1).dropna(axis=1).values
         weights = pd.Series(((xerr ** 2 + yerr ** 2) ** -.5).flatten(), index=ws.index)
+        # alternative: use -log10(DMR FDR)
+        # however, this is not possible with the permutation approach (may not be defined)
+        # weights = -np.log10(dmr_fdr[pid]).sum(axis=1)
         wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
-        rsq_true[pid] = rsq_true
+        wls_true[pid] = wls_fit
+
+        dm_true[pid] = this_dm
+        de_true[pid] = this_de
+
+        ax = wls_plot(this_dm, this_de, xerr, yerr, wls_fit)
+        fig = ax.figure
+        ax.set_xlabel(r'Methylation median $\Delta M$')
+        ax.set_ylabel(r'Gene expression $\log_2$ fold change')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.png" % pid), dpi=200)
+        fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s.tiff" % pid), dpi=200)
 
         # now repeat for randomly-selected genes (no need for significant DM, just use whatever the delta M value is)
+        all_dm_h7 = pd.read_csv(os.path.join(dmr_full_indir, dmr_in_filenames_h7[pid]), header=0, index_col=0)
+        all_dm_h7 = filter_dm(all_dm_h7)
+        all_dm_h9 = pd.read_csv(os.path.join(dmr_full_indir, dmr_in_filenames_h9[pid]), header=0, index_col=0)
+        all_dm_h9 = filter_dm(all_dm_h9)
+        # the two DMR dataframes share the same cluster ID index
+        common_ix = all_dm_h7.index.intersection(all_dm_h9.index)
+        all_dm = pd.concat([
+            all_dm_h7.loc[common_ix, ['median_delta', 'padj']],
+            all_dm_h9.loc[common_ix, ['median_delta', 'padj', 'genes']],
+        ], axis=1)
+        all_dm.columns = ['median_delta_1', 'padj_1', 'median_delta_2', 'padj_2', 'genes']
 
+        all_de_1 = de_res_full[("iPSC_%s_ours" % pid, 'ESC_encode')]
+        all_de_2 = de_res_full[("iPSC_%s_ours" % pid, 'ESC_cacchiarelli')]
+        common_ix = all_de_1.index.intersection(all_de_2.index)
+        common_ix = all_de_1.loc[common_ix, 'Gene Symbol'].dropna().index
+        common_ix = common_ix[~all_de_1.loc[common_ix, 'Gene Symbol'].duplicated()]
 
+        all_de = pd.concat([
+            all_de_1.loc[common_ix, ['logFC', 'Gene Symbol']].set_index('Gene Symbol'),
+            all_de_2.loc[common_ix, ['logFC', 'Gene Symbol']].set_index('Gene Symbol'),
+        ], axis=1)
+        all_de.columns = range(2)
+
+        # reduce to those that have at least some DM result
+        all_dm_genes = sorted(set(all_dm.genes.apply(make_tuple).sum()))
+
+        common_ix = all_de.index.intersection(all_dm_genes)
+        all_de = all_de.loc[common_ix]
+        all_dm = all_dm.loc[all_dm.genes.apply(make_tuple).apply(lambda x: len(set(x).intersection(common_ix)) > 0)]
+
+        wls_permute[pid] = []
+        dm_permute[pid] = []
+        de_permute[pid] = []
+
+        n_pick = this_de.size
+        for i in range(n_perm):
+            # random selection of genes
+            this_genes = np.random.choice(common_ix, size=n_pick, replace=False)
+            perm_de = all_de.loc[this_genes]
+            perm_dm, _ = aggregate_dm_results_by_gene(all_dm, this_genes)
+            ws = pd.DataFrame({'x': perm_dm.mean(axis=1), 'y': perm_de.mean(axis=1)})
+
+            dm_permute[pid].append(ws['x'])
+            de_permute[pid].append(ws['y'])
+
+            xerr = perm_de.diff(axis=1).iloc[:, -1].values
+            yerr = perm_dm.diff(axis=1).iloc[:, -1].values
+            weights = pd.Series(((xerr ** 2 + yerr ** 2) ** -.5).flatten(), index=ws.index)
+            wls_fit = sm.wls('y ~ x', data=ws, weights=weights).fit()
+            wls_permute[pid].append(wls_fit)
+
+            if i == 0:
+                ax = wls_plot(ws['x'], ws['y'], xerr, yerr, wls_fit)
+                fig = ax.figure
+                ax.set_xlabel(r'Methylation median $\Delta M$')
+                ax.set_ylabel(r'Gene expression $\log_2$ fold change')
+                fig.tight_layout()
+                fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s_permutation.png" % pid), dpi=200)
+                fig.savefig(os.path.join(outdir, "de_logfc_vs_dmr_delta_m_%s_permutation.tiff" % pid), dpi=200)
+
+    # now use the permutation outcomes as a null hypothesis
+    # generate a few summary plots to show the outcome
+
+    # proportion of hits that are concordant
+    conc_true = dict([
+        (pid, (np.sign(dm_true[pid]) != np.sign(de_true[pid])).sum() / float(de_true[pid].shape[0]) * 100.) for pid in dm_true
+    ])
+    conc_permute = dict([
+        (
+            pid,
+            [(np.sign(u) != np.sign(v)).sum() / float(u.shape[0]) * 100. for u, v in zip(dm_permute[pid], de_permute[pid])]
+        ) for pid in dm_true
+    ])
+
+    fig, axs = plt.subplots(nrows=len(conc_true), ncols=1, sharex=True, sharey=True, figsize=(5.4, 4.7))
+    for i, pid in enumerate(sorted(conc_true.keys())):
+        ax = axs[i]
+        n_pick = dm_true[pid].size
+        ax.hist(conc_permute[pid], np.linspace(0, 100, n_pick), color='lightblue', edgecolor='k', linewidth=1.0)
+        ax.axvline(conc_true[pid], c='k', linestyle='--', linewidth=1.5)
+        ax.set_ylabel(pid)
+        p = (conc_permute[pid] >= conc_true[pid]).sum() / float(n_perm)
+        text_kws = {}
+        if p < 0.05:
+            text_kws['weight'] = 'bold'
+        ax.text(84, 100, "p = %.3f" % p, **text_kws)
+    big_ax = common.add_big_ax_to_subplot_fig(fig)
+    big_ax.set_ylabel('Frequency', labelpad=25.)
+    axs[-1].set_xlabel('Percentage concordant DE/DMR')
+    fig.subplots_adjust(left=0.16, right=0.99, bottom=0.1, top=0.98, hspace=0.1)
+    fig.savefig(os.path.join(outdir, "permutation_test_pct_concordant.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "permutation_test_pct_concordant.tiff"), dpi=200)
+
+    # slope of linear fit
 
