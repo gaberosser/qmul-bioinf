@@ -92,9 +92,9 @@ if __name__ == '__main__':
     else:
         raise Exception("Unable to locate pre-existing DE results.")
 
-    the_hash = tsgd.de_results_hash(meth_obj.meta.index.tolist(), dmr_hash_dict)
-    filename = 'de_results_paired_comparison.%d.pkl' % the_hash
-    fn = os.path.join(DE_LOAD_DIR, filename)
+    the_hash = tsgd.dmr_results_hash(meth_obj.meta.index.tolist(), dmr_hash_dict)
+    filename = 'dmr_results_paired_comparison.%d.pkl' % the_hash
+    fn = os.path.join(DMR_LOAD_DIR, filename)
 
     if os.path.isfile(fn):
         logger.info("Loading pre-computed DMR results from %s", fn)

@@ -133,10 +133,42 @@ class GtfAnnotation(gffutils.FeatureDB):
             else:
                 yield t
 
+    def get_children_descending_hierarchy(self, parents, ftr=None, ftr_hierarchy=None):
+        if ftr_hierarchy is not None:
+            if ftr is not None:
+                raise AttributeError("Either supply ftr_hierarchy OR ftr")
+
+        if len(parents) == 0:
+            return []
+
+        stack = {}
+
+        for p in parents:
+            this_ftr = ftr_hierarchy[0] if len(ftr_hierarchy) > 0 else ftr
+            children = list(self.children(p, featuretype=this_ftr, level=1))
+            # print "Parent %s. %d children of feature type %s." % (repr(p), len(children), repr(this_ftr))
+
+            if ftr_hierarchy is not None:
+                if len(ftr_hierarchy) > 1:
+                    # print "Current feature hierarchy long enough to continue."
+                    new_ftr_hier = ftr_hierarchy[1:]
+                    # print "Next up: %s." % repr(new_ftr_hier)
+                    stack[p] = self.get_children_descending_hierarchy(children, ftr=ftr, ftr_hierarchy=new_ftr_hier)
+                else:
+                    # print "No more entries on the feature hierarchy list. Stop here"
+                    # reached the end of this line
+                    stack[p] = children
+            else:
+                # print "No feature hierarchy defined."
+                stack[p] = self.get_children_descending_hierarchy(children, ftr=ftr)
+
+        return stack
+
     def hierarchical_feature_search(
             self,
             parent_value,
             hierarchical_feature_types,
+            parent_feature_type='gene',
             parent_key='gene_name',
             region=None,
             strand=None,
@@ -152,17 +184,14 @@ class GtfAnnotation(gffutils.FeatureDB):
         :param hierarchical_feature_types:
         :return:
         """
-        if len(hierarchical_feature_types) < 2:
-            raise ValueError("hierarchical_feature_types must have length >= 2")
-
         parents = self.feature_search(
             parent_value,
-            feature_type=hierarchical_feature_types[0],
+            feature_type=parent_feature_type,
             key=parent_key,
             region=region,
             strand=strand
         )
-
+        return self.get_children_descending_hierarchy(list(parents), ftr_hierarchy=hierarchical_feature_types)
 
 
 def get_reference_genome_directory(tax_id, version='default'):

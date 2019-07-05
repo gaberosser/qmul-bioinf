@@ -1,5 +1,5 @@
 from matplotlib import pyplot as plt, patches, collections as plt_collections
-from utils import genomics, setops
+from utils import genomics, setops, dictionary
 
 PATCH_KWS = {
     'edgecolor': 'k',
@@ -110,6 +110,7 @@ class MethylationExpressionLocusPlot(object):
         if gtf_fn is None:
             gtf_fn = genomics.get_reference_genome_fasta(tax_id, version=genome_version)
         self.gtf_fn = gtf_fn
+        self.db = genomics.GtfAnnotation(gtf_fn)
         self.meta = None
         self.mdat = None
         self.dmr_res = None
@@ -158,13 +159,31 @@ class MethylationExpressionLocusPlot(object):
         self.de_res = de_res
         self.check_data_compat()
 
-    def plot_gene(self, gene, rois, figsize=(8, 6)):
+    def plot_gene(self, gene, rois, edge_buffer_bp=500, figsize=(8, 6)):
+        feat_res = self.db.hierarchical_feature_search(
+            gene,
+            [['transcript'], ['exon', 'three_prime_utr', 'five_prime_utr']]
+        )
+        if len(feat_res) == 0:
+            raise ValueError("No search results for gene %s" % gene)
+
+        # identify clusters (not necessarily DMRs) associated with this gene
         this_clusters = dict([
             (k, v) for k, v in self.dmr_res.clusters.items() if len([x for x in v.genes if x[0] == gene])
         ])
-        feat_res = genomics.get_features_from_gtf(gene, tax_id=self.tax_id, version=self.genome_version)
-        for i, (ftr, x) in enumerate(feat_res.items()):
-            # get clusters and DMRs
+
+        # feat_res = genomics.get_features_from_gtf(gene, tax_id=self.tax_id, version=self.genome_version)
+
+        # get coordinate range (min, max) - this only requires the parental gene search results
+        xmin = 1e12
+        xmax = 0
+        this_chrom = None
+
+        for ftr in feat_res:
+            if this_chrom is None:
+                this_chrom = ftr.chrom
+            elif this_chrom != ftr.chrom:
+                raise AttributeError("Multiple gene search results on DIFFERENT chromosomes are not supported")
             check_intersection = lambda x: \
                 (ftr.start <= x.coord_range[0] <= ftr.stop) or \
                 (ftr.start <= x.coord_range[1] <= ftr.stop) or \
@@ -174,6 +193,13 @@ class MethylationExpressionLocusPlot(object):
                     (k, v) for k, v in self.dmr_res.clusters.items() if v.chr == ftr.chrom and check_intersection(v)
                 ])
             )
+            xmin = min(xmin, ftr.start)
+            xmax = max(xmax, ftr.stop)
+
+        # include specified margins
+        xmin -= edge_buffer_bp
+        xmax += edge_buffer_bp
+
         this_dmrs = {}
         for k, v in this_clusters.items():
             for k2, t in self.dmr_res.results.items():
@@ -202,32 +228,46 @@ class MethylationExpressionLocusPlot(object):
                 de_axs[nm] = fig.add_subplot(gs[i, 1], sharex=de_share, sharey=de_share)
                 de_share = de_axs[nm]
 
-        # keep tabs on all probes involved in DMRs (they may be outside of the region)
-        probes_in_dmrs = set()
+        # generate a list of all probes to plot
+        # these are either in relevant DMRs or just within the genomic region being shown
+
+        # add all probes involved in DMRs (they may be outside of the region)
+        include_probes = set()
 
         for cid, d1 in this_dmrs.items():
             pc = this_clusters[cid]
-            probes_in_dmrs.update(pc.pids)
-            for pid, d2 in d1.items():
-                this_ax = dm_axs[pid]
-                # bar showing DMR coverage and delta
-                this_ax.barh(
-                    0,
-                    pc.coord_range[1] - pc.coord_range[0],
-                    left=pc.coord_range[0],
-                    height=d2['median_change'],
-                    color=DIRECTION_COLOURS['up' if d2['median_change'] > 0 else 'down'],
-                    align='edge',
-                    zorder=15,
-                    edgecolor='k',
-                    linewidth=0.75
-                )
+            include_probes.update(pc.pids)
 
-        # scatter showing individual probe values
-        ix = (
-                     (self.anno.CHR == ftr.chrom) & (self.anno.MAPINFO >= ftr.start) & (self.anno.MAPINFO <= ftr.stop)
-             ) | (self.anno.index.isin(probes_in_dmrs))
-        this_probe_ids = self.anno.loc[self.anno.index[ix].intersection(self.mdat.index), 'MAPINFO'].sort_values().index
+        # add all probes in the region
+        ix = (self.anno.CHR == this_chrom) & (self.anno.MAPINFO >= xmin) & (self.anno.MAPINFO <= xmax)
+        include_probes.update(self.anno.index[ix])
+
+        # reduce to those probes in the data
+        include_probes = self.mdat.index.intersection(include_probes)
+
+        # sort by coordinate
+        include_probes = self.anno.loc[include_probes, 'MAPINFO'].sort_values().index
+
+        # bar plot DMRs
+        for cid, d1 in this_dmrs.items():
+            pc = this_clusters[cid]
+            for nm, d2 in d1.items():
+                if nm in self.dmr_comparison_groups:
+                    this_ax = dm_axs[nm]
+                    # bar showing DMR coverage and delta
+                    this_ax.barh(
+                        0,
+                        pc.coord_range[1] - pc.coord_range[0],
+                        left=pc.coord_range[0],
+                        height=d2['median_change'],
+                        color=DIRECTION_COLOURS['up' if d2['median_change'] > 0 else 'down'],
+                        align='edge',
+                        zorder=15,
+                        edgecolor='k',
+                        linewidth=0.75
+                    )
+
+        # scatter plot individual probes
         ymin = 0
         ymax = 0
         for nm, grp in self.dmr_comparison_groups.items():
