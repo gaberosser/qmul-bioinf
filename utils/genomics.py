@@ -43,6 +43,38 @@ def multiple_region_lookup(regions, db, njobs=None):
     return res
 
 
+def get_children_descending_hierarchy(db, parents, ftr=None, ftr_hierarchy=None):
+    if ftr_hierarchy is not None:
+        if ftr is not None:
+            raise AttributeError("Either supply ftr_hierarchy OR ftr")
+
+    if len(parents) == 0:
+        return []
+
+    stack = {}
+
+    for p in parents:
+        this_ftr = ftr_hierarchy[0] if len(ftr_hierarchy) > 0 else ftr
+        children = list(db.children(p, featuretype=this_ftr, level=1))
+        print "Parent %s. %d children of feature type %s." % (repr(p), len(children), repr(this_ftr))
+
+        if ftr_hierarchy is not None:
+            if len(ftr_hierarchy) > 1:
+                print "Current feature hierarchy long enough to continue."
+                new_ftr_hier = ftr_hierarchy[1:]
+                print "Next up: %s." % repr(new_ftr_hier)
+                stack[p] = get_children_descending_hierarchy(db, children, ftr=ftr, ftr_hierarchy=new_ftr_hier)
+            else:
+                print "No more entries on the feature hierarchy list. Stop here"
+                # reached the end of this line
+                stack[p] = children
+        else:
+            print "No feature hierarchy defined."
+            stack[p] = get_children_descending_hierarchy(db, children, ftr=ftr)
+
+    return stack
+
+
 class GtfAnnotation(gffutils.FeatureDB):
     def __init__(self, gtf_fn, db_fn=None, logger=_logger, **kwargs):
         if not os.path.isfile(gtf_fn):
@@ -85,12 +117,52 @@ class GtfAnnotation(gffutils.FeatureDB):
         it = self.features_of_type(
             feature_type,
             limit=region,
-            strand=strand,
-
+            strand=strand
         )
         for t in it:
             if t.attributes.get(key, [None])[0] == value:
                 yield t
+
+    def children(self, id, level=None, featuretype=None, order_by=None,
+                 reverse=False, limit=None, completely_within=False, include_self=False):
+        it = super(GtfAnnotation, self).children(id, level=level, featuretype=featuretype, order_by=order_by,
+                                                 reverse=reverse, limit=limit, completely_within=completely_within)
+        for t in it:
+            if not include_self and t == id:
+                pass
+            else:
+                yield t
+
+    def hierarchical_feature_search(
+            self,
+            parent_value,
+            hierarchical_feature_types,
+            parent_key='gene_name',
+            region=None,
+            strand=None,
+    ):
+        """
+        Starting with a top level feature search, move down the hierarchy extracting children where they are of the
+        correct type.
+        :param parent_value:
+        :param parent_feature_type:
+        :param parent_key:
+        :param region:
+        :param strand:
+        :param hierarchical_feature_types:
+        :return:
+        """
+        if len(hierarchical_feature_types) < 2:
+            raise ValueError("hierarchical_feature_types must have length >= 2")
+
+        parents = self.feature_search(
+            parent_value,
+            feature_type=hierarchical_feature_types[0],
+            key=parent_key,
+            region=region,
+            strand=strand
+        )
+
 
 
 def get_reference_genome_directory(tax_id, version='default'):
