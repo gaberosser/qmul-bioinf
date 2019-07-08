@@ -251,6 +251,7 @@ if __name__ == "__main__":
     me_obj, anno = load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
     me_data = me_obj.data
     me_meta = me_obj.meta
+    me_meta.insert(0, 'patient_id', me_meta.index.str.replace(r'(GBM|DURA)(?P<pid>[0-9]{3}).*', '\g<pid>'))
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results
@@ -469,7 +470,50 @@ if __name__ == "__main__":
                 this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
         ps_de_dm[pid] = joint_de_dmr_concordant_s1[pid].reindex(this_clusters).dropna(axis=0, how='all')
 
+    from plotting.genomics import MethylationExpressionLocusPlotter
+    import collections
 
+    dmr_comparison_groups = collections.OrderedDict([(pid, {}) for pid in consts.PIDS])
+    gg = me_data.columns.groupby(zip(me_meta.patient_id, me_meta.type))
+    for (pid, typ), samples in gg.items():
+        dmr_comparison_groups[pid][typ] = samples
+
+    plt_obj = MethylationExpressionLocusPlotter()
+    plt_obj.set_mvalues(me_data)
+    plt_obj.set_dmr_res(dmr_res_s1, dmr_comparison_groups)
+    plt_obj.set_de_res(de_res_s1)
+
+    # shortlist
+    shortlist = sorted(setops.reduce_union(*[[u[1] for u in t.index] for t in ps_de_dm.values()]))
+
+    import datetime
+    from matplotlib.backends.backend_pdf import PdfPages
+    import matplotlib.pyplot as plt
+
+    # Create the PdfPages object to which we will save the pages:
+    # The with statement makes sure that the PdfPages object is closed properly at
+    # the end of the block, even if an Exception occurs.
+    with PdfPages(os.path.join(outdir, "de_dmr_shortlist_mex_plots.pdf")) as pdf:
+        for g in shortlist:
+            the_obj = plt_obj.plot_gene(g)
+            the_obj.dm_axs[pids[0]].set_title(g)
+            the_obj.gs.update(top=0.95)
+            pdf.savefig(the_obj.fig)
+            plt.close(the_obj.fig)
+
+        # pdf.attach_note("plot of sin(x)")  # you can add a pdf note to
+        # attach metadata to a page
+
+        # We can also set the file's metadata via the PdfPages object:
+        d = pdf.infodict()
+        d['Title'] = 'Patient-specific DE/DMR, shortlist'
+        d['Author'] = 'Gabriel Rosser'
+        d['Subject'] = ''
+        d['CreationDate'] = datetime.datetime.now()
+        d['ModDate'] = datetime.datetime.today()
+
+
+    raise StopIteration
 
     ##################
     ### STRATEGY 2 ###
