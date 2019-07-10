@@ -478,7 +478,15 @@ if __name__ == "__main__":
     for (pid, typ), samples in gg.items():
         dmr_comparison_groups[pid][typ] = samples
 
+    # set plotting attributes
+    plot_colours = {'GBM': '#de8100', 'iNSC': '#1f8bff'}
+    plot_markers = {'GBM': 'o', 'iNSC': '^'}
+    plot_zorder = {'GBM': 21, 'iNSC': 20}
+    plot_alpha = {'GBM': 0.5, 'iNSC': 0.7}
+    # TODO: set DE and DM colours as a red / green diverging gradient
+
     plt_obj = MethylationExpressionLocusPlotter()
+    plt_obj.set_plot_parameters(colours=plot_colours, markers=plot_markers, zorder=plot_zorder, alpha=plot_alpha)
     plt_obj.set_mvalues(me_data)
     plt_obj.set_dmr_res(dmr_res_s1, dmr_comparison_groups)
     plt_obj.set_de_res(de_res_s1)
@@ -493,13 +501,19 @@ if __name__ == "__main__":
     # Create the PdfPages object to which we will save the pages:
     # The with statement makes sure that the PdfPages object is closed properly at
     # the end of the block, even if an Exception occurs.
+    count = error_count = 0
     with PdfPages(os.path.join(outdir, "de_dmr_shortlist_mex_plots.pdf")) as pdf:
         for g in shortlist:
-            the_obj = plt_obj.plot_gene(g)
-            the_obj.dm_axs[pids[0]].set_title(g)
-            the_obj.gs.update(top=0.95)
-            pdf.savefig(the_obj.fig)
-            plt.close(the_obj.fig)
+            try:
+                the_obj = plt_obj.plot_gene(g)
+                the_obj.dm_axs[pids[0]].set_title(g)
+                the_obj.gs.update(top=0.95)
+                pdf.savefig(the_obj.fig)
+                plt.close(the_obj.fig)
+                count += 1
+            except ValueError:
+                logger.error("Unable to generate plot for gene %s.", g)
+                error_count += 1
 
         # pdf.attach_note("plot of sin(x)")  # you can add a pdf note to
         # attach metadata to a page
@@ -512,6 +526,7 @@ if __name__ == "__main__":
         d['CreationDate'] = datetime.datetime.now()
         d['ModDate'] = datetime.datetime.today()
 
+    logger.info("Generated PDF report containing %d genes. %d failed.", count, error_count)
 
     raise StopIteration
 

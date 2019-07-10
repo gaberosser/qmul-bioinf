@@ -1,7 +1,8 @@
-from matplotlib import pyplot as plt, patches, collections as plt_collections
+import numpy as np
+from matplotlib import pyplot as plt, patches, collections as plt_collections, colors
 from utils import genomics, setops, dictionary, log
 from plotting import common
-
+logger = log.get_console_logger()
 
 PATCH_KWS = {
     'edgecolor': 'k',
@@ -25,7 +26,42 @@ DIRECTION_COLOURS = {
 }
 
 
-def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=None, patch_kwargs=None):
+def direction_colour_getter(direction_colours=DIRECTION_COLOURS, vmin=None, vmax=None):
+    """
+    Generate a direction colour getters, which returns a hexadecimal colour code when called with a direction.
+    :param direction_colours: Various inputs supported
+    string: The name of a matplotlib colourmap. Must specify vmin and vmax.
+    dict: Must be keyed by 'up' and 'down', this is used to create a binary colourmap. No need to specify vmin or vmax.
+    array of hex strings: Used to generate a discrete colourmap between the specified vmin and vmax values.
+    :param vmin, vmax: The min and max values used for the scalar colour mapping.
+    :return: Function that takes a single scalar input and returns a hex colour.
+    """
+    if isinstance(direction_colours, str):
+        if vmin is None or vmax is None:
+            raise AttributeError("When supplying the name of a matplotlib colourmap, must also supply vmin and vmax.")
+        return common.continuous_cmap(vmin, vmax, cmap=direction_colours)
+    elif isinstance(direction_colours, dict):
+        if len({'up', 'down'}.intersection(direction_colours.keys())) != 2:
+            raise ValueError("When supplying a dictionary, it must contain the keys 'up' and 'down'.")
+        return lambda x: direction_colours['up' if x > 0 else 'down']
+    elif hasattr(direction_colours, '__iter__'):
+        if vmin is None or vmax is None:
+            raise AttributeError("When supplying an iterable of colours, must also supply vmin and vmax.")
+        norm = common.Normalize(vmin=vmin, vmax=vmax)
+        lsm = colors.LinearSegmentedColormap.from_list(direction_colours)
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=lsm)
+        return lambda x: colors.to_hex(sm.to_rgba(x))
+    elif callable(direction_colours):
+        return direction_colours
+    else:
+        ## TODO: support ColorMap objects from matplotlib??
+        raise NotImplementedError("Unsupported direction_colours object.")
+
+
+DIRECTION_COLOUR_GETTER = direction_colour_getter(DIRECTION_COLOURS)
+
+
+def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=None, patch_kwargs=None, add_arrow=True):
     """
 
     :param feature_res: Output from utils.genomics.get_features_from_gtf. Nested dictionary. Keys are features. The
@@ -46,11 +82,17 @@ def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=No
     y = 0
     gene_y = []
     chroms = set()
+    the_strand = None
 
     for gene_ftr, d1 in feature_res.items():
         chroms.add(gene_ftr.chrom)
         if len(chroms) > 1:
             raise AttributeError("The supplied features inhabit different chromosomes (%s)." % ', '.join(chroms))
+        if the_strand is None:
+            the_strand = gene_ftr.strand
+        elif the_strand != gene_ftr.strand:
+            logger.warn("Supplied features are present on both strands. Axis labels will be confusing.")
+
         gene_y.append(y)
         if y != 0:
             # start new gene section
@@ -85,19 +127,12 @@ def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=No
     ax.set_xlim([xmin, xmax])
     ax.set_ylim([-bar_height, y - 1 + bar_height])
 
-    # go back through and add directions
-    # we'll assume all directions are the same across transcripts (FIXME!)
-    chrom = None
-    for i, (gene_ftr, d1) in enumerate(feature_res.items()):
-        midy = (gene_y[i + 1] + gene_y[i]) / 2
-        if gene_ftr.strand == '+':
-            txt0 = "5'"
-            txt1 = "3'"
+    if add_arrow:
+        if the_strand == '+':
+            loc_str = 'bottom right'
         else:
-            txt1 = "5'"
-            txt0 = "3'"
-        ax.text(xmin + edge_buffer_bp * 0.5, midy, txt0, horizontalalignment='right', va='center', fontsize=12)
-        ax.text(xmax - edge_buffer_bp * 0.5, midy, txt1, horizontalalignment='left', va='center', fontsize=12)
+            loc_str = 'bottom left'
+        common.arrowed_spines(ax, lw=0.3, locations=(loc_str,))
 
     ax.set_xlabel('Chromosome %s' % the_chrom)
     ax.yaxis.set_visible(False)
@@ -107,7 +142,7 @@ def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=No
 
 class MethylationExpressionLocusPlot(object):
 
-    def __init__(self, row_names, fig_kws=None):
+    def __init__(self, row_names, fig_kws=None, edge_buffer=500):
         if fig_kws is None:
             fig_kws = {'figsize': (8, 6)}
         self.fig_kws = fig_kws
@@ -121,8 +156,17 @@ class MethylationExpressionLocusPlot(object):
         self.include_de = False
         self.row_names = row_names
         self.nrows = len(row_names) + 1  # additional row for the track plot
+
         self.mdat_min = None
         self.mdat_max = None
+        self.de_min = None
+        self.de_max = None
+        self.coord_min = None
+        self.coord_max = None
+        self.strand = None
+
+        self.edge_buffer = edge_buffer
+
         self.setup_figure_axes()
 
     def set_de_on(self, toggle=True):
@@ -136,28 +180,36 @@ class MethylationExpressionLocusPlot(object):
         self.gs = plt.GridSpec(nrows=self.nrows, ncols=2, width_ratios=(10000, 1))
         self.track_ax = self.fig.add_subplot(self.gs[-1, 0])
         dm_sharex = None
-        de_sharex = None
+        de_sharey = None
 
-        # plot_gene_transcripts(feat_res, ax=track_ax)
         self.dm_axs = {}
         self.de_axs = {}
         for i, nm in enumerate(self.row_names):
             self.dm_axs[nm] = self.fig.add_subplot(self.gs[i, 0], sharex=dm_sharex)
             dm_sharex = self.dm_axs[nm]
-            self.de_axs[nm] = self.fig.add_subplot(self.gs[i, 1], sharex=de_sharex, sharey=de_sharex)
-            de_sharex = self.de_axs[nm]
+            self.de_axs[nm] = self.fig.add_subplot(self.gs[i, 1], sharey=de_sharey)
+            de_sharey = self.de_axs[nm]
 
     def check_setup(self):
         if self.fig is None:
             raise AttributeError("Must run setup_figure_axes() before plotting")
 
+    def get_de_dmr_colour(self, value):
+
+        pass
+
     def plot_tracks(self, feat_res):
         self.check_setup()
-        plot_gene_transcripts(feat_res, ax=self.track_ax)
+        plot_gene_transcripts(feat_res, ax=self.track_ax, add_arrow=False)
 
-    def plot_dmrs(self, dmr_res, clusters):
+        if self.coord_max is None:
+            self.coord_min, self.coord_max = self.track_ax.get_xlim()
+
+        # get strand - assume this is the same for all features
+        self.strand = feat_res.keys()[0].strand
+
+    def plot_dmrs(self, dmr_res, clusters, colours=DIRECTION_COLOUR_GETTER):
         """
-
         :param dmr_res: Nested dictionary. First level is keyed by cluster ID. Second level is keyed by comparison.
         :param clusters: Dictionary keyed by cluster ID. Each entry is an instance of ProbeCluster
         :return:
@@ -175,21 +227,22 @@ class MethylationExpressionLocusPlot(object):
                         pc.coord_range[1] - pc.coord_range[0],
                         left=pc.coord_range[0],
                         height=d2['median_change'],
-                        color=DIRECTION_COLOURS['up' if d2['median_change'] > 0 else 'down'],
+                        color=colours(d2['median_change']),
                         align='edge',
                         zorder=15,
                         edgecolor='k',
                         linewidth=0.75
                     )
 
-    def plot_de(self, de_res, fdr_cutoff=0.01):
+    def plot_de(self, de_res, fdr_cutoff=0.01, colours=DIRECTION_COLOUR_GETTER):
         """
-
         :param de_res:
         :param fdr_cutoff:
         :return:
         """
         self.check_setup()
+        de_min = 0
+        de_max = 0
 
         for nm in self.row_names:
             this_de_ax = self.de_axs[nm]
@@ -201,12 +254,26 @@ class MethylationExpressionLocusPlot(object):
                     [this_res['logFC']],
                     edgecolor='k' if this_res['FDR'] < fdr_cutoff else 'none',
                     linewidth=1.,
-                    color=DIRECTION_COLOURS['up'] if this_res['logFC'] > 0 else DIRECTION_COLOURS['down']
+                    color=colours(this_res['logFC'])
                 )
+                de_min = min(de_min, this_res['logFC'])
+                de_max = max(de_max, this_res['logFC'])
 
         self.set_de_on(True)
+        self.de_min = de_min
+        self.de_max = de_max
 
-    def plot_m_values(self, mdat, probe_locations, comparisons, group_colours=None):
+    def plot_m_values(
+            self,
+            mdat,
+            probe_locations,
+            comparisons,
+            colours='default',
+            markers='default',
+            zorder='default',
+            alpha='default',
+            size='default',
+    ):
         """
 
         :param mdat: pd.DataFrame containing the data to plot. Columns are samples, rows are probes
@@ -214,12 +281,66 @@ class MethylationExpressionLocusPlot(object):
         :param comparisons: Dictionary keyed by comparison (equivalent to row_names). Each entry is a dictionary keyed
         by group name (e.g. 'Disease' / 'Healthy') and with values giving the samples in that group. The sample names
         must be in the columns of `mdat`.
+        :param colours: Dictionary keyed by group name (e.g. 'Disease') giving the colour to use for that group.
+        Defaults are used if not supplied. To disable colours, set to None.
+        :param markers: Dictionary keyed by group name giving the marker to use for that group.
+        Defaults are used if not supplied. To use circle markers for everything, set to None.
+        :param zorder: Dictionary keyed by group name giving the zorder to use for that group.
+        Defaults are used if not supplied. To use matplotlib defaults for everything, set to None.
+        :param alpha: Dictionary keyed by group name giving the alpha to use for that group.
+        Defaults are used if not supplied. To use matplotlib defaults for everything, set to None.
         :return:
         """
-        if group_colours is None:
-            all_groups = sorted(setops.reduce_union(*(t.keys() for t in comparisons.values())))
-            n_groups = len(all_groups)
-            group_colours = dict(zip(all_groups, common.get_best_cmap(n_groups)))
+        all_groups = sorted(setops.reduce_union(*(t.keys() for t in comparisons.values())))
+        n_groups = len(all_groups)
+
+        def set_property(x, default, default_static):
+            if x == 'default':
+                out = dict(zip(all_groups, default))
+            elif x is None:
+                out = dict([(k, default_static) for k in all_groups])
+            elif not hasattr(x, 'get'):
+                # single value supplied
+                out = dict([(k, x) for k in all_groups])
+            else:
+                out = x
+            return out
+
+        colours = set_property(
+            colours,
+            common.get_best_cmap(n_groups),
+            '0.5'
+        )
+        markers = set_property(
+            markers,
+            common.get_best_marker_map(n_groups),
+            'o'
+        )
+        zorder = set_property(
+            zorder,
+            range(20, 20 + n_groups),
+            20
+        )
+        # default alpha will be based on zorder
+        a = sorted([(k, zorder[k]) for k in all_groups], key=lambda x: x[1])
+        a_ix = dict([(t[0], i) for i, t in enumerate(a)])
+        alpha_values = np.linspace(0.4, 0.6, n_groups)
+        alpha_default = [alpha_values[a_ix[k]] for k in all_groups]
+
+        alpha = set_property(
+            alpha,
+            alpha_default,
+            '0.6'
+        )
+
+        # default size will be based on zorder
+        s_values = range(20, 20 + n_groups)
+        s_default = [s_values[a_ix[k]] for k in all_groups]
+        size = set_property(
+            size,
+            s_default,
+            20
+        )
 
         # scatter plot individual probes
         ymin = 0
@@ -228,16 +349,20 @@ class MethylationExpressionLocusPlot(object):
             grp_dict = comparisons[nm]
             this_ax = self.dm_axs[nm]
             for grp_nm, grp_samples in grp_dict.items():
-                the_colour = group_colours.get(grp_nm, '0.5')
+                the_colour = colours.get(grp_nm)
+                the_marker = markers.get(grp_nm)
+                the_z = zorder.get(grp_nm)
+                the_alpha = alpha.get(grp_nm)
+                the_s = size.get(grp_nm)
                 for col, x in mdat.loc[probe_locations.index, grp_samples].iteritems():
                     this_ax.scatter(
                         probe_locations,
                         x.values,
                         c=the_colour,
-                        marker='o',  ## TODO?
-                        zorder=20,  ## TODO?
-                        alpha=0.6,  ## TODO?
-                        s=20,  ## TODO?
+                        marker=the_marker,
+                        zorder=the_z,
+                        alpha=the_alpha,
+                        s=the_s,
                         edgecolor='k',
                         linewidth=0.5
                     )
@@ -247,11 +372,29 @@ class MethylationExpressionLocusPlot(object):
         self.mdat_min = ymin
         self.mdat_max = ymax
 
+        if self.coord_max is None:
+            self.coord_min = probe_locations.min()
+            self.coord_max = probe_locations.max()
+        else:
+            self.coord_min = min(probe_locations.min(), self.coord_min)
+            self.coord_max = max(probe_locations.max(), self.coord_max)
+
     def update_xlims(self, x0, x1):
         self.track_ax.set_xlim([x0, x1])
         self.dm_axs[self.row_names[-1]].set_xlim([x0, x1])
 
+    def apply_edge_buffer(self, edge_buffer=None):
+        if self.coord_max is None:
+            raise ValueError("Must plot tracks or M values before applying the edge buffer.")
+        if edge_buffer is None:
+            edge_buffer = self.edge_buffer
+        else:
+            self.edge_buffer = edge_buffer
+        self.update_xlims(self.coord_min - edge_buffer, self.coord_max + edge_buffer)
+
     def fix_axes(self):
+        self.apply_edge_buffer()
+
         repr_dm_ax = self.dm_axs[self.row_names[-1]]
         repr_dm_ax.xaxis.set_ticklabels([])
         [ax.set_ylim([self.mdat_min * 1.05, self.mdat_max * 1.05]) for ax in self.dm_axs.values()]
@@ -261,11 +404,26 @@ class MethylationExpressionLocusPlot(object):
         repr_de_ax.set_ylim([-1, 1])
         plt.setp(repr_de_ax.xaxis.get_ticklabels(), rotation=90)
         repr_de_ax.set_xlabel('DE logFC')
+        [ax.set_xlim([self.de_min * 1.05, self.de_max * 1.05]) for ax in self.de_axs.values()]
+        [self.de_axs[k].set_xticks([]) for k in self.row_names[:-1]]
 
         # declutter track axis by removing all borders except the bottom
         for k in ['left', 'right', 'top']:
             self.track_ax.spines[k].set_visible(False)
-        self.track_ax.set_xlim(repr_dm_ax.get_xlim())
+
+        # add arrow to track axis
+        if self.strand == '+':
+            loc_str = 'bottom right'
+        else:
+            loc_str = 'bottom left'
+        # TODO: auto-select hardcoded arrow width parameters?
+        common.arrowed_spines(
+            self.track_ax,
+            lw=0.3,
+            locations=(loc_str,),
+            x_length_fraction=0.025,
+            y_width_fraction=0.15
+        )
 
         self.gs.update(top=0.98, left=0.07, right=0.97, bottom=0.09, hspace=0.15, wspace=0.05)
 
@@ -284,6 +442,16 @@ class MethylationExpressionLocusPlotter(object):
         self.de_res = None
         self.dmr_comparison_groups = None
         self.logger = log.get_console_logger(self.__class__.__name__)
+
+        # default plotting parameters
+        self.fig_kws = {}
+        self.m_plot_kws = {}
+
+        self.de_direction_colour = None
+        self.dm_direction_colour = None
+
+        self.set_plot_parameters()
+
 
     def check_data_compat(self):
 
@@ -319,17 +487,52 @@ class MethylationExpressionLocusPlotter(object):
         self.de_res = de_res
         self.check_data_compat()
 
-    def plot_gene(self, gene, edge_buffer_bp=500, figsize=(8, 6), group_colours=None, fdr_cutoff=0.01):
+    def set_plot_parameters(
+            self,
+            figsize=(8, 6),
+            colours='default',
+            markers='default',
+            zorder='default',
+            alpha='default',
+            size='default',
+            de_direction_colours=DIRECTION_COLOURS,
+            dm_direction_colours=DIRECTION_COLOURS,
+            de_vmin=None,
+            de_vmax=None,
+            dm_vmin=None,
+            dm_vmax=None
+    ):
+        self.m_plot_kws = {
+            'colours': colours,
+            'markers': markers,
+            'zorder': zorder,
+            'alpha': alpha,
+            'size': size
+        }
+        self.fig_kws = {
+            'figsize': figsize
+        }
+        self.de_direction_colour = direction_colour_getter(de_direction_colours, vmin=de_vmin, vmax=de_vmax)
+        self.dm_direction_colour = direction_colour_getter(dm_direction_colours, vmin=dm_vmin, vmax=dm_vmax)
+
+    def plot_legend(self):
+        """
+        Generate a figure showing the interpretation of the various colours / markers
+        :return:
+        """
+        pass
+
+    def plot_gene(
+        self,
+        gene,
+        fdr_cutoff=0.01,
+        edge_buffer_bp=500,
+    ):
         if self.dmr_res is None:
             raise AttributeError("Must run set_dmr_res() before plotting.")
 
         if self.mdat is None:
             raise AttributeError("Must run set_mvalues() befoire plotting.")
-
-        if group_colours is None:
-            all_groups = sorted(setops.reduce_union(*(t.keys() for t in self.dmr_comparison_groups.values())))
-            n_groups = len(all_groups)
-            group_colours = dict(zip(all_groups, common.get_best_cmap(n_groups)))
 
         feat_res = self.db.hierarchical_feature_search(
             gene,
@@ -397,10 +600,12 @@ class MethylationExpressionLocusPlotter(object):
         # prepare DE results for plotting (if present)
         this_de = {}
         if self.de_res is not None:
+            de_res_present = []
             for nm in self.dmr_comparison_groups:
                 ix = self.de_res[nm]['Gene Symbol'] == gene
                 if ix.sum() == 1:
                     this_de[nm] = self.de_res[nm].loc[ix].squeeze()
+                    de_res_present.append(nm)
                 elif ix.sum() > 1:
                     self.logger.warn("Gene %s. Found %d matching DE results in comparison %s. Why?", gene, int(ix.sum()),
                                      nm)
@@ -408,15 +613,26 @@ class MethylationExpressionLocusPlotter(object):
                 else:
                     self.logger.warn("Gene %s. No matching DE result for comparison %s.", gene, nm)
                     this_de[nm] = None
+            if len(de_res_present) > 0:
+                self.logger.info(
+                    "Gene %s. Found DE results in %d comparisons: %s.",
+                    gene,
+                    len(de_res_present),
+                    ', '.join(de_res_present)
+                )
+            else:
+                self.logger.warn("Gene %s. No DE results found.", gene)
+
 
         plot_obj = MethylationExpressionLocusPlot(
             self.dmr_comparison_groups.keys(),
-            fig_kws={'figsize': figsize}
+            fig_kws=self.fig_kws
         )
         plot_obj.plot_tracks(feat_res)
-        plot_obj.plot_dmrs(this_dmrs, self.dmr_res.clusters)
-        plot_obj.plot_m_values(self.mdat, probe_locations, self.dmr_comparison_groups, group_colours=group_colours)
-        plot_obj.plot_de(this_de, fdr_cutoff=fdr_cutoff)
+        plot_obj.plot_dmrs(this_dmrs, self.dmr_res.clusters, colours=self.dm_direction_colour)
+
+        plot_obj.plot_m_values(self.mdat, probe_locations, self.dmr_comparison_groups, **self.m_plot_kws)
+        plot_obj.plot_de(this_de, fdr_cutoff=fdr_cutoff, colours=self.de_direction_colour)
         plot_obj.fix_axes()
 
         return plot_obj

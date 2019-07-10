@@ -18,6 +18,7 @@ from utils import setops, output, log
 
 logger = log.get_console_logger()
 
+
 def line_plot_pvalues_slope(
         pvals,
         slopes,
@@ -426,15 +427,85 @@ def tam_signature_dict():
     }
 
 
+def get_groups(meta, classification='verhaak'):
+    if classification == 'verhaak':
+        groups = meta.expression_subclass
+        # remove any small groups (e.g. a single G-CIMP instance)
+        group_list = groups.value_counts()
+        group_list = group_list.index[group_list > 2]
+    elif classification == 'wang':
+        groups = meta.wang_classification
+        if not allow_multiple_classes:
+            groups[meta.wang_classification_num_matches != 1] = None
+        group_list = groups.dropna().unique()
+    else:
+        raise ValueError("Unsupported classification method %s" % classification)
+
+    groups = groups.fillna('NONE')
+    group_list = sorted(group_list)
+
+    return groups, group_list
+
+
+def boxplots(data, groups, group_list):
+    """
+    Generate boxplot figures for each of the genesets showing the supplied score divided into subgroups.
+    :param data: pd.DataFrame, index is the name of the signature and columns are sample names.
+    :param groups: pd.Series indexed by the sample names giving the subgroup.
+    :param group_list:
+    :return:
+    """
+    res = {}
+    for k, the_data in data.iterrows():
+        for_plot = collections.OrderedDict()
+        for sg in group_list:
+            for_plot[sg] = the_data.loc[groups.fillna('').str.contains(sg)].values
+
+        lbl, tmp = zip(*for_plot.items())
+        tmp = [list(t) for t in tmp]
+        fig = plt.figure(num=k, figsize=(5, 4))
+        ax = fig.add_subplot(111)
+        sns.boxplot(data=tmp, orient='v', ax=ax, color='0.5')
+        ax.set_xticklabels(lbl, rotation=45)
+        ax.set_ylabel("Normalised ssGSEA score")
+        fig.tight_layout()
+
+        res[k] = fig
+    return res
+
+
+def scatterplot_array(data, groups, group_list):
+    dict_mg = scatter_plot_with_linregress(data.loc['mTOR'], data.loc['MG'], group_list, groups)
+    dict_bmdm = scatter_plot_with_linregress(es_z.loc['mTOR'], es_z.loc['BMDM'], group_list, groups)
+    dict_both = scatter_plot_with_linregress(es_z.loc['MG'], es_z.loc['BMDM'], group_list, groups)
+
+    # again but across groups
+    dict_both_uniform = scatter_plot_with_linregress(es_z.loc['MG'], es_z.loc['BMDM'])
+    dict_both_uniform['fig'].set_size_inches([6, 4])
+    dict_both_uniform['fig'].tight_layout()
+
+    return {
+        'MG': dict_mg,
+        'BMDM': dict_bmdm,
+        'Both': dict_both,
+        'Both no groups': dict_both_uniform
+    }
+
+
 if __name__ == "__main__":
     """
+    This is a cut-down script containing just summary images from the full version at
+    scripts/anaelle/tcga_tam_vs_mtor.py
+
     Use the TCGA cohort to validate a link between the mTOR pathway and the proportion of microglial and macrophage
     immune infiltrate in the bulk samples.
-    
+
     mTOR is assessed using a known set of genes.
-    
-    Tumour-associated bone marrow-derived macrophages (TAM-BMDM) and microglia (TAM-MG) are distinguished using a 
-    human signature from Muller et al. (Genome Biol 2017) or a converted mouse signature from Bowman et al. (???).
+
+    Tumour-associated bone marrow-derived macrophages (TAM-BMDM) and microglia (TAM-MG) are distinguished using a
+    converted mouse signature from Bowman et al.
+
+    We generate two versions using the original Verhaak classification and the newer Wang classification.
     """
     rnaseq_type = 'gliovis'
     remove_idh1 = True
@@ -474,13 +545,6 @@ if __name__ == "__main__":
     for_export = for_export.sort_index(axis=1)
     for_export.to_excel(os.path.join(outdir, "gene_sets.xlsx"), index=False)
 
-    # Venn diagram showing various mTOR signature options and overlap between them
-    fig, ax = plt.subplots()
-    venn.venn_diagram(*mtor_gs_dict.values(), set_labels=mtor_gs_dict.keys(), ax=ax)
-    fig.tight_layout()
-    ax.set_facecolor('w')
-    fig.savefig(os.path.join(outdir, "venn_mtor_genesets.png"), dpi=200)
-
     basedir = os.path.join(
         HGIC_LOCAL_DIR,
         'current/input_data/tcga'
@@ -506,7 +570,6 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError("Unrecognised rnaseq data type")
 
-
     rnaseq_dat_raw = pd.read_excel(rnaseq_dat_fn, header=0, index_col=0, sheet_name=sheet_name)
     wang_classes = pd.read_csv(wang_fn, header=0, index_col=0)
 
@@ -531,7 +594,6 @@ if __name__ == "__main__":
         # rnaseq_meta.index = new_cols[~new_cols.duplicated()]
         rnaseq_dat_raw.columns = new_cols[~new_cols.duplicated()]
         rnaseq_meta = brennan_s7.reindex(rnaseq_dat_raw.columns)
-
 
     if remove_idh1:
         # filter IDH1 mutants
@@ -588,123 +650,84 @@ if __name__ == "__main__":
 
     # export
     for_export = es_z.transpose()
-    for_export.insert(for_export.shape[1], 'Verhaak classification', rnaseq_meta.loc[for_export.index, 'expression_subclass'])
-    for_export.insert(for_export.shape[1], 'Wang classification', rnaseq_meta.loc[for_export.index, 'wang_classification'])
+    for_export.insert(for_export.shape[1], 'Verhaak classification',
+                      rnaseq_meta.loc[for_export.index, 'expression_subclass'])
+    for_export.insert(for_export.shape[1], 'Wang classification',
+                      rnaseq_meta.loc[for_export.index, 'wang_classification'])
     for_export.to_excel(os.path.join(outdir, "tcga_signature_scores_and_subgroups.xlsx"))
 
     # boxplot by subgroup
-    if class_method == 'verhaak':
-        groups = rnaseq_meta.expression_subclass
-        # remove any small groups (e.g. a single G-CIMP instance)
-        group_list = groups.value_counts()
-        group_list = group_list.index[group_list > 2]
-    elif class_method == 'wang':
-        groups = rnaseq_meta.wang_classification
-        if not allow_multiple_classes:
-            groups[rnaseq_meta.wang_classification_num_matches != 1] = None
-        group_list = groups.dropna().unique()
-    else:
-        raise NotImplementedError("Subgroup type not recognised.")
 
-    groups = groups.fillna('NONE')
-    group_list = sorted(group_list)
+    for class_method in ['verhaak', 'wang']:
+        groups, group_list = get_groups(rnaseq_meta, classification=class_method)
 
-    bplot = {}
-    for k in genesets:
-        the_data = es_z.loc[k]
-        bplot[k] = collections.OrderedDict()
-        for sg in group_list:
-            bplot[k][sg] = the_data.loc[groups.fillna('').str.contains(sg)].values
+        plot_dict = boxplots(es_z, groups, group_list)
+        for k, fig in plot_dict.items():
+            fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga_%s.png' % (k.lower(), class_method)), dpi=200)
+            fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga_%s.pdf' % (k.lower(), class_method)))
+            plt.close(fig)
 
-        lbl, tmp = zip(*bplot[k].items())
-        tmp = [list(t) for t in tmp]
-        fig = plt.figure(num=k, figsize=(5, 4))
-        ax = fig.add_subplot(111)
-        sns.boxplot(data=tmp, orient='v', ax=ax, color='0.5')
-        ax.set_xticklabels(lbl, rotation=45)
-        ax.set_ylabel("Normalised ssGSEA score")
-        fig.tight_layout()
-        fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.png' % k.lower()), dpi=200)
-        fig.savefig(os.path.join(outdir, '%s_ssgsea_by_subgroup_tcga.pdf' % k.lower()))
+        plot_dict = scatterplot_array(es_z, groups, group_list)
+        plot_dict['MG']['fig'].savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup_%s.png" % class_method), dpi=300)
+        plot_dict['MG']['fig'].savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup_%s.pdf" % class_method))
+        plot_dict['BMDM']['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup_%s.png" % class_method), dpi=300)
+        plot_dict['BMDM']['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup_%s.pdf" % class_method))
+        plot_dict['Both']['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup_%s.png" % class_method), dpi=300)
+        plot_dict['Both']['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup_%s.pdf" % class_method))
+        plot_dict['Both no groups']['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.png"), dpi=300)
+        plot_dict['Both no groups']['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.pdf"))
 
-    # is the correlation between MG / BMDM and mTOR higher in a given subgroup?
-    gs = plt.GridSpec(6, 3)
-    fig = plt.figure(figsize=(9, 6))
-    # left panel is 2 x 2, comprising all 4 subgroups
+        # summary plot with all information
+        alpha = 0.01
+        slope_cmap = plt.get_cmap('RdBu_r')
+        slope_norm = common.MidpointNormalize(vmin=-.5, vmax=1.2, midpoint=0.)
+        slope_sm = plt.cm.ScalarMappable(cmap=slope_cmap, norm=slope_norm)
 
-    dict_mg = scatter_plot_with_linregress(es_z.loc['mTOR'], es_z.loc['MG'], group_list, groups)
-    dict_bmdm = scatter_plot_with_linregress(es_z.loc['mTOR'], es_z.loc['BMDM'], group_list, groups)
+        group_list_extended = list(group_list) + ['All']
 
-    dict_mg['fig'].savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup.png"), dpi=300)
-    dict_mg['fig'].savefig(os.path.join(outdir, "mtor_vs_mg_correlation_by_tcga_subgroup.pdf"))
+        for_plot = collections.OrderedDict([
+            ('mTOR-MF', plot_dict['BMDM']),
+            ('mTOR-MG', plot_dict['MG'])
+        ])
 
-    dict_bmdm['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.png"), dpi=300)
-    dict_bmdm['fig'].savefig(os.path.join(outdir, "mtor_vs_bmdm_correlation_by_tcga_subgroup.pdf"))
-
-    # check for MG / BMDM correlation
-    dict_both = scatter_plot_with_linregress(es_z.loc['MG'],  es_z.loc['BMDM'], group_list, groups)
-    dict_both['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup.png"), dpi=300)
-    dict_both['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation_by_tcga_subgroup.pdf"))
-
-    # again but across groups
-    dict_both_uniform = scatter_plot_with_linregress(es_z.loc['MG'],  es_z.loc['BMDM'])
-    dict_both_uniform['fig'].set_size_inches([6, 4])
-    dict_both_uniform['fig'].tight_layout()
-    dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.png"), dpi=200)
-    dict_both_uniform['fig'].savefig(os.path.join(outdir, "mg_vs_bmdm_correlation.pdf"))
-
-    # summary plot with all information
-    alpha = 0.01
-    slope_cmap = plt.get_cmap('RdBu_r')
-    slope_norm = common.MidpointNormalize(vmin=-.5, vmax=1.2, midpoint=0.)
-    slope_sm = plt.cm.ScalarMappable(cmap=slope_cmap, norm=slope_norm)
-
-    group_list_extended = list(group_list) + ['All']
-
-    for_plot = collections.OrderedDict([
-        # ('MG-BMDM', dict_both),
-        ('mTOR-MF', dict_bmdm),
-        ('mTOR-MG', dict_mg)
-    ])
-
-    s, p = get_slope_and_pval(
-        for_plot,
-        col_order=group_list_extended,
-    )
-
-    # p_to_size = lambda t: min(150., 45 - 15 * np.log10(t))
-    p_to_size = lambda t: min(500., 100 + 10 * np.log10(t) ** 2)
-
-    x = range(len(group_list_extended))
-    y_fun = lambda t: [t] * len(group_list_extended)
-
-    fig, ax = plt.subplots(figsize=(6, 2.4))
-    for i, k in enumerate(s.index):
-        ax.scatter(
-            x,
-            y_fun(i),
-            color=[slope_sm.to_rgba(t) for t in s.loc[k]],
-            s=[p_to_size(t) for t in p.loc[k]],
-            edgecolor='k',
-            linewidth=[.5 if t > alpha else 1.5 for t in p.loc[k]]
+        s, p = get_slope_and_pval(
+            for_plot,
+            col_order=group_list_extended,
         )
-    ax.grid('off')
-    ax.set_facecolor('w')
-    ax.set_xticks(x)
-    ax.set_xticklabels(group_list_extended)
-    ax.set_yticks(range(p.shape[0]))
-    ax.set_yticklabels(p.index)
-    ax.set_ylim([-.5, p.shape[0] - 0.5])
 
-    slope_sm.set_array(s.values)
-    cbar = fig.colorbar(slope_sm)
-    cbar.set_label('Slope')
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "tcga_correlation_summary.png"), dpi=200)
-    fig.savefig(os.path.join(outdir, "tcga_correlation_summary.pdf"))
+        # p_to_size = lambda t: min(150., 45 - 15 * np.log10(t))
+        p_to_size = lambda t: min(500., 100 + 10 * np.log10(t) ** 2)
 
-    plt_dict = line_plot_pvalues_slope(p, s, alpha=.05)
-    plt_dict['fig'].set_size_inches([6., 2.5])
-    plt_dict['gs'].update(bottom=0.23, top=0.9, hspace=0.4, right=0.75)
-    plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line.png"), dpi=200)
-    plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line.pdf"))
+        x = range(len(group_list_extended))
+        y_fun = lambda t: [t] * len(group_list_extended)
+
+        fig, ax = plt.subplots(figsize=(6, 2.4))
+        for i, k in enumerate(s.index):
+            ax.scatter(
+                x,
+                y_fun(i),
+                color=[slope_sm.to_rgba(t) for t in s.loc[k]],
+                s=[p_to_size(t) for t in p.loc[k]],
+                edgecolor='k',
+                linewidth=[.5 if t > alpha else 1.5 for t in p.loc[k]]
+            )
+        ax.grid('off')
+        ax.set_facecolor('w')
+        ax.set_xticks(x)
+        ax.set_xticklabels(group_list_extended)
+        ax.set_yticks(range(p.shape[0]))
+        ax.set_yticklabels(p.index)
+        ax.set_ylim([-.5, p.shape[0] - 0.5])
+
+        slope_sm.set_array(s.values)
+        cbar = fig.colorbar(slope_sm)
+        cbar.set_label('Slope')
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, "tcga_correlation_summary_%s.png" % class_method), dpi=200)
+        fig.savefig(os.path.join(outdir, "tcga_correlation_summary_%s.pdf" % class_method))
+
+        plt_dict = line_plot_pvalues_slope(p, s, alpha=.05)
+        plt_dict['fig'].set_size_inches([6., 2.5])
+        plt_dict['gs'].update(bottom=0.23, top=0.9, hspace=0.4, right=0.75)
+        plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line_%s.png" % class_method), dpi=200)
+        plt_dict['fig'].savefig(os.path.join(outdir, "tcga_correlation_summary_line_%s.pdf" % class_method))
