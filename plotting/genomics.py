@@ -520,11 +520,18 @@ class MexLocusPlotter(object):
         self.logger = log.get_console_logger(self.__class__.__name__)
 
         # default plotting parameters
+        self.colours = None
+        self.markers = None
+        self.zorder = None
+        self.alpha = None
+        self.size = None
         self.fig_kws = {}
         self.m_plot_kws = {}
 
         self.de_direction_colour = None
         self.dm_direction_colour = None
+        self.dm_vmin = self.dm_vmax = None
+        self.de_vmin = self.de_vmax = None
 
         self.set_plot_parameters()
 
@@ -578,25 +585,145 @@ class MexLocusPlotter(object):
             dm_vmin=None,
             dm_vmax=None
     ):
+
+        all_groups = sorted(setops.reduce_union(*(t.keys() for t in self.dmr_comparison_groups.values())))
+        n_groups = len(all_groups)
+
+        def set_property(x, default, default_static):
+            if x == 'default':
+                out = dict(zip(all_groups, default))
+            elif x is None:
+                out = dict([(k, default_static) for k in all_groups])
+            elif not hasattr(x, 'get'):
+                # single value supplied
+                out = dict([(k, x) for k in all_groups])
+            else:
+                out = x
+            return out
+
+        self.colours = set_property(
+            colours,
+            common.get_best_cmap(n_groups),
+            '0.5'
+        )
+        self.markers = set_property(
+            markers,
+            common.get_best_marker_map(n_groups),
+            'o'
+        )
+        self.zorder = set_property(
+            zorder,
+            range(20, 20 + n_groups),
+            20
+        )
+        # default alpha will be based on zorder
+        a = sorted([(k, zorder[k]) for k in all_groups], key=lambda x: x[1])
+        a_ix = dict([(t[0], i) for i, t in enumerate(a)])
+        alpha_values = np.linspace(0.4, 0.6, n_groups)
+        alpha_default = [alpha_values[a_ix[k]] for k in all_groups]
+
+        self.alpha = set_property(
+            alpha,
+            alpha_default,
+            '0.6'
+        )
+
+        # default size will be based on zorder
+        s_values = range(20, 20 + n_groups)
+        s_default = [s_values[a_ix[k]] for k in all_groups]
+        self.size = set_property(
+            size,
+            s_default,
+            20
+        )
+
         self.m_plot_kws = {
-            'colours': colours,
-            'markers': markers,
-            'zorder': zorder,
-            'alpha': alpha,
-            'size': size
+            'colours': self.colours,
+            'markers': self.markers,
+            'zorder': self.zorder,
+            'alpha': self.alpha,
+            'size': self.size
         }
         self.fig_kws = {
             'figsize': figsize
         }
         self.de_direction_colour = direction_colour_getter(de_direction_colours, vmin=de_vmin, vmax=de_vmax)
         self.dm_direction_colour = direction_colour_getter(dm_direction_colours, vmin=dm_vmin, vmax=dm_vmax)
+        if dm_vmin is not None:
+            self.dm_vmin = dm_vmin
+        if dm_vmax is not None:
+            self.dm_vmax = dm_vmax
+        if de_vmin is not None:
+            self.de_vmin = de_vmin
+        if de_vmax is not None:
+            self.de_vmax = de_vmax
 
     def plot_legend(self):
         """
         Generate a figure showing the interpretation of the various colours / markers
         :return:
         """
-        pass
+        fig = plt.figure(**self.fig_kws)
+        gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[5, 1])
+        dm_ax = fig.add_subplot(gs[0, 0])
+        de_ax = fig.add_subplot(gs[1, 0])
+        leg_ax = fig.add_subplot(gs[:, 1])
+
+        de_vmin = self.de_vmin or -5
+        de_vmax = self.de_vmax or 5
+        dm_vmin = self.dm_vmin or -8
+        dm_vmax = self.dm_vmax or 8
+
+        for_heatmap = [
+            {
+                'vmin': de_vmin,
+                'vmax': de_vmax,
+                'cmap': self.de_direction_colour,
+                'ax': de_ax
+            },
+            {
+                'vmin': dm_vmin,
+                'vmax': dm_vmax,
+                'cmap': self.dm_direction_colour,
+                'ax': dm_ax
+            },
+        ]
+
+        for d in for_heatmap:
+            if isinstance(d['cmap'], colors.LinearSegmentedColormap):
+                the_cmap = d['cmap']
+            else:
+                the_cmap = colors.LinearSegmentedColormap.from_list(
+                    'the_cmap',
+                    [d['cmap'](t) for t in np.linspace(d['vmin'], d['vmax'], 256)],
+                    N=256
+                )
+
+            d['ax'].pcolor(
+                [np.linspace(d['vmin'], d['vmax'], 257)] * 2,
+                [np.zeros(257), np.ones(257)],
+                [np.linspace(d['vmin'], d['vmax'], 257)] * 2,
+                cmap=the_cmap
+            )
+
+        # custom legend
+        type_attrs = {
+            'class': 'line',
+            'linestyle': 'none',
+            'markeredgecolor': 'k',
+            'markeredgewidth': 1.,
+            'markerfacecolor': 'none',
+            'markersize': 20
+        }
+
+        leg_dict = {}
+        for nm in self.dmr_comparison_groups:
+            leg_dict[nm] = dict(type_attrs)
+            leg_dict[nm]['markerfacecolor'] = self.colours.get(nm)
+            leg_dict[nm]['marker'] = self.markers.get(nm)
+            leg_dict[nm]['alpha'] = self.alpha.get(nm)
+            leg_dict[nm]['markersize'] = self.size.get(nm)
+        common.add_custom_legend(leg_ax, leg_dict, loc='center')
 
     def plot_gene(
         self,
