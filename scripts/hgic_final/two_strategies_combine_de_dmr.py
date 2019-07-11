@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 import pickle
 import re
+import collections
+import datetime
+
 from scipy import stats
 from utils import output, setops, excel, log
 from methylation import dmr, process, loader as methylation_loader, annotation_gene_to_ensembl
@@ -11,8 +14,9 @@ from rnaseq import loader as rnaseq_loader, differential_expression, general, fi
 from integrator import rnaseq_methylationarray
 from analysis import cross_comparison
 from load_data import loader
-from plotting import venn
-from matplotlib import pyplot as plt, text, patches
+from plotting import venn, genomics as plt_genomics
+from matplotlib import pyplot as plt, text, patches, colors
+from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 import consts
 
@@ -151,6 +155,64 @@ def export_to_ipa(
         ipa_export.loc[g_ix, "%s logFC" % pid] = z.groupby(data_wideform.loc[ix, 'gene']).mean()
         ipa_export.loc[g_ix, "%s FDR" % pid] = p.groupby(data_wideform.loc[ix, 'gene']).mean()
     return ipa_export
+
+
+def multipage_pdf_mex_plots(
+    fn_out,
+    de_dm_list,
+    me_data,
+    dmr_res,
+    dmr_comparison_groups,
+    de_res,
+    plot_colours=None,
+    plot_markers=None,
+    plot_zorder=None,
+    plot_alpha=None,
+    direction_cmap=None
+):
+    gene_list = sorted([u[1] for u in de_dm_list])
+
+    plt_obj = plt_genomics.MexLocusPlotter()
+    plt_obj.set_plot_parameters(
+        colours=plot_colours,
+        markers=plot_markers,
+        zorder=plot_zorder,
+        alpha=plot_alpha,
+        de_direction_colours=direction_cmap,
+        dm_direction_colours=direction_cmap,
+        de_vmin=-5,
+        de_vmax=5,
+        dm_vmin=-8,
+        dm_vmax=8
+    )
+    plt_obj.set_mvalues(me_data)
+    plt_obj.set_dmr_res(dmr_res, dmr_comparison_groups)
+    plt_obj.set_de_res(de_res)
+
+    count = error_count = 0
+    with PdfPages(fn_out) as pdf:
+        for g in gene_list:
+            try:
+                the_obj = plt_obj.plot_gene(g)
+                the_obj.set_title(g)
+                pdf.savefig(the_obj.fig)
+
+                # zoom in on DMR(s) and update the title
+                the_clusters = sorted(
+                    [u[0] for u in de_dm_list if u[1] == g]
+                )
+                for cid in the_clusters:
+                    pc = dmr_res_s1.clusters[cid]
+                    the_obj.update_xlims(pc.coord_range[0] - 200, pc.coord_range[1] + 200)
+                    the_obj.set_title("%s (DMR %d)" % (g, cid))
+                    pdf.savefig(the_obj.fig)
+
+                plt.close(the_obj.fig)
+                count += 1
+
+            except ValueError:
+                logger.error("Unable to generate plot for gene %s.", g)
+                error_count += 1
 
 
 if __name__ == "__main__":
@@ -470,65 +532,57 @@ if __name__ == "__main__":
                 this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
         ps_de_dm[pid] = joint_de_dmr_concordant_s1[pid].reindex(this_clusters).dropna(axis=0, how='all')
 
-    from plotting.genomics import MethylationExpressionLocusPlotter
-    import collections
-
     dmr_comparison_groups = collections.OrderedDict([(pid, {}) for pid in consts.PIDS])
     gg = me_data.columns.groupby(zip(me_meta.patient_id, me_meta.type))
     for (pid, typ), samples in gg.items():
         dmr_comparison_groups[pid][typ] = samples
+
+    ps_de_dm_list = setops.reduce_union(*[t.index for t in ps_de_dm.values()])
 
     # set plotting attributes
     plot_colours = {'GBM': '#de8100', 'iNSC': '#1f8bff'}
     plot_markers = {'GBM': 'o', 'iNSC': '^'}
     plot_zorder = {'GBM': 21, 'iNSC': 20}
     plot_alpha = {'GBM': 0.5, 'iNSC': 0.7}
-    # TODO: set DE and DM colours as a red / green diverging gradient
 
-    plt_obj = MethylationExpressionLocusPlotter()
-    plt_obj.set_plot_parameters(colours=plot_colours, markers=plot_markers, zorder=plot_zorder, alpha=plot_alpha)
-    plt_obj.set_mvalues(me_data)
-    plt_obj.set_dmr_res(dmr_res_s1, dmr_comparison_groups)
-    plt_obj.set_de_res(de_res_s1)
+    reds = plt.cm.Reds(np.linspace(.1, 1., 128))
+    greens = plt.cm.Greens_r(np.linspace(0, .9, 128))
+    colours_comb = np.vstack((greens, reds))
+    cmap = colors.LinearSegmentedColormap.from_list("mex_cmap", colours_comb)
 
     # shortlist
-    shortlist = sorted(setops.reduce_union(*[[u[1] for u in t.index] for t in ps_de_dm.values()]))
+    multipage_pdf_mex_plots(
+        os.path.join(outdir, "de_dmr_shortlist_mex_plots.pdf"),
+        sorted(ps_de_dm_list),
+        me_data,
+        dmr_res_s1,
+        dmr_comparison_groups,
+        de_res_full_s1,
+        plot_colours=plot_colours,
+        plot_markers=plot_markers,
+        plot_zorder=plot_zorder,
+        plot_alpha=plot_alpha,
+        direction_cmap=cmap
+    )
 
-    import datetime
-    from matplotlib.backends.backend_pdf import PdfPages
-    import matplotlib.pyplot as plt
-
-    # Create the PdfPages object to which we will save the pages:
-    # The with statement makes sure that the PdfPages object is closed properly at
-    # the end of the block, even if an Exception occurs.
-    count = error_count = 0
-    with PdfPages(os.path.join(outdir, "de_dmr_shortlist_mex_plots.pdf")) as pdf:
-        for g in shortlist:
-            try:
-                the_obj = plt_obj.plot_gene(g)
-                the_obj.dm_axs[pids[0]].set_title(g)
-                the_obj.gs.update(top=0.95)
-                pdf.savefig(the_obj.fig)
-                plt.close(the_obj.fig)
-                count += 1
-            except ValueError:
-                logger.error("Unable to generate plot for gene %s.", g)
-                error_count += 1
-
-        # pdf.attach_note("plot of sin(x)")  # you can add a pdf note to
-        # attach metadata to a page
-
-        # We can also set the file's metadata via the PdfPages object:
-        d = pdf.infodict()
-        d['Title'] = 'Patient-specific DE/DMR, shortlist'
-        d['Author'] = 'Gabriel Rosser'
-        d['Subject'] = ''
-        d['CreationDate'] = datetime.datetime.now()
-        d['ModDate'] = datetime.datetime.today()
-
-    logger.info("Generated PDF report containing %d genes. %d failed.", count, error_count)
-
-    raise StopIteration
+    # long list
+    ss = setops.specific_sets(pids)
+    ps_de_dm_long_list = setops.reduce_union(
+        *[venn_set[ss[pid]] for pid in pids]
+    )
+    multipage_pdf_mex_plots(
+        os.path.join(outdir, "de_dmr_longlist_mex_plots.pdf"),
+        sorted(ps_de_dm_long_list),
+        me_data,
+        dmr_res_s1,
+        dmr_comparison_groups,
+        de_res_full_s1,
+        plot_colours=plot_colours,
+        plot_markers=plot_markers,
+        plot_zorder=plot_zorder,
+        plot_alpha=plot_alpha,
+        direction_cmap=cmap
+    )
 
     ##################
     ### STRATEGY 2 ###

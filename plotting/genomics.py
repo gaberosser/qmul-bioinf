@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt, patches, collections as plt_collections, colors
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from utils import genomics, setops, dictionary, log
 from plotting import common
 logger = log.get_console_logger()
@@ -140,7 +141,7 @@ def plot_gene_transcripts(feature_res, bar_height=0.8, edge_buffer_bp=500, ax=No
     return ax
 
 
-class MethylationExpressionLocusPlot(object):
+class MexLocusPlot(object):
 
     def __init__(self, row_names, fig_kws=None, edge_buffer=500):
         if fig_kws is None:
@@ -149,11 +150,12 @@ class MethylationExpressionLocusPlot(object):
         self.fig = None
         self.gs = None
         self.track_ax = None
-        self.dm_axs = {}
+        self.m_axs = {}
         self.de_axs = {}
         self.coord_min = None
         self.coord_max = None
-        self.include_de = False
+        self.track_arrow = None
+
         self.row_names = row_names
         self.nrows = len(row_names) + 1  # additional row for the track plot
 
@@ -182,21 +184,17 @@ class MethylationExpressionLocusPlot(object):
         dm_sharex = None
         de_sharey = None
 
-        self.dm_axs = {}
+        self.m_axs = {}
         self.de_axs = {}
         for i, nm in enumerate(self.row_names):
-            self.dm_axs[nm] = self.fig.add_subplot(self.gs[i, 0], sharex=dm_sharex)
-            dm_sharex = self.dm_axs[nm]
+            self.m_axs[nm] = self.fig.add_subplot(self.gs[i, 0], sharex=dm_sharex)
+            dm_sharex = self.m_axs[nm]
             self.de_axs[nm] = self.fig.add_subplot(self.gs[i, 1], sharey=de_sharey)
             de_sharey = self.de_axs[nm]
 
     def check_setup(self):
         if self.fig is None:
             raise AttributeError("Must run setup_figure_axes() before plotting")
-
-    def get_de_dmr_colour(self, value):
-
-        pass
 
     def plot_tracks(self, feat_res):
         self.check_setup()
@@ -220,7 +218,7 @@ class MethylationExpressionLocusPlot(object):
             pc = clusters[cid]
             for nm, d2 in d1.items():
                 if nm in self.row_names:
-                    this_ax = self.dm_axs[nm]
+                    this_ax = self.m_axs[nm]
                     # bar showing DMR coverage and delta
                     this_ax.barh(
                         0,
@@ -347,7 +345,7 @@ class MethylationExpressionLocusPlot(object):
         ymax = 0
         for nm in self.row_names:
             grp_dict = comparisons[nm]
-            this_ax = self.dm_axs[nm]
+            this_ax = self.m_axs[nm]
             for grp_nm, grp_samples in grp_dict.items():
                 the_colour = colours.get(grp_nm)
                 the_marker = markers.get(grp_nm)
@@ -381,7 +379,9 @@ class MethylationExpressionLocusPlot(object):
 
     def update_xlims(self, x0, x1):
         self.track_ax.set_xlim([x0, x1])
-        self.dm_axs[self.row_names[-1]].set_xlim([x0, x1])
+        self.m_axs[self.row_names[-1]].set_xlim([x0, x1])
+        # add arrow to track axis
+        self.add_arrow_to_track_ax()
 
     def apply_edge_buffer(self, edge_buffer=None):
         if self.coord_max is None:
@@ -392,24 +392,12 @@ class MethylationExpressionLocusPlot(object):
             self.edge_buffer = edge_buffer
         self.update_xlims(self.coord_min - edge_buffer, self.coord_max + edge_buffer)
 
-    def fix_axes(self):
-        self.apply_edge_buffer()
-
-        repr_dm_ax = self.dm_axs[self.row_names[-1]]
-        repr_dm_ax.xaxis.set_ticklabels([])
-        [ax.set_ylim([self.mdat_min * 1.05, self.mdat_max * 1.05]) for ax in self.dm_axs.values()]
-
-        repr_de_ax = self.de_axs[self.row_names[-1]]
-        plt.setp([t.yaxis for t in self.de_axs.values()], visible=False)
-        repr_de_ax.set_ylim([-1, 1])
-        plt.setp(repr_de_ax.xaxis.get_ticklabels(), rotation=90)
-        repr_de_ax.set_xlabel('DE logFC')
-        [ax.set_xlim([self.de_min * 1.05, self.de_max * 1.05]) for ax in self.de_axs.values()]
-        [self.de_axs[k].set_xticks([]) for k in self.row_names[:-1]]
-
-        # declutter track axis by removing all borders except the bottom
-        for k in ['left', 'right', 'top']:
-            self.track_ax.spines[k].set_visible(False)
+    def add_arrow_to_track_ax(self):
+        # if arrow present, remove it first
+        if self.track_arrow is not None:
+            for v in self.track_arrow.values():
+                v.remove()
+            self.track_arrow = None
 
         # add arrow to track axis
         if self.strand == '+':
@@ -417,7 +405,7 @@ class MethylationExpressionLocusPlot(object):
         else:
             loc_str = 'bottom left'
         # TODO: auto-select hardcoded arrow width parameters?
-        common.arrowed_spines(
+        self.track_arrow = common.arrowed_spines(
             self.track_ax,
             lw=0.3,
             locations=(loc_str,),
@@ -425,10 +413,98 @@ class MethylationExpressionLocusPlot(object):
             y_width_fraction=0.15
         )
 
+    def fix_axes(self):
+        self.apply_edge_buffer()
+
+        repr_dm_ax = self.m_axs[self.row_names[-1]]
+        repr_dm_ax.xaxis.set_ticklabels([])
+        [ax.set_ylim([self.mdat_min * 1.05, self.mdat_max * 1.05]) for ax in self.m_axs.values()]
+
+        repr_de_ax = self.de_axs[self.row_names[-1]]
+        plt.setp([t.yaxis for t in self.de_axs.values()], visible=False)
+        repr_de_ax.set_ylim([-1, 1])
+        plt.setp(repr_de_ax.xaxis.get_ticklabels(), rotation=90)
+        repr_de_ax.set_xlabel('DE logFC')
+        [ax.set_xlim([self.de_min * 1.05, self.de_max * 1.05]) for ax in self.de_axs.values()]
+        [self.de_axs[k].set_xticklabels([]) for k in self.row_names[:-1]]
+
+        # declutter track axis by removing all borders except the bottom
+        for k in ['left', 'right', 'top']:
+            self.track_ax.spines[k].set_visible(False)
+
         self.gs.update(top=0.98, left=0.07, right=0.97, bottom=0.09, hspace=0.15, wspace=0.05)
 
+    def set_title(self, ttl, **kwargs):
+        self.m_axs[self.row_names[0]].set_title(ttl, **kwargs)
+        self.gs.update(top=0.95)
 
-class MethylationExpressionLocusPlotter(object):
+    def remove_title(self):
+        self.m_axs[self.row_names[0]].set_title("")
+        self.gs.update(top=0.98)
+
+
+class MexLocusPlotFloatingDMR(MexLocusPlot):
+    """
+    Mex locus plot where DMRs are shown on a axis inset into the M value axis (floating at the top) to improve
+    clarity.
+    """
+    def __init__(self, *args, **kwargs):
+        self.dm_axs = {}
+        super(MexLocusPlotFloatingDMR, self).__init__(*args, **kwargs)
+
+    def update_xlims(self, x0, x1):
+        super(MexLocusPlotFloatingDMR, self).update_xlims(x0, x1)
+        plt.setp(self.dm_axs.values(), xlim=[x0, x1])
+
+    def fix_axes(self):
+        super(MexLocusPlotFloatingDMR, self).fix_axes()
+        for ax in self.dm_axs.values():
+            ax.patch.set_visible(False)
+            plt.setp(ax.spines.values(), visible=False)
+            ax.xaxis.set_ticks([])
+            ax.yaxis.set_ticks([])
+            ax.set_ylim([-.55, .55])
+
+    def setup_figure_axes(self):
+        super(MexLocusPlotFloatingDMR, self).setup_figure_axes()
+        # add DMR insets
+        for nm in self.row_names:
+            parent_ax = self.m_axs[nm]
+            self.dm_axs[nm] = inset_axes(
+                parent_ax,
+                width="100%",
+                height="15%",
+                loc=3,  # lower left
+                bbox_to_anchor=(0., .85, 1., 1.),
+                bbox_transform=parent_ax.transAxes,
+                borderpad=0.
+            )
+
+    def plot_dmrs(self, dmr_res, clusters, colours=DIRECTION_COLOUR_GETTER):
+        """
+        :param dmr_res: Nested dictionary. First level is keyed by cluster ID. Second level is keyed by comparison.
+        :param clusters: Dictionary keyed by cluster ID. Each entry is an instance of ProbeCluster
+        :return:
+        """
+        self.check_setup()
+
+        for cid, d1 in dmr_res.items():
+            pc = clusters[cid]
+            for nm, d2 in d1.items():
+                if nm in self.row_names:
+                    this_ax = self.dm_axs[nm]
+                    the_patch = patches.Rectangle(
+                        (pc.coord_range[0], -.5),
+                        width=pc.coord_range[1] - pc.coord_range[0],
+                        height=1.,
+                        facecolor=colours(d2['median_change']),
+                        edgecolor='k',
+                        linewidth=0.75
+                    )
+                    this_ax.add_patch(the_patch)
+
+
+class MexLocusPlotter(object):
     def __init__(self, tax_id=9606, genome_version='GRCh37', gtf_fn=None):
         self.tax_id = tax_id
         self.genome_version = genome_version
@@ -527,12 +603,24 @@ class MethylationExpressionLocusPlotter(object):
         gene,
         fdr_cutoff=0.01,
         edge_buffer_bp=500,
+        dmr_display='floating'
     ):
+        class_dict = {
+            'floating': MexLocusPlotFloatingDMR,
+            'overlay': MexLocusPlot
+        }
         if self.dmr_res is None:
             raise AttributeError("Must run set_dmr_res() before plotting.")
 
         if self.mdat is None:
             raise AttributeError("Must run set_mvalues() befoire plotting.")
+
+        if dmr_display.lower() not in class_dict:
+            raise AttributeError("Unsupported dmr_display %s. Options are %s." % (
+                dmr_display,
+                ', '.join(class_dict.keys())
+            ))
+        the_class = class_dict[dmr_display.lower()]
 
         feat_res = self.db.hierarchical_feature_search(
             gene,
@@ -624,7 +712,7 @@ class MethylationExpressionLocusPlotter(object):
                 self.logger.warn("Gene %s. No DE results found.", gene)
 
 
-        plot_obj = MethylationExpressionLocusPlot(
+        plot_obj = the_class(
             self.dmr_comparison_groups.keys(),
             fig_kws=self.fig_kws
         )
