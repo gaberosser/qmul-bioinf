@@ -191,6 +191,9 @@ def multipage_pdf_mex_plots(
 
     count = error_count = 0
     with PdfPages(fn_out) as pdf:
+        plt_dict = plt_obj.plot_legend()
+        pdf.savefig(plt_dict['fig'])
+
         for g in gene_list:
             try:
                 the_obj = plt_obj.plot_gene(g)
@@ -249,13 +252,13 @@ if __name__ == "__main__":
     subgroups_lookup = {}
     for grp, arr in subgroups.items():
         subgroups_lookup.update(dict([
-            (t, grp) for t in arr
-        ]))
+                                         (t, grp) for t in arr
+                                         ]))
 
     # indicator showing which groups the PIDs belong to
     subgroup_ind = dict([
-        (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
-    ])
+                            (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
+                            ])
 
     external_ref_names_de = ['GSE61794']
     external_ref_strandedness_de = ['u']
@@ -346,7 +349,7 @@ if __name__ == "__main__":
 
     # only keep the required syngeneic samples for this analysis
     dat_s1 = rnaseq_obj.data.loc[
-                :, rnaseq_obj.meta.index.isin(consts.S1_RNASEQ_SAMPLES)
+             :, rnaseq_obj.meta.index.isin(consts.S1_RNASEQ_SAMPLES)
              ]
     meta_s1 = rnaseq_obj.meta.loc[dat_s1.columns]
 
@@ -513,14 +516,14 @@ if __name__ == "__main__":
     vs_dm, vc_dm = setops.venn_from_arrays(*[dmr_res_s1[pid].results_significant.keys() for pid in pids])
     vs_de, vc_de = setops.venn_from_arrays(*[de_res_s1[pid]['Gene Symbol'].dropna() for pid in pids])
     ps_dm = dict([
-        (pid, vs_dm[v]) for pid, v in setops.specific_sets(pids).items()
-    ])
+                     (pid, vs_dm[v]) for pid, v in setops.specific_sets(pids).items()
+                     ])
     ps_dm_genes = {}
     for pid, cids in ps_dm.items():
         ps_dm_genes[pid] = sorted(setops.reduce_union(*[[t[0] for t in dmr_res_s1.clusters[c].genes] for c in cids]))
     ps_de = dict([
-        (pid, vs_de[v]) for pid, v in setops.specific_sets(pids).items()
-    ])
+                     (pid, vs_de[v]) for pid, v in setops.specific_sets(pids).items()
+                     ])
 
     ps_de_dm = {}
     for pid in pids:
@@ -545,10 +548,32 @@ if __name__ == "__main__":
     plot_zorder = {'GBM': 21, 'iNSC': 20}
     plot_alpha = {'GBM': 0.5, 'iNSC': 0.7}
 
-    reds = plt.cm.Reds(np.linspace(.1, 1., 128))
-    greens = plt.cm.Greens_r(np.linspace(0, .9, 128))
+    reds = plt.cm.Reds(np.linspace(.1, .7, 128))
+    greens = plt.cm.Greens_r(np.linspace(0.3, .9, 128))
     colours_comb = np.vstack((greens, reds))
     cmap = colors.LinearSegmentedColormap.from_list("mex_cmap", colours_comb)
+
+    # debug / test
+    # plt_obj = plt_genomics.MexLocusPlotter()
+    # gene_list = sorted(ps_de_dm_list)
+    # plt_obj.set_plot_parameters(
+    #     colours=plot_colours,
+    #     markers=plot_markers,
+    #     zorder=plot_zorder,
+    #     alpha=plot_alpha,
+    #     de_direction_colours=cmap,
+    #     dm_direction_colours=cmap,
+    #     de_vmin=-5,
+    #     de_vmax=5,
+    #     dm_vmin=-8,
+    #     dm_vmax=8
+    # )
+    # plt_obj.set_mvalues(me_data)
+    # plt_obj.set_dmr_res(dmr_res_s1, dmr_comparison_groups)
+    # plt_obj.set_de_res(de_res_full_s1)
+    # g = gene_list[0][1]
+    # the_obj = plt_obj.plot_gene(g)
+    # the_obj.set_title(g)
 
     # shortlist
     multipage_pdf_mex_plots(
@@ -755,7 +780,7 @@ if __name__ == "__main__":
             the_lists = [
                 data_concordant_s2['gene'].loc[data_concordant_s2["%s_%s" % (pid, k)] == 'Y']
                 for k in ['syngeneic'] + external_refs_de_dm_labels
-            ]
+                ]
             venn_sets, cts = setops.venn_from_arrays(*the_lists)
             venn.venn_diagram(*the_lists, set_labels=None, ax=axs[i, j])
             axs[i, j].set_title("GBM%s" % pid, y=0.95)
@@ -769,7 +794,7 @@ if __name__ == "__main__":
         # legend
         leg_objs = [
             patches.Rectangle([0, 0], 1, 1, color=c, alpha=0.4, label=l) for c, l in zip(set_colours, set_labels)
-        ]
+            ]
         cax.legend(handles=leg_objs, loc='center')
 
         fig.subplots_adjust(left=0., right=1., bottom=0., top=.93, wspace=0., hspace=0.05)

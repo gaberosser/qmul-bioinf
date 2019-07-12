@@ -1,4 +1,6 @@
 import numpy as np
+import collections
+import itertools
 from matplotlib import pyplot as plt, patches, collections as plt_collections, colors
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from utils import genomics, setops, dictionary, log
@@ -564,7 +566,18 @@ class MexLocusPlotter(object):
         self.dmr_res = dmr_res
         self.dmr_comparison_groups = comparison_groups
         self.anno = dmr_res.anno
+
         self.check_data_compat()
+
+    @property
+    def all_comparison_groups(self):
+        if self.dmr_comparison_groups is None:
+            raise ValueError("Must first call set_dmr_res.")
+        return sorted(setops.reduce_union(*(t.keys() for t in self.dmr_comparison_groups.values())))
+
+    @property
+    def n_comparison_groups(self):
+        return len(self.all_comparison_groups)
 
     def set_de_res(self, de_res):
         self.de_res = de_res
@@ -573,11 +586,11 @@ class MexLocusPlotter(object):
     def set_plot_parameters(
             self,
             figsize=(8, 6),
-            colours='default',
-            markers='default',
-            zorder='default',
-            alpha='default',
-            size='default',
+            colours=None,
+            markers=None,
+            zorder=None,
+            alpha=None,
+            size=None,
             de_direction_colours=DIRECTION_COLOURS,
             dm_direction_colours=DIRECTION_COLOURS,
             de_vmin=None,
@@ -586,56 +599,54 @@ class MexLocusPlotter(object):
             dm_vmax=None
     ):
 
-        all_groups = sorted(setops.reduce_union(*(t.keys() for t in self.dmr_comparison_groups.values())))
-        n_groups = len(all_groups)
+        # Automatic plot parameters are only possible when we know which groups will be plotted.
+        # If this is not the case, we just guess how many there will be and hope we guessed enough!
 
-        def set_property(x, default, default_static):
-            if x == 'default':
-                out = dict(zip(all_groups, default))
-            elif x is None:
-                out = dict([(k, default_static) for k in all_groups])
-            elif not hasattr(x, 'get'):
-                # single value supplied
-                out = dict([(k, x) for k in all_groups])
-            else:
+        if self.dmr_comparison_groups is not None:
+            n_groups = self.n_comparison_groups
+        else:
+            n_groups = 4
+
+        default_colours = common.get_best_cmap(n_groups)
+        default_markers = common.get_best_marker_map(n_groups)
+        default_zorder = range(20, 20 + n_groups)
+        default_alpha = 0.6
+        default_size = 20
+
+        def set_property(x, default):
+            if x is None:
+                # cycle through default values
+                if not hasattr(default, '__iter__'):
+                    default = [default]
+                it = itertools.cycle(default)
+                out = collections.defaultdict(lambda: it.next())
+            elif hasattr(x, 'get'):
+                # dictionary of values: no modification needed
                 out = x
+            elif hasattr(x, '__iter__'):
+                # iterable of values: cycle through these
+                it = itertools.cycle(x)
+                out = collections.defaultdict(lambda: it.next())
+            else:
+                # single value supplied
+                # result: dictionary that always returns this value
+                out = collections.defaultdict(lambda: x)
             return out
 
         self.colours = set_property(
             colours,
-            common.get_best_cmap(n_groups),
-            '0.5'
+            default_colours,
         )
         self.markers = set_property(
             markers,
-            common.get_best_marker_map(n_groups),
-            'o'
+            default_markers,
         )
         self.zorder = set_property(
             zorder,
-            range(20, 20 + n_groups),
-            20
+            default_zorder,
         )
-        # default alpha will be based on zorder
-        a = sorted([(k, zorder[k]) for k in all_groups], key=lambda x: x[1])
-        a_ix = dict([(t[0], i) for i, t in enumerate(a)])
-        alpha_values = np.linspace(0.4, 0.6, n_groups)
-        alpha_default = [alpha_values[a_ix[k]] for k in all_groups]
-
-        self.alpha = set_property(
-            alpha,
-            alpha_default,
-            '0.6'
-        )
-
-        # default size will be based on zorder
-        s_values = range(20, 20 + n_groups)
-        s_default = [s_values[a_ix[k]] for k in all_groups]
-        self.size = set_property(
-            size,
-            s_default,
-            20
-        )
+        self.alpha = set_property(alpha, default_alpha)
+        self.size = set_property(size, default_size)
 
         self.m_plot_kws = {
             'colours': self.colours,
@@ -658,72 +669,112 @@ class MexLocusPlotter(object):
         if de_vmax is not None:
             self.de_vmax = de_vmax
 
-    def plot_legend(self):
+    def plot_legend(self, figsize=None):
         """
         Generate a figure showing the interpretation of the various colours / markers
         :return:
         """
-        fig = plt.figure(**self.fig_kws)
-        gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[5, 1])
-        dm_ax = fig.add_subplot(gs[0, 0])
-        de_ax = fig.add_subplot(gs[1, 0])
-        leg_ax = fig.add_subplot(gs[:, 1])
+        the_fig_kws = dict(self.fig_kws)
+        if self.dmr_comparison_groups is None:
+            if figsize is None:
+                height = min(2., self.n_comparison_groups / 3.)
+                figsize = (4., height)
+            the_fig_kws['figsize'] = figsize
+            fig = plt.figure(**the_fig_kws)
+            # no legend
+            gs = plt.GridSpec(nrows=2, ncols=1)
+            dm_ax = fig.add_subplot(gs[0])
+            de_ax = fig.add_subplot(gs[1])
+            leg_ax = None
+        else:
+            figsize = (5.5, 2.)
+            the_fig_kws['figsize'] = figsize
+            fig = plt.figure(**the_fig_kws)
+            gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[5, 1])
+            dm_ax = fig.add_subplot(gs[0, 0])
+            de_ax = fig.add_subplot(gs[1, 0])
+            leg_ax = fig.add_subplot(gs[:, 1], frameon=False)
+            leg_ax.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
+            leg_ax.grid(False)
 
         de_vmin = self.de_vmin or -5
         de_vmax = self.de_vmax or 5
         dm_vmin = self.dm_vmin or -8
         dm_vmax = self.dm_vmax or 8
 
-        for_heatmap = [
-            {
+        for_heatmap = {
+            'de': {
                 'vmin': de_vmin,
                 'vmax': de_vmax,
                 'cmap': self.de_direction_colour,
-                'ax': de_ax
+                'ax': de_ax,
+                'label': "DE log2(fold change)",
             },
-            {
+            'dm': {
                 'vmin': dm_vmin,
                 'vmax': dm_vmax,
                 'cmap': self.dm_direction_colour,
-                'ax': dm_ax
+                'ax': dm_ax,
+                'label': r"DM median $\Delta$M",
             },
-        ]
+        }
 
-        for d in for_heatmap:
+        heatmaps = {}
+        for k, d in for_heatmap.items():
             if isinstance(d['cmap'], colors.LinearSegmentedColormap):
                 the_cmap = d['cmap']
             else:
                 the_cmap = colors.LinearSegmentedColormap.from_list(
-                    'the_cmap',
+                    k,
                     [d['cmap'](t) for t in np.linspace(d['vmin'], d['vmax'], 256)],
                     N=256
                 )
-
-            d['ax'].pcolor(
+            heatmaps[k] = d['ax'].pcolor(
                 [np.linspace(d['vmin'], d['vmax'], 257)] * 2,
                 [np.zeros(257), np.ones(257)],
                 [np.linspace(d['vmin'], d['vmax'], 257)] * 2,
                 cmap=the_cmap
             )
+            d['ax'].yaxis.set_ticks([])
+            d['ax'].set_xlabel(d['label'], fontsize=14)
 
-        # custom legend
-        type_attrs = {
-            'class': 'line',
-            'linestyle': 'none',
-            'markeredgecolor': 'k',
-            'markeredgewidth': 1.,
-            'markerfacecolor': 'none',
-            'markersize': 20
+        # custom legend (if we have the groups needed to plot it)
+        leg = None
+        hleg = None
+        if self.dmr_comparison_groups is not None:
+            all_groups = sorted(setops.reduce_union(*(t.keys() for t in self.dmr_comparison_groups.values())))
+            type_attrs = {
+                'class': 'line',
+                'linestyle': 'none',
+                'markeredgecolor': 'k',
+                'markeredgewidth': 1.,
+                'markerfacecolor': 'none',
+                'markersize': 20
+            }
+
+            leg_dict = {}
+            for nm in all_groups:
+                leg_dict[nm] = dict(type_attrs)
+                leg_dict[nm]['markerfacecolor'] = self.colours.get(nm)
+                leg_dict[nm]['marker'] = self.markers.get(nm)
+                leg_dict[nm]['alpha'] = self.alpha.get(nm)
+                leg_dict[nm]['markersize'] = self.size.get(nm)
+            leg = common.add_custom_legend(leg_ax, leg_dict, loc='center', fontsize=14)
+            hleg = leg_ax.get_legend()
+            hleg.set_frame_on(False)
+
+        gs.update(bottom=0.3, top=0.98, left=0.04, right=0.95, wspace=0.05, hspace=2.)
+
+        return {
+            'fig': fig,
+            'gs': gs,
+            'legend_objects': leg,
+            'legend': hleg,
+            'heatmaps': heatmaps,
+            'dm_ax': dm_ax,
+            'de_ax': de_ax,
+            'leg_ax': leg_ax
         }
-
-        leg_dict = {}
-        for nm in self.dmr_comparison_groups:
-            leg_dict[nm] = dict(type_attrs)
-            leg_dict[nm]['markerfacecolor'] = self.colours.get(nm)
-            leg_dict[nm]['marker'] = self.markers.get(nm)
-            leg_dict[nm]['alpha'] = self.alpha.get(nm)
-            leg_dict[nm]['markersize'] = self.size.get(nm)
-        common.add_custom_legend(leg_ax, leg_dict, loc='center')
 
     def plot_gene(
         self,
