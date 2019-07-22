@@ -695,3 +695,9 @@ class Macs2PeaksIteratorMixin(FileIteratorMixin):
     cleanup_regex = [
         (r'_peaks', ''),
     ]
+
+
+class VcfFileShardIterator(object):
+    def setup_params(self, fn, lines_per_shard, *args, **kwargs):
+        import vcf
+        rd = vcf.Reader(filename=fn)

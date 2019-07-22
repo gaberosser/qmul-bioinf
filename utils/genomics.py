@@ -767,3 +767,4 @@ def bam_is_sorted(bam_fn):
     )
     rc = p.wait()
     return rc == 0
+
