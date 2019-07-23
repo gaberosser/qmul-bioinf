@@ -29,17 +29,17 @@ if __name__ == '__main__':
     While we are at it, we may generate some overview plots, too.
     """
     indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12')
-    vcf_fn = os.path.join(indir, 'merged.vcf.bgz')
+    vcf_fn = os.path.join(indir, 'merged.vcf.gz')
 
     membership = collections.defaultdict(list)
-    count = 0
+    save_every_n = 1000
 
     with open(vcf_fn, 'rb') as f:
         reader = vcf.Reader(f, compressed=True)
-        for rec in reader:
-            if count % 10000 == 0:
-                logger.info("Processed %d VCF entries", count)
-            for call in rec.samples:
-                if call.called:
-                    membership[call.sample].append(hash(rec))
-            count += 1
+        for i, rec in enumerate(reader):
+            if i % 10000 == 0:
+                logger.info("Processed %d VCF entries", i)
+            if i % save_every_n == 0:
+                for call in rec.samples:
+                    if call.called:
+                        membership[call.sample].append(str(rec))

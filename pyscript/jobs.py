@@ -701,3 +701,26 @@ class VcfFileShardIterator(object):
     def setup_params(self, fn, lines_per_shard, *args, **kwargs):
         import vcf
         rd = vcf.Reader(filename=fn)
+        contigs = rd.contigs
+        run_params = []
+        run_names = []
+        for k, v in contigs.items():
+            if self.include is not None and k not in self.include:
+                continue
+            if self.exclude is not None and k in self.exclude:
+                continue
+            shards = range(0, v.length + 2, lines_per_shard)
+            if shards[-1] !=  (v.length + 1):
+                shards.append(v.length + 1)
+
+            for i in range(len(shards) - 1):
+                u0 = shards[i]
+                u1 = shards[i + 1]
+                name = os.path.splitext(os.path.split(fn)[-1])[0]
+                name = "%s.%s.%d-%d" % (name, v.id, u0, u1)
+                run_params.append([name, fn, v.id, u0, u1])
+                run_names.append(name)
+        self.params = run_params
+        self.run_names = run_names
+
+
