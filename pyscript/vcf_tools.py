@@ -81,7 +81,7 @@ def run(run_type):
 
     if args.out_dir is None:
         # if no output_dir specified, create one here
-        args.out_dir = os.path.join('./', 'vcf_stats')
+        args.out_dir = os.path.join('./', 'methylation_related')
         if not os.path.exists(args.out_dir):
             os.makedirs(args.out_dir)
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
