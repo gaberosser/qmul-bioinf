@@ -439,6 +439,78 @@ class BamFileIteratorMixin(FileIteratorMixin):
     ]
 
 
+class BamBartsMultilaneRecursiveIteratorMixin(BamFileIteratorMixin):
+    cleanup_regex = [
+        (r'_pe$', '')
+    ]
+    file_sep = ' '  # the character used to separate files of the same read number in different lanes
+    create_subdirs = True
+
+    def setup_params(self, read_dir, *args, **kwargs):
+        """
+        Generate the parameters array, run names and check output subdirs (if necessary)
+        :return:
+        """
+        self.params = []
+        self.run_names = []
+        rr = re.compile(r'\.{ext}$'.format(ext=self.ext), flags=re.IGNORECASE)
+        it = os.walk(read_dir)
+
+        flist = []
+        for a, b, c in it:
+            for d in c:
+                fn = os.path.join(a, d)
+                if re.search(rr, fn):
+                    flist.append(os.path.abspath(fn))
+
+        to_join = {}
+
+        # check for existing output and identify pairs of files
+        for t in flist:
+            # get the read number and stem
+            fn = os.path.split(t)[-1]
+            stem = filename_to_name(fn, self.ext, cleanup_regex_arr=self.cleanup_regex)
+            # the stem still contains the lane number
+            lane_num = int(re.search("L(?P<lane>[0-9]*)$", stem).group('lane'))
+            base = re.sub("_L[0-9]*$", "", stem)
+            if self.include is not None:
+                if base not in self.include:
+                    self.logger.info("Skipping file %s as it is not in the list of included files", base)
+                    continue
+            if self.exclude is not None:
+                if base in self.exclude:
+                    self.logger.info("Skipping file %s as it is in the list of excluded files", base)
+                    continue
+
+            to_join.setdefault(base, {})[lane_num] = t
+
+        self.logger.info("Identified %d samples in multiple lanes." % len(to_join))
+        for base, lanes in to_join.items():
+            self.logger.info(
+                "Sample %s has %d lanes", base, len(lanes)
+            )
+
+        for base, lanes in to_join.items():
+
+            # check output subdirectory and create if necessary
+            out_subdir = os.path.abspath(os.path.join(self.out_dir, base))
+            if self.skip_non_empty and os.path.isdir(out_subdir):
+                if len(os.listdir(out_subdir)) > 0:
+                    self.logger.warn("Dir already exists: %s. Skipping.", out_subdir)
+                    continue
+                else:
+                    self.logger.info("Using existing empty output subdir %s", out_subdir)
+
+            if self.create_subdirs and not os.path.exists(out_subdir):
+                os.makedirs(out_subdir)
+                self.logger.info("Created output subdir %s", out_subdir)
+
+            this_param = [base, self.file_sep.join(lanes.values()), out_subdir]
+
+            self.params.append(this_param)
+            self.run_names.append(base)
+
+
 class BamFileSingleRunMixin(BamFileIteratorMixin):
     file_sep = ' ' # the character used to separate files
     def setup_params(self, read_dir, *args, **kwargs):

@@ -10,45 +10,41 @@ except Exception:
     PY_PATH = '.'
 
 
-class VCFRequirements(sge.ApocritaArrayJobMixin):
+class MergeBamRequirements(sge.ApocritaArrayJobMixin):
     @property
     def ram_per_core(self):
-        return "1G"
+        return "2G"
 
     @property
     def runtime_mins(self):
-        return 10
+        return 20
 
 
-class VCFStatsBase(jobs.ArrayJob):
-    title = 'vcf_stats'
-    required_args = ['filename', 'variants_per_shard']
+class MergeBamsBase(jobs.ArrayJob):
+    title = 'merge_bams'
+    required_args = ['read_dir', 'threads']
 
     parameters = [
         # format: (name as it appears in bash script, bash check or None)
         ('$ID', '! -z'),
-        ('$FILE', '! -z'),
-        ('$CONTIG', '! -z'),
-        ('$STARTPOS', None),
-        ('$ENDPOS', None),
+        ('$BAMS', '! -z'),
+        ('$OUTDIR', '! -z'),
     ]
-    param_delim = ','
+    param_delim = ':'
 
     core_cmd = """
-        PATH="$PATH:%s"
-        if [[ ! -z $STARTPOS ]]; then S="--start $STARTPOS"; else S=""; fi
-        if [[ ! -z $ENDPOS ]]; then E="--end $ENDPOS"; else E=""; fi
-        get_gbm_specific_variants.py $FILE --contig $CONTIG $S $E --outdir {out_dir} {extra}
-    """ % PY_PATH
+    outfn="$OUTDIR/${{ID}}.bam"
+        samtools merge {extra} $outfn $BAMS -@ {threads}
+    """
 
     def prepare_submission(self, *args, **kwargs):
-        self.setup_params(self.args['filename'], self.args['variants_per_shard'])
+        self.setup_params(self.args['read_dir'])
 
 
-class VCFStatsBash(jobs.BashArrayJobMixin, VCFStatsBase, jobs.VcfFileShardIterator):
+class MergeBamsMultilaneBartsBash(jobs.BashArrayJobMixin, MergeBamsBase, jobs.BamBartsMultilaneRecursiveIteratorMixin):
     pass
 
-class VCFStatsApocrita(VCFRequirements, VCFStatsBase, jobs.VcfFileShardIterator):
+class MergeBamsMultilaneBartsApocrita(MergeBamRequirements, MergeBamsBase, jobs.BamBartsMultilaneRecursiveIteratorMixin):
     pass
 
 
@@ -56,10 +52,10 @@ def run(run_type):
     import argparse
     import sys
 
-    if run_type == 'bash':
-        cls = VCFStatsBash
-    elif run_type == 'apocrita':
-        cls = VCFStatsApocrita
+    if run_type == 'bash_multilane_barts':
+        cls = MergeBamsMultilaneBartsBash
+    elif run_type == 'apocrita_multilane_barts':
+        cls = MergeBamsMultilaneBartsApocrita
     else:
         raise NotImplementedError("Unrecognised run_type option: %s" % run_type)
 
@@ -67,10 +63,9 @@ def run(run_type):
     optional = parser._action_groups.pop()
     required = parser.add_argument_group('required arguments')
 
-    required.add_argument("filename", help="Path to VCF file")
-    optional.add_argument("-n", "--variants_per_shard", help="Number of variants to handle per shard", type=int, default=int(1e7))
+    required.add_argument("read_dir", help="Input directory")
     optional.add_argument("-o", "--out_dir", help="Output directory")
-    optional.add_argument("-p", "--threads", help="Number of threads", default='1')
+    optional.add_argument("--threads", help="Number of threads to use", type=int, default=1)
 
     optional.add_argument("--include", help="List of filestems to include (comma separated)")
     optional.add_argument("--exclude", help="List of filestems to exclude (comma separated)")
@@ -80,9 +75,7 @@ def run(run_type):
 
     if args.out_dir is None:
         # if no output_dir specified, create one here
-        args.out_dir = os.path.join('./', 'vcf_stats')
-        if not os.path.exists(args.out_dir):
-            os.makedirs(args.out_dir)
+        args.out_dir = '.'
         sys.stderr.write("Output directory not specified, using default: %s\n" % args.out_dir)
 
     if args.include is not None:

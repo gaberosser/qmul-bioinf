@@ -43,7 +43,6 @@ def get_gbm_specific_variants(
         sample_pairs[k] = sorted(sample_pairs[k])
         if len(sample_pairs[k]) != 2:
             raise AttributeError("Sample with ID %s has %d matching entries. Expected 2." % (k, len(sample_pairs[k])))
-        # res[k] = []
 
     if chrom is not None:
         rd = rd.fetch(chrom, start=start_pos, end=end_pos)
