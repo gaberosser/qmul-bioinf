@@ -38,7 +38,8 @@ class VCFStatsBase(jobs.ArrayJob):
         PATH="$PATH:%s"
         if [[ ! -z $STARTPOS ]]; then S="--start $STARTPOS"; else S=""; fi
         if [[ ! -z $ENDPOS ]]; then E="--end $ENDPOS"; else E=""; fi
-        get_gbm_specific_variants.py $FILE --contig $CONTIG $S $E --outdir {out_dir} {extra}
+        # get_gbm_specific_variants.py $FILE --contig $CONTIG $S $E --outdir {out_dir} {extra}
+        get_methylation_related.py $FILE --contig $CONTIG $S $E --outdir {out_dir} {extra}
     """ % PY_PATH
 
     def prepare_submission(self, *args, **kwargs):

@@ -772,6 +772,7 @@ class Macs2PeaksIteratorMixin(FileIteratorMixin):
 class VcfFileShardIterator(object):
     def setup_params(self, fn, lines_per_shard, *args, **kwargs):
         import vcf
+        fn = os.path.abspath(fn)
         rd = vcf.Reader(filename=fn)
         contigs = rd.contigs
         run_params = []
