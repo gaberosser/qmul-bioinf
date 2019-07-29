@@ -157,6 +157,33 @@ def export_to_ipa(
     return ipa_export
 
 
+def shortlist_de_dm_genes(vs_de, vs_dm, sets, clusters, concordant_only=False):
+    if concordant_only:
+        raise NotImplementedError("Haven't yet implemented concordant filter in this function.")
+    ps_dm = dict([(s, vs_dm[s]) for s in sets])
+    ps_dm_genes = {}
+
+    for k, cids in ps_dm.items():
+        arr = [[t[0] for t in clusters[c].genes] for c in cids]
+        if len(arr) > 0:
+            ps_dm_genes[k] = sorted(setops.reduce_union(*arr))
+        else:
+            ps_dm_genes[k] = []
+
+    ps_de = dict([(s, vs_de[s]) for s in sets])
+
+    res = {}
+    for s in sets:
+        this_genes = set(ps_de[s]).intersection(ps_dm_genes[s])
+        this_clusters = []
+        for c in ps_dm[s]:
+            this = [t[0] for t in clusters[c].genes]
+            if len(this_genes.intersection(this)):
+                this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
+        res[s] = this_clusters
+    return res
+
+
 def multipage_pdf_mex_plots(
     fn_out,
     de_dm_list,
@@ -515,6 +542,8 @@ if __name__ == "__main__":
     # repeat with the other approach
     vs_dm, vc_dm = setops.venn_from_arrays(*[dmr_res_s1[pid].results_significant.keys() for pid in pids])
     vs_de, vc_de = setops.venn_from_arrays(*[de_res_s1[pid]['Gene Symbol'].dropna() for pid in pids])
+
+
     ps_dm = dict([
                      (pid, vs_dm[v]) for pid, v in setops.specific_sets(pids).items()
                      ])
@@ -577,7 +606,7 @@ if __name__ == "__main__":
 
     # shortlist
     multipage_pdf_mex_plots(
-        os.path.join(outdir, "de_dmr_shortlist_mex_plots.pdf"),
+        os.path.join(outdir, "de_dmr_patient_specific_shortlist_mex_plots.pdf"),
         sorted(ps_de_dm_list),
         me_data,
         dmr_res_s1,
@@ -596,7 +625,7 @@ if __name__ == "__main__":
         *[venn_set[ss[pid]] for pid in pids]
     )
     multipage_pdf_mex_plots(
-        os.path.join(outdir, "de_dmr_longlist_mex_plots.pdf"),
+        os.path.join(outdir, "de_dmr_patient_specific_longlist_mex_plots.pdf"),
         sorted(ps_de_dm_long_list),
         me_data,
         dmr_res_s1,
@@ -608,6 +637,25 @@ if __name__ == "__main__":
         plot_alpha=plot_alpha,
         direction_cmap=cmap
     )
+
+    # by request (SM): Extend to targets shared between up to 3 patients (use shortlist approach)
+    for n in range(2, len(pids) + 1):
+        this_sets = list(setops.binary_combinations_sum_eq(len(pids), n))
+        de_dm_ix = shortlist_de_dm_genes(vs_de, vs_dm, this_sets, dmr_res_s1.clusters)
+        this_list = sorted(setops.reduce_union(*de_dm_ix.values()))
+        multipage_pdf_mex_plots(
+            os.path.join(outdir, "de_dmr_%d_patients_shortlist_mex_plots.pdf" % n),
+            this_list,
+            me_data,
+            dmr_res_s1,
+            dmr_comparison_groups,
+            de_res_full_s1,
+            plot_colours=plot_colours,
+            plot_markers=plot_markers,
+            plot_zorder=plot_zorder,
+            plot_alpha=plot_alpha,
+            direction_cmap=cmap
+        )
 
     ##################
     ### STRATEGY 2 ###

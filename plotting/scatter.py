@@ -22,7 +22,7 @@ def scatter_with_colour_and_markers(
     default_marker='o',
     ec='k',
     lw=1.0,
-    ms=40
+    ms=40,
 ):
     """
     :param dat: Data to be plotted in any array format. Expect two columns (x and y). Can also be a pd.DataFrame.
@@ -38,7 +38,6 @@ def scatter_with_colour_and_markers(
     :param ec: Edgecolour
     :param lw: Linewidth
     :param ms: Marker size
-
     :return:
     """
 
@@ -52,26 +51,36 @@ def scatter_with_colour_and_markers(
     c_has_labels = True
     if colour_subgroups is None:
         c_has_labels = False
-        colour_subgroups = pd.Series(default_colour, index=dat.index)
+        # colour_subgroups = pd.Series(default_colour, index=dat.index)
+        # everything is in the same colour group
+        colour_subgroups = pd.Series('foo', index=dat.index)
 
     cidx, clabels = colour_subgroups.factorize()
 
     m_has_labels = True
     if marker_subgroups is None:
         m_has_labels = False
-        marker_subgroups = pd.Series(default_marker, index=dat.index)
+        # marker_subgroups = pd.Series(default_marker, index=dat.index)
+        # everything is in the same marker group
+        marker_subgroups = pd.Series('foo', index=dat.index)
 
     midx, mlabels = marker_subgroups.factorize()
 
     if colour_map is None:
-        cmap = common.get_best_cmap(len(clabels))
+        if c_has_labels:
+            cmap = common.get_best_cmap(len(clabels))
+        else:
+            cmap = [default_colour] * len(clabels)
         colour_map = dict([
             (k, cmap[i]) for i, k in enumerate(clabels)
         ])
 
     if marker_map is None:
-        # marker_map = dict([(k, 'o') for k in mlabels])
-        mmap = common.get_best_marker_map(len(mlabels))
+        if m_has_labels:
+            mmap = common.get_best_marker_map(len(mlabels))
+        else:
+            mmap = [default_marker] * len(mlabels)
+
         marker_map = dict([
             (k, mmap[i]) for i, k in enumerate(mlabels)
         ])

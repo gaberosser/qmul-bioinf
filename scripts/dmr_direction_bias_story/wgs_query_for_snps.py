@@ -24,6 +24,39 @@ METH_GENES = [
     "TDRD9", "TDRKH", "TET1", "TET2", "TET3", "TRIM28", "UHRF1", "UHRF2", "USP7", "USP9X", "WT1", "ZFP57", "ZMPSTE24"
 ]
 
+
+def run_one_count(res_arr, key1='GIC', key2='iNSC'):
+    this_var_count = collections.defaultdict(collections.Counter)
+    for t in res_arr:
+        if t[key2] is None:
+            this_var_count[t[key1].CHROM]['%s only' % key1] += 1
+        elif t[key1] is None:
+            this_var_count[t[key2].CHROM]['%s only' % key2] += 1
+        elif (t[key1].samples[0]['GT'] == '1/1') and (t[key2].samples[0]['GT'] == '0/1'):
+            this_var_count[t[key1].CHROM]['%s hom %s het' % (key1, key2)] += 1
+        elif (t[key2].samples[0]['GT'] == '1/1') and (t[key1].samples[0]['GT'] == '0/1'):
+            this_var_count[t[key1].CHROM]['%s hom %s het' % (key2, key1)] += 1
+        else:
+            this_var_count[t[key1].CHROM]['other'] += 1
+    return this_var_count
+
+
+def run_one_sort(res_arr, key1, key2):
+    res = collections.defaultdict(list)
+    for t in res_arr:
+        if t[key2] is None:
+            res['%s only' % key1].append(t[key1])
+        elif t[key1] is None:
+            res['%s only' % key2].append(t[key2])
+        elif (t[key1].samples[0]['GT'] == '1/1') and (t[key2].samples[0]['GT'] == '0/1'):
+            res['%s hom %s het' % (key1, key2)].append(t)
+        elif (t[key2].samples[0]['GT'] == '1/1') and (t[key1].samples[0]['GT'] == '0/1'):
+            res['%s hom %s het' % (key2, key1)].append(t)
+        else:
+            res['other'].append(t)
+    return res
+
+
 if __name__ == '__main__':
     """
     Here we are going to iterate over a VCF file containing all variants called in our WGS dataset.
@@ -35,13 +68,96 @@ if __name__ == '__main__':
     pids = consts.PIDS
     contigs = set(['chr%d' % i for i in range(1, 23)] + ['chrX', 'chrY', 'chrM'])
 
-    base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12')
-    meta_fn = os.path.join(base_indir, 'sources.csv')
+    # V1: iterate over full VCF files and count (only - too big)
+    if False:
+
+        base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12')
+        meta_fn = os.path.join(base_indir, 'sources.csv')
+
+        meta = pd.read_csv(meta_fn, header=0, index_col=0)
+        meta.loc[:, 'patient_id'] = ["%03d" % t for t in meta.patient_id]
+
+        outdir = output.unique_output_dir()
+
+        var_dat = []
+
+        var_counts = collections.OrderedDict()
+        meth_counts = collections.OrderedDict()
+
+        for pid in pids:
+            logger.info("Patient %s", pid)
+            this_meta = meta.loc[meta.patient_id == pid]
+            in_fns = []
+            readers = {}
+            for t in this_meta.index:
+                the_fn = os.path.join(base_indir, t, "%s.vcf.gz" % meta.loc[t, 'sample'])
+                in_fns.append(the_fn)
+                readers[this_meta.loc[t, 'type']] = vcf.Reader(filename=the_fn, compressed=True)
+            logger.info("Found %d conditions to compare: %s", len(readers), ', '.join(readers.keys()))
+
+            it = vcf.utils.walk_together(*readers.values())
+
+            this_res = []
+            this_res_meth = []
+
+            for i, recs in enumerate(it):
+                if i % 50000 == 0:
+                    logger.info(
+                        "Processed %d variants. Retained %d as they differ. Retained %d related to methylation.",
+                        i,
+                        len(this_res),
+                        len(this_res_meth)
+                    )
+
+                the_chrom = None
+                the_ann = None
+                for rec in recs:
+                    if rec is not None:
+                        the_chrom = rec.CHROM
+                        the_ann = '#'.join(rec.INFO['ANN'])
+                        break
+
+                if the_chrom in contigs:
+                    # compare across results
+                    gts = set()
+                    for rec in recs:
+                        if rec is None:
+                            this_res.append(dict(zip(readers.keys(), recs)))
+                            # reset gts
+                            gts = set()
+                            break
+                        else:
+                            gts.add(rec.samples[0]['GT'])
+                    if len(gts) > 1:
+                        this_res.append(dict(zip(readers.keys(), recs)))
+
+                    # regardless of whether they differ, if they are related to methylation keep track
+                    if any([t in the_ann for t in METH_GENES]):
+                        this_res_meth.append(dict(zip(readers.keys(), recs)))
+
+            var_counts[pid] = run_one_count(this_res)
+            meth_counts[pid] = run_one_count(this_res_meth)
+
+            # out_fn = os.path.join(outdir, "%s_delta_variants.pkl.gz" % pid)
+            # with gzip.open(out_fn, 'wb') as f:
+            #     pickle.dump(this_res, f)
+            # logger.info("Dumped %d results to gzipped pickle file %s", len(this_res), out_fn)
+            #
+            # out_fn = os.path.join(outdir, "%s_meth_variants.pkl.gz" % pid)
+            # with gzip.open(out_fn, 'wb') as f:
+            #     pickle.dump(this_res_meth, f)
+            # logger.info("Dumped %d methylation-related results to gzipped pickle file %s", len(this_res_meth), out_fn)
+
+    # V2: iterate over pre-made short files and store data in memory
+    base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/dnmt_associated/')
+    meta_fn = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
 
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
     meta.loc[:, 'patient_id'] = ["%03d" % t for t in meta.patient_id]
 
     outdir = output.unique_output_dir()
+
+    var_dat = {}
 
     for pid in pids:
         logger.info("Patient %s", pid)
@@ -49,25 +165,16 @@ if __name__ == '__main__':
         in_fns = []
         readers = {}
         for t in this_meta.index:
-            the_fn = os.path.join(base_indir, t, "%s.vcf.gz" % meta.loc[t, 'sample'])
+            the_fn = os.path.join(base_indir, "%s.vcf" % meta.loc[t, 'sample'])
             in_fns.append(the_fn)
-            readers[this_meta.loc[t, 'type']] = vcf.Reader(filename=the_fn, compressed=True)
+            readers[this_meta.loc[t, 'type']] = vcf.Reader(filename=the_fn)
         logger.info("Found %d conditions to compare: %s", len(readers), ', '.join(readers.keys()))
 
         it = vcf.utils.walk_together(*readers.values())
 
         this_res = []
-        this_res_meth = []
 
         for i, recs in enumerate(it):
-            if i % 50000 == 0:
-                logger.info(
-                    "Processed %d variants. Retained %d as they differ. Retained %d related to methylation.",
-                    i,
-                    len(this_res),
-                    len(this_res_meth)
-                )
-
             the_chrom = None
             the_ann = None
             for rec in recs:
@@ -90,17 +197,4 @@ if __name__ == '__main__':
                 if len(gts) > 1:
                     this_res.append(dict(zip(readers.keys(), recs)))
 
-                # regardless of whether they differ, if they are related to methylation keep track
-                if any([t in the_ann for t in METH_GENES]):
-                    this_res_meth.append(dict(zip(readers.keys(), recs)))
-
-        out_fn = os.path.join(outdir, "%s_delta_variants.pkl.gz" % pid)
-        with gzip.open(out_fn, 'wb') as f:
-            pickle.dump(this_res, f)
-        logger.info("Dumped %d results to gzipped pickle file %s", len(this_res), out_fn)
-
-        out_fn = os.path.join(outdir, "%s_meth_variants.pkl.gz" % pid)
-        with gzip.open(out_fn, 'wb') as f:
-            pickle.dump(this_res_meth, f)
-        logger.info("Dumped %d methylation-related results to gzipped pickle file %s", len(this_res_meth), out_fn)
-
+            var_dat[pid] = this_res

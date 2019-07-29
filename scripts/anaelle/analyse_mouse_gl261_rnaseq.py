@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     de_res.to_csv(os.path.join(outdir, "de_res_full.csv"))
 
-    # try removing one WT case where the Rheb level is low
+    # try removing one WT case (WT76) where the Rheb level is low
     if True:
         ix = ~obj_star.data.columns.isin(['WT_76'])
         dat = filter.filter_by_cpm(obj_star.data.loc[:, ix], min_cpm=min_cpm, min_n_samples=2)
