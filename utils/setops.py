@@ -51,7 +51,7 @@ def venn_from_arrays(*args, **kwargs):
      Counts are also computed for convenience
     :param args:
     :param kwargs:
-    :return:
+    :return: venn_sets, venn_counts
     """
     n = len(args)
 

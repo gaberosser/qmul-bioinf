@@ -138,18 +138,8 @@ if __name__ == '__main__':
             var_counts[pid] = run_one_count(this_res)
             meth_counts[pid] = run_one_count(this_res_meth)
 
-            # out_fn = os.path.join(outdir, "%s_delta_variants.pkl.gz" % pid)
-            # with gzip.open(out_fn, 'wb') as f:
-            #     pickle.dump(this_res, f)
-            # logger.info("Dumped %d results to gzipped pickle file %s", len(this_res), out_fn)
-            #
-            # out_fn = os.path.join(outdir, "%s_meth_variants.pkl.gz" % pid)
-            # with gzip.open(out_fn, 'wb') as f:
-            #     pickle.dump(this_res_meth, f)
-            # logger.info("Dumped %d methylation-related results to gzipped pickle file %s", len(this_res_meth), out_fn)
-
     # V2: iterate over pre-made short files and store data in memory
-    base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/dnmt_associated/')
+    base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/meth_associated/')
     meta_fn = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
 
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
@@ -198,3 +188,20 @@ if __name__ == '__main__':
                     this_res.append(dict(zip(readers.keys(), recs)))
 
             var_dat[pid] = this_res
+
+    dat_classified = dict([
+        (pid, run_one_sort(var_dat[pid], 'GIC', 'iNSC')) for pid in pids
+    ])
+
+    # search through GIC only and GIC hom/iNSC het SNPs and 'other' and generate upset
+    members = {}
+    for pid, d in dat_classified.items():
+        members[pid] = set()
+        for typ in ['GIC only', 'GIC hom iNSC het', 'other']:
+            for x in d[typ]:
+                if isinstance(x, dict):
+                    members[pid].add(str(x['GIC']))
+                else:
+                    members[pid].add(str(x))
+
+    vs, vc = setops.venn_from_arrays(*[members[pid] for pid in pids])
