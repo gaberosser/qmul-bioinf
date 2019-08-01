@@ -15,13 +15,20 @@ I organise files as follows.
 - Where processing is reference-specific, files are located in a subdirectory naming the reference, e.g. `<data_dir>/<experiment_type>/<project_id>/<lane_id>/mouse/bwa_alignment` (lane-specific) or `<data_dir>/<experiment_type>/<project_id>/mouse/bwa_alignment` (combined lanes).
 
 ## Downloading data
-The Wellcome Trust Centre for Human Genetics (WTCHG) always serves data over ftp. The ftp server requires a username and password, which are supplied in the URL they send. To download the entire directory from a URL, run 
+
+### Wellcome Trust Centre for Human Genetics (WTCHG)
+
+The WTCHG always serves data over ftp. The ftp server requires a username and password, which are supplied in the URL they send by email. To download the entire directory from a URL, run 
 
 ```bash
 wget -nH -np -r ftp://<username>:<password>@bsg-ftp.well.ox.ac.uk/<run_id>
 ```
 
 The entire URL can just be copied from the email. This will create a directory called `run_id`.
+
+### Barts Genome Centre
+
+Barts Genome Centre transfer data using [Illumina's BaseSpace](https://basespace.illumina.com/) web service. It is possible to download data directly from the web interface, but this is not practical for large runs and not straightforward to run from Apocrita. Instead, I have used the [BaseSpace BaseMount](https://basemount.basespace.illumina.com/) tool (Linux only), which allows you to browse and copy files from BaseSpace as if they were mounted on your local machine.
 
 ## FastQC
 
@@ -140,7 +147,7 @@ Note that this can accept a list of bam files separated by a space. If run in th
 - Split over several lanes (4 in last batch)
 - Only raw reads received
 ### Process
-This pipeline has only been applied once, so it is only partially automated. First load modules if on Apocrita:
+This pipeline has only been applied twice, so it is only partially automated. First load modules if on Apocrita:
 ```bash
 module load trimgalore
 module load bismark
