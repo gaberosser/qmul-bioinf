@@ -195,13 +195,7 @@ bismark path/to/fasta_dir -o <output_dir> -p <num_threads> -B <output_prefix> -1
 
 The output files for each pair of reads will be located in a subdirectory, `output_dir/output_prefix`. Each subdirectory will contain a bam file. 
 
-If `bismark` was run on each lane separately, at this point we need to merge bams corresponding to multiple lanes of the same run. `samtools cat` is a quick option that preserves the required order (sorted by read name).
-
-```bash
-samtools cat sample1_lane1.bam sample1_lane2.bam ... > sample1.bam
-```
-
-I would recommend running `bismark` with multiple lanes in one go, unless you think there's some important lane-specific effect to investigate.
+**Warning: I have experienced problems with this approach, in which `bismark` seems to generate a bam file for just one of the lanes, despite reporting that it will use all of them. For this reason, I recommend running it separately on each lane.**
 
 Finally, we will extract the actual methylation state estimates:
 
@@ -225,13 +219,38 @@ It's a bit annoying that we only find out about problems at this stage, because 
 bismark_methylation_extractor --parallel <num_threads> --no_header --gzip --bedGraph --ignore_r2 2 --ignore_3prime_r2 2 sample1.bam
 ```
 
-The two steps (`bismark` followed by `bismark_methylation_extractor`) are automated in the following python scripts:
+The two steps (`bismark` followed by `bismark_methylation_extractor`) are automated in the following python scripts. This one to run on individual lanes (recommended):
 
 ```bash
-python bioinf/pyscript/apocrita/trim_galore_pe.py --rrbs
+python bioinf/pyscript/apocrita/bismark_pe.py --ignore_3prime 2 --ignore_3prime_r2 4 -i /path/to/fasta
 ```
 
-This script also accepts the optional arguments `--ignore_r2 <int>` and `--ignore_3prime_r2`. If only the second step (`bismark_methylation_extractor`) is required, this can be specified using the argument `--extract_only`, in which case it is assumed that bam files have already been generated.
+or this one to run on multiple lanes in one shot (see my earlier caveat):
+
+```bash
+python bioinf/pyscript/apocrita/bismark_multilane_pe.py --ignore_3prime 2 --ignore_3prime_r2 4 -i /path/to/fasta
+```
+
+The path to the fasta files points to a *directory* not a file. This script also accepts the optional arguments `--ignore <int>` and `--ignore_r2 <int>` to ignore the 5 prime ends or read 1 and 2, respectively. 
+
+If only the second step (`bismark_methylation_extractor`) is required, this can be specified using the argument `--extract_only`, in which case it is assumed that bam files have already been generated.
+
+#### Optional: merge bams
+
+If `bismark` was run on each lane separately, at this point we can merge bams corresponding to multiple lanes of the same run. `samtools cat` is a quick option that preserves the order.
+
+```bash
+samtools cat sample1_lane1.bam sample1_lane2.bam ... > sample1.bam
+```
+
+Alternatively, `samtools merge -n` sorts by read name, but this isn't necessary. **NB**: `samtools merge` without the `-n` flag will result in an error from the final step when we run `bismark_methylation_extractor`. These operations have been automated for Barts Genome Centre data in the following `python` scripts:
+
+```bash
+python bioinf/pyscript/apocrita/cat_bams_barts_multilane.py /path/to/bam/top_level
+python bioinf/pyscript/apocrita/merge_bam_barts_multilane.py /path/to/bam/top_level -n
+```
+
+The path above just needs to point to the top level directory containing all bam files. The files themselves can be located in subdirectories, as the script searches exhaustively. However, all bam files in the path specified must be compatible with the naming scheme: `<sample_name>_L<lane_number>[_pe].bam`.
 
 
 ## ChIP-Seq

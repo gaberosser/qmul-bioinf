@@ -72,8 +72,6 @@ class BismarkPEBase(jobs.ArrayJob):
         return cmd
 
 
-
-
 class BismarkPEBash(jobs.BashArrayJobMixin, BismarkPEBase, jobs.PEFastqFileIteratorMixin):
     pass
 
