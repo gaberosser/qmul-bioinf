@@ -11,8 +11,8 @@ import seaborn as sns
 
 
 if __name__ == '__main__':
-    indir1 = os.path.join(settings.DATA_DIR_NON_GIT, 'chipseq', 'wtchg_p170710')
-    indir2 = os.path.join(settings.DATA_DIR_NON_GIT, 'chipseq', 'wtchg_p170710_pilot')
+    indir1 = os.path.join(settings.DATA_DIR, 'chipseq', 'wtchg_p170710')
+    indir2 = os.path.join(settings.DATA_DIR, 'chipseq', 'wtchg_p170710_pilot')
 
     outdir = output.unique_output_dir("p170710_chipseq_analysis")
 

@@ -1,6 +1,6 @@
 import pandas as pd
 from utils import output
-from settings import OUTPUT_DIR, DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2
+from settings import OUTPUT_DIR, DATA_DIR
 import os
 from plotting import venn, clustering
 from matplotlib import pyplot as plt
@@ -10,12 +10,12 @@ if __name__ == "__main__":
     outdir = output.unique_output_dir("tcga_gbm_analysis", reuse_empty=True)
     # load meta files
     meta_fn = {
-        'rnaseq': os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'rnaseq.meta.csv'),
-        'marr_u133': os.path.join(DATA_DIR_NON_GIT2, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.ht_hg_u133a.csv'),
-        'marr_agilent1': os.path.join(DATA_DIR_NON_GIT2, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.agilentg4502a_07_1.csv'),
-        'marr_agilent2': os.path.join(DATA_DIR_NON_GIT2, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.agilentg4502a_07_2.csv'),
-        'meth_450k': os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'methylation.450k.meta.csv'),
-        'meth_27k': os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'methylation.27k.meta.csv'),
+        'rnaseq': os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'rnaseq.meta.csv'),
+        'marr_u133': os.path.join(DATA_DIR, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.ht_hg_u133a.csv'),
+        'marr_agilent1': os.path.join(DATA_DIR, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.agilentg4502a_07_1.csv'),
+        'marr_agilent2': os.path.join(DATA_DIR, 'microarray', 'tcga_gbm', 'primary_tumour', 'microarray.meta.agilentg4502a_07_2.csv'),
+        'meth_450k': os.path.join(DATA_DIR, 'methylation', 'tcga_gbm', 'primary_tumour', 'methylation.450k.meta.csv'),
+        'meth_27k': os.path.join(DATA_DIR, 'methylation', 'tcga_gbm', 'primary_tumour', 'methylation.27k.meta.csv'),
     }
 
     meta = {}

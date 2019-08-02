@@ -1,6 +1,6 @@
 from utils import output
 from rnaseq import gsea
-from settings import DATA_DIR_NON_GIT, HGIC_LOCAL_DIR
+from settings import DATA_DIR, HGIC_LOCAL_DIR
 import references
 from scripts.wang_gbm_classifier.classify_our_gbm_samples import simplicity_score, load_pvalue_results
 

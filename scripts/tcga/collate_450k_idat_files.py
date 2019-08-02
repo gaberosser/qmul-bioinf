@@ -2,7 +2,7 @@ import os
 import shutil
 import json
 import pandas as pd
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from collate_annotate2 import parse_meta, get_meta
 from utils import output
 
@@ -15,7 +15,7 @@ IDAT files stored in one directory per file, so we need to reunite pairs.
 We'll also associate each with the case UUID and submitter ID and save this as new metadata.
 """
 
-indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour', 'idat')
+indir = os.path.join(DATA_DIR, 'methylation', 'tcga_gbm', 'primary_tumour', 'idat')
 outdir = output.unique_output_dir('tcga_450k')
 
 meta_fn = get_meta(indir)

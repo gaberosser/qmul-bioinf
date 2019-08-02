@@ -1,6 +1,6 @@
 from rnaseq import gsva, loader
 import pandas as pd
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR
 from plotting import venn, common
 
 import os
@@ -409,7 +409,7 @@ def tam_signature_dict():
     }
 
     # Mouse version (needs translating) by Bowman et al.
-    bowman_tam_signature_fn = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S2.csv')
+    bowman_tam_signature_fn = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S2.csv')
     bowman_tam_signatures = pd.read_csv(bowman_tam_signature_fn, header=0, index_col=None)
 
     # generate series of orthologs of the relevant gene signatures

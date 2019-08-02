@@ -2,7 +2,7 @@ import requests
 from utils.log import get_console_logger, get_file_logger
 from utils.output import unique_output_dir
 import os
-from settings import HEIDELBERG_CLASSIFIER_CONFIG, DATA_DIR_NON_GIT
+from settings import HEIDELBERG_CLASSIFIER_CONFIG, DATA_DIR
 import pandas as pd
 from scripts.heidelberg_classifier import api
 from time import sleep
@@ -258,8 +258,8 @@ if __name__ == '__main__':
     for d in inputs:
         base_dir = d.pop('base_dir') # remaining dictionary values are kwargs for the uploader
         print "Project %s" % base_dir
-        sample_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', base_dir, 'samplesheet.csv')
-        indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', base_dir, 'idat')
+        sample_fn = os.path.join(DATA_DIR, 'methylation', base_dir, 'samplesheet.csv')
+        indir = os.path.join(DATA_DIR, 'methylation', base_dir, 'idat')
 
         samples = api.read_samplesheet(sample_fn)
         if include is not None:

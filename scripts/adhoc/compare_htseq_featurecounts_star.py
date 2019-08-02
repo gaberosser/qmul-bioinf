@@ -1,12 +1,12 @@
 from matplotlib import pyplot as plt
 import pandas as pd
 import os
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from load_data import rnaseq_data
 
 
 if __name__ == "__main__":
-    INDIR = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    INDIR = os.path.join(DATA_DIR, 'rnaseq', 'GSE73721')
 
     # featureCounts with hisat2
     fcount_files = [os.path.join(INDIR, 'hisat2_alignment', 'featureCounts', 'counts.txt')]
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     ## WTCHG run 1
 
     # featureCounts with hisat2
-    INDIR = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704/161219_K00198_0151_BHGYHTBBXX')
+    INDIR = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704/161219_K00198_0151_BHGYHTBBXX')
     fcount_files = [os.path.join(INDIR, 'featureCounts', 'counts.txt')]
     metafile = os.path.join(INDIR, 'sources.csv')
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     all_dat.columns = ['fc', 'STAR']
 
     ## GSE61794 (NSC)
-    INDIR = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
+    INDIR = os.path.join(DATA_DIR, 'rnaseq', 'GSE61794')
 
     # featureCounts with hisat2
     fcount_files = [os.path.join(INDIR, 'hisat2_alignment', 'featureCounts', 'counts.txt')]
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     plt.scatter(all_dat.fc, all_dat.STAR)
 
     ## GSE73721: pre-computed FPKM (from GEO) vs featureCounts "FPKM"
-    INDIR = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    INDIR = os.path.join(DATA_DIR, 'rnaseq', 'GSE73721')
 
     fcount_files = [os.path.join(INDIR, 'hisat2_alignment', 'featureCounts', 'counts.txt')]
     metafile = os.path.join(INDIR, 'sources.csv')

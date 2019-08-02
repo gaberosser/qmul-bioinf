@@ -524,6 +524,14 @@ class BamFileSingleRunMixin(BamFileIteratorMixin):
         self.run_names = '&'.join(self.run_names)
 
 
+class BismarkCovBartsMultilaneRecursiveIteratorMixin(BamBartsMultilaneRecursiveIteratorMixin):
+    ext = 'bismark.cov.gz'
+    cleanup_regex = [
+        (r'_pe$', '')
+    ]
+    create_subdirs = False
+
+
 class PEFastqFileIteratorMixin(PairedFileIteratorMixin):
     ext = r'fastq(\.gz)?'
     cleanup_regex = [

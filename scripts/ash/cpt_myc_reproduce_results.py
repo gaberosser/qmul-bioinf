@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 import os
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from matplotlib import pyplot as plt
 import seaborn as sns
 from plotting import heatmap, clustering
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     cross_corr_threshold = 0.5
     alpha = 0.05
 
-    fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
+    fn = os.path.join(DATA_DIR, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
     rma_data = pd.read_csv(fn, sep='\t', comment='#', header=0, index_col=0)
 
     # load annotation files
@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
 
     # version used by Jennie originally
-    ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'ash_cpt_project', 'GSE60892_annotation.xlsx')
+    ann_fn = os.path.join(DATA_DIR, 'exon_array', 'ash_cpt_project', 'GSE60892_annotation.xlsx')
     ann = pd.read_excel(ann_fn)
     ann = ann.loc[~ann.probeset_id.isnull()]
     ann.loc[:, 'probeset_id'] = ann.loc[:, 'probeset_id'].astype(int)

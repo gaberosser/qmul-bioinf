@@ -1,6 +1,6 @@
 from rnaseq import gsva, loader
 import pandas as pd
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR
 from plotting import venn
 
 import os

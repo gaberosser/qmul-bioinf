@@ -2,7 +2,7 @@ import pandas as pd
 from rnaseq import loader, differential_expression, filter
 from matplotlib import pyplot as plt
 import seaborn as sns
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 from utils import output
 import os
 
@@ -16,7 +16,7 @@ if __name__ == "__main__":
         'fdr': 0.05
     }
     # load featurecounts summaries and generate a plot
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'small_rnaseq')
+    basedir = os.path.join(DATA_DIR, 'small_rnaseq')
     indirs = [
         'wtchg_p170389',
         'wtchg_p170645',

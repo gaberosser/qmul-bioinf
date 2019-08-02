@@ -1,5 +1,5 @@
 import os
-from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR
+from settings import DATA_DIR, LOCAL_DATA_DIR
 import csv
 from gzip import GzipFile
 import re

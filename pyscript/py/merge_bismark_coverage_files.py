@@ -11,18 +11,18 @@ import gzip
 sys.path.append(os.path.dirname(__file__) + '/../../')
 
 
-def merge_coverage_files(*files, **kwargs):
+def merge_coverage_files(files, chroms=None):
     """
     Merge the specified bismark methylation coverage files. These are typically gzipped, but we'll check the file
     extension to be sure. The format is (tab delimited):
     CHROM START END PCT_METH M_COUNT U_COUNT
     where END = START (It's a single CpG site), M_COUNT is the number of reads supporting a methylated site (and vice versa
     for U_COUNT)
-    :param files: Files to be merged
-    :param **kwargs: Optional kwargs. chroms: iterable specifying the chromosomes to include
+    :param files: Iterable of files to be merged
+    :param chroms: Iterable specifying the chromosomes to include (None means include all chroms - this is the default
+    operation)s
     :return:
     """
-    chroms = kwargs.get('chroms')
     if chroms is not None:
         chroms = set([str(t) for t in chroms])
 
@@ -58,26 +58,35 @@ def merge_coverage_files(*files, **kwargs):
     return res
 
 
-def write_coverage_file(res, out_fn, gzip=True):
-    if gzip:
-        opener = gzip.open
-    else:
-        opener = open
-
-    with opener(out_fn, 'wb') as f:
-        writer = csv.writer(f, delimiter='\t')
-        writer.writerows(res)
+def write_coverage_file(res, fstream):
+    writer = csv.writer(fstream, delimiter='\t')
+    writer.writerows(res)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge and sum multiple bismark coverage files from the same experiment.")
     parser.add_argument('files', type=argparse.FileType('rb'), nargs='+', help='Path to coverage files')
     parser.add_argument('-o', '--output', type=str, help='Output file', required=False, default=None)
-    ## TODO
     parser.add_argument('-c', '--chroms', type=str, help='Comma-separated list of chromosomes', required=False, default=None)
 
     args = parser.parse_args()
     files = [t.name for t in args.files]
+    chroms = None
+    if args.chroms is not None:
+        chroms = args.chroms.split(',')
 
-    res = merge_coverage_files(files)
-    print args
+    out_fn = args.output
+    out_stream = sys.stdout
+
+    try:
+        res = merge_coverage_files(files, chroms=chroms)
+        if out_fn is not None:
+            out_stream = gzip.open(out_fn, 'wb')
+        write_coverage_file(res, out_stream)
+
+    finally:
+
+        out_stream.close()
+
+
+

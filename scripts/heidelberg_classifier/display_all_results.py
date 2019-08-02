@@ -2,7 +2,7 @@ import pandas as pd
 import zipfile
 import os
 import numpy as np
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import re
 
 
@@ -61,7 +61,7 @@ def get_top_n_results(indir, n_result=4, score_threshold=0.6):
 
 
 if __name__ == "__main__":
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation')
+    indir = os.path.join(DATA_DIR, 'methylation')
     for t in os.walk(indir):
         if 'heidelberg_classifier' in t[1]:
             this_dir = os.path.join(t[0], 'heidelberg_classifier')

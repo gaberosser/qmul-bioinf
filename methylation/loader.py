@@ -5,7 +5,7 @@ import gzip
 import re
 import multiprocessing as mp
 import numpy as np
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 
 from utils import rinterface, log
 from rpy2 import robjects
@@ -22,31 +22,31 @@ NORM_METHODS = {
     'funnorm'
 }
 
-METHYLATION_DIR = os.path.join(DATA_DIR_NON_GIT, 'methylation')
+METHYLATION_DIR = os.path.join(DATA_DIR, 'methylation')
 
 project_dirs = {
-    "2016-06-10_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner'),
-    "2016-09-21_dutt": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-09-21_dutt'),
-    "2016-12-19_ucl_genomics": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics'),
-    "2017-01-17_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-01-17_brandner'),
-    "2017-02-09_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-02-09_brandner'),
-    "2017-05-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12'),
-    "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
-    "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
-    "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
-    "2018-03-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-19'),
-    "2018-03-26": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-03-26'),
-    "2018-04-09": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-04-09'),
-    "2018-06-26": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-06-26'),
-    "gse38216": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216'),
-    "gse65214": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214'),
-    "gse67283": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283'),
-    "gse31848": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848'),
-    "gse110544": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE110544'),
-    "E-MTAB-6194": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194'),
-    "encode_epic": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_EPIC'),
-    "encode_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_450k'),
-    "gse92462_450k": os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_450K'),
+    "2016-06-10_brandner": os.path.join(DATA_DIR, 'methylation', '2016-06-10_brandner'),
+    "2016-09-21_dutt": os.path.join(DATA_DIR, 'methylation', '2016-09-21_dutt'),
+    "2016-12-19_ucl_genomics": os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics'),
+    "2017-01-17_brandner": os.path.join(DATA_DIR, 'methylation', '2017-01-17_brandner'),
+    "2017-02-09_brandner": os.path.join(DATA_DIR, 'methylation', '2017-02-09_brandner'),
+    "2017-05-12": os.path.join(DATA_DIR, 'methylation', '2017-05-12'),
+    "2017-08-23": os.path.join(DATA_DIR, 'methylation', '2017-08-23'),
+    "2017-09-19": os.path.join(DATA_DIR, 'methylation', '2017-09-19'),
+    "2018-01-12": os.path.join(DATA_DIR, 'methylation', '2018-01-12'),
+    "2018-03-19": os.path.join(DATA_DIR, 'methylation', '2018-03-19'),
+    "2018-03-26": os.path.join(DATA_DIR, 'methylation', '2018-03-26'),
+    "2018-04-09": os.path.join(DATA_DIR, 'methylation', '2018-04-09'),
+    "2018-06-26": os.path.join(DATA_DIR, 'methylation', '2018-06-26'),
+    "gse38216": os.path.join(DATA_DIR, 'methylation', 'GSE38216'),
+    "gse65214": os.path.join(DATA_DIR, 'methylation', 'GSE65214'),
+    "gse67283": os.path.join(DATA_DIR, 'methylation', 'GSE67283'),
+    "gse31848": os.path.join(DATA_DIR, 'methylation', 'GSE31848'),
+    "gse110544": os.path.join(DATA_DIR, 'methylation', 'GSE110544'),
+    "E-MTAB-6194": os.path.join(DATA_DIR, 'methylation', 'E-MTAB-6194'),
+    "encode_epic": os.path.join(DATA_DIR, 'methylation', 'ENCODE_EPIC'),
+    "encode_450k": os.path.join(DATA_DIR, 'methylation', 'ENCODE_450k'),
+    "gse92462_450k": os.path.join(DATA_DIR, 'methylation', 'GSE92462_450K'),
 }
 
 PATIENT_LOOKUP_FFPE = {
@@ -680,7 +680,7 @@ def load_reference(ref_names, norm_method='pbc', samples=None):
 
 
 def e_mtab_6194(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'E-MTAB-6194')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'E-MTAB-6194')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -694,7 +694,7 @@ def e_mtab_6194(norm_method='raw', samples=None):
 
 
 def gse92462_epic(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_EPIC')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE92462_EPIC')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -707,7 +707,7 @@ def gse92462_epic(norm_method='raw', samples=None):
 
 
 def gse92462_450k(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE92462_450K')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE92462_450K')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -720,7 +720,7 @@ def gse92462_450k(norm_method='raw', samples=None):
 
 
 def gse110544(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE110544')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE110544')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -733,7 +733,7 @@ def gse110544(norm_method='raw', samples=None):
 
 
 def gse60274(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE60274')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE60274')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -746,7 +746,7 @@ def gse60274(norm_method='raw', samples=None):
 
 
 def gse31848(norm_method='raw', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE31848')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE31848')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
@@ -760,7 +760,7 @@ def gse31848(norm_method='raw', samples=None):
 
 
 def gse38216(norm_method='bmiq', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE38216')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE38216')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -773,7 +773,7 @@ def gse38216(norm_method='bmiq', samples=None):
 
 
 def gse67283(norm_method='bmiq', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE67283')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE67283')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -786,7 +786,7 @@ def gse67283(norm_method='bmiq', samples=None):
 
 
 def gse65214(norm_method='bmiq', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE65214')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE65214')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -799,7 +799,7 @@ def gse65214(norm_method='bmiq', samples=None):
 
 
 def encode_epic(norm_method='bmiq', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_EPIC')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'ENCODE_EPIC')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -812,7 +812,7 @@ def encode_epic(norm_method='bmiq', samples=None):
 
 
 def encode_450k(norm_method='bmiq', samples=None):
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'ENCODE_450k')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'ENCODE_450k')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
     return IlluminaHumanMethylationLoader(
@@ -833,7 +833,7 @@ def hipsci(norm_method='bmiq', array_type='all', n_sample=None):
     """
     if array_type.lower() not in {'all', '450k', 'epic'}:
         raise AttributeError("array_type %s is not supported" % array_type)
-    base_dir = os.path.join(DATA_DIR_NON_GIT, 'methylation',  'hipsci_ipsc')
+    base_dir = os.path.join(DATA_DIR, 'methylation', 'hipsci_ipsc')
     beta_fn = os.path.join(base_dir, 'beta', array_type.lower(), 'beta_%s.csv.gz' % norm_method)
     if not os.path.isfile(beta_fn):
         raise AttributeError("Unable to find file %s, are you sure you chose a valid norm_method?" % beta_fn)

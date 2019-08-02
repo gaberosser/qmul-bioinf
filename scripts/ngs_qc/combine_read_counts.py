@@ -1,9 +1,9 @@
 import os
 import pandas as pd
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 
 
-basedir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq')
+basedir = os.path.join(DATA_DIR, 'rnaseq')
 dirname = 'wtchg_p170446'
 indir = os.path.join(basedir, dirname)
 

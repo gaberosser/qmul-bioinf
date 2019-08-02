@@ -1,6 +1,6 @@
 from rnaseq import gsva, loader
 import pandas as pd
-from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, GIT_LFS_DATA_DIR
 import os
 import references
 import datetime
@@ -93,8 +93,8 @@ def ols_plot(y, x, add_intercept=True, alpha=0.05, xlim=None, ax=None):
 def get_de_tissue_tumour():
 
     # load tables S1A, S1B: lists of DE genes in healthy vs TAM
-    fn_s1a = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S1A.csv')
-    fn_s1b = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S1B.csv')
+    fn_s1a = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S1A.csv')
+    fn_s1b = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S1B.csv')
 
     s1a = pd.read_csv(fn_s1a, header=0, index_col=None)
     s1b = pd.read_csv(fn_s1b, header=0, index_col=None)
@@ -212,15 +212,15 @@ if __name__ == "__main__":
     # load RNA-Seq data annotated by Brennan
 
     if rnaseq_type == 'counts':
-        rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
+        rnaseq_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
         rnaseq_dat_fn = os.path.join(rnaseq_dir, 'counts.csv')
         rnaseq_meta_fn = os.path.join(rnaseq_dir, 'sources.csv')
     elif rnaseq_type == 'fpkm':
-        rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
+        rnaseq_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
         rnaseq_dat_fn = os.path.join(rnaseq_dir, 'fpkm.csv')
         rnaseq_meta_fn = os.path.join(rnaseq_dir, 'sources.csv')
     elif rnaseq_type == 'gliovis':
-        rnaseq_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm')
+        rnaseq_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm')
         rnaseq_dat_fn = os.path.join(rnaseq_dir, 'gliovis_tcga_gbmlgg_expression.csv')
         rnaseq_meta_fn = os.path.join(rnaseq_dir, 'gliovis_tcga_gbmlgg_meta.csv')
     else:
@@ -287,10 +287,10 @@ if __name__ == "__main__":
         print ', '.join(rnaseq_dat.index[rnaseq_dat.index.duplicated()].tolist())
 
     # load signatures (Bowman et al.)
-    fn_s1a = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S1A.csv')
-    fn_s1b = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S1B.csv')
-    fn_s2 = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S2.csv')
-    fn_s4 = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86573', 'table_S4.csv')
+    fn_s1a = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S1A.csv')
+    fn_s1b = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S1B.csv')
+    fn_s2 = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S2.csv')
+    fn_s4 = os.path.join(DATA_DIR, 'rnaseq', 'GSE86573', 'table_S4.csv')
 
     s1a = pd.read_csv(fn_s1a, header=0, index_col=None)
     s1b = pd.read_csv(fn_s1b, header=0, index_col=None)

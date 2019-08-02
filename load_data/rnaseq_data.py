@@ -6,7 +6,7 @@ import references
 import loader
 from rnaseq import normalisation, tcga
 from utils.log import get_console_logger
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 logger = get_console_logger(__name__)
 
 INDEX_FIELDS = (
@@ -64,47 +64,47 @@ class RnaSeqFileLocations(object):
 
 
 wtchg_p160704 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704'),
     alignment_subdir='human'
 )
 
 wtchg_p170218 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170218'),
     alignment_subdir='human'
 )
 
 wtchg_p170390 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390'),
     alignment_subdir='human'
 )
 
 wtchg_p170503 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170503'),
     alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704_ribozero'),
     alignment_subdir='human'
 )
 
 wtchg_p160704_ribozero2 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero_rerun'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704_ribozero_rerun'),
     alignment_subdir='human'
 )
 
 wtchg_p170446 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170446'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170446'),
     alignment_subdir='human'
 )
 
 wtchg_p170582 = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170582'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170582'),
     alignment_subdir='human'
 )
 
 gse73721_loc = RnaSeqFileLocations(
-    root_dir=os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721'),
+    root_dir=os.path.join(DATA_DIR, 'rnaseq', 'GSE73721'),
 )
 
 PATIENT_LOOKUP_CC = {
@@ -1161,7 +1161,7 @@ def gbm_paired_samples(units='counts', annotate_by='all', annotation_type='prote
 
 def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
     # TODO: replace or rename?
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
     metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
@@ -1205,7 +1205,7 @@ def gbm_paired_samples_loader(source='star', annotate_by='all', annotation_type=
 
 
 def gbm_astrocyte_nsc_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
     metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
@@ -1308,7 +1308,7 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
     if include_derived:
         samples += ('DURA018_ASTRO_N2_DAY12', 'DURA019_ASTRO_N8C_DAY12')
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
     lanedirs = [
         os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
         os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
@@ -1335,7 +1335,7 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
         'GBM030_P5',
         'DURA030_NSC_N16B6_P1',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170218')
     lanedirs = [
         os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
         os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
@@ -1359,7 +1359,7 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
         'GBM017_P4',
         'DURA017_NSC_P4_N3C5',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     lanedirs = [
         os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
         os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
@@ -1397,7 +1397,7 @@ def all_hgic_loader(source='star', annotate_by='all', annotation_type='protein_c
         'DURA052_NSC_N4_P3',
         'DURA052_NSC_N5_P2',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170503')
     lanedirs = [
         os.path.join(indir, '170929_K00150_0250_BHLGNHBBXX'),
         os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_1'),
@@ -1438,7 +1438,7 @@ def rtki_hgic_loader(source='star', annotate_by='all', annotation_type='protein_
         'DURA031_NSC_N44B_P2',
     )
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
     lanedirs = [
         os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
         os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
@@ -1463,7 +1463,7 @@ def rtki_hgic_loader(source='star', annotate_by='all', annotation_type='protein_
     if include_reference:
         samples += ('GIBCO_NSC_P4',)
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170218')
     lanedirs = [
         os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
         os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
@@ -1484,7 +1484,7 @@ def rtki_hgic_loader(source='star', annotate_by='all', annotation_type='protein_
         'GBM031_P7',
         'GBM019_P3n6',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     lanedirs = [
         os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
         os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
@@ -1519,7 +1519,7 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
         'GBM017_P4',
         'DURA017_NSC_P4_N3C5',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     lanedirs = [
         os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
         os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
@@ -1549,7 +1549,7 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
         'DURA061_N4_P2',
         'DURA061_NSC_N6_P4',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170503')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170503')
     lanedirs = [
         os.path.join(indir, '170929_K00150_0250_BHLGNHBBXX'),
         os.path.join(indir, '171003_K00198_0242_AHLGYVBBXX_1'),
@@ -1567,7 +1567,7 @@ def rtkii_hgic_loader(source='star', annotate_by='all', annotation_type='protein
     if include_reference:
         samples = ('GIBCO_NSC_P4',)
 
-        indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170218')
+        indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170218')
         lanedirs = [
             os.path.join(indir, '170509_K00150_0192_BHJKCLBBXX'),
             os.path.join(indir, '170515_K00150_0196_BHJKC5BBXX_lane_2'),
@@ -1676,7 +1676,7 @@ def atcc_cell_lines(source='star', annotate_by='all', annotation_type='protein_c
     :param annotation_type:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     lane_dirs = [
         os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
         os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),
@@ -1710,7 +1710,7 @@ def zhao_mb_cultures(source='star', annotate_by='all', annotation_type='protein_
     :param annotation_type:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
     lane1dir = os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX')
     lane2dir = os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX')
     metafiles = [os.path.join(d, 'sources.csv') for d in (lane1dir, lane2dir)]
@@ -1752,7 +1752,7 @@ def brainrnaseq_preprocessed():
     These are in units of FPKM, annotated by gene. Annoyingly, the gene symbols are for mouse.
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE73721')
     infile = os.path.join(indir, 'fpkm', 'fpkm.csv')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
@@ -1792,7 +1792,7 @@ def tcga_primary_gbm(units='counts'):
     :param units: Either 'counts' or 'fpkm' are available.
     :return: data, meta
     """
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour')
+    basedir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour')
     meta_fn = os.path.join(basedir, 'brennan_s7.csv')
     if units == 'counts':
         indir = os.path.join(basedir, 'htseq-count')
@@ -1810,7 +1810,7 @@ def tcga_methylation_assayed(units='counts'):
     :param units: Either 'counts' or 'fpkm' are available.
     :return: data, meta
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'paired_rnaseq_methylation_cohort')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'paired_rnaseq_methylation_cohort')
     return nih_gdc_gbm_preprocessed(indir, units=units)
 
 
@@ -1819,7 +1819,7 @@ def gse73721(source='star', annotate_by='all', annotation_type='protein_coding')
     Barres data on GEO.
     Astrocytes, oligodendrocytes, etc...
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE73721')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -1861,7 +1861,7 @@ def gse61794(source='star', annotate_by='all', annotation_type='protein_coding',
     These may be technical replicates as they are very highly correlated.
     :param collapse_replicates: If True, combine the counts to make one sample
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE61794')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -1898,7 +1898,7 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
     :param annotation_type:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'E-MTAB-3867')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'E-MTAB-3867')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -1915,7 +1915,7 @@ def pollard_nsc(source='star', annotate_by='all', annotation_type='protein_codin
 
 
 def gbm_ribozero_samples_loader(source='star', annotate_by='all', annotation_type='protein_coding'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704_ribozero', '170328_K00150_0177_BHJ2C2BBXX')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704_ribozero', '170328_K00150_0177_BHJ2C2BBXX')
     metafn = os.path.join(indir, 'sources.csv')
     samples = (
         'GBM018 FFPE',
@@ -1943,7 +1943,7 @@ def gse92839(source='star', annotate_by='all', annotation_type='protein_coding')
     """
     Bago et al. iNSC (plus precursor fibroblasts) and ReNcell CX NPC lines
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE92839')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE92839')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -1969,7 +1969,7 @@ def gse38993(source='star', annotate_by='all', annotation_type='protein_coding')
     """
     Kelley and Rinn H1 ESC, NSC and 2 x fibroblast
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE38993')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE38993')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2006,7 +2006,7 @@ def mouse_nsc_validation_samples(source='star', annotate_by='all'):
     loaders = []
 
     # expt 1: original data
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     countdir = os.path.join(indir, 'mouse', 'star_alignment')
     metafn = os.path.join(indir, 'sources.csv')
 
@@ -2028,7 +2028,7 @@ def mouse_nsc_validation_samples(source='star', annotate_by='all'):
     # expt 2: 3 x replacement runs
 
     samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170506')
     countdir = os.path.join(indir, 'mouse', 'star_alignment')
     metafn = os.path.join(indir, 'sources.csv')
     obj = StarCountLoader(
@@ -2053,7 +2053,7 @@ def gse77920_loader(source='star', annotate_by='all', annotation_type='protein_c
     :param annotation_type:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE77920')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE77920')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2076,7 +2076,7 @@ def gse24399_merged_loader(source='star', annotate_by='all', annotation_type='pr
     :param annotation_type:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE24399')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE24399')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2099,7 +2099,7 @@ def gse52564(source='star', annotate_by='all', **kwargs):
     :param annotate_by:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE52564')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE52564')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2124,7 +2124,7 @@ def gse43916(source='star', annotate_by='all', **kwargs):
     :param annotate_by:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE43916')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE43916')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2150,7 +2150,7 @@ def gse86248(source='star', annotate_by='all'):
     :param annotate_by:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE86248')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE86248')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2174,7 +2174,7 @@ def gse36114(source='star', annotate_by='all', **kwargs):
     :param annotate_by:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE36114')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE36114')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         obj = StarCountLoader(
@@ -2200,7 +2200,7 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
     :param trimmed: If True, use the data that was trimmed before alignment
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE64411')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE64411')
     metafn = os.path.join(indir, 'sources.csv')
     if trimmed:
         count_dir = os.path.join(indir, 'trimgalore', 'star_alignment')
@@ -2222,7 +2222,7 @@ def gse64411(source='star', annotate_by='all', trimmed=False, **kwargs):
 
 
 def mouse_gbm_pten_p53(source='star', annotate_by='all', **kwargs):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GBM_Pten_P53')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GBM_Pten_P53')
     metafn = os.path.join(indir, 'sources.csv')
     if source == 'star':
         count_dir = os.path.join(indir, 'mouse', 'star_alignment')
@@ -2247,119 +2247,119 @@ def mouse_gbm_pten_p53(source='star', annotate_by='all', **kwargs):
 # all the loaders just work.
 
 def gse73721_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE73721')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE73721')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def pollard_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'E-MTAB-3867')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'E-MTAB-3867')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse80732_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE80732')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE80732')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse64882_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE64882')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE64882')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse84166_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE84166')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE84166')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse61794_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE61794')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE61794')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse38993_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE38993')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE38993')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse92839_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE92839')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE92839')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_esc_costello(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR950PSB')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR950PSB')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_esc_wold(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR000EYP')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR000EYP')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h7_esc_gingeras(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR490SQH')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR490SQH')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_esc_gingeras(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR000COU')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR000COU')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h9_npc_gingeras(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR244ISQ')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR244ISQ')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_npc_ecker1(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR977XUX')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR977XUX')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_npc_ecker2(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR572EET')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR572EET')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_esc_ecker1(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR670WQY')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR670WQY')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def encode_h1_esc_ecker2(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'encode_roadmap', 'ENCSR043RSE')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'encode_roadmap', 'ENCSR043RSE')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'human', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
@@ -2368,7 +2368,7 @@ def encode_h1_esc_ecker2(units='tpm'):
 # mouse data
 def mouse_nsc_salmon(units='tpm'):
     # initial runs
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'mouse', 'salmon')
 
@@ -2379,7 +2379,7 @@ def mouse_nsc_salmon(units='tpm'):
     dat1 = load_salmon(count_dir, meta_fn, units=units, samples=samples)
 
     # 3 x replacement runs
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170506')
     count_dir = os.path.join(indir, 'mouse', 'salmon')
     samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
     meta_fn = os.path.join(indir, 'sources.csv')
@@ -2391,7 +2391,7 @@ def mouse_nsc_salmon(units='tpm'):
 
 def mouse_nsc_star():
     # initial runs
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'mouse', 'star_alignment')
 
@@ -2402,7 +2402,7 @@ def mouse_nsc_star():
     dat1 = load_star(count_dir, meta_fn, 'r', samples=samples)
 
     # 3 x replacement runs
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170506')
     count_dir = os.path.join(indir, 'mouse', 'star_alignment')
     samples = ['eNSC%dmed' % i for i in (3, 5, 6)]
     meta_fn = os.path.join(indir, 'sources.csv')
@@ -2459,84 +2459,84 @@ def load_star(count_dir, meta_fn, strandedness, samples=None):
 
 
 def gse96950_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE96950')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE96950')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse43916_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE43916')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE43916')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse73127_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE73127')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE73127')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse64411_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE64411')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE64411')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'trimgalore', 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse52564_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE52564')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE52564')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse52125_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE52125')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE52125')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse88982_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE88982')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE88982')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse66029_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE66029')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE66029')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse75592_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE75592')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE75592')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse78795_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE78795')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE78795')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse75246_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE75246')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE75246')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)
 
 
 def gse78938_salmon(units='tpm'):
-    indir = os.path.join(DATA_DIR_NON_GIT2, 'rnaseq', 'GSE78938')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE78938')
     meta_fn = os.path.join(indir, 'sources.csv')
     count_dir = os.path.join(indir, 'salmon')
     return load_salmon(count_dir, meta_fn, units=units)

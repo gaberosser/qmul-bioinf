@@ -14,7 +14,7 @@ from plotting import common
 
 
 if __name__ == '__main__':
-    indir = os.path.join(settings.DATA_DIR_NON_GIT, 'chipseq', 'wtchg_p180649')
+    indir = os.path.join(settings.DATA_DIR, 'chipseq', 'wtchg_p180649')
 
     outdir = output.unique_output_dir()
 

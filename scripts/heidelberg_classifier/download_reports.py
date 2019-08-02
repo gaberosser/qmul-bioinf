@@ -3,7 +3,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from scripts.heidelberg_classifier import api
-from settings import DATA_DIR_NON_GIT, HEIDELBERG_CLASSIFIER_CONFIG
+from settings import DATA_DIR, HEIDELBERG_CLASSIFIER_CONFIG
 from utils.log import get_console_logger
 from utils.output import unique_output_dir
 
@@ -27,7 +27,7 @@ logger = get_console_logger(__name__)
 
 # sample_ids = range(2248, 2298)
 outdir = os.path.join(
-    DATA_DIR_NON_GIT,
+    DATA_DIR,
     'methylation',
     'tcga_gbm',
     'heidelberg_classifier',

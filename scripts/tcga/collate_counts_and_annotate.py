@@ -1,12 +1,12 @@
 import os
 import pandas as pd
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import re
 import json
 import references
 
 ## RNASEQ
-base_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour')
+base_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour')
 indir = os.path.join(base_dir, 'htseq-count_fpkm')
 
 dirlist = os.listdir(indir)

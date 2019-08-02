@@ -6,7 +6,7 @@ import vcf.utils
 import collections
 import pandas as pd
 from utils import setops, output, log
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from scripts.hgic_final import consts
 
 
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     # V1: iterate over full VCF files and count (only - too big)
     if False:
 
-        base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12')
+        base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12')
         meta_fn = os.path.join(base_indir, 'sources.csv')
 
         meta = pd.read_csv(meta_fn, header=0, index_col=0)
@@ -139,8 +139,8 @@ if __name__ == '__main__':
             meth_counts[pid] = run_one_count(this_res_meth)
 
     # V2: iterate over pre-made short files and store data in memory
-    base_indir = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/meth_associated/')
-    meta_fn = os.path.join(DATA_DIR_NON_GIT, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
+    base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/meth_associated/')
+    meta_fn = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
 
     meta = pd.read_csv(meta_fn, header=0, index_col=0)
     meta.loc[:, 'patient_id'] = ["%03d" % t for t in meta.patient_id]

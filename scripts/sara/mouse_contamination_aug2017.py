@@ -11,7 +11,7 @@ import os
 from load_data import rnaseq_data
 from plotting import corr
 from matplotlib import pyplot as plt
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import pandas as pd
 
 
@@ -20,7 +20,7 @@ import pandas as pd
 # first, all of the MOUSE samples in the affected run (3 lanes, 20 samples)
 # this includes the contaminated sample
 
-indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
 
 lanedirs = [
     os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
@@ -41,7 +41,7 @@ obj1 = rnaseq_data.all_samples_multilane_loader(
 
 # also include the 1487
 
-indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p160704')
+indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p160704')
 lanedirs = [
     os.path.join(indir, '161219_K00198_0151_BHGYHTBBXX'),
     os.path.join(indir, '161222_K00198_0152_AHGYG3BBXX'),
@@ -71,7 +71,7 @@ fig.tight_layout()
 # 2) What are the correlation coeffs when we look at individual lanes?
 # Only include the endogenous NSC in the endogenous medium
 
-indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
 lanedirs = [
     os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
     os.path.join(indir, '170731_K00150_0226_AHL2CJBBXX_1'),

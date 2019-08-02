@@ -10,7 +10,7 @@ Finally, the dataframe is exported to a gzipped CSV file.
 
 import os
 import pandas as pd
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from glob import glob
 import re
 import numpy as np
@@ -18,7 +18,7 @@ from utils import output
 
 
 if __name__ == "__main__":
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'hipsci_ipsc')
+    basedir = os.path.join(DATA_DIR, 'methylation', 'hipsci_ipsc')
     indir = os.path.join(basedir, 'raw')
     meta_fn = os.path.join(basedir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0)

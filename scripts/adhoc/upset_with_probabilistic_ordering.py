@@ -505,13 +505,13 @@ if __name__ == "__main__":
         bbox_to_anchor=(0.05, 1.1),  # place above and outside the axis
     )
 
-    return {
-        'gs': gs,
-        'axes': {
-            'set_size': ax_set_size,
-            'intersection': ax_intersect,
-            'main': ax_main,
-            'top_left': ax_tl
-        },
-        'figure': fig
-    }
+    # return {
+    #     'gs': gs,
+    #     'axes': {
+    #         'set_size': ax_set_size,
+    #         'intersection': ax_intersect,
+    #         'main': ax_main,
+    #         'top_left': ax_tl
+    #     },
+    #     'figure': fig
+    # }

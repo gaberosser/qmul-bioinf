@@ -3,7 +3,7 @@ import collections
 import pandas as pd
 import pysam
 import numpy as np
-from settings import OUTPUT_DIR, DATA_DIR_NON_GIT
+from settings import OUTPUT_DIR, DATA_DIR
 from utils import output
 from glob import glob
 from matplotlib import pyplot as plt
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         # alternative: pick the files out of their subdirs
         outdir = output.unique_output_dir()
         indir = os.path.join(
-            DATA_DIR_NON_GIT,
+            DATA_DIR,
             'rrbseq',
             'GC-CV-8176-b/trim_galore/mouse/bismark'
         )

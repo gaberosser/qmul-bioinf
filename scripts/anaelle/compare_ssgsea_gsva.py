@@ -1,7 +1,7 @@
 from rnaseq.gsea import ssgsea, run_one_ssgsea
 from rnaseq import loader, gsva
 import pandas as pd
-from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR, HGIC_LOCAL_DIR
+from settings import DATA_DIR, GIT_LFS_DATA_DIR, HGIC_LOCAL_DIR
 import os
 import csv
 import references
@@ -35,7 +35,7 @@ if __name__ == '__main__':
             ipa_pathways[row[0]] = row[2:]
 
     # load TCGA count data (for GSVA)
-    tcga_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
+    tcga_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count')
     tcga_dat_fn = os.path.join(tcga_dir, 'counts.csv')
     tcga_meta_fn = os.path.join(tcga_dir, 'sources.csv')
 
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     tcga_meta = pd.read_csv(tcga_meta_fn, header=0, index_col=0)
 
     # load TCGA FPKM data (for ssGSEA)
-    tcga_fpkm_dir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
+    tcga_fpkm_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'htseq-count_fpkm')
     tcga_fpkm_fn = os.path.join(tcga_fpkm_dir, 'fpkm.csv')
     tcga_fpkm = pd.read_csv(tcga_fpkm_fn, header=0, index_col=0).drop('Approved Symbol', axis=1)
 

@@ -5,7 +5,7 @@ import os
 import collections
 from utils import output, setops
 from methylation import dmr, process
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import multiprocessing as mp
 
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     # in this case, we want the median beta value over all probes that are associated with a given gene
     # we'll exclude those associated with gene body only
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'primary_tumour')
+    indir = os.path.join(DATA_DIR, 'methylation', 'tcga_gbm', 'primary_tumour')
     meta_fn = os.path.join(indir, 'methylation.450k.meta.csv')
     dat_fn = os.path.join(indir, 'methylation.450k.csv.gz')
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     # 2: SOLID NORMAL    #
     ######################
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'tcga_gbm', 'solid_tissue_normal')
+    indir = os.path.join(DATA_DIR, 'methylation', 'tcga_gbm', 'solid_tissue_normal')
     meta_fn = os.path.join(indir, 'methylation_normal.450k.meta.csv')
     dat_fn = os.path.join(indir, 'methylation_normal.450k.csv.gz')
 

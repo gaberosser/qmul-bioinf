@@ -4,7 +4,7 @@ import gzip
 import numpy as np
 from scipy import stats
 import re
-from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 import pysam
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -16,7 +16,7 @@ logger = log.get_console_logger(__name__)
 if __name__ == "__main__":
     outdir = output.unique_output_dir("rrbs_enzyme_specificity", reuse_empty=True)
 
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163')
+    basedir = os.path.join(DATA_DIR, 'rrbseq', 'GC-CV-7163')
 
     indir = os.path.join(basedir, 'trim_galore_mouse/bismark')
     bam_fn = os.path.join(indir, 'GC-CV-7163-6_S6_pe.sorted.bam')

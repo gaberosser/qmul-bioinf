@@ -10,7 +10,7 @@ import shutil
 import zipfile
 from utils import output
 from plotting import common
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 
 
 def get_top_n(data, n):
@@ -41,7 +41,7 @@ def read_calibrated_scores_script():
         '2017-09-19',
         '2018-03-19'
     ]
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'methylation')
+    basedir = os.path.join(DATA_DIR, 'methylation')
     for b in batches:
         print "*** %s ***" % b
         if os.path.isdir(os.path.join(basedir, b, 'heidelberg_classifier')):
@@ -77,10 +77,10 @@ def unzip_scores(the_dir):
 if __name__ == "__main__":
 
     outdir = output.unique_output_dir("cruk_classification")
-    in_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'classification.xlsx')
-    ffpe_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner', 'heidelberg_classifier', '2017_10', 'NH15-2101.calibrated_scores.csv')
-    cc1_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'heidelberg_classifier', '2017_10', 'GBM019_P4_DNA_8-11-2016_CLEANED.calibrated_scores.csv')
-    cc2_fn = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19', 'heidelberg_classifier', '2017_10', 'GBM019_NH16-2101_P6_FROM_8-11-2015_+_GBM019_NH16-2101_P3_FROM_26-10-2015.calibrated_scores.csv')
+    in_fn = os.path.join(DATA_DIR, 'methylation', 'classification.xlsx')
+    ffpe_fn = os.path.join(DATA_DIR, 'methylation', '2016-06-10_brandner', 'heidelberg_classifier', '2017_10', 'NH15-2101.calibrated_scores.csv')
+    cc1_fn = os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics', 'heidelberg_classifier', '2017_10', 'GBM019_P4_DNA_8-11-2016_CLEANED.calibrated_scores.csv')
+    cc2_fn = os.path.join(DATA_DIR, 'methylation', '2017-09-19', 'heidelberg_classifier', '2017_10', 'GBM019_NH16-2101_P6_FROM_8-11-2015_+_GBM019_NH16-2101_P3_FROM_26-10-2015.calibrated_scores.csv')
 
     # number of classes to include
     n = 3

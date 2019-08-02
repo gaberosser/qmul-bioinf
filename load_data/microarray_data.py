@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from microarray import process
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
@@ -190,7 +190,7 @@ def load_annotated_microarray_gse37382(aggr_field=None, aggr_method=None):
     :param aggr_method: The method to use when aggregating over probe sets. If None, do not aggregate over probe sets.
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE37382')
+    indir = os.path.join(DATA_DIR, 'microarray', 'GSE37382')
     infile = os.path.join(indir, 'expr.rma.csv.gz')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
@@ -206,7 +206,7 @@ def load_annotated_microarray_gse10327(aggr_field=None, aggr_method=None):
     :param index_field:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE10327')
+    indir = os.path.join(DATA_DIR, 'microarray', 'GSE10327')
     infile = os.path.join(indir, 'expr.rma.csv.gz')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')
@@ -221,7 +221,7 @@ def load_annotated_microarray_gse37418(aggr_field=None, aggr_method=None):
     :param index_field:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE37418')
+    indir = os.path.join(DATA_DIR, 'microarray', 'GSE37418')
     infile = os.path.join(indir, 'expr.rma.csv.gz')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=1, sep=',')  # NB index by accession here
@@ -236,7 +236,7 @@ def load_annotated_microarray_gse54650(aggr_field=None, aggr_method=None):
     :param index_field:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE54650')
+    indir = os.path.join(DATA_DIR, 'microarray', 'GSE54650')
     infile = os.path.join(indir, 'expr.rma.csv.gz')
     meta_fn = os.path.join(indir, 'sources.csv')
     meta = pd.read_csv(meta_fn, header=0, index_col=0, sep=',')  # NB index by filename here
@@ -253,7 +253,7 @@ def load_annotated_microarray_gse33199(aggr_field=None, aggr_method=None):
     :param aggr_method:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'GSE33199')
+    indir = os.path.join(DATA_DIR, 'microarray', 'GSE33199')
     return _annotated_microarray(indir, aggr_field=aggr_field, aggr_method=aggr_method)
     # infile = os.path.join(indir, 'expr.rma.csv.gz')
     # meta_fn = os.path.join(indir, 'sources.csv')
@@ -270,5 +270,5 @@ def load_annotated_thompson2006(aggr_field=None, aggr_method=None):
     :param aggr_method:
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'microarray', 'thompson2006')
+    indir = os.path.join(DATA_DIR, 'microarray', 'thompson2006')
     return _annotated_microarray(indir, aggr_field=aggr_field, aggr_method=aggr_method)

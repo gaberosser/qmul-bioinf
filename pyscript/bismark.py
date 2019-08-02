@@ -67,7 +67,7 @@ class BismarkPEBase(jobs.ArrayJob):
         bme_args = " ".join(bme_args)
         # avoid using .format() here so we don't need to escape all other braces
         cmd += """
-        bismark_methylation_extractor %s --parallel {threads} --no_header --gzip --bedGraph ${{SUBDIR}}/$(basename $SUBDIR)_pe.bam
+        bismark_methylation_extractor %s --parallel {threads} --no_header --gzip ${{SUBDIR}}/$(basename $SUBDIR)_pe.bam
         """ % bme_args
         return cmd
 

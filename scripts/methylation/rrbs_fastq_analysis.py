@@ -4,7 +4,7 @@ import gzip
 import numpy as np
 from scipy import stats
 import re
-from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 import pysam
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -35,7 +35,7 @@ if __name__ == '__main__':
     #     'mDura6Human',
     # ]
 
-    basedir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-8176-b')
+    basedir = os.path.join(DATA_DIR, 'rrbseq', 'GC-CV-8176-b')
     fq_pattern = "{sid}-GC-CV-8176/{sid}-GC-CV-8176_S{sid}_L{0:03d}_R{rid}_001.fastq.gz"
     sample_names = [
         'm3_choi_1',

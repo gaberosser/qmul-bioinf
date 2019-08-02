@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from settings import GIT_LFS_DATA_DIR, DATA_DIR_NON_GIT
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 from utils.log import get_console_logger
 from utils import setops
 logger = get_console_logger(__name__)
@@ -16,15 +16,15 @@ NORM_METHODS = {
 }
 
 project_dirs = {
-    "2016-06-10_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-06-10_brandner'),
-    "2016-09-21_dutt": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-09-21_dutt'),
-    "2016-12-19_ucl_genomics": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics'),
-    "2017-01-17_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-01-17_brandner'),
-    "2017-02-09_brandner": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-02-09_brandner'),
-    "2017-05-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12'),
-    "2017-08-23": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-08-23'),
-    "2017-09-19": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-09-19'),
-    "2018-01-12": os.path.join(DATA_DIR_NON_GIT, 'methylation', '2018-01-12'),
+    "2016-06-10_brandner": os.path.join(DATA_DIR, 'methylation', '2016-06-10_brandner'),
+    "2016-09-21_dutt": os.path.join(DATA_DIR, 'methylation', '2016-09-21_dutt'),
+    "2016-12-19_ucl_genomics": os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics'),
+    "2017-01-17_brandner": os.path.join(DATA_DIR, 'methylation', '2017-01-17_brandner'),
+    "2017-02-09_brandner": os.path.join(DATA_DIR, 'methylation', '2017-02-09_brandner'),
+    "2017-05-12": os.path.join(DATA_DIR, 'methylation', '2017-05-12'),
+    "2017-08-23": os.path.join(DATA_DIR, 'methylation', '2017-08-23'),
+    "2017-09-19": os.path.join(DATA_DIR, 'methylation', '2017-09-19'),
+    "2018-01-12": os.path.join(DATA_DIR, 'methylation', '2018-01-12'),
 }
 
 PATIENT_LOOKUP_FFPE = {}  # TODO?
@@ -325,7 +325,7 @@ def gse36278(dropna=True):
     available.
     :return:
     """
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', 'GSE36278')
+    indir = os.path.join(DATA_DIR, 'methylation', 'GSE36278')
     metafile = os.path.join(indir, 'sources.csv')
     data, meta = load_beta_values(indir, metafile=metafile, norm_method='raw')
     # data.columns = meta.loc[data.columns, 'title']
@@ -350,8 +350,8 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan', ref=None):
         'DURA019_NSC_N8C_P2',
         'DURA031_NSC_N44B_P2',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'beta')
-    metafile = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
+    indir = os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics', 'beta')
+    metafile = os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
     b1, m1 = load_beta_values(indir, metafile=metafile, norm_method=norm_method, samples=samples1)
 
     samples2 = (
@@ -367,7 +367,7 @@ def gbm_rtk1_and_paired_nsc(norm_method='swan', ref=None):
             raise NotImplementedError("Unrecognised reference %s" % ref)
 
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'beta')
+    indir = os.path.join(DATA_DIR, 'methylation', '2017-05-12', 'beta')
     metafile = os.path.join(indir, '..', 'sources.csv')
     b2, m2 = load_beta_values(indir, metafile=metafile, norm_method=norm_method, samples=samples2)
 
@@ -391,8 +391,8 @@ def hgic_methylationepic(norm_method='swan'):
         'DURA026_NSC_N31D_P5',
         'DURA031_NSC_N44B_P2',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'beta')
-    metafile = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
+    indir = os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics', 'beta')
+    metafile = os.path.join(DATA_DIR, 'methylation', '2016-12-19_ucl_genomics', 'sources.csv')
     b1, m1 = load_beta_values(indir, metafile=metafile, norm_method=norm_method, samples=samples1)
 
     samples2 = (
@@ -407,7 +407,7 @@ def hgic_methylationepic(norm_method='swan'):
         'GBM030_P5',
         'DURA030_NSC_N16B6_P1',
     )
-    indir = os.path.join(DATA_DIR_NON_GIT, 'methylation', '2017-05-12', 'beta')
+    indir = os.path.join(DATA_DIR, 'methylation', '2017-05-12', 'beta')
     metafile = os.path.join(indir, '..', 'sources.csv')
     b2, m2 = load_beta_values(indir, metafile=metafile, norm_method=norm_method, samples=samples2)
 

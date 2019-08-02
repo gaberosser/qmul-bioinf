@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import re
 import json
 import references

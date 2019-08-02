@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, GIT_LFS_DATA_DIR
 from load_data import rnaseq_data
 import numpy as np
 from scipy import stats
@@ -18,7 +18,7 @@ if __name__ == '__main__':
     my_idx = obj.data.index[obj.data.index.str.contains('ENS')]
 
     # load preprocessed datasets
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'GSE64411', 'preprocessed')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'GSE64411', 'preprocessed')
     fns = ['%s_tagcounts.txt.gz' % t for t in (
         'GSM1570771_I_2', 'GSM1570773_I_5', 'GSM1570775_I_7', 'GSM1570777_I_9'
     )]

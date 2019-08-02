@@ -2,14 +2,14 @@ import os
 from load_data import rnaseq_data
 from plotting import corr, clustering
 from matplotlib import pyplot as plt
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 import pandas as pd
 import seaborn as sns
 
 
 if __name__ == "__main__":
     obj = rnaseq_data.mouse_nsc_validation_samples(annotate_by='Ensembl Gene ID')
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170390')
+    indir = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170390')
 
     lanedirs = [
         os.path.join(indir, '170727_K00198_0222_AHKWW5BBXX'),
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     meta = obj.meta
 
     # load replacements
-    indir_rep = os.path.join(DATA_DIR_NON_GIT, 'rnaseq', 'wtchg_p170506', '170829_K00150_0236_AHL5YHBBXX')
+    indir_rep = os.path.join(DATA_DIR, 'rnaseq', 'wtchg_p170506', '170829_K00150_0236_AHL5YHBBXX')
     obj_rep = rnaseq_data.StarCountLoader(
         count_dir=os.path.join(indir_rep, 'mouse', 'star_alignment'),
         strandedness='r',

@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 from glob import glob
-from settings import DATA_DIR_NON_GIT, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, GIT_LFS_DATA_DIR
 from utils import genomics, output, log
 from matplotlib import pyplot as plt
 import seaborn as sns
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     cpg_island_tsv = os.path.join(GIT_LFS_DATA_DIR, 'mouse_cpg_island', 'grcm38_cpgisland.tsv')
     cpg_regions = pd.read_csv(cpg_island_tsv, sep='\t', header=0)
 
-    indir = os.path.join(DATA_DIR_NON_GIT, 'rrbseq', 'GC-CV-7163', 'trim_galore', 'mouse', 'bismark')
+    indir = os.path.join(DATA_DIR, 'rrbseq', 'GC-CV-7163', 'trim_galore', 'mouse', 'bismark')
     subdir = "GC-CV-7163-{i}_S{i}"
     flist = glob(os.path.join(indir, "*.bismark.cov.gz"))
 

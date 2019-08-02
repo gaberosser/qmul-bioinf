@@ -6,7 +6,7 @@ import vcf.utils
 import collections
 import pandas as pd
 from utils import setops, output, log
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from scripts.hgic_final import consts
 
 

@@ -3,7 +3,7 @@ import numpy as np
 from scipy import stats
 from scipy.cluster import hierarchy
 import os
-from settings import DATA_DIR_NON_GIT
+from settings import DATA_DIR
 from matplotlib import pyplot as plt, colors
 import seaborn as sns
 import multiprocessing as mp
@@ -85,10 +85,10 @@ if __name__ == '__main__':
 
     outdir = output.unique_output_dir("cpt_myc")
 
-    fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
+    fn = os.path.join(DATA_DIR, 'exon_array', 'GSE60982', 'raw', 'GSE60892_HuEx-ALL40-Upload-Transposed.txt.gz')
     rma_data = pd.read_csv(fn, sep='\t', comment='#', header=0, index_col=0)
 
-    ann_fn = os.path.join(DATA_DIR_NON_GIT, 'exon_array', 'GSE60982', 'HuEx-1_0-st-v2.na36.hg19.probeset.csv.gz')
+    ann_fn = os.path.join(DATA_DIR, 'exon_array', 'GSE60982', 'HuEx-1_0-st-v2.na36.hg19.probeset.csv.gz')
     ann = pd.read_csv(ann_fn, sep=',', comment='#', header=0, index_col=0, na_values='---')
 
     # annotation files

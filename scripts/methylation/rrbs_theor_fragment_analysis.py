@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 sys.path.append(os.path.dirname(__file__) + '/../../')
-from settings import DATA_DIR_NON_GIT, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
+from settings import DATA_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 from utils import log, genomics, output
 
 logger = log.get_console_logger(__name__)

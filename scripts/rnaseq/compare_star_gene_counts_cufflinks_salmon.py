@@ -1,6 +1,5 @@
 from load_data import rnaseq_data
 import os
-from settings import DATA_DIR_NON_GIT, DATA_DIR_NON_GIT2
 from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy import stats
