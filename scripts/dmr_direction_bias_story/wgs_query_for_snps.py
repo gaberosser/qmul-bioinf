@@ -9,19 +9,21 @@ from utils import setops, output, log, dictionary
 from settings import DATA_DIR
 from scripts.hgic_final import consts
 
-
 logger = log.get_console_logger()
-
 
 METH_GENES = [
     "A0A096LPK6", "AICDA", "ALKBH1", "ALKBH2", "ALKBH3", "APEX1", "APOBEC1", "APOBEC2", "APOBEC3A", "APOBEC3B",
     "APOBEC3C", "APOBEC3D", "APOBEC3F", "APOBEC3G", "APOBEC3H", "ASZ1", "ATF7IP", "ATRX", "BAZ2A", "BEND3", "BRCA1",
     "CTCF", "CTCFL", "DDX4", "DMAP1", "DNMT1", "DNMT3A", "DNMT3B", "DNMT3L", "DPPA3", "EHMT1", "EHMT2", "EZH2",
-    "FAM129B", "FKBP6", "FOS", "FTO", "GATA3", "GATAD2A", "GNAS", "GRHL2", "GSK3A", "GSK3B", "H1FOO", "HELLS", "HEMK1",
-    "KCNQ1OT1", "KDM1B", "KMT2A", "KMT2E", "MAEL", "MBD1", "MBD2", "MBD3", "MECP2", "METTL4", "MGMT", "MIS18A", "MORC1",
+    "FAM129B", "FKBP6", "FOS", "FTO", "GATA3", "GATAD2A", "GNAS", "GRHL2", "GSK3A", "GSK3B", "H1FOO", "HELLS",
+    "HEMK1",
+    "KCNQ1OT1", "KDM1B", "KMT2A", "KMT2E", "MAEL", "MBD1", "MBD2", "MBD3", "MECP2", "METTL4", "MGMT", "MIS18A",
+    "MORC1",
     "MOV10L1", "MPHOSPH8", "MTA2", "MTRR", "MYC", "N6AMT1", "OTUD4", "PARP1", "PICK1", "PIK3CA", "PIKC3A", "PIWIL2",
-    "PIWIL4", "PLD6", "PPM1D", "PRDM14", "PRMT5", "PRMT7", "RLF", "SPI1", "STPG4", "TDG", "TDRD1", "TDRD12", "TDRD5",
-    "TDRD9", "TDRKH", "TET1", "TET2", "TET3", "TRIM28", "UHRF1", "UHRF2", "USP7", "USP9X", "WT1", "ZFP57", "ZMPSTE24"
+    "PIWIL4", "PLD6", "PPM1D", "PRDM14", "PRMT5", "PRMT7", "RLF", "SPI1", "STPG4", "TDG", "TDRD1", "TDRD12",
+    "TDRD5",
+    "TDRD9", "TDRKH", "TET1", "TET2", "TET3", "TRIM28", "UHRF1", "UHRF2", "USP7", "USP9X", "WT1", "ZFP57",
+    "ZMPSTE24"
 ]
 
 
@@ -190,8 +192,8 @@ if __name__ == '__main__':
             var_dat[pid] = this_res
 
     dat_classified = dict([
-        (pid, run_one_sort(var_dat[pid], 'GIC', 'iNSC')) for pid in pids
-    ])
+                              (pid, run_one_sort(var_dat[pid], 'GIC', 'iNSC')) for pid in pids
+                              ])
 
     # search through GIC only and GIC hom/iNSC het SNPs and 'other' and generate upset
     members = {}
@@ -213,3 +215,79 @@ if __name__ == '__main__':
     groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
 
     venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
+
+    hypo_count_full = vc[venn_sets_by_group['full']['Hypo'][0]]
+    hyper_count_full = vc[venn_sets_by_group['full']['Hyper'][0]]
+
+    hypo_counts_partial = [
+        (setops.key_to_members(t, pids), vc[t]) for t in venn_sets_by_group['partial']['Hypo']
+        ]
+    hyper_counts_partial = [
+        (setops.key_to_members(t, pids), vc[t]) for t in venn_sets_by_group['partial']['Hyper']
+        ]
+
+    # V3: Iterate over ALL VCFs in one and look for fully group-specific variants
+    group_hypo = set(groups['Hypo'])
+    group_hyper = set(groups['Hyper'])
+
+    base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12')
+    gs_var = collections.defaultdict(list)
+    gs_var_hyper = []
+    readers = {}
+
+    for pid in pids:
+        # logger.info("Patient %s", pid)
+        this_meta = meta.loc[meta.patient_id == pid]
+        for t in this_meta.index:
+            the_fn = os.path.join(base_indir, t, "%s.vcf.gz" % meta.loc[t, 'sample'])
+            readers[(pid, this_meta.loc[t, 'type'])] = vcf.Reader(filename=the_fn, compressed=True)
+
+    it = vcf.utils.walk_together(*readers.values())
+    count = 0
+
+    for recs in it:
+        count += 1
+
+        if count % 50000 == 0:
+            logger.info(
+                "Processed %d variants.",
+                count,
+            )
+
+        rec_dict = dict(zip(readers.keys(), recs))
+        the_chrom = None
+        the_ann = None
+        for rec in recs:
+            if rec is not None:
+                the_chrom = rec.CHROM
+                the_ann = '#'.join(rec.INFO['ANN'])
+                break
+
+        if the_chrom not in contigs:
+            continue
+
+        this_pids = []
+
+        for pid in pids:
+            a = rec_dict[(pid, 'GIC')]
+            b = rec_dict[(pid, 'iNSC')]
+            if a is None:
+                continue
+            elif b is None:
+                this_pids.append(pid)
+            elif (a.samples[0]['GT'] == '1/1') and (b.samples[0]['GT'] == '0/1'):
+                this_pids.append(pid)
+
+        if set(this_pids) == group_hypo:
+            gs_var['hypo'].append(rec_dict)
+            logger.info("Found %d hypo-related variants in %d records", len(gs_var['hypo']), count)
+        elif set(this_pids) == group_hyper:
+            gs_var['hyper'].append(rec_dict)
+            logger.info("Found %d hypo-related variants in %d records", len(gs_var['hyper']), count)
+
+    # TEMP
+    with open(os.path.join('/home/gabriel/Dropbox/pigeonhole', "all_variants_group_specific.pkl"), 'wb') as f:
+        pickle.dump(gs_var, f)
+
+    with open(os.path.join(outdir, "all_variants_group_specific.pkl"), 'wb') as f:
+        pickle.dump(gs_var, f)
