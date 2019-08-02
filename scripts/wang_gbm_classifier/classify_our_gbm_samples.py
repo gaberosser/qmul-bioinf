@@ -1,14 +1,12 @@
-import pandas as pd
-import numpy as np
-from rnaseq import gsea, loader
-from utils import output, dictionary, excel
 import os
-import references
-from matplotlib import pyplot as plt
-import seaborn as sns
-from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
-from scripts.hgic_final import consts
 
+import numpy as np
+import pandas as pd
+
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
+from rnaseq import gsea, loader
+from scripts.hgic_final import consts
+from utils import output, dictionary, excel, reference_genomes
 
 SRC_MAP = {
     'star': 'counts',
@@ -44,7 +42,7 @@ def prepare_gct_files_hgic(pids=consts.ALL_PIDS, outdir=None):
             if typ == 'ffpe':
                 # restrict to the 'best' versions (there are some duplicates where we tried twice)
                 this_obj.filter_by_sample_name(consts.FFPE_RNASEQ_SAMPLES_ALL)
-            this_dat = references.translate_quantification_resolving_duplicates(
+            this_dat = reference_genomes.translate_quantification_resolving_duplicates(
                 this_obj.data,
                 'Ensembl Gene ID',
                 'Approved Symbol'

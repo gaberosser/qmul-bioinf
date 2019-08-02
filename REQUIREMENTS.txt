@@ -11,7 +11,12 @@ python-pptx
 Shapely
 scikit-posthocs
 urllib3
-py2cytoscape
 plotly
 openpyxl
 networkx
+vcf
+seaborn
+pysam
+gffutils
+beautifulsoup4
+adjustText

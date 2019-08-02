@@ -1,12 +1,8 @@
-from scripts.comparison_rnaseq_microarray import load_illumina_data, load_rnaseq_data, load_references, comparisons
-from microarray.process import aggregate_by_probe_set
-import references
-import pandas as pd
 import numpy as np
-from scipy import stats
-import collections
-from matplotlib import rc, pyplot as plt, gridspec as gridspec
+import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
+
 plt.interactive(True)
 sns.set_style('white')
 # rc('text', usetex=True)
@@ -171,7 +167,7 @@ SAMPLE_GROUPS = (
 )
 
 # lookup Entrez ID of extended Northcott
-from references import known_genes
+from utils.reference_genomes import known_genes
 
 df = known_genes()
 all_by_symbol = df.set_index('Symbol').loc[:, ['GeneID']].dropna().astype(int)

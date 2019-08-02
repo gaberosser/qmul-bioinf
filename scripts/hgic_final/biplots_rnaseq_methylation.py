@@ -1,26 +1,24 @@
-import numpy as np
-from scipy import stats
-from matplotlib import pyplot as plt, ticker, patches, collections as plt_collections
-import seaborn as sns
-import pandas as pd
-import itertools
 import collections
+import itertools
 import os
-from statsmodels.sandbox.stats import multicomp
-import scikit_posthocs as sp
 
-from rnaseq import loader, filter, general
-from methylation import loader as methylation_loader, process
-from scripts.hgic_final import consts
-from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log, setops, excel, dictionary, genomics
-from stats import decomposition, transformations
-import references
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
-
+import numpy as np
+import pandas as pd
 import plotly.plotly as py
+import scikit_posthocs as sp
+import seaborn as sns
+from matplotlib import pyplot as plt, ticker, patches, collections as plt_collections
 from plotly import graph_objs as go
+from scipy import stats
+from statsmodels.sandbox.stats import multicomp
 
+from methylation import loader as methylation_loader, process
+from plotting import common, pca, _plotly, scatter, adjuster
+from rnaseq import loader, filter, general
+from scripts.hgic_final import consts
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from stats import decomposition, transformations
+from utils import output, log, setops, excel, dictionary, genomics, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -217,7 +215,7 @@ def plot_biplot(
     fig.subplots_adjust(right=0.8)
 
     if annotate_features is not None:
-        symbols_selected = references.ensembl_to_gene_symbol(annotate_features)
+        symbols_selected = reference_genomes.ensembl_to_gene_symbol(annotate_features)
 
         # add gene symbol annotations
         text_handles = []

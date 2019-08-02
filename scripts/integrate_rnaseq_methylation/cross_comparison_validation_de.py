@@ -1,23 +1,23 @@
+import collections
 import multiprocessing as mp
 import os
-import re
-import collections
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import seaborn as sns
-import references
-from rnaseq import filter, differential_expression
-from settings import LOCAL_DATA_DIR
-from utils import output, setops, excel, ipa
+from matplotlib import pyplot as plt
+
 from load_data import rnaseq_data
+from rnaseq import differential_expression
+from settings import LOCAL_DATA_DIR
+from utils import output, setops, excel, ipa, reference_genomes
 
 
 def add_gene_symbols(df):
     """
     Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
     """
-    gs = references.ensembl_to_gene_symbol(df.index)
+    gs = reference_genomes.ensembl_to_gene_symbol(df.index)
     # resolve any duplicates arbitrarily (these should be rare)
     gs = gs.loc[~gs.index.duplicated()]
     df.insert(0, 'Gene Symbol', gs)
@@ -327,7 +327,7 @@ if __name__ == "__main__":
     # get the genes that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
     # these will have an expression pattern in Gibco similar to GBM, so that they do NOT appear
     po_gibco_diff = po_specific_to_reference.loc['GIBCO']
-    po_gibco_diff_gs = references.ensembl_to_gene_symbol(po_gibco_diff)
+    po_gibco_diff_gs = reference_genomes.ensembl_to_gene_symbol(po_gibco_diff)
     po_gibco_diff_gs = po_gibco_diff_gs.where(~po_gibco_diff_gs.isnull(), po_gibco_diff)
 
     po_dat = rnaseq_obj.data.loc[po_gibco_diff]
@@ -364,7 +364,7 @@ if __name__ == "__main__":
 
     # export those same genes to a file, adding gene symbols
     for_export = rnaseq_obj.data.loc[po_gibco_diff, the_cols]
-    gs = references.ensembl_to_gene_symbol(for_export.index)
+    gs = reference_genomes.ensembl_to_gene_symbol(for_export.index)
     for_export.insert(0, 'gene_symbol', gs)
     for_export.to_excel(os.path.join(outdir, 'consistently_in_pair_only.xlsx'))
 
@@ -393,7 +393,7 @@ if __name__ == "__main__":
 
     # ro_gibco_diff = sorted(reduce(lambda x, y: set(y).intersection(x), ro_diff.loc[:, 'GIBCO']))
     ro_gibco_diff = ro_each.loc['GIBCO']
-    ro_gibco_diff_gs = references.ensembl_to_gene_symbol(ro_gibco_diff)
+    ro_gibco_diff_gs = reference_genomes.ensembl_to_gene_symbol(ro_gibco_diff)
     # the lincRNA symbols are missing, so keep ENSG for those
     ro_gibco_diff_gs = ro_gibco_diff_gs.where(~ro_gibco_diff_gs.isnull(), other=ro_gibco_diff)
 

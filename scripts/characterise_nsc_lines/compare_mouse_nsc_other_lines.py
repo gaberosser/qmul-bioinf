@@ -1,17 +1,16 @@
-from load_data import rnaseq_data
-from plotting import clustering
-import references
-from rnaseq import general, loader
-from scripts.rnaseq import gtf_reader
+import os
+import re
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-import seaborn as sns
-from utils.output import unique_output_dir
-from stats import transformations
-import os
-import re
+
+from plotting import clustering
+from rnaseq import loader
+from scripts.rnaseq import gtf_reader
 from settings import RNASEQ_DIR
+from stats import transformations
+from utils.output import unique_output_dir
 
 
 def hist_logvalues(data, thresholds=None, eps=1e-6):

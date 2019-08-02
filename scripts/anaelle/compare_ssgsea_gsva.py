@@ -1,22 +1,13 @@
-from rnaseq.gsea import ssgsea, run_one_ssgsea
-from rnaseq import loader, gsva
-import pandas as pd
-from settings import DATA_DIR, GIT_LFS_DATA_DIR, HGIC_LOCAL_DIR
-import os
 import csv
-import references
-import datetime
-from matplotlib import pyplot as plt
-import statsmodels.api as sm
-from statsmodels.sandbox.regression.predstd import wls_prediction_std
-import seaborn as sns
-import numpy as np
-import collections
-from scipy import stats
+import os
 
-from utils.output import unique_output_dir
+import pandas as pd
+
+from rnaseq import loader, gsva
+from rnaseq.gsea import ssgsea
 from scripts.hgic_final import consts
-
+from settings import DATA_DIR, HGIC_LOCAL_DIR
+from utils.output import unique_output_dir
 
 if __name__ == '__main__':
     # Step 1: compare RNA-Seq count data and some known gene signatures

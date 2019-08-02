@@ -8,17 +8,15 @@ I'm going to play around with this and will probably show a volcano plot instead
 Rather than reload all samples and running lumped DE all over again, I'll load the pre-processed results.
 """
 import os
-import pandas as pd
 import pickle
-from matplotlib import pyplot as plt, markers
-import seaborn as sns
+
 import numpy as np
-from settings import OUTPUT_DIR, HGIC_LOCAL_DIR
-from utils import output, setops
-import references
-from plotting import scatter, common
+import pandas as pd
+from matplotlib import pyplot as plt, markers
 
 from scripts.hgic_final import consts
+from settings import HGIC_LOCAL_DIR
+from utils import output, setops, reference_genomes
 
 
 def de_results_hash(pids, de_params):
@@ -68,12 +66,12 @@ def scatter_plot(
 
     for pw in pw_colours:
         the_genes = ipa_df.loc[pw].genes.split(',')
-        the_ens_id = references.gene_symbol_to_ensembl(the_genes).dropna().tolist()
+        the_ens_id = reference_genomes.gene_symbol_to_ensembl(the_genes).dropna().tolist()
         # resolve '/' weirdness
         for g in the_genes:
             if '/' in g:
                 g_arr = g.split('/')
-                e_arr = references.gene_symbol_to_ensembl(g_arr).dropna().tolist()
+                e_arr = reference_genomes.gene_symbol_to_ensembl(g_arr).dropna().tolist()
                 the_ens_id += e_arr
         # drop any genes not found in the data
         in_pathways[pw] = dat_all.index.intersection(the_ens_id)

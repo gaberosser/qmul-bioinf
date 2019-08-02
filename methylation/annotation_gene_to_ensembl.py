@@ -1,6 +1,4 @@
-import references
-import pandas as pd
-
+from utils import reference_genomes
 
 MANUALLY_CURATED = {
     'A2BP1': 'ENSG00000078328',
@@ -179,7 +177,7 @@ def gene_to_ens(genes):
     """
     if isinstance(genes, str):
         genes = [genes]
-    df = references.gene_symbol_to_ensembl(genes)
+    df = reference_genomes.gene_symbol_to_ensembl(genes)
     not_found = df.index[df.isna()]
     for nf in not_found:
         if nf in MANUALLY_CURATED:

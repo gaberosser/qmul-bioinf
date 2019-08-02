@@ -1,15 +1,14 @@
 import os
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import seaborn as sns
+from matplotlib import pyplot as plt
 
-from settings import HGIC_LOCAL_DIR
-from utils import log, output, excel, go_analysis, network
-from scripts.hgic_final import consts
-import references
 from cytoscape import cyto
-
+from scripts.hgic_final import consts
+from settings import HGIC_LOCAL_DIR
+from utils import log, output, excel, go_analysis, network, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -25,7 +24,7 @@ def reannotate(this_res):
     for k, df in this_res.items():
         for t in df.study_items.str.split(', ').dropna():
             all_genes.update(t)
-    gene_conv = references.ensembl_to_gene_symbol(sorted(all_genes))
+    gene_conv = reference_genomes.ensembl_to_gene_symbol(sorted(all_genes))
 
     new_res = {}
 

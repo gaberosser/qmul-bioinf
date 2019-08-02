@@ -1,22 +1,11 @@
 import os
-import re
 
-import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
-from matplotlib import ticker
-import seaborn as sns
-from scipy.cluster import hierarchy
 
 from load_data import rnaseq_data
-from microarray import process
-from utils.output import unique_output_dir
-from plotting import clustering, bar, heatmap
-
 from scripts.rnaseq import gtf_reader
-
-import references
-
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 if __name__ == '__main__':
     gene_lengths = {
@@ -95,7 +84,7 @@ if __name__ == '__main__':
     data_n = data.divide(data.sum(axis=0), axis=1)
 
     # extract genes of interest
-    genes = references.gene_symbol_to_ensembl(['SLC1A3', 'PDGFRA'])
+    genes = reference_genomes.gene_symbol_to_ensembl(['SLC1A3', 'PDGFRA'])
 
     this_fpkm = data_n.loc[genes] * 1e6
     this_fpkm.index = genes.index

@@ -1,27 +1,25 @@
-from plotting import bar, common, venn
-from methylation import dmr, annotation_gene_to_ensembl
-from rnaseq import loader as rnaseq_loader
-import pandas as pd
-from stats import basic
-from utils import output, setops, genomics, log, dictionary
+import collections
 import multiprocessing as mp
 import os
-import collections
-import numpy as np
 import pickle
-import references
-from scipy import stats
-from matplotlib import pyplot as plt, colors, gridspec
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import seaborn as sns
-from sklearn.neighbors import KernelDensity
-from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, two_strategies_combine_de_dmr as tscd, consts
-from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
-from scripts.dmr_direction_bias_story import same_process_applied_to_de as same_de
-from scripts.methylation import dmr_values_to_bigwig
-from integrator import rnaseq_methylationarray
 
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt, colors
+from scipy import stats
+
+from integrator import rnaseq_methylationarray
+from methylation import dmr, annotation_gene_to_ensembl
+from plotting import bar, common, venn
+from rnaseq import loader as rnaseq_loader
+from scripts.dmr_direction_bias_story import same_process_applied_to_de as same_de
+from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
+from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, two_strategies_combine_de_dmr as tscd, consts
+from scripts.methylation import dmr_values_to_bigwig
 from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from stats import basic
+from utils import output, setops, genomics, log, dictionary, reference_genomes
+
 logger = log.get_console_logger()
 
 
@@ -687,7 +685,7 @@ if __name__ == '__main__':
     # no, but if we look at the intersection genes, are they in different directions (DE) between the two groups?
     groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
     in_both = setops.reduce_intersection(*genes_from_dmr_groups.values())
-    in_both_ens = references.gene_symbol_to_ensembl(in_both)
+    in_both_ens = reference_genomes.gene_symbol_to_ensembl(in_both)
 
     # some of these will have no DE results
     tmp = {}

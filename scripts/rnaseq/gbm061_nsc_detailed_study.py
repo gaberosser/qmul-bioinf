@@ -1,15 +1,12 @@
-from load_data import rnaseq_data
-from rnaseq.differential_expression import edger_glmqlfit
-from rnaseq.filter import filter_by_cpm
-import pandas as pd
-import numpy as np
-from scipy import stats
-import references
 import os
-from utils import output, setops
-from matplotlib import pyplot as plt
-import seaborn as sns
 
+import numpy as np
+from matplotlib import pyplot as plt
+from scipy import stats
+
+from load_data import rnaseq_data
+from rnaseq.filter import filter_by_cpm
+from utils import output
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir("gmb061")

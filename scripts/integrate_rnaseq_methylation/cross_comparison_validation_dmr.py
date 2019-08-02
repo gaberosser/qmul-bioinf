@@ -1,15 +1,14 @@
-from methylation import dmr, process
-import os
-import re
 import collections
+import os
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import seaborn as sns
-import references
-from settings import LOCAL_DATA_DIR
-from utils import output, setops
+from matplotlib import pyplot as plt
+
 from load_data import methylation_array
+from methylation import dmr, process
+from utils import output, setops
 
 
 def compute_cross_dmr(me_data, me_meta, anno, pids, dmr_params, external_references=(('GIBCO', 'NSC'),)):

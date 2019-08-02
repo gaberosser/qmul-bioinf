@@ -1,19 +1,13 @@
-from rnaseq import loader, differential_expression, filter, general
-from plotting import common, clustering
-from stats import transformations, basic
-import pandas as pd
-import numpy as np
-from scipy import stats
-import math
-from matplotlib import pyplot as plt
-import seaborn as sns
-from mpltools import color
-from adjustText import adjust_text
-from utils import output, setops
-import references
 import collections
-from plotting.rnaseq import log_cpm_ecdf_plot
 import os
+
+import numpy as np
+from mpltools import color
+
+from plotting.rnaseq import log_cpm_ecdf_plot
+from rnaseq import loader
+from stats import transformations
+from utils import output
 
 
 def log_cpm(dat, base=2, offset=1.):

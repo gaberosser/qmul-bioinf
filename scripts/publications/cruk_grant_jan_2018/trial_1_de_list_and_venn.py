@@ -1,15 +1,15 @@
 import os
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import seaborn as sns
-from plotting import venn
-import references
-from rnaseq import differential_expression, general
-from utils import output, setops, excel, ipa
-from load_data import rnaseq_data
-from analysis import cross_comparison
+from matplotlib import pyplot as plt
 
+from analysis import cross_comparison
+from load_data import rnaseq_data
+from plotting import venn
+from rnaseq import differential_expression, general
+from utils import output, setops, excel, reference_genomes
 
 if __name__ == "__main__":
 
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     # get the genes that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
     # these will have an expression pattern in Gibco similar to GBM, so that they do NOT appear
-    po_specific_to_all_refs_gs = references.ensembl_to_gene_symbol(po_specific_to_all_refs)
+    po_specific_to_all_refs_gs = reference_genomes.ensembl_to_gene_symbol(po_specific_to_all_refs)
     po_specific_to_all_refs_gs = po_specific_to_all_refs_gs.where(~po_specific_to_all_refs_gs.isnull(), po_specific_to_all_refs)
 
     po_dat = rnaseq_obj.data.loc[po_specific_to_all_refs]

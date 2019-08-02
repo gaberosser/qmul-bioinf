@@ -1,24 +1,18 @@
+import json
+import os
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+
+from integrator.rnaseq_methylationarray import compute_joint_de_dmr
 from load_data import rnaseq_data, methylation_array
+from methylation import plots as me_plots
+from methylation import process, dmr
 from rnaseq import differential_expression, general
 from rnaseq.filter import filter_by_cpm
-from methylation import process, dmr
-from methylation import plots as me_plots
-from integrator.rnaseq_methylationarray import compute_joint_de_dmr
-from utils import excel, ipa
-from integrator import plots
-import copy
-import pandas as pd
-import numpy as np
-from scipy import stats
-import references
-import os
-import itertools
-import csv
-import datetime
-import json
+from utils import excel, ipa, reference_genomes
 from utils import output, setops, dictionary
-from matplotlib import pyplot as plt
-import seaborn as sns
 
 
 class BasicLogicException(Exception):
@@ -925,7 +919,7 @@ if __name__ == "__main__":
                 idx = ~pd.Index(bl.loc[:, 'gene']).duplicated()
                 bl = bl.loc[idx]
                 # attempt to convert genes to Ensembl
-                idx = references.gene_symbol_to_ensembl(bl.gene)
+                idx = reference_genomes.gene_symbol_to_ensembl(bl.gene)
                 b_mixed = False
                 if idx.duplicated().any():
                     idx.loc[idx.duplicated()] = bl.gene.loc[idx.duplicated()]

@@ -1,20 +1,19 @@
-from rnaseq import gsva, loader
-import pandas as pd
-from settings import DATA_DIR, GIT_LFS_DATA_DIR
-import os
-import references
-import datetime
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import statsmodels.api as sm
-from statsmodels.sandbox.regression.predstd import wls_prediction_std
-import seaborn as sns
-import numpy as np
 import collections
+import os
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import statsmodels.api as sm
+from matplotlib import pyplot as plt
 from scipy import stats
-from utils.output import unique_output_dir
-from utils import setops
+from statsmodels.sandbox.regression.predstd import wls_prediction_std
+
 from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
+from rnaseq import gsva, loader
+from settings import DATA_DIR, GIT_LFS_DATA_DIR
+from utils import setops, reference_genomes
+from utils.output import unique_output_dir
 
 
 def z_transform(df, axis=None):
@@ -202,7 +201,7 @@ if __name__ == "__main__":
     obj_ff.meta.insert(0, 'patient_id', p_id)
 
     # switch to gene symbols
-    gs = references.ensembl_to_gene_symbol(obj_ff.data.index)
+    gs = reference_genomes.ensembl_to_gene_symbol(obj_ff.data.index)
     gs = gs.loc[~gs.index.duplicated()]
     the_ix = np.array(obj_ff.data.index, copy=True)
     the_ix[~gs.isnull().values] = gs.values[~gs.isnull()]
@@ -255,7 +254,7 @@ if __name__ == "__main__":
 
     if rnaseq_type != 'gliovis':
         # add gene symbols for gene signature scoring?
-        gs = references.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
+        gs = reference_genomes.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
         rnaseq_dat = rnaseq_dat.loc[gs.index]
         rnaseq_dat.index = gs.values
 

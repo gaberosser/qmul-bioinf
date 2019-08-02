@@ -1,13 +1,13 @@
-import networkx
-import os
-import pandas as pd
-from matplotlib import pyplot as plt
-import numpy as np
-import settings
-import references
 import csv
 import itertools
+import os
 
+import networkx
+import numpy as np
+from matplotlib import pyplot as plt
+
+import settings
+from utils import reference_genomes
 
 pathway_files = {
     'all': 'msigdb.v6.1.symbols.gmt',
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         c = csv.reader(f, delimiter='\t')
         for row in c:
             pathway_symbols[row[0]] = row[2:]
-            ee = references.gene_symbol_to_x_robust(row[2:], 'Ensembl Gene ID')
+            ee = reference_genomes.gene_symbol_to_x_robust(row[2:], 'Ensembl Gene ID')
             if ee.isnull().any():
                 still_missing = []
                 for g in ee[ee.isnull()].index:

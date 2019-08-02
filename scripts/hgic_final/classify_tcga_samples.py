@@ -1,12 +1,11 @@
-from utils import output
-from rnaseq import gsea
-from settings import DATA_DIR, HGIC_LOCAL_DIR
-import references
-from scripts.wang_gbm_classifier.classify_our_gbm_samples import simplicity_score, load_pvalue_results
-
-import pandas as pd
 import os
 
+import pandas as pd
+
+from rnaseq import gsea
+from scripts.wang_gbm_classifier.classify_our_gbm_samples import simplicity_score, load_pvalue_results
+from settings import HGIC_LOCAL_DIR
+from utils import output, reference_genomes
 
 if __name__ == '__main__':
     ## TCGA
@@ -80,7 +79,7 @@ if __name__ == '__main__':
 
     if rnaseq_type != 'gliovis':
         # add gene symbols for gene signature scoring?
-        gs = references.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
+        gs = reference_genomes.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
         rnaseq_dat = rnaseq_dat.loc[gs.index]
         rnaseq_dat.index = gs.values
 

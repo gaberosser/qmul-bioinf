@@ -3,21 +3,18 @@ import re
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib import ticker
-import seaborn as sns
 from scipy.cluster import hierarchy
 
 from load_data import rnaseq_data
-from stats import transformations
 from microarray import process
-from utils.output import unique_output_dir
 from plotting import clustering, bar, heatmap
-
 from scripts.rnaseq import gtf_reader
-
-import references
-
+from stats import transformations
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 N_GENES = 500
 
@@ -223,7 +220,7 @@ if __name__ == "__main__":
         'NFIA',
     ]
     data_markers = data.loc[
-        references.gene_symbol_to_ensembl(astro_markers1),
+        reference_genomes.gene_symbol_to_ensembl(astro_markers1),
         data.columns.str.contains('DURA')
     ]
     data_markers.index = astro_markers1
@@ -385,7 +382,7 @@ if __name__ == "__main__":
             common_genes.update(t.index)
 
         top_dat = data_rr_mt.loc[list(common_genes)].divide(data_rr.sum(), axis=1)
-        symb = references.ensembl_to_gene_symbol(top_dat.index)
+        symb = reference_genomes.ensembl_to_gene_symbol(top_dat.index)
         tidx = np.array(top_dat.index)
         tidx[~symb.isnull().values] = symb.loc[~symb.isnull()].values
         top_dat.index = tidx
@@ -412,7 +409,7 @@ if __name__ == "__main__":
         'SLC1A2'
     ]
     data_timeline = data.loc[
-        references.gene_symbol_to_ensembl(astro_markers2),
+        reference_genomes.gene_symbol_to_ensembl(astro_markers2),
         ~data.columns.str.contains('neuron')
         # & ~data.columns.str.contains('oligo')
     ]
@@ -473,7 +470,7 @@ if __name__ == "__main__":
     all_neuronal_markers = []
     for grp, arr in neuronal_lineage_markers.items():
         all_neuronal_markers.extend(arr)
-    all_neuronal_markers_ens = references.gene_symbol_to_ensembl(all_neuronal_markers)
+    all_neuronal_markers_ens = reference_genomes.gene_symbol_to_ensembl(all_neuronal_markers)
 
     n = data_rr_mt.loc[
         :,

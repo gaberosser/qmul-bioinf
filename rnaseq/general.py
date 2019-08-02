@@ -1,11 +1,12 @@
-import references
-import pandas as pd
-import os
-from settings import LOCAL_DATA_DIR
-from gzip import GzipFile
 import csv
+import os
 import re
+from gzip import GzipFile
 
+import pandas as pd
+
+from settings import LOCAL_DATA_DIR
+from utils import reference_genomes
 
 DEFAULT_REFS = {
     9606: 'GRCh38r90',
@@ -83,7 +84,7 @@ def top_genes(
     """
     if convert_to_symbols:
         # get gene symbols and drop all NaN
-        gs = references.ensembl_to_gene_symbol(data.index, tax_id=tax_id).dropna()
+        gs = reference_genomes.ensembl_to_gene_symbol(data.index, tax_id=tax_id).dropna()
         gs = gs.loc[~gs.index.duplicated()]
         gs = gs.loc[~gs.duplicated()]
     res = {}
@@ -101,7 +102,7 @@ def add_gene_symbols_to_ensembl_data(df, tax_id=9606):
     """
     Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
     """
-    gs = references.ensembl_to_gene_symbol(df.index, tax_id=tax_id)
+    gs = reference_genomes.ensembl_to_gene_symbol(df.index, tax_id=tax_id)
     # resolve any duplicates arbitrarily (these should be rare)
     gs = gs.loc[~gs.index.duplicated()]
     df.insert(0, 'Gene Symbol', gs)

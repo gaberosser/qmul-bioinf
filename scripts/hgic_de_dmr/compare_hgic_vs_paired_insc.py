@@ -1,14 +1,12 @@
 import os
-import numpy as np
-from plotting import venn
-import pandas as pd
-from stats import transformations
-import references
-from rnaseq import general, differential_expression
-from settings import LOCAL_DATA_DIR
-from utils import output, setops, excel, ipa
-from load_data import rnaseq_data
 
+import numpy as np
+import pandas as pd
+
+from load_data import rnaseq_data
+from plotting import venn
+from rnaseq import differential_expression
+from utils import output, setops
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir("compare_paired_de", reuse_empty=True)

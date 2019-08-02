@@ -1,19 +1,18 @@
-from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-from rnaseq import loader
-from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
-import numpy as np
-from scipy import stats
-import pandas as pd
-from stats import nht
-from utils import output, setops
-from settings import HGIC_LOCAL_DIR
-from plotting import common
 import os
 import pickle
-import references
-from matplotlib import pyplot as plt
-import seaborn as sns
 
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+
+from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
+from plotting import common
+from rnaseq import loader
+from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
+from settings import HGIC_LOCAL_DIR
+from stats import nht
+from utils import output, setops, reference_genomes
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir()
@@ -23,7 +22,7 @@ if __name__ == "__main__":
     eps = .1  # offset for log transform
 
     target_gene = 'CD274'
-    target_ens = references.gene_symbol_to_ensembl(target_gene)
+    target_ens = reference_genomes.gene_symbol_to_ensembl(target_gene)
 
     # load Salmon data
 
@@ -97,7 +96,7 @@ if __name__ == "__main__":
     combined_pathway_genes = sorted(setops.reduce_union(*pathway_genes.values()))
     # add target gene for heatmap
     lookup_gene = combined_pathway_genes + [target_gene]
-    lookup_ens = references.gene_symbol_to_ensembl(lookup_gene)
+    lookup_ens = reference_genomes.gene_symbol_to_ensembl(lookup_gene)
 
     # lookup and plot in patients (GIC)
     log_gic_cc = log2_tpm_cc[consts.S1_RNASEQ_SAMPLES_GIC]
@@ -234,7 +233,7 @@ if __name__ == "__main__":
     tregs_signatures = dict([(k, v) for k, v in xcell_signatures.items() if 'tregs' in k.lower()])
     # since there's a lot of complementarity, reduce this down to a single list
     tregs_signature_combined = sorted(setops.reduce_union(*tregs_signatures.values()))
-    tregs_signature_combined_ens = references.gene_symbol_to_ensembl(tregs_signature_combined)
+    tregs_signature_combined_ens = reference_genomes.gene_symbol_to_ensembl(tregs_signature_combined)
 
     # heatmap
     dat = log2_tpm_ff.loc[tregs_signature_combined_ens]

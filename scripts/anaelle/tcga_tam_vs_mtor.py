@@ -1,20 +1,18 @@
-from rnaseq import gsva, loader
-import pandas as pd
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR
-from plotting import venn, common
-
-import os
-import references
-import datetime
-from matplotlib import pyplot as plt, colors
-from mpl_toolkits.mplot3d import Axes3D
-import statsmodels.api as sm
-from statsmodels.sandbox.regression.predstd import wls_prediction_std
-import seaborn as sns
-import numpy as np
 import collections
+import os
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import statsmodels.api as sm
+from matplotlib import pyplot as plt, colors
 from scipy import stats
-from utils import setops, output, log
+from statsmodels.sandbox.regression.predstd import wls_prediction_std
+
+from plotting import venn, common
+from rnaseq import gsva
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR
+from utils import setops, output, log, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -412,7 +410,7 @@ def tam_signature_dict():
     bowman_tam_signatures = pd.read_csv(bowman_tam_signature_fn, header=0, index_col=None)
 
     # generate series of orthologs of the relevant gene signatures
-    orth = references.homologs_table(references.mouse_tid, references.human_tid)
+    orth = reference_genomes.homologs_table(reference_genomes.mouse_tid, reference_genomes.human_tid)
     orth = orth.set_index('gene_symbol_10090').squeeze()
 
     bowman_tam_signatures = {
@@ -544,7 +542,7 @@ if __name__ == "__main__":
 
     if rnaseq_type != 'gliovis':
         # add gene symbols for gene signature scoring?
-        gs = references.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
+        gs = reference_genomes.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
         rnaseq_dat = rnaseq_dat.loc[gs.index]
         rnaseq_dat.index = gs.values
 

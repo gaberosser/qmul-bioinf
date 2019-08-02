@@ -1,36 +1,31 @@
-from plotting import bar, common, pie, polar, venn
-from methylation import loader, dmr, process, annotation_gene_to_ensembl
-import pandas as pd
-import itertools
-from stats import nht, basic
-from utils import output, setops, genomics, log, ipa, dictionary
-from cytoscape import cyto
-import multiprocessing as mp
-import os
 import collections
+import itertools
+import multiprocessing as mp
 import operator
+import os
 import pickle
-import numpy as np
-from scipy import stats, cluster, special
-import matplotlib
-from matplotlib import pyplot as plt, patches, gridspec
-from matplotlib import colors
-from sklearn.neighbors import KernelDensity
-import seaborn as sns
 
-import references
+import numpy as np
+import pandas as pd
+from matplotlib import colors
+from matplotlib import pyplot as plt
+from scipy import stats, special
+
+from integrator import rnaseq_methylationarray
+from methylation import dmr, annotation_gene_to_ensembl
+from plotting import common, venn
+from rnaseq import loader as rnaseq_loader
+from scripts.dmr_direction_bias_story import \
+    same_process_applied_to_de as same_de
 from scripts.hgic_final import \
     two_strategies_grouped_dispersion as tsgd, \
     two_strategies_combine_de_dmr as tscd, \
     analyse_dmrs_s1_direction_distribution as addd, \
     consts
-from scripts.dmr_direction_bias_story import \
-    same_process_applied_to_de as same_de
-from rnaseq import loader as rnaseq_loader, filter
-from integrator import rnaseq_methylationarray
-from scripts.methylation import dmr_values_to_bigwig
+from settings import HGIC_LOCAL_DIR
+from stats import basic
+from utils import output, setops, log, dictionary, reference_genomes
 
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
 logger = log.get_console_logger()
 
 """
@@ -121,7 +116,7 @@ def tabulate_de_counts_by_direction(de_res, pids=consts.PIDS, **gene_lists):
         de_count_table.loc[pid, 'Total up'] = (de_res[pid]['logFC'] > 0).sum()
         de_count_table.loc[pid, 'Total down'] = (de_res[pid]['logFC'] < 0).sum()
         for k, g_arr in gene_lists.items():
-            ix = de_res[pid].index.intersection(references.gene_symbol_to_ensembl(g_arr).dropna().values)
+            ix = de_res[pid].index.intersection(reference_genomes.gene_symbol_to_ensembl(g_arr).dropna().values)
             de_count_table.loc[pid, '%s up' % k] = (de_res[pid].loc[ix, 'logFC'] > 0).sum()
             de_count_table.loc[pid, '%s down' % k] = (de_res[pid].loc[ix, 'logFC'] < 0).sum()
 

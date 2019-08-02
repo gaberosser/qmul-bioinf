@@ -4,21 +4,19 @@ The idea behind this is to work out how different the ssGSEA approach is (run on
 (run on DE gene list from a GBM-iNSC comparison)
 """
 
-import pandas as pd
-import os
-import re
 import csv
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
-from matplotlib import pyplot as plt
+import os
+
+import pandas as pd
 import seaborn as sns
-import multiprocessing as mp
+from matplotlib import pyplot as plt
 from scipy.cluster import hierarchy as hc
+
 from plotting import clustering
-from utils import log, output
-from rnaseq import gsea
-from scripts.hgic_final import consts
 from scripts.hgic_final import analyse_xcell_results
-import references
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
+from utils import log, output, reference_genomes
+
 logger = log.get_console_logger()
 
 
@@ -283,7 +281,7 @@ if __name__ == "__main__":
     # convert IPA pathway Ensembl IDs to symbols for compatibility
     ipa_signatures_symb = {}
     for k, v in ipa_signatures.items():
-        ipa_signatures_symb[k] = references.ensembl_to_gene_symbol(v).dropna()
+        ipa_signatures_symb[k] = reference_genomes.ensembl_to_gene_symbol(v).dropna()
 
     # compute overlap between cell type signatures and IPA signatures
     pct_shared = analyse_xcell_results.compute_cell_type_pathway_overlap(

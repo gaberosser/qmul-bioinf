@@ -1,10 +1,12 @@
-import pandas as pd
-import numpy as np
 import collections
 import os
 import pickle
-import references
+
+import numpy as np
+import pandas as pd
+
 from settings import GIT_LFS_DATA_DIR
+from utils import reference_genomes
 
 RNASEQ_GENE_COUNTS_DIR = os.path.join(GIT_LFS_DATA_DIR, 'rnaseq_GSE83696', 'cufflinks')
 RNA_COUNT_FIELDS = [
@@ -31,7 +33,7 @@ def load_rnaseq_htseq_count_data(by_gene=False):
         with open(ff, 'rb') as f:
             t = pickle.load(f)
         if by_gene:
-            trans = references.ensembl_to_gene_symbol(t.index)
+            trans = reference_genomes.ensembl_to_gene_symbol(t.index)
             # keep only the non-null entries
             trans = trans.loc[~trans.isnull()]
             t = t.loc[trans.index.union(RNA_COUNT_FIELDS)]

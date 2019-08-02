@@ -1,18 +1,16 @@
-import pandas as pd
-import os
-import re
 import csv
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
-from matplotlib import pyplot as plt
+import os
+
+import pandas as pd
 import seaborn as sns
-import multiprocessing as mp
+from matplotlib import pyplot as plt
 from scipy.cluster import hierarchy as hc
+
 from plotting import clustering
-from utils import log, output
-from rnaseq import gsea
-from scripts.hgic_final import consts
 from scripts.hgic_final import analyse_xcell_results
-import references
+from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR
+from utils import log, output
+
 logger = log.get_console_logger()
 
 

@@ -1,14 +1,14 @@
-import pandas as pd
-import re
-import os
 import glob
-import references
+import os
+import re
+
+import pandas as pd
+
 from load_data import loader
-from load_data.loader import MultipleBatchLoader
 from rnaseq.general import ensembl_transcript_quant_to_gene
-from utils.log import get_console_logger
-from utils import setops
 from settings import RNASEQ_DIR
+from utils.log import get_console_logger
+
 logger = get_console_logger(__name__)
 
 

@@ -1,23 +1,22 @@
-import os
+import itertools
 import multiprocessing as mp
-import collections
+import operator
+import os
+
 import numpy as np
 import pandas as pd
-import itertools
-import operator
 from matplotlib import pyplot as plt
-import seaborn as sns
-import references
-from rnaseq import filter, differential_expression
-from settings import LOCAL_DATA_DIR
-from utils import output, setops, excel, ipa
+
 from load_data import rnaseq_data
+from rnaseq import filter, differential_expression
+from utils import output, setops, reference_genomes
+
 
 def add_gene_symbols(df):
     """
     Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
     """
-    gs = references.ensembl_to_gene_symbol(df.index)
+    gs = reference_genomes.ensembl_to_gene_symbol(df.index)
     # resolve any duplicates arbitrarily (these should be rare)
     gs = gs.loc[~gs.index.duplicated()]
     df.insert(0, 'Gene Symbol', gs)

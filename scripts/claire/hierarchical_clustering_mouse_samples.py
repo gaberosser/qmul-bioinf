@@ -1,16 +1,17 @@
-from scipy import stats
-from load_data import rnaseq_data
-from rnaseq import loader
-from plotting import corr, clustering
-from stats import transformations
-from matplotlib import pyplot as plt
-from utils.output import unique_output_dir
 import os
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import references
+from matplotlib import pyplot as plt
+from scipy import stats
 
+from load_data import rnaseq_data
+from plotting import corr, clustering
+from rnaseq import loader
+from stats import transformations
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 if __name__ == "__main__":
     outdir = unique_output_dir('mouse_validation')
@@ -204,7 +205,7 @@ if __name__ == "__main__":
     from statsmodels.sandbox.stats import multicomp
     tmp = multicomp.multipletests(p_values.values, method='fdr_bh', alpha=0.001)
     # get the genes responsible for the observed changes
-    references.ensembl_to_gene_symbol(the_insc.loc[tmp[0]].index, tax_id=10090)
+    reference_genomes.ensembl_to_gene_symbol(the_insc.loc[tmp[0]].index, tax_id=10090)
 
     # compare within mice
 

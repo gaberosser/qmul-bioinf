@@ -1,14 +1,13 @@
-from rnaseq import loader, general
-import references
-from matplotlib import pyplot as plt
-import seaborn as sns
-from scripts.hgic_final import consts
-
-from utils import output
-
 import os
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+
+from rnaseq import loader, general
+from scripts.hgic_final import consts
+from utils import output
 
 
 def chunker(arr, chunk_size):

@@ -1,9 +1,10 @@
-import os
-import pandas as pd
-from settings import DATA_DIR
-import re
 import json
-import references
+import os
+import re
+
+import pandas as pd
+
+from utils import reference_genomes
 
 
 def prepare_data_and_meta(indir, meta_fn=None):
@@ -15,7 +16,7 @@ def prepare_data_and_meta(indir, meta_fn=None):
         meta_fn = os.path.join(indir, '..', 'brennan_s7.csv')
     dirlist = os.listdir(indir)
 
-    df = references.conversion_table()
+    df = reference_genomes.conversion_table()
     df = df.loc[~df.loc[:, 'Ensembl Gene ID'].duplicated()].set_index('Ensembl Gene ID')
 
     dat = None  # this will hold all our data

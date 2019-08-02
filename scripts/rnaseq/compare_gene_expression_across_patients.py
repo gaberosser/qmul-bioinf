@@ -1,10 +1,6 @@
 from load_data import rnaseq_data
-import pandas as pd
-import os
 from rnaseq import general
-from utils import output
-import references
-
+from utils import reference_genomes
 
 if __name__ == "__main__":
     gois = [
@@ -36,6 +32,6 @@ if __name__ == "__main__":
         )
         dat = dat.loc[:, idx]
 
-    lookup = references.gene_symbol_to_ensembl(gois, tax_id=tax_id)
+    lookup = reference_genomes.gene_symbol_to_ensembl(gois, tax_id=tax_id)
 
     vals = dat.loc[lookup]

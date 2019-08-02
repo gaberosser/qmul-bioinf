@@ -1,13 +1,15 @@
-import pandas as pd
-import numpy as np
-from rnaseq import gsea
-from load_data import rnaseq_data
-from utils.output import unique_output_dir
-from settings import OUTPUT_DIR
 import os
-import references
-from matplotlib import pyplot as plt
+
+import numpy as np
+import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
+
+from load_data import rnaseq_data
+from rnaseq import gsea
+from settings import OUTPUT_DIR
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 
 def prepare_gct_files(outdir=None):
@@ -31,7 +33,7 @@ def prepare_gct_files(outdir=None):
     dat_cc = obj_cc.get_fpkm()
     dat_cc = dat_cc.loc[:, obj_cc.meta.type == 'GBM']
     dat_all = pd.concat((dat_cc, dat_ffpe), axis=1)
-    idx = references.ensembl_to_gene_symbol(dat_all.index).dropna()
+    idx = reference_genomes.ensembl_to_gene_symbol(dat_all.index).dropna()
     dat_all = dat_all.loc[idx.index]
     dat_all.index = idx
     fn = os.path.join(outdir, "gbm_ffpe_cc_fpkm.gct")
@@ -41,7 +43,7 @@ def prepare_gct_files(outdir=None):
     # 2) TCGA (IDH1 WT only)
     tcga_dat, tcga_meta = rnaseq_data.tcga_primary_gbm(units='fpkm')
     tcga_dat = tcga_dat.loc[:, tcga_meta.idh1_status == 'WT']
-    idx = references.ensembl_to_gene_symbol(tcga_dat.index).dropna()
+    idx = reference_genomes.ensembl_to_gene_symbol(tcga_dat.index).dropna()
     idx = idx.loc[~idx.index.duplicated()]
     tcga_dat = tcga_dat.loc[idx.index]
     tcga_dat.index = idx

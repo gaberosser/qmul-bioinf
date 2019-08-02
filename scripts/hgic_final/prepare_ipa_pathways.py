@@ -6,12 +6,12 @@ We convert IDs to Ensembl (where possible) for compatibility with downstream dat
 """
 
 import os
-import pandas as pd
-from utils import output
-import references
-import unicodecsv as csv
-from settings import HGIC_LOCAL_DIR
 
+import pandas as pd
+import unicodecsv as csv
+
+from settings import HGIC_LOCAL_DIR
+from utils import output, reference_genomes
 
 # some of the pathways contain forbidden symbols; this list details which need renaming
 TO_RENAME = {
@@ -59,11 +59,11 @@ if __name__ == '__main__':
         else:
             lookup = lookup.tolist()
 
-        ens = references.entrez_to_ensembl(lookup)
+        ens = reference_genomes.entrez_to_ensembl(lookup)
         output_ens_id[row['name']] = [path_id] + ens.dropna().values.tolist()
 
         # Entrez -> gene symbol
-        gs = references.entrez_to_gene_symbol(lookup)
+        gs = reference_genomes.entrez_to_gene_symbol(lookup)
         output_gene_symbols[row['name']] = [path_id] + gs.dropna().values.tolist()
 
     # output to (UTF-8 encoded) CSV files

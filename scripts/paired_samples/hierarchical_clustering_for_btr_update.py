@@ -1,23 +1,12 @@
-from astrocytes_comparison import plot_all_clustermaps, plot_correlation_heatmap
 import os
 import re
 
-import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
-from matplotlib import ticker
-import seaborn as sns
-from scipy.cluster import hierarchy
 
+from astrocytes_comparison import plot_all_clustermaps
 from load_data import rnaseq_data
-from microarray import process
-from utils.output import unique_output_dir
-from plotting import clustering, bar, heatmap
-
 from scripts.rnaseq import gtf_reader
-
-import references
-
+from utils.output import unique_output_dir
 
 N_GENES = 500
 

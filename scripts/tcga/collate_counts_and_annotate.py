@@ -1,9 +1,11 @@
-import os
-import pandas as pd
-from settings import DATA_DIR
-import re
 import json
-import references
+import os
+import re
+
+import pandas as pd
+
+from settings import DATA_DIR
+from utils import reference_genomes
 
 ## RNASEQ
 base_dir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour')
@@ -11,7 +13,7 @@ indir = os.path.join(base_dir, 'htseq-count_fpkm')
 
 dirlist = os.listdir(indir)
 
-df = references.conversion_table()
+df = reference_genomes.conversion_table()
 df = df.loc[~df.loc[:, 'Ensembl Gene ID'].duplicated()].set_index('Ensembl Gene ID')
 
 dat = None  # this will hold all our data
@@ -102,7 +104,7 @@ meta = meta.loc[meta.index.intersection(bb.values)]
 dat2 = dat2.loc[:, meta.index]
 
 # add gene symbols
-gs = references.ensembl_to_gene_symbol(dat2.index)
+gs = reference_genomes.ensembl_to_gene_symbol(dat2.index)
 dat2.loc[:, 'Approved Symbol'] = gs
 
 # export

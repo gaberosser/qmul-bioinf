@@ -1,15 +1,14 @@
-from load_data import rnaseq_data
-from references import ensembl_to_gene_symbol, gene_symbol_to_ensembl
-import numpy as np
-from matplotlib import pyplot as plt
-import seaborn as sns
 import os
-from utils.output import unique_output_dir
-import pandas as pd
+
 import numpy as np
-from stats import transformations
+import pandas as pd
+from matplotlib import pyplot as plt
 from scipy.stats import rankdata
 
+from load_data import rnaseq_data
+from stats import transformations
+from utils.output import unique_output_dir
+from utils.reference_genomes import ensembl_to_gene_symbol, gene_symbol_to_ensembl
 
 if __name__ == "__main__":
     outdir = unique_output_dir("tom_qpcr", reuse_empty=True)

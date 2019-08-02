@@ -1,24 +1,18 @@
-import numpy as np
-from matplotlib import pyplot as plt
-import seaborn as sns
-from sklearn.preprocessing import StandardScaler
-from adjustText import adjust_text
-import pandas as pd
-import itertools
 import collections
+import itertools
 import os
 
-from rnaseq import loader, filter, general
-from scripts.hgic_final import consts
-from plotting import common, pca, _plotly, scatter, adjuster
-from utils import output, log, setops, excel
-from stats import decomposition
-import references
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
-
+import numpy as np
+import pandas as pd
 import plotly.plotly as py
 from plotly import graph_objs as go
 
+from plotting import common, pca, _plotly, adjuster
+from rnaseq import loader, filter, general
+from scripts.hgic_final import consts
+from settings import HGIC_LOCAL_DIR
+from stats import decomposition
+from utils import output, log, setops, excel, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -233,7 +227,7 @@ def plot_biplot(
 
     if selected is not None:
         genes_selected = dat.index[selected]
-        symbols_selected = references.ensembl_to_gene_symbol(genes_selected)
+        symbols_selected = reference_genomes.ensembl_to_gene_symbol(genes_selected)
 
         # add gene symbol annotations
         text_handles = []

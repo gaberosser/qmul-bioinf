@@ -1,10 +1,11 @@
-from load_data import rnaseq_data
-from rnaseq import general, gsea
-from utils.output import unique_output_dir
-import references
 import os
+
 import pandas as pd
 
+from load_data import rnaseq_data
+from rnaseq import general, gsea
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 if __name__ == '__main__':
     outdir = unique_output_dir("mouse_gsea_files", reuse_empty=True)
@@ -16,7 +17,7 @@ if __name__ == '__main__':
     the_groups[dat.columns.str.contains('mDura')] = 'iNSC'
 
     # now switch from Ensembl to gene symbol and capitalize (why?)
-    gs = references.ensembl_to_gene_symbol(dat.index, tax_id=10090)
+    gs = reference_genomes.ensembl_to_gene_symbol(dat.index, tax_id=10090)
     gs = gs.str.upper()
     gs = gs.loc[~gs.index.duplicated()]
 

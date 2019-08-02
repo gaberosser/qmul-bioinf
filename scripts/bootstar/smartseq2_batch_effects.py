@@ -1,17 +1,16 @@
-from rnaseq import loader, differential_expression, filter, general
-from plotting import common, clustering, venn
-from stats import transformations, basic
-import pandas as pd
+import os
+
 import numpy as np
+import pandas as pd
+from adjustText import adjust_text
+from matplotlib import pyplot as plt
 from scipy import stats
 from scipy.cluster import hierarchy as hc
-import math
-from matplotlib import pyplot as plt
-import seaborn as sns
-from adjustText import adjust_text
-from utils import output, setops
-import references
-import os
+
+from plotting import common, clustering, venn
+from rnaseq import loader, differential_expression, filter, general
+from stats import transformations, basic
+from utils import output, setops, reference_genomes
 
 
 def log_cpm(dat, base=2, offset=1.):
@@ -366,7 +365,7 @@ if __name__ == '__main__':
             (de_res_separate[p].logFC < 0).sum(),
         )
 
-    de_in_all = references.ensembl_to_gene_symbol(
+    de_in_all = reference_genomes.ensembl_to_gene_symbol(
         setops.reduce_intersection(*[t.index for t in de_res_separate.values()])
     )
     # sort this by the avg logFC
@@ -416,7 +415,7 @@ if __name__ == '__main__':
 
         # annotate the largest FC genes (top 10%)
         to_annot = abs_fc.index[:int(np.ceil(0.1 * abs_fc.shape[0]))]
-        to_annot = references.ensembl_to_gene_symbol(to_annot)
+        to_annot = reference_genomes.ensembl_to_gene_symbol(to_annot)
         # to_annot.loc[to_annot.isnull()] = to_annot.index[to_annot.isnull()]
         to_annot = to_annot.dropna()
         texts = []

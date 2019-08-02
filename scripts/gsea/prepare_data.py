@@ -1,9 +1,9 @@
-from rnaseq import loader, general
-from utils.output import unique_output_dir
-from rnaseq import gsea
 import os
-import references
+
 import pandas as pd
+
+from rnaseq import gsea
+from rnaseq import loader, general
 from settings import OUTPUT_DIR
 
 

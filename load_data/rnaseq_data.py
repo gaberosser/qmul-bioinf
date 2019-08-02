@@ -1,12 +1,14 @@
-import pandas as pd
-import re
-import os
 import glob
-import references
-import loader
+import os
+import re
+
+import pandas as pd
+
 from rnaseq import normalisation, tcga
-from utils.log import get_console_logger
 from settings import GIT_LFS_DATA_DIR, DATA_DIR
+from utils import reference_genomes
+from utils.log import get_console_logger
+
 logger = get_console_logger(__name__)
 
 INDEX_FIELDS = (
@@ -963,7 +965,7 @@ def annotate(
     """
     if annotate_by is not None:
         # load genenames data for annotation
-        df = references.conversion_table(type=annotation_type, tax_id=tax_id)
+        df = reference_genomes.conversion_table(type=annotation_type, tax_id=tax_id)
         df.set_index('Ensembl Gene ID', inplace=True)
         # resolve duplicates (if present) by keeping the first
         df = df.loc[~df.index.duplicated(keep='first')]
@@ -1138,7 +1140,7 @@ def gse83696(index_by='Ensembl Gene ID'):
         df.loc[:, sn] = t
 
     if index_by is not None and index_by != 'Ensembl Gene ID':
-        new_idx = references.translate(df.index, to_field=index_by, from_field='Ensembl Gene ID')
+        new_idx = reference_genomes.translate(df.index, to_field=index_by, from_field='Ensembl Gene ID')
         new_idx.dropna(inplace=True)
         df = df.loc[new_idx.index]
         df.index = new_idx.values

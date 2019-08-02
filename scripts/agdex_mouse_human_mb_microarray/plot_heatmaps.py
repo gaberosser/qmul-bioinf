@@ -1,16 +1,18 @@
-from matplotlib import pyplot as plt
-from plotting import heatmap
+import os
+
+import numpy as np
 import pandas as pd
-from references import known_genes
+import seaborn as sns
+from matplotlib import pyplot as plt
+from scipy.cluster import hierarchy
+
 from load_data import microarray_data
-from utils.output import unique_output_dir
+from microarray import process
+from plotting import heatmap
 from scripts.agdex_mouse_human_mb_microarray import generate_ortholog_table
 from scripts.comparison_rnaseq_microarray.consts import NORTHCOTT_GENEID, NORTHCOTT_GENEID_MAP
-from microarray import process
-import os
-import numpy as np
-import seaborn as sns
-from scipy.cluster import hierarchy
+from utils.output import unique_output_dir
+from utils.reference_genomes import known_genes
 
 
 def mo_entrez_to_symbol(data, kg):

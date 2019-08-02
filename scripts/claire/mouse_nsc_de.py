@@ -1,13 +1,12 @@
-from load_data import rnaseq_data
-from rnaseq import differential_expression, general, loader
-from utils.output import unique_output_dir
-from utils import excel
-import references
-import multiprocessing as mp
 import itertools
+import multiprocessing as mp
 import os
+
 import pandas as pd
-import numpy as np
+
+from rnaseq import differential_expression, general, loader
+from utils import excel
+from utils.output import unique_output_dir
 
 
 def run_one_de(dat, groups, contrasts, **kwargs):

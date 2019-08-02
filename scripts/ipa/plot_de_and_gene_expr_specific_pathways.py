@@ -1,22 +1,17 @@
-import os
-import pandas as pd
-import numpy as np
-import pickle
-from matplotlib import pyplot as plt
-import seaborn as sns
 import collections
+import os
+import pickle
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
 from sklearn.preprocessing import StandardScaler
 
-from rnaseq import loader as rnaseq_loader
 from plotting import common, heatmap
-from utils import output, ipa, setops, dictionary, log
-from settings import GIT_LFS_DATA_DIR
-from scripts.hgic_final import ipa_results_s1_s2 as irss
+from rnaseq import loader as rnaseq_loader
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-import references
-
 from settings import HGIC_LOCAL_DIR
-
+from utils import output, setops, log, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -114,7 +109,7 @@ if __name__ == '__main__':
             for arr in v.dropna().genes.str.split(',').values:
                 union_genes.update(arr)
 
-        union_genes_ens = references.gene_symbol_to_ensembl(union_genes)
+        union_genes_ens = reference_genomes.gene_symbol_to_ensembl(union_genes)
         union_genes_comp = union_genes_ens.reset_index().set_index('Ensembl Gene ID').squeeze()
 
         # plot TPM

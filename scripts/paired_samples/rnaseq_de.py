@@ -1,21 +1,20 @@
+import os
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+
 from load_data import rnaseq_data
 from rnaseq import differential_expression
 from rnaseq.filter import filter_by_cpm
-import pandas as pd
-import numpy as np
-from scipy import stats
-import references
-import os
-from utils import output, setops
-from matplotlib import pyplot as plt
-import seaborn as sns
+from utils import output, setops, reference_genomes
 
 
 def add_gene_symbols(df):
     """
     Add gene symbols to the DataFrame df which is indexed by Ensembl IDs
     """
-    gs = references.ensembl_to_gene_symbol(df.index)
+    gs = reference_genomes.ensembl_to_gene_symbol(df.index)
     # resolve any duplicates arbitrarily (these should be rare)
     gs = gs.loc[~gs.index.duplicated()]
     df.insert(0, 'Gene Symbol', gs)

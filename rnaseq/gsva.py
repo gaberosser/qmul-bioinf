@@ -1,17 +1,15 @@
+import multiprocessing as mp
+import operator
+from functools import partial
+
 import numpy as np
 import pandas as pd
-from scipy import stats
 from matplotlib import pyplot as plt
-import seaborn as sns
-import os
-from functools import partial
-import operator
-import multiprocessing as mp
+from scipy import stats
 
-
-import references
-from utils import output, log, rinterface
 from rnaseq import loader
+from utils import output, log, rinterface, reference_genomes
+
 logger = log.get_console_logger()
 
 
@@ -444,7 +442,7 @@ if __name__ == "__main__":
 
     example_col = X.columns[0]
     example_ens = X.index[0]
-    example_gene = references.ensembl_to_gene_symbol(example_ens)
+    example_gene = reference_genomes.ensembl_to_gene_symbol(example_ens)
 
     x1 = X.loc[example_ens]
     n = float(len(x1))

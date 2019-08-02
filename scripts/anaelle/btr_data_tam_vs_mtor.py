@@ -1,20 +1,19 @@
-import pandas as pd
 import collections
 import os
-from statsmodels.stats.multicomp import MultiComparison
-from scipy import stats
-from matplotlib import pyplot as plt
-import seaborn as sns
+
 import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from scipy import stats
+from statsmodels.stats.multicomp import MultiComparison
 
-import references
-from plotting import common
-from utils import output, log
-from rnaseq import loader, gsva
-from scripts.hgic_final import consts
-from scripts.anaelle import tcga_tam_vs_mtor as ttm
 from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
-
+from plotting import common
+from rnaseq import loader, gsva
+from scripts.anaelle import tcga_tam_vs_mtor as ttm
+from scripts.hgic_final import consts
+from utils import output, log, reference_genomes
 
 logger = log.get_console_logger()
 
@@ -70,7 +69,7 @@ if __name__ == "__main__":
 
     rnaseq_dat = obj.data.copy()
     # use gene symbol identifiers
-    gs = references.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
+    gs = reference_genomes.ensembl_to_gene_symbol(rnaseq_dat.index).dropna()
     rnaseq_dat = rnaseq_dat.loc[gs.index]
     rnaseq_dat.index = gs.values
 

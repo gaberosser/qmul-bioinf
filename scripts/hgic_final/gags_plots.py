@@ -1,15 +1,15 @@
+import os
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+
+from plotting import common
 from rnaseq import loader
 from scripts.hgic_final import consts
-from matplotlib import pyplot as plt, gridspec
-import seaborn as sns
-import numpy as np
-import os
-import pandas as pd
-
 from settings import HGIC_LOCAL_DIR
-from utils import output, setops, dictionary
-import references
-from plotting import common
+from utils import output, setops, dictionary, reference_genomes
 
 if __name__ == "__main__":
     pids = consts.PIDS
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     #     "HAS3"
     # ]
 
-    ee = references.gene_symbol_to_ensembl(goi)
+    ee = reference_genomes.gene_symbol_to_ensembl(goi)
 
     dat = obj.data.loc[ee]
     dat.index = ee.index

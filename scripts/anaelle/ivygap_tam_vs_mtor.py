@@ -1,29 +1,18 @@
-from rnaseq import gsva, loader
-import pandas as pd
-from settings import HGIC_LOCAL_DIR, GIT_LFS_DATA_DIR, DATA_DIR
-from plotting import venn
-
+import collections
 import os
 import re
-import references
-import datetime
-from matplotlib import pyplot as plt
-import matplotlib as mpl
-from mpl_toolkits.mplot3d import Axes3D
 
-import statsmodels.api as sm
-from statsmodels.sandbox.regression.predstd import wls_prediction_std
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from scipy import stats
 from statsmodels.stats.multicomp import MultiComparison
 
-import seaborn as sns
-import numpy as np
-import collections
-from scipy import stats
 from plotting import common
-from utils import setops, output, log
-from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
-
+from rnaseq import gsva, loader
 from scripts.anaelle import tcga_tam_vs_mtor as ttm
+from utils import output, log
 
 logger = log.get_console_logger()
 

@@ -1,20 +1,17 @@
-from methylation import loader, dmr, process
-from plotting import clustering, common, venn, pca as pca_plotting
-from stats import transformations
-import pandas as pd
-import numpy as np
-import copy
-import os
-from utils import output, setops
-import references
 import collections
-from scipy.stats import zscore, spearmanr
-from scipy.cluster import hierarchy as hc
-import numpy as np
 import multiprocessing as mp
+import os
+
+import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
-import seaborn as sns
+from scipy.stats import spearmanr
 from sklearn.decomposition import pca
+
+from methylation import loader, dmr, process
+from plotting import clustering, common
+from stats import transformations
+from utils import output
 
 
 def init_pool_shared_obj(obj):

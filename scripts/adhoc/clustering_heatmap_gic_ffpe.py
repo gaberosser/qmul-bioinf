@@ -1,15 +1,14 @@
-from rnaseq import loader
-from matplotlib import pyplot as plt
-import seaborn as sns
-from plotting import clustering
-import pandas as pd
-import numpy as np
-from utils import output
 import os
-import references
-from stats import transformations
-import hgic_consts
 
+import numpy as np
+import seaborn as sns
+from matplotlib import pyplot as plt
+
+import hgic_consts
+from plotting import clustering
+from rnaseq import loader
+from stats import transformations
+from utils import output, reference_genomes
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir("cluster_gic_ffpe")
@@ -61,7 +60,7 @@ if __name__ == '__main__':
      'SIM2', 'BAMBI', 'PKMYT1', 'PLCB4', 'SLC17A6', 'KLRK1', 'CENPJ', 'NHLH1', 'GABRB3', 'KLRC4', 'KCNK3', 'GRID2',
      'DACH1']
 
-    lcpm_gene = references.translate_quantification_resolving_duplicates(
+    lcpm_gene = reference_genomes.translate_quantification_resolving_duplicates(
         lcpm,
         from_field='Ensembl Gene ID',
         to_field = 'Approved Symbol'

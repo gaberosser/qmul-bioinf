@@ -1,15 +1,15 @@
-from rnaseq import loader
-from plotting import clustering, common, scatter
-from stats import transformations
-import pandas as pd
-import numpy as np
-from copy import copy
 import os
-from utils import output
-import references
-from scipy.stats import zscore
 from copy import copy
+
+import numpy as np
+import pandas as pd
+from scipy.stats import zscore
 from sklearn.decomposition import pca
+
+from plotting import clustering, common, scatter
+from rnaseq import loader
+from stats import transformations
+from utils import output, reference_genomes
 
 
 class SetMe(object):
@@ -237,7 +237,7 @@ if __name__ == '__main__':
 
     # Ruiz 9 gene signature - should distinguish ESC and iPSC
     gene_sign = ['PTPRT', 'TMEM132C', 'TMEM132D', 'TCERG1L', 'DPP6', 'FAM19A5', 'RBFOX1', 'CSMD1', 'C22orf34']
-    gene_sign_ens = references.gene_symbol_to_ensembl(gene_sign)
+    gene_sign_ens = reference_genomes.gene_symbol_to_ensembl(gene_sign)
 
     outdir = output.unique_output_dir("assess_reprogramming")
 

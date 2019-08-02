@@ -1,17 +1,16 @@
-from load_data import rnaseq_data
-import pandas as pd
-from matplotlib import pyplot as plt
-import seaborn as sns
-from scipy.cluster import hierarchy
-from scipy import stats
-import references
-from plotting import clustering, corr
-import re
 import os
-from scripts.rnaseq import gtf_reader
-from utils.output import unique_output_dir
+import re
 
-from scripts.paired_samples.astrocytes_comparison import plot_clustermap
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from scipy import stats
+
+from load_data import rnaseq_data
+from plotting import clustering
+from scripts.rnaseq import gtf_reader
+from utils import reference_genomes
+from utils.output import unique_output_dir
 
 outdir = unique_output_dir("nih_gdc_tcga-gbm", reuse_empty=True)
 
@@ -62,9 +61,9 @@ clustering.dendrogram_with_colours(data, col_colours, legend_labels=legend_label
 # concatenate meta and data for plotting
 # variables in columns
 
-ens_pdgfra = references.gene_symbol_to_ensembl('PDGFRA')
-ens_nf1 = references.gene_symbol_to_ensembl('NF1')
-ens_cdkn2a = references.gene_symbol_to_ensembl('CDKN2A')
+ens_pdgfra = reference_genomes.gene_symbol_to_ensembl('PDGFRA')
+ens_nf1 = reference_genomes.gene_symbol_to_ensembl('NF1')
+ens_cdkn2a = reference_genomes.gene_symbol_to_ensembl('CDKN2A')
 
 aa = pd.concat((datan.transpose(), meta), axis=1)
 

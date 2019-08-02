@@ -1,15 +1,14 @@
 import os
-import collections
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import seaborn as sns
-import references
+from matplotlib import pyplot as plt
+
+from load_data import rnaseq_data
 from rnaseq import differential_expression, general
 from settings import LOCAL_DATA_DIR
-from utils import output, setops, excel, ipa
-from load_data import rnaseq_data
-
+from utils import output, setops, excel, ipa, reference_genomes
 
 if __name__ == "__main__":
 
@@ -195,7 +194,7 @@ if __name__ == "__main__":
         # get the genes that consistently differ in the pair comparison only and NOT in Gibco (across all patients)
         # these will have an expression pattern in Gibco similar to GBM, so that they do NOT appear
         po_ref_diff = po_specific_to_reference.loc[c]
-        po_ref_diff_gs = references.ensembl_to_gene_symbol(po_ref_diff)
+        po_ref_diff_gs = reference_genomes.ensembl_to_gene_symbol(po_ref_diff)
         po_ref_diff_gs = po_ref_diff_gs.where(~po_ref_diff_gs.isnull(), po_ref_diff)
 
         po_dat = rnaseq_obj.data.loc[po_ref_diff]
