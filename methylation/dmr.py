@@ -1,5 +1,5 @@
-from load_data import methylation_array
-from methylation.process import m_from_beta, beta_from_m, merge_illumina_probe_gene_classes
+from methylation.process import m_from_beta, beta_from_m
+from methylation import loader
 from scipy import ndimage, stats
 from stats import nht
 import pandas as pd
@@ -65,12 +65,6 @@ def get_coords(dat, gene_class, col='merged_class'):
 def init_pool(_data):
     global pdata
     pdata = _data
-
-
-def add_merged_probe_classes(anno):
-    anno.loc[:, 'merged_class'] = merge_illumina_probe_gene_classes(
-        anno.loc[:, 'UCSC_RefGene_Group'], anno.loc[:, 'Relation_to_UCSC_CpG_Island']
-    )
 
 
 def identify_cluster(coords, n_min, d_max):
@@ -1418,9 +1412,11 @@ def venn_set_to_wide_dataframe(
 if __name__ == "__main__":
     OUTDIR = unique_output_dir('dmr', reuse_empty=True)
 
-    anno = methylation_array.load_illumina_methylationepic_annotation()
-    b, meta = methylation_array.hgic_methylationepic('swan')
-    m = m_from_beta(b)
+    anno = loader.load_illumina_methylationepic_annotation(split_genes=False)
+
+    # anno = methylation_array.load_illumina_methylationepic_annotation()
+    # b, meta = methylation_array.hgic_methylationepic('swan')
+    # m = m_from_beta(b)
 
     gbm_sample_dict = {
         '018': 'GBM018_P10',
@@ -1433,11 +1429,11 @@ if __name__ == "__main__":
         '031': 'DURA031_NSC_N44B_P2',
     }
 
-    # reduce anno down to probes in the data
-    anno = anno.loc[anno.index.intersection(b.index)]
+    obj = loader.load_by_patient(gbm_sample_dict.keys(), norm_method='swan')
+    m = m_from_beta(obj.data)
 
-    # add merged class column to annotation
-    add_merged_probe_classes(anno)
+    # reduce anno down to probes in the data
+    anno = anno.loc[anno.index.intersection(m.index)]
 
     # split gene symbols and store as a set
     anno.loc[:, 'UCSC_RefGene_Name'] = \

@@ -2,7 +2,7 @@ import os
 import numpy as np
 from microarray import illumina, process, annotation
 from load_data import microarray_data, allen_human_brain_atlas
-from settings import GIT_LFS_DATA_DIR
+from settings import GIT_LFS_DATA_DIR, DATA_DIR
 
 
 def load_hkg_list():
@@ -78,7 +78,10 @@ if __name__ == '__main__':
     # Initially 66 / 121 HKGs are matched, but we can probably do better
     # NB: These performed very poorly in terms of improving correlation between the two mouse datasets
 
-    mo_annot = annotation.load_from_r_format('mogene10sttranscriptcluster.db')
+    annot_dir = os.path.join(DATA_DIR, 'microarray', 'annotation')
+    annot_fn = os.path.join(annot_dir, "mogene10sttranscriptcluster.tsv")
+    mo_annot = pd.read_csv(annot_fn, sep='\t', header=0, index_col=0).replace("NA", np.nan)
+
     # translate from gene symbol to Entrez ID
     mo_hkg_translation = mo_annot.loc[mo_annot.loc[:, 'gene_symbol'].isin(mo_hkg), ['gene_symbol', 'entrez_id']]
     mo_hkg_entrez_id = mo_hkg_translation.loc[:, 'entrez_id']  # we silently lose hkg (e.g. Gapdh) here

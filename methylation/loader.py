@@ -376,7 +376,8 @@ def load_illumina_methylationepic_annotation(split_genes=True):
     many downstream applications
     :return:
     """
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'infinium-methylationepic-v1-0-b3-manifest-file-csv.zip')
+    fn = os.path.join(DATA_DIR, 'methylation', 'annotation', 'epic', 'MethylationEPIC_v-1-0_B3.csv.gz')
+
     usecols = [
         'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
         'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'
@@ -433,7 +434,7 @@ def load_illumina_methylationepic_annotation(split_genes=True):
 
 
 def load_illumina_methylation450_annotation():
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
+    fn = os.path.join(DATA_DIR, 'methylation', 'annotation', '450', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
     usecols = [
         'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
         'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'

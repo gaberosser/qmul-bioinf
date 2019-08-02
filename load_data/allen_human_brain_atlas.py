@@ -4,11 +4,12 @@ import os
 import pandas as pd
 
 from microarray.process import aggregate_by_probe_set
-from settings import GIT_LFS_DATA_DIR
+from settings import DATA_DIR
 from utils.log import get_console_logger
 
 logger = get_console_logger(__name__)
-BASE_DIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas')
+MICROARRAY_DIR = os.path.join(DATA_DIR, 'microarray', 'allen_human_brain_atlas')
+RNASEQ_DIR = os.path.join(DATA_DIR, 'rnaseq', 'allen_human_brain_atlas')
 
 # structure IDs
 CEREBELLUM_STRUCT_ID = 4696
@@ -21,7 +22,7 @@ def get_structure_ids_by_parent(parent_id):
     :return: set of structure IDs
     """
     # load ontology library
-    ontol_fn = os.path.join(BASE_DIR, 'Ontology.csv')
+    ontol_fn = os.path.join(MICROARRAY_DIR, 'Ontology.csv')
     ontol = pd.read_csv(ontol_fn, index_col=0)
     if parent_id is None:
         # return everything
@@ -46,7 +47,7 @@ def load_one_microarray_donor(
         struct_ids=None,
         mask_nonsig=False
 ):
-    INDIR = os.path.join(BASE_DIR, 'microarray')
+    INDIR = os.path.join(MICROARRAY_DIR, 'microarray')
     indir = os.path.join(INDIR, "donor%d" % donor_num)
     expre_fn = os.path.join(indir, 'MicroarrayExpression.csv.gz')
     sampl_fn = os.path.join(indir, 'SampleAnnot.csv.gz')
@@ -107,7 +108,6 @@ def load_microarray_reference_data(
         if hasattr(ann_field, '__iter__') or ann_field is None:
             raise ValueError("When agg_method is not None, ann_field must be a string.")
 
-    INDIR = os.path.join(BASE_DIR, 'microarray')
     DONOR_NUMBERS = [
         9861,
         10021,
@@ -118,7 +118,7 @@ def load_microarray_reference_data(
     ]
 
     # load probe library
-    probe_fn = os.path.join(INDIR, 'Probes.csv')
+    probe_fn = os.path.join(MICROARRAY_DIR, 'Probes.csv')
     probes = pd.read_csv(probe_fn, index_col=0)
     # keep only those probes with an Entrez ID
     probes = probes.dropna(axis=0, subset=['entrez_id'])
@@ -164,14 +164,13 @@ def cerebellum_microarray_reference_data(agg_field=None, agg_method=None):
     if (agg_method is not None and agg_field is None) or (agg_method is None and agg_field is not None):
         raise ValueError("Must supply either both agg_field and agg_method, or neither.")
 
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
-    infile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
+    infile_meta = os.path.join(MICROARRAY_DIR, 'cerebellum_meta.csv')
 
     # form input filename for expression data
     if agg_field is None:
-        infile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
+        infile_expr = os.path.join(MICROARRAY_DIR, 'cerebellum_expression.csv.gz')
     else:
-        infile_expr = os.path.join(INDIR, 'cerebellum_expression.by_%s.agg_%s.csv.gz' % (agg_field, agg_method))
+        infile_expr = os.path.join(MICROARRAY_DIR, 'cerebellum_expression.by_%s.agg_%s.csv.gz' % (agg_field, agg_method))
 
     bload = True
     if not os.path.exists(infile_expr):
@@ -221,7 +220,6 @@ def load_rnaseq_reference_data(
         9861,
         10021
     ]
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
 
     if parent_struct_id is None:
         struct_ids = None
@@ -238,7 +236,7 @@ def load_rnaseq_reference_data(
 
     for dn in DONOR_NUMBERS:
         logger.info("Processing donor %d", dn)
-        this_dir = os.path.join(INDIR, "donor%d" % dn)
+        this_dir = os.path.join(RNASEQ_DIR, "donor%d" % dn)
         if units == 'counts':
             dat_fn = os.path.join(this_dir, 'RNAseqCounts.csv.gz')
         else:

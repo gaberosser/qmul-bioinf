@@ -6,12 +6,11 @@ import re
 import os
 from scipy import stats
 from microarray.process import aggregate_by_probe_set
-from settings import GIT_LFS_DATA_DIR
+from settings import DATA_DIR
 
-RAW_MICROARRAY_TXT = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192/raw/GSE28192_series_matrix.txt')
-# RAW_MICROARRAY_TXT = 'data/microarray_GSE28192/raw/GSE28192_series_matrix.txt'
-NORMED_MICROARRAY_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192')
-MICROARRAY_LIBRARY = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192/probe_set/GPL6102-11574.txt')
+RAW_MICROARRAY_TXT = os.path.join(DATA_DIR, 'microarray', 'GSE28192', 'raw/GSE28192_series_matrix.txt')
+NORMED_MICROARRAY_DIR = os.path.join(DATA_DIR, 'microarray', 'GSE28192', 'processed_on_geo')
+MICROARRAY_LIBRARY = os.path.join(DATA_DIR, 'microarray', 'GSE28192', 'probe_set/GPL6102-11574.txt')
 
 SAMPLE_NAMES = [
     'A508112',
@@ -64,7 +63,7 @@ SAMPLE_NAMES = [
 
 
 def load_sample_metadata():
-    infile = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192', 'sources.csv')
+    infile = os.path.join(DATA_DIR, 'microarray', 'GSE28192', 'sources.csv')
     return pd.read_csv(infile)
 
 

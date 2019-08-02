@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from load_data import methylation_array
-from methylation import dmr, process
+from methylation import dmr, process, loader
 from utils import output, setops
 
 
@@ -116,20 +116,26 @@ if __name__ == "__main__":
         'test_kwargs': {},
         'n_jobs': 4,
     }
+    norm_method = 'swan'
 
     intersecter = lambda x, y: set(x).intersection(y)
     unioner = lambda x, y: set(x).union(y)
 
     # Load DNA Methylation
-    me_data, me_meta = methylation_array.load_by_patient(pids)
-    me_data.dropna(inplace=True)
-    me_data = process.m_from_beta(me_data)
-    anno = methylation_array.load_illumina_methylationepic_annotation()
+    me_obj = loader.load_by_patient(pids, norm_method=norm_method)
+    me_meta = me_obj.meta
+    # me_data, me_meta = methylation_array.load_by_patient(pids)
+    # me_data.dropna(inplace=True)
+    # me_data = process.m_from_beta(me_data)
+
+    me_data = process.m_from_beta(me_obj.data)
+
+    anno = loader.load_illumina_methylationepic_annotation()
+    # anno = methylation_array.load_illumina_methylationepic_annotation()
 
     # reduce anno and data down to common probes
     common_probes = anno.index.intersection(me_data.index)
     anno = anno.loc[common_probes]
-    dmr.add_merged_probe_classes(anno)
     me_data = me_data.loc[common_probes]
 
     # Compute DMR

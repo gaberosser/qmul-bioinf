@@ -5,7 +5,7 @@ import vcf
 import vcf.utils
 import collections
 import pandas as pd
-from utils import setops, output, log
+from utils import setops, output, log, dictionary
 from settings import DATA_DIR
 from scripts.hgic_final import consts
 
@@ -205,3 +205,11 @@ if __name__ == '__main__':
                     members[pid].add(str(x))
 
     vs, vc = setops.venn_from_arrays(*[members[pid] for pid in pids])
+    groups = {
+        'Hypo': ['019', '030', '031', '017'],
+        'Hyper': ['018', '050', '054', '061', '026', '052']
+    }
+    group_ind = setops.groups_to_ind(pids, groups)
+    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
+
+    venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)

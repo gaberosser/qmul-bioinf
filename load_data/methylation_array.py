@@ -115,66 +115,6 @@ PATIENT_LOOKUP_CELL = {
 }
 
 
-def load_illumina_methylationepic_annotation(split_genes=True):
-    """
-
-    :param split_genes: If True (default), the RefGene name column will be split into a set - useful for
-    many downstream applications
-    :return:
-    """
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'infinium-methylationepic-v1-0-b3-manifest-file-csv.zip')
-    usecols = [
-        'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
-        'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'
-    ]
-    dtype = dict(
-        Name=str,
-        CHR=str,
-        MAPINFO=str,  # should be int but there are some NA entries
-        Strand=str,
-        UCSC_RefGene_Name=str,
-        UCSC_RefGene_Group=str,
-        Relation_to_UCSC_CpG_Island=str
-    )
-    dat = pd.read_csv(
-        fn, skiprows=7, usecols=usecols, dtype=dtype, header=0, index_col=0
-    )
-    # remove calibration probes
-    dat = dat.loc[~dat.loc[:, 'MAPINFO'].isnull()]
-    dat.loc[:, 'MAPINFO'] = dat.loc[:, 'MAPINFO'].astype(int)
-
-    if split_genes:
-        dat.loc[:, 'UCSC_RefGene_Name'] = \
-            dat.UCSC_RefGene_Name.str.split(';').apply(lambda x: set(x) if isinstance(x, list) else None)
-
-    return dat
-
-
-def load_illumina_methylation450_annotation():
-    fn = os.path.join(GIT_LFS_DATA_DIR, 'annotation', 'methylation', 'GPL13534_HumanMethylation450_15017482_v.1.1.csv.gz')
-    usecols = [
-        'Name', 'CHR', 'MAPINFO', 'Strand', 'UCSC_RefGene_Name',
-        'UCSC_RefGene_Group', 'Relation_to_UCSC_CpG_Island'
-    ]
-    dtype = dict(
-        Name=str,
-        CHR=str,
-        MAPINFO=str,  # should be int but there are some NA entries
-        Strand=str,
-        UCSC_RefGene_Name=str,
-        UCSC_RefGene_Group=str,
-        Relation_to_UCSC_CpG_Island=str
-    )
-    dat = pd.read_csv(
-        fn, skiprows=7, usecols=usecols, dtype=dtype, header=0, index_col=0
-    )
-    # remove calibration probes
-    dat = dat.loc[~dat.loc[:, 'MAPINFO'].isnull()]
-    dat.loc[:, 'MAPINFO'] = dat.loc[:, 'MAPINFO'].astype(int)
-
-    return dat
-
-
 def load_beta_values(indir, metafile=None, norm_method='swan', samples=None):
     """
     Load beta values. These are all generated in one pass in R using `methylation/process.R`

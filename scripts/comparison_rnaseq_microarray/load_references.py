@@ -1,6 +1,6 @@
-from settings import GIT_LFS_DATA_DIR
+from settings import DATA_DIR
 import os
-import dill
+import pickle
 import pandas as pd
 import logging
 import operator
@@ -53,8 +53,8 @@ def get_structure_ids_by_parent(ontol, parent_id):
 
 
 def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
+    MICROARRAY_DIR = os.path.join(DATA_DIR, 'microarray', 'allen_human_brain_atlas')
 
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
     DONOR_NUMBERS = [
         9861,
         10021,
@@ -65,17 +65,17 @@ def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
     ]
     PARENT_STRUCT_ID = 4696
 
-    outfile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
-    outfile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
+    outfile_expr = os.path.join(MICROARRAY_DIR, 'cerebellum_expression.csv.gz')
+    outfile_meta = os.path.join(MICROARRAY_DIR, 'cerebellum_meta.csv')
 
     # load probe library
-    probe_fn = os.path.join(INDIR, 'Probes.csv')
+    probe_fn = os.path.join(MICROARRAY_DIR, 'Probes.csv')
     probes = pd.read_csv(probe_fn, index_col=0)
     # keep only those probes with an Entrez ID
     probes = probes.dropna(axis=0, subset=['entrez_id'])
 
     # load ontology library
-    ontol_fn = os.path.join(INDIR, 'Ontology.csv')
+    ontol_fn = os.path.join(MICROARRAY_DIR, 'Ontology.csv')
     ontol = pd.read_csv(ontol_fn, index_col=0)
 
     struct_ids = get_structure_ids_by_parent(ontol, PARENT_STRUCT_ID)
@@ -85,7 +85,7 @@ def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
 
     for dn in DONOR_NUMBERS:
         logger.info("Processing donor %d", dn)
-        this_dir = os.path.join(INDIR, "donor%d" % dn)
+        this_dir = os.path.join(MICROARRAY_DIR, "donor%d" % dn)
         expre_fn = os.path.join(this_dir, 'MicroarrayExpression.csv.gz')
         sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
         pacal_fn = os.path.join(this_dir, 'PACall.csv.gz')
@@ -140,10 +140,10 @@ def prepare_cerebellum_microarray_reference_data(mask_nonsig=False):
 
 
 def load_cerebellum_microarray_reference_data():
+    MICROARRAY_DIR = os.path.join(DATA_DIR, 'microarray', 'allen_human_brain_atlas')
 
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
-    infile_expr = os.path.join(INDIR, 'cerebellum_expression.csv.gz')
-    infile_meta = os.path.join(INDIR, 'cerebellum_meta.csv')
+    infile_expr = os.path.join(MICROARRAY_DIR, 'cerebellum_expression.csv.gz')
+    infile_meta = os.path.join(MICROARRAY_DIR, 'cerebellum_meta.csv')
 
     bload = True
     if not os.path.exists(infile_expr):
@@ -164,10 +164,11 @@ def load_cerebellum_microarray_reference_data():
 
 
 def save_cerebellum_microarray_data_by_entrez_id(method='median'):
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/microarray')
+    MICROARRAY_DIR = os.path.join(DATA_DIR, 'microarray', 'allen_human_brain_atlas')
+
     expr, meta = load_cerebellum_microarray_reference_data()
     expr_eid = microarray_entrez_markers(expr, method=method)
-    outfile = os.path.join(INDIR, 'cerebellum_expression.by_entrezid.csv.gz')
+    outfile = os.path.join(MICROARRAY_DIR, 'cerebellum_expression.by_entrezid.csv.gz')
     expr_eid.to_csv(outfile, compression='gzip')
     # no need to re-save meta because it's unaltered
 
@@ -222,15 +223,17 @@ def microarray_entrez_markers(marray_data, entrez_ids=None, method='max'):
 
 
 def prepare_cerebellum_rnaseq_reference_data(outfile=None):
+    RNASEQ_DIR = os.path.join(DATA_DIR, 'rnaseq', 'allen_human_brain_atlas')
+
     DONOR_NUMBERS = [
         9861,
         10021
     ]
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
+
     PARENT_STRUCT_ID = 4696
 
     if outfile is None:
-        outfile = os.path.join(INDIR, 'cerebellum_expression_dataframes.pkl')
+        outfile = os.path.join(RNASEQ_DIR, 'cerebellum_expression_dataframes.pkl')
 
     # load gene library
     # unnecessary unless we want Entrez IDs
@@ -238,7 +241,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
     # genes = pd.read_csv(genes_fn, header=0, index_col=0)
 
     # load ontology library
-    ontol_fn = os.path.join(INDIR, 'Ontology.csv')
+    ontol_fn = os.path.join(RNASEQ_DIR, 'Ontology.csv')
     ontol = pd.read_csv(ontol_fn, index_col=0)
 
     struct_ids = get_structure_ids_by_parent(ontol, PARENT_STRUCT_ID)
@@ -249,7 +252,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
     for dn in DONOR_NUMBERS:
         logger.info("Processing donor %d", dn)
-        this_dir = os.path.join(INDIR, "donor%d" % dn)
+        this_dir = os.path.join(RNASEQ_DIR, "donor%d" % dn)
         tpm_fn = os.path.join(this_dir, 'RNAseqTPM.csv.gz')
         cts_fn = os.path.join(this_dir, 'RNAseqCounts.csv.gz')
         sampl_fn = os.path.join(this_dir, 'SampleAnnot.csv.gz')
@@ -288,7 +291,7 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
     logger.info("Saving results to %s", outfile)
     with open(outfile, 'wb') as f:
-        dill.dump(
+        pickle.dump(
             {
                 'tpm': expression_tpm,
                 'count': expression_cts,
@@ -301,16 +304,16 @@ def prepare_cerebellum_rnaseq_reference_data(outfile=None):
 
 
 def load_cerebellum_rnaseq_reference_data():
+    RNASEQ_DIR = os.path.join(DATA_DIR, 'rnaseq', 'allen_human_brain_atlas')
 
-    INDIR = os.path.join(GIT_LFS_DATA_DIR, 'allen_human_brain_atlas/rnaseq')
-    infile = os.path.join(INDIR, 'cerebellum_expression_dataframes.pkl')
+    infile = os.path.join(RNASEQ_DIR, 'cerebellum_expression_dataframes.pkl')
     if not os.path.exists(infile):
         logger.info("Unable to find pre-prepared pickled file %s. Recomputing.", infile)
         return prepare_cerebellum_rnaseq_reference_data()
     else:
         logger.info("Loading from pre-prepared pickled file %s.", infile)
         with open(infile, 'rb') as f:
-            res = dill.load(f)
+            res = pickle.load(f)
         return res['count'], res['tpm'], res['meta']
 
 

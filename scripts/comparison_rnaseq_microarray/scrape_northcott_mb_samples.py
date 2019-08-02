@@ -3,22 +3,25 @@ from bs4 import BeautifulSoup
 from urllib2 import urlopen
 import urlparse
 import re
-from settings import GIT_LFS_DATA_DIR
+from settings import OUTPUT_DIR
 import os
 import collections
 import csv
 import pandas as pd
 
+outdir = os.path.join(OUTPUT_DIR, 'scrape_GSE37382')
+if not os.path.exists(outdir):
+    os.makedirs(outdir)
+
 BASE_URL = 'https://www.ncbi.nlm.nih.gov'
 SERIES_URL = urlparse.urljoin(BASE_URL, 'geo/query/acc.cgi?acc=GSE37382')
 SAMPLE_URL = urlparse.urljoin(BASE_URL, '/geo/query/acc.cgi?acc=')
 TABLE_HEADER = ['ID_REF', 'VALUE']
-OUT_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE37382')
 
 TABLE_START_LINE = 22
 TABLE_END_LINE = -12
 
-SAMPLES_ALREADY_LOADED = os.listdir(OUT_DIR)
+SAMPLES_ALREADY_LOADED = os.listdir(outdir)
 
 # get download links
 html = urlopen(SERIES_URL).read()
@@ -63,7 +66,7 @@ for sname, surl in samples.items():
         this_html = urlopen(gsm_url).read()
         tab = this_html.split('\n')[TABLE_START_LINE:TABLE_END_LINE]
         # process to include only data and save to file
-        with open(os.path.join(OUT_DIR, sname), 'wb') as f:
+        with open(os.path.join(outdir, sname), 'wb') as f:
             f.write('\n'.join(tab))
         print "Success: %s" % sname
     except Exception as exc:
@@ -74,7 +77,7 @@ sample_info = dict(sample_info)
 for sname, sinfo in sample_info.items():
     sinfo['name'] = sname
 
-index_fn = os.path.join(OUT_DIR, 'sources.csv')
+index_fn = os.path.join(outdir, 'sources.csv')
 with open(index_fn, 'ab') as f:
     c = csv.DictWriter(f, fieldnames=['name', 'age_years', 'gender', 'subgroup'])
     c.writeheader()
@@ -83,9 +86,9 @@ with open(index_fn, 'ab') as f:
 
 # combine into a single pandas matrix
 res = pd.DataFrame()
-sample_files = os.listdir(OUT_DIR)
+sample_files = os.listdir(outdir)
 for sname in sample_files:
     if sname[-4:] == '.csv':
         continue
-    s = pd.read_csv(os.path.join(OUT_DIR, sname), header=None, index_col=0, sep='\t').loc[:, 1]
+    s = pd.read_csv(os.path.join(outdir, sname), header=None, index_col=0, sep='\t').loc[:, 1]
     res[sname] = s

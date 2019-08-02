@@ -80,7 +80,6 @@ if __name__ == "__main__":
     common_probes = anno.index.intersection(me_data.index)
 
     anno = anno.loc[common_probes]
-    dmr.add_merged_probe_classes(anno)
 
     # plot PCA
 

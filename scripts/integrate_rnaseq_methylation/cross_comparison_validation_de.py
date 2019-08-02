@@ -8,7 +8,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from load_data import rnaseq_data
-from rnaseq import differential_expression
+from rnaseq import differential_expression, loader
 from settings import LOCAL_DATA_DIR
 from utils import output, setops, excel, ipa, reference_genomes
 
@@ -142,8 +142,10 @@ if __name__ == "__main__":
     rnaseq_obj = rnaseq_data.load_by_patient(pids, annotate_by='Ensembl Gene ID')
 
     # load additional references if required
-    h9_obj = rnaseq_data.gse61794(annotate_by='Ensembl Gene ID')
-    h1_obj = rnaseq_data.gse38993(annotate_by='Ensembl Gene ID')
+    h9_obj = loader.load_references('gse61794')
+    h1_obj = loader.load_references('gse38993')
+    # h9_obj = rnaseq_data.gse61794(annotate_by='Ensembl Gene ID')
+    # h1_obj = rnaseq_data.gse38993(annotate_by='Ensembl Gene ID')
     rnaseq_obj = rnaseq_data.MultipleBatchLoader([rnaseq_obj, h1_obj, h9_obj])
 
     # discard unmapped, etc

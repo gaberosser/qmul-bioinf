@@ -3,15 +3,15 @@ from bs4 import BeautifulSoup
 from urllib2 import urlopen
 import urlparse
 import re
-from settings import GIT_LFS_DATA_DIR
 import os
 import csv
+from utils import output
 
 
 BASE_URL = 'https://www.ncbi.nlm.nih.gov'
 SERIES_URL = urlparse.urljoin(BASE_URL, 'geo/query/acc.cgi?acc=GSE28192')
 TABLE_HEADER = ['ID_REF', 'VALUE', 'Avg_NBEADS', 'BEAD_STDERR', 'Detection Pval']
-OUT_DIR = os.path.join(GIT_LFS_DATA_DIR, 'microarray_GSE28192')
+outdir = output.unique_output_dir()
 
 # get download links
 html = urlopen(SERIES_URL).read()
@@ -40,7 +40,7 @@ for sname, surl in samples.items():
     # retrieve the HTML data for the full table
     this_html = urlopen(gsm_url).read()
     # process to include only data and save to file
-    with open(os.path.join(OUT_DIR, sname), 'wb') as f:
+    with open(os.path.join(outdir, sname), 'wb') as f:
         f.write('\t'.join(TABLE_HEADER) + '\n')
         for row in this_html.split('\n'):
             if row[:4] == 'ILMN':
