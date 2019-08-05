@@ -638,6 +638,27 @@ if __name__ == "__main__":
         direction_cmap=cmap
     )
 
+    # filter these by druggability using the DGIdb
+    import requests
+    import json
+
+    def dgidb_lookup_drug_gene_interactions(genes):
+        url = 'http://dgidb.org/api/v2/interactions.json'
+        resp = requests.get(url, {'genes': ','.join(genes)})
+        dat = json.loads(resp.content)
+        interactions = dict(
+            [(t['geneName'], t['interactions']) for t in dat['matchedTerms'] if len(t['interactions'])]
+        )
+        ## TODO: return interactions but also mismatched / ambiguous terms
+        return {
+
+        }
+
+    ## TODO: implement this
+    res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
+
+    raise StopIteration
+
     # by request (SM): Extend to targets shared between up to 3 patients (use shortlist approach)
     for n in range(2, len(pids) + 1):
         this_sets = list(setops.binary_combinations_sum_eq(len(pids), n))

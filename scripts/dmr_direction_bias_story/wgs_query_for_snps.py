@@ -1,13 +1,16 @@
 import os
 import gzip
 import pickle
-import vcf
+import itertools
 import vcf.utils
 import collections
 import pandas as pd
+from matplotlib import pyplot as plt
+import seaborn as sns
 from utils import setops, output, log, dictionary
 from settings import DATA_DIR
 from scripts.hgic_final import consts
+
 
 logger = log.get_console_logger()
 
@@ -70,76 +73,6 @@ if __name__ == '__main__':
     pids = consts.PIDS
     contigs = set(['chr%d' % i for i in range(1, 23)] + ['chrX', 'chrY', 'chrM'])
 
-    # V1: iterate over full VCF files and count (only - too big)
-    if False:
-
-        base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12')
-        meta_fn = os.path.join(base_indir, 'sources.csv')
-
-        meta = pd.read_csv(meta_fn, header=0, index_col=0)
-        meta.loc[:, 'patient_id'] = ["%03d" % t for t in meta.patient_id]
-
-        outdir = output.unique_output_dir()
-
-        var_dat = []
-
-        var_counts = collections.OrderedDict()
-        meth_counts = collections.OrderedDict()
-
-        for pid in pids:
-            logger.info("Patient %s", pid)
-            this_meta = meta.loc[meta.patient_id == pid]
-            in_fns = []
-            readers = {}
-            for t in this_meta.index:
-                the_fn = os.path.join(base_indir, t, "%s.vcf.gz" % meta.loc[t, 'sample'])
-                in_fns.append(the_fn)
-                readers[this_meta.loc[t, 'type']] = vcf.Reader(filename=the_fn, compressed=True)
-            logger.info("Found %d conditions to compare: %s", len(readers), ', '.join(readers.keys()))
-
-            it = vcf.utils.walk_together(*readers.values())
-
-            this_res = []
-            this_res_meth = []
-
-            for i, recs in enumerate(it):
-                if i % 50000 == 0:
-                    logger.info(
-                        "Processed %d variants. Retained %d as they differ. Retained %d related to methylation.",
-                        i,
-                        len(this_res),
-                        len(this_res_meth)
-                    )
-
-                the_chrom = None
-                the_ann = None
-                for rec in recs:
-                    if rec is not None:
-                        the_chrom = rec.CHROM
-                        the_ann = '#'.join(rec.INFO['ANN'])
-                        break
-
-                if the_chrom in contigs:
-                    # compare across results
-                    gts = set()
-                    for rec in recs:
-                        if rec is None:
-                            this_res.append(dict(zip(readers.keys(), recs)))
-                            # reset gts
-                            gts = set()
-                            break
-                        else:
-                            gts.add(rec.samples[0]['GT'])
-                    if len(gts) > 1:
-                        this_res.append(dict(zip(readers.keys(), recs)))
-
-                    # regardless of whether they differ, if they are related to methylation keep track
-                    if any([t in the_ann for t in METH_GENES]):
-                        this_res_meth.append(dict(zip(readers.keys(), recs)))
-
-            var_counts[pid] = run_one_count(this_res)
-            meth_counts[pid] = run_one_count(this_res_meth)
-
     # V2: iterate over pre-made short files and store data in memory
     base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/meth_associated/')
     meta_fn = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
@@ -192,8 +125,8 @@ if __name__ == '__main__':
             var_dat[pid] = this_res
 
     dat_classified = dict([
-                              (pid, run_one_sort(var_dat[pid], 'GIC', 'iNSC')) for pid in pids
-                              ])
+        (pid, run_one_sort(var_dat[pid], 'GIC', 'iNSC')) for pid in pids
+    ])
 
     # search through GIC only and GIC hom/iNSC het SNPs and 'other' and generate upset
     members = {}
@@ -225,6 +158,83 @@ if __name__ == '__main__':
     hyper_counts_partial = [
         (setops.key_to_members(t, pids), vc[t]) for t in venn_sets_by_group['partial']['Hyper']
         ]
+
+    # is this significant in any way?
+    # focus on 3/4 of hypo OR 5/6 of hyper
+    it = itertools.combinations(pids, 4)
+    perm_hypo_full = []
+    perm_hyper_full = []
+    perm_hypo_partial = []
+    perm_hyper_partial = []
+
+    for fake_hypo_group in it:
+        fake_groups = {
+            'Hypo': fake_hypo_group,
+            'Hyper': set(pids).difference(fake_hypo_group)
+        }
+        venn_sets_by_fake_group = setops.full_partial_unique_other_sets_from_groups(pids, fake_groups)
+
+        perm_hypo_full.append(vc[venn_sets_by_fake_group['full']['Hypo'][0]])
+        perm_hyper_full.append(vc[venn_sets_by_fake_group['full']['Hyper'][0]])
+
+        fake_hypo_counts_partial = [
+            (setops.key_to_members(t, pids), vc[t]) for t in venn_sets_by_fake_group['partial']['Hypo']
+        ]
+        fake_hyper_counts_partial = [
+            (setops.key_to_members(t, pids), vc[t]) for t in venn_sets_by_fake_group['partial']['Hyper']
+        ]
+
+        perm_hypo_partial.append(
+            sum([t[1] for t in fake_hypo_counts_partial if len(t[0]) > 2])
+        )
+        perm_hyper_partial.append(
+            sum([t[1] for t in fake_hyper_counts_partial if len(t[0]) > 4])
+        )
+
+    fig, ax = plt.subplots()
+    sns.kdeplot(perm_hypo_partial, ax=ax)
+    ax.axvline(sum([t[1] for t in hypo_counts_partial if len(t[0]) > 2]), c='k', ls='--')
+    ax.set_xlabel('Number of variants')
+    ax.set_ylabel('Density')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "permute_partial_counts_meth_assoc_hypo.png"), dpi=200)
+
+    fig, ax = plt.subplots()
+    sns.kdeplot(perm_hyper_partial, ax=ax)
+    ax.axvline(sum([t[1] for t in hyper_counts_partial if len(t[0]) > 4]), c='k', ls='--')
+    ax.set_xlabel('Number of variants')
+    ax.set_ylabel('Density')
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "permute_partial_counts_meth_assoc_hyper.png"), dpi=200)
+
+    # track these partial matches down
+    aa_hypo = [(setops.key_to_members(t, pids)[0], vs[t]) for t in venn_sets_by_group['partial']['Hypo'] if len(setops.key_to_members(t, pids)) > 2]
+    aa_hyper = [(setops.key_to_members(t, pids)[0], vs[t]) for t in venn_sets_by_group['partial']['Hyper'] if len(setops.key_to_members(t, pids)) > 4]
+    all_hypo = setops.reduce_union(*[t[1] for t in aa_hypo])
+    all_hyper = setops.reduce_union(*[t[1] for t in aa_hyper])
+
+    partial_hypo_recs = []
+    partial_hyper_recs = []
+
+    for pid, arr in aa_hypo:
+        for x in arr:
+            the_search_list = dat_classified[pid]['GIC only']
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid]['GIC hom iNSC het']])
+            the_recs = [t for t in the_search_list if str(t) == x]
+            if len(the_recs) > 0:
+                partial_hypo_recs.append(the_recs[0])
+            else:
+                print "No search result for rec %s" % x
+
+    for pid, arr in aa_hyper:
+        for x in arr:
+            the_search_list = dat_classified[pid]['GIC only']
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid]['GIC hom iNSC het']])
+            the_recs = [t for t in the_search_list if str(t) == x]
+            if len(the_recs) > 0:
+                partial_hyper_recs.append(the_recs[0])
+            else:
+                print "No search result for rec %s" % x
 
     # V3: Iterate over ALL VCFs in one and look for fully group-specific variants
     group_hypo = set(groups['Hypo'])
@@ -283,7 +293,7 @@ if __name__ == '__main__':
             logger.info("Found %d hypo-related variants in %d records", len(gs_var['hypo']), count)
         elif set(this_pids) == group_hyper:
             gs_var['hyper'].append(rec_dict)
-            logger.info("Found %d hypo-related variants in %d records", len(gs_var['hyper']), count)
+            logger.info("Found %d hyper-related variants in %d records", len(gs_var['hyper']), count)
 
     # TEMP
     with open(os.path.join('/home/gabriel/Dropbox/pigeonhole', "all_variants_group_specific.pkl"), 'wb') as f:
