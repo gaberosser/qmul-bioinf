@@ -236,6 +236,9 @@ if __name__ == '__main__':
             else:
                 print "No search result for rec %s" % x
 
+    ## TODO: fix the broken lookup (whywhywhy?)
+    ## TODO: export Excel sheet
+
     # V3: Iterate over ALL VCFs in one and look for fully group-specific variants
     group_hypo = set(groups['Hypo'])
     group_hyper = set(groups['Hyper'])
