@@ -1,6 +1,8 @@
 import os
 import gzip
 import pickle
+from utils import reference_genomes
+import re
 import itertools
 import vcf.utils
 import collections
@@ -44,6 +46,31 @@ def run_one_count(res_arr, key1='GIC', key2='iNSC'):
         else:
             this_var_count[t[key1].CHROM]['other'] += 1
     return this_var_count
+
+
+def classify_comparison(rec1, rec2, labels=('1', '2')):
+    """
+    Given two related variant records, classify (e.g. '1 only').
+    Either of the records can be None, indicating absence.
+    :param rec1:
+    :param rec2:
+    :param labels: Optional. These labels are used to
+    :return:
+    """
+    if rec1 is None and rec2 is None:
+        return
+    elif rec2 is None:
+        return "{0} only".format(labels[0])
+    elif rec1 is None:
+        return "{0} only".format(labels[1])
+    elif (rec1.samples[0]['GT'] == '1/1') and (rec2.samples[0]['GT'] == '0/1'):
+        return "{0} hom {1} het".format(*labels)
+    elif (rec2.samples[0]['GT'] == '1/1') and (rec1.samples[0]['GT'] == '0/1'):
+        return "{0} hom {1} het".format(*labels[::-1])
+    elif rec1 == rec2:
+        return 'same'
+    else:
+        return 'other'
 
 
 def run_one_sort(res_arr, key1, key2):
@@ -208,36 +235,73 @@ if __name__ == '__main__':
     fig.savefig(os.path.join(outdir, "permute_partial_counts_meth_assoc_hyper.png"), dpi=200)
 
     # track these partial matches down
-    aa_hypo = [(setops.key_to_members(t, pids)[0], vs[t]) for t in venn_sets_by_group['partial']['Hypo'] if len(setops.key_to_members(t, pids)) > 2]
-    aa_hyper = [(setops.key_to_members(t, pids)[0], vs[t]) for t in venn_sets_by_group['partial']['Hyper'] if len(setops.key_to_members(t, pids)) > 4]
+    aa_hypo = [(setops.key_to_members(t, pids), vs[t]) for t in venn_sets_by_group['partial']['Hypo'] if len(setops.key_to_members(t, pids)) > 2]
+    aa_hyper = [(setops.key_to_members(t, pids), vs[t]) for t in venn_sets_by_group['partial']['Hyper'] if len(setops.key_to_members(t, pids)) > 4]
     all_hypo = setops.reduce_union(*[t[1] for t in aa_hypo])
     all_hyper = setops.reduce_union(*[t[1] for t in aa_hyper])
 
     partial_hypo_recs = []
     partial_hyper_recs = []
 
-    for pid, arr in aa_hypo:
+    for pid_arr, arr in aa_hypo:
         for x in arr:
-            the_search_list = dat_classified[pid]['GIC only']
-            the_search_list.extend([t['GIC'] for t in dat_classified[pid]['GIC hom iNSC het']])
+            the_search_list = dat_classified[pid_arr[0]]['GIC only']
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid_arr[0]]['GIC hom iNSC het']])
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid_arr[0]]['other']])
             the_recs = [t for t in the_search_list if str(t) == x]
             if len(the_recs) > 0:
-                partial_hypo_recs.append(the_recs[0])
+                partial_hypo_recs.append((pid_arr, the_recs[0]))
             else:
                 print "No search result for rec %s" % x
 
-    for pid, arr in aa_hyper:
+    for pid_arr, arr in aa_hyper:
         for x in arr:
-            the_search_list = dat_classified[pid]['GIC only']
-            the_search_list.extend([t['GIC'] for t in dat_classified[pid]['GIC hom iNSC het']])
+            the_search_list = dat_classified[pid_arr[0]]['GIC only']
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid_arr[0]]['GIC hom iNSC het']])
+            the_search_list.extend([t['GIC'] for t in dat_classified[pid_arr[0]]['other']])
             the_recs = [t for t in the_search_list if str(t) == x]
             if len(the_recs) > 0:
-                partial_hyper_recs.append(the_recs[0])
+                partial_hyper_recs.append((pid_arr, the_recs[0]))
             else:
                 print "No search result for rec %s" % x
 
-    ## TODO: fix the broken lookup (whywhywhy?)
-    ## TODO: export Excel sheet
+    export_hypo = []
+    export_hyper = []
+
+    for tt, out_arr in zip([partial_hypo_recs, partial_hyper_recs], [export_hypo, export_hyper]):
+        for pid_arr, rec in tt:
+            genes = set()
+            gene_names = []
+            for t in rec.INFO['ANN']:
+                srch = re.search(r'(?P<g>ENSG[0-9]*)', t)
+                if srch is not None:
+                    genes.add(srch.group('g'))
+            if len(genes) > 0:
+                try:
+                    gene_names = reference_genomes.ensembl_to_gene_symbol(genes).dropna().unique()
+                except KeyError:
+                    gene_names = []
+
+            out = collections.OrderedDict([
+                ('id', rec.ID),
+                ('chrom', rec.CHROM),
+                ('start', rec.start),
+                ('end', rec.end),
+                ('ref', rec.REF),
+                ('alt_seq', '|'.join([t.sequence for t in rec.ALT])),
+                ('alt_type', '|'.join([t.type for t in rec.ALT])),
+                ('gene_ens', ','.join(genes)),
+                ('gene_symbol', ','.join(gene_names)),
+            ])
+            for p in pids:
+                out[p] = 'Y' if p in pid_arr else 'N'
+            out_arr.append(out)
+
+    export_hypo = pd.DataFrame(export_hypo).sort_values(by=['chrom', 'start'])
+    export_hyper = pd.DataFrame(export_hyper).sort_values(by=['chrom', 'start'])
+
+    export_hypo.to_excel(os.path.join(outdir, "hypo_partial_group_specific_variants.xlsx"), index=False)
+    export_hyper.to_excel(os.path.join(outdir, "hyper_partial_group_specific_variants.xlsx"), index=False)
 
     # V3: Iterate over ALL VCFs in one and look for fully group-specific variants
     group_hypo = set(groups['Hypo'])
@@ -245,7 +309,6 @@ if __name__ == '__main__':
 
     base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12')
     gs_var = collections.defaultdict(list)
-    gs_var_hyper = []
     readers = {}
 
     for pid in pids:
@@ -279,28 +342,36 @@ if __name__ == '__main__':
         if the_chrom not in contigs:
             continue
 
+        # keep track of which patients have a  GIC-specific variant
+        # also which patients have the variant in the iNSC too
         this_pids = []
+        not_this_pids = []
 
         for pid in pids:
             a = rec_dict[(pid, 'GIC')]
             b = rec_dict[(pid, 'iNSC')]
-            if a is None:
-                continue
-            elif b is None:
+            cl = classify_comparison(a, b, labels=('GIC', 'iNSC'))
+            if cl == 'GIC only' or cl == 'GIC hom iNSC het' or cl == 'other':
                 this_pids.append(pid)
-            elif (a.samples[0]['GT'] == '1/1') and (b.samples[0]['GT'] == '0/1'):
-                this_pids.append(pid)
+            elif cl == 'iNSC only' or cl == 'same':
+                not_this_pids.append(pid)
 
         if set(this_pids) == group_hypo:
-            gs_var['hypo'].append(rec_dict)
-            logger.info("Found %d hypo-related variants in %d records", len(gs_var['hypo']), count)
+            # we also require that no other patients are in the 'not' list
+            if len(set(not_this_pids).intersection(group_hyper)) == 0:
+                gs_var['hypo'].append(rec_dict)
+                logger.info("Found %d hypo-related variants in %d records", len(gs_var['hypo']), count)
         elif set(this_pids) == group_hyper:
-            gs_var['hyper'].append(rec_dict)
-            logger.info("Found %d hyper-related variants in %d records", len(gs_var['hyper']), count)
-
-    # TEMP
-    with open(os.path.join('/home/gabriel/Dropbox/pigeonhole', "all_variants_group_specific.pkl"), 'wb') as f:
-        pickle.dump(gs_var, f)
+            # we also require that no other patients are in the 'not' list
+            if len(set(not_this_pids).intersection(group_hypo)) == 0:
+                gs_var['hyper'].append(rec_dict)
+                logger.info("Found %d hyper-related variants in %d records", len(gs_var['hyper']), count)
 
     with open(os.path.join(outdir, "all_variants_group_specific.pkl"), 'wb') as f:
         pickle.dump(gs_var, f)
+
+    # export to Excel
+    export_hypo = []
+    export_hyper = []
+
+    # for res, out_arr in zip([gs_var['hypo'], gs_var['hyper']], [export_hypo, export_hyper]):

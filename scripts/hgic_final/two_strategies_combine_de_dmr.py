@@ -5,7 +5,8 @@ import numpy as np
 import pickle
 import re
 import collections
-import datetime
+import requests
+import json
 
 from scipy import stats
 from utils import output, setops, excel, log
@@ -182,6 +183,20 @@ def shortlist_de_dm_genes(vs_de, vs_dm, sets, clusters, concordant_only=False):
                 this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
         res[s] = this_clusters
     return res
+
+
+def dgidb_lookup_drug_gene_interactions(genes):
+    url = 'http://dgidb.org/api/v2/interactions.json'
+    resp = requests.get(url, {'genes': ','.join(genes)})
+    dat = json.loads(resp.content)
+    interactions = dict(
+        [(t['geneName'], t['interactions']) for t in dat['matchedTerms']]
+    )
+    return {
+        'interactions': interactions,
+        'unmatched': dat['unmatchedTerms'][0].split(', ') if len(dat['unmatchedTerms']) > 0 else [],
+        'ambiguous': dat['ambiguousTerms'][0].split(', ') if len(dat['ambiguousTerms']) > 0 else [],
+    }
 
 
 def multipage_pdf_mex_plots(
@@ -639,23 +654,63 @@ if __name__ == "__main__":
     )
 
     # filter these by druggability using the DGIdb
-    import requests
-    import json
+    # we also need to export a corresponding Excel sheet indicating which drugs might be suitable
+    # It would be nicer to include a link directly in the PDF, but this is difficult.
 
-    def dgidb_lookup_drug_gene_interactions(genes):
-        url = 'http://dgidb.org/api/v2/interactions.json'
-        resp = requests.get(url, {'genes': ','.join(genes)})
-        dat = json.loads(resp.content)
-        interactions = dict(
-            [(t['geneName'], t['interactions']) for t in dat['matchedTerms'] if len(t['interactions'])]
-        )
-        ## TODO: return interactions but also mismatched / ambiguous terms
-        return {
+    # shortlist
+    filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
 
-        }
+    ps_de_dm_druggable_list = [t for t in ps_de_dm_list if len(filt_res['interactions'].get(t[1], []))]
+    out_fn = os.path.join(outdir, "de_dmr_patient_specific_shortlist_dgidb_lookpup.csv")
+    filt_export = []
+    cols = [
+        'Gene',
+        'DGIdb result',
+        'DGIdb URL',
+        'Compound name',
+        'Compound ID',
+        'Compound interaction types',
+    ]
+    ## TODO
+    for t in ps_de_dm_list:
+        g = t[1]
+        the_url = None
+        if g in filt_res['interactions']:
+            the_url = 'http://www.dgidb.org/genes/{gene}#_interactions'.format(gene=g)
+            if len(filt_res['interactions'][g]) == 0:
+                the_res = 'Match, no results'
+            else:
+                the_res = 'Match and results'
+        elif g in filt_res['unmatched']:
+            the_res = 'Unmatched'
+        elif g in filt_res['ambiguous']:
+            the_res = 'Ambiguous'
+        else:
+            the_res = 'N/A'
+            logger.warn("No result string defined for gene %s", g)
+        this_first_row = [g, the_res, ]
 
-    ## TODO: implement this
-    res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
+
+
+
+    multipage_pdf_mex_plots(
+        os.path.join(outdir, "de_dmr_patient_specific_shortlist_druggable_mex_plots.pdf"),
+        sorted(ps_de_dm_druggable_list),
+        me_data,
+        dmr_res_s1,
+        dmr_comparison_groups,
+        de_res_full_s1,
+        plot_colours=plot_colours,
+        plot_markers=plot_markers,
+        plot_zorder=plot_zorder,
+        plot_alpha=plot_alpha,
+        direction_cmap=cmap
+    )
+
+    # longlist
+    filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_long_list])
+    ps_de_dm_druggable_long_list = [t for t in ps_de_dm_long_list if t[1] in filt_res['interactions']]
+
 
     raise StopIteration
 
