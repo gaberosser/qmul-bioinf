@@ -100,6 +100,13 @@ if __name__ == '__main__':
     pids = consts.PIDS
     contigs = set(['chr%d' % i for i in range(1, 23)] + ['chrX', 'chrY', 'chrM'])
 
+    groups = {
+        'Hypo': ['019', '030', '031', '017'],
+        'Hyper': ['018', '050', '054', '061', '026', '052']
+    }
+    group_ind = setops.groups_to_ind(pids, groups)
+    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
+
     # V2: iterate over pre-made short files and store data in memory
     base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/meth_associated/')
     meta_fn = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
@@ -167,12 +174,6 @@ if __name__ == '__main__':
                     members[pid].add(str(x))
 
     vs, vc = setops.venn_from_arrays(*[members[pid] for pid in pids])
-    groups = {
-        'Hypo': ['019', '030', '031', '017'],
-        'Hyper': ['018', '050', '054', '061', '026', '052']
-    }
-    group_ind = setops.groups_to_ind(pids, groups)
-    groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
 
     venn_sets_by_group = setops.full_partial_unique_other_sets_from_groups(pids, groups)
 
@@ -303,7 +304,8 @@ if __name__ == '__main__':
     export_hypo.to_excel(os.path.join(outdir, "hypo_partial_group_specific_variants.xlsx"), index=False)
     export_hyper.to_excel(os.path.join(outdir, "hyper_partial_group_specific_variants.xlsx"), index=False)
 
-    # V3: Iterate over ALL VCFs in one and look for fully group-specific variants
+    ##### V3: Iterate over ALL VCFs in one and look for fully group-specific variants
+
     group_hypo = set(groups['Hypo'])
     group_hyper = set(groups['Hyper'])
 
@@ -353,7 +355,7 @@ if __name__ == '__main__':
             cl = classify_comparison(a, b, labels=('GIC', 'iNSC'))
             if cl == 'GIC only' or cl == 'GIC hom iNSC het' or cl == 'other':
                 this_pids.append(pid)
-            elif cl == 'iNSC only' or cl == 'same':
+            elif cl == 'iNSC only' or cl == 'iNSC hom GIC het' or cl == 'same':
                 not_this_pids.append(pid)
 
         if set(this_pids) == group_hypo:

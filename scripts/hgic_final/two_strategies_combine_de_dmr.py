@@ -7,6 +7,7 @@ import re
 import collections
 import requests
 import json
+import csv
 
 from scipy import stats
 from utils import output, setops, excel, log
@@ -190,12 +191,15 @@ def dgidb_lookup_drug_gene_interactions(genes):
     resp = requests.get(url, {'genes': ','.join(genes)})
     dat = json.loads(resp.content)
     interactions = dict(
-        [(t['geneName'], t['interactions']) for t in dat['matchedTerms']]
+        [(t['searchTerm'], t['interactions']) for t in dat['matchedTerms']]
     )
+    ambiguous = collections.defaultdict(list)
+    for t in dat['ambiguousTerms']:
+        ambiguous[t['searchTerm']].append(t)
     return {
         'interactions': interactions,
         'unmatched': dat['unmatchedTerms'][0].split(', ') if len(dat['unmatchedTerms']) > 0 else [],
-        'ambiguous': dat['ambiguousTerms'][0].split(', ') if len(dat['ambiguousTerms']) > 0 else [],
+        'ambiguous': ambiguous,
     }
 
 
@@ -258,6 +262,59 @@ def multipage_pdf_mex_plots(
             except ValueError:
                 logger.error("Unable to generate plot for gene %s.", g)
                 error_count += 1
+
+
+def dgidb_druggability_report(dgidb_res, de_dm_list, membership, out_fn=None):
+    pids = membership.keys()
+    res = []
+    cols = [
+               'Gene',
+               'DGIdb result',
+               'DGIdb URL',
+               'Compound name',
+               'Compound ID',
+               'Compound interaction types',
+           ] + ["GBM%s" % pid for pid in pids]
+
+    for t in de_dm_list:
+        # traceback to get the patients involved
+        patients_involved = [k for k, v in membership.items() if t in v]
+        row_suff = ['Y' if pid in patients_involved else 'N' for pid in pids]
+
+        g = t[1].upper()  # dgiDB converts all genes to full capitals
+        the_url = None
+        if g in dgidb_res['interactions']:
+            the_url = 'http://www.dgidb.org/genes/{gene}#_interactions'.format(gene=g)
+            if len(dgidb_res['interactions'][g]) == 0:
+                the_res = 'Match, no results'
+            else:
+                the_res = 'Match and results'
+        elif g in dgidb_res['unmatched']:
+            the_res = 'Unmatched'
+        elif g in dgidb_res['ambiguous']:
+            the_res = 'Ambiguous'
+        else:
+            the_res = 'N/A'
+            logger.warn("No result string defined for gene %s", g)
+        this_first_row = [g, the_res, the_url]
+        if the_res == 'Match and results':
+            for i, v in enumerate(dgidb_res['interactions'][g]):
+                this_row = this_first_row + [v['drugName'], v['drugChemblId'],
+                                             ','.join(v['interactionTypes'] or ['N/A'])]
+                this_row += []
+                res.append(this_row + row_suff)
+        else:
+            this_first_row += [''] * 3
+            res.append(this_first_row + row_suff)
+
+    if out_fn is not None:
+        # write to file
+        with open(out_fn, 'wb') as f:
+            c = csv.writer(f)
+            c.writerow(cols)
+            c.writerows(res)
+
+    return res
 
 
 if __name__ == "__main__":
@@ -621,27 +678,8 @@ if __name__ == "__main__":
 
     # shortlist
     multipage_pdf_mex_plots(
-        os.path.join(outdir, "de_dmr_patient_specific_shortlist_mex_plots.pdf"),
+        os.path.join(outdir_s1, "de_dmr_patient_specific_shortlist_mex_plots.pdf"),
         sorted(ps_de_dm_list),
-        me_data,
-        dmr_res_s1,
-        dmr_comparison_groups,
-        de_res_full_s1,
-        plot_colours=plot_colours,
-        plot_markers=plot_markers,
-        plot_zorder=plot_zorder,
-        plot_alpha=plot_alpha,
-        direction_cmap=cmap
-    )
-
-    # long list
-    ss = setops.specific_sets(pids)
-    ps_de_dm_long_list = setops.reduce_union(
-        *[venn_set[ss[pid]] for pid in pids]
-    )
-    multipage_pdf_mex_plots(
-        os.path.join(outdir, "de_dmr_patient_specific_longlist_mex_plots.pdf"),
-        sorted(ps_de_dm_long_list),
         me_data,
         dmr_res_s1,
         dmr_comparison_groups,
@@ -661,40 +699,9 @@ if __name__ == "__main__":
     filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
 
     ps_de_dm_druggable_list = [t for t in ps_de_dm_list if len(filt_res['interactions'].get(t[1], []))]
-    out_fn = os.path.join(outdir, "de_dmr_patient_specific_shortlist_dgidb_lookpup.csv")
-    filt_export = []
-    cols = [
-        'Gene',
-        'DGIdb result',
-        'DGIdb URL',
-        'Compound name',
-        'Compound ID',
-        'Compound interaction types',
-    ]
-    ## TODO
-    for t in ps_de_dm_list:
-        g = t[1]
-        the_url = None
-        if g in filt_res['interactions']:
-            the_url = 'http://www.dgidb.org/genes/{gene}#_interactions'.format(gene=g)
-            if len(filt_res['interactions'][g]) == 0:
-                the_res = 'Match, no results'
-            else:
-                the_res = 'Match and results'
-        elif g in filt_res['unmatched']:
-            the_res = 'Unmatched'
-        elif g in filt_res['ambiguous']:
-            the_res = 'Ambiguous'
-        else:
-            the_res = 'N/A'
-            logger.warn("No result string defined for gene %s", g)
-        this_first_row = [g, the_res, ]
-
-
-
 
     multipage_pdf_mex_plots(
-        os.path.join(outdir, "de_dmr_patient_specific_shortlist_druggable_mex_plots.pdf"),
+        os.path.join(outdir_s1, "de_dmr_patient_specific_shortlist_druggable_mex_plots.pdf"),
         sorted(ps_de_dm_druggable_list),
         me_data,
         dmr_res_s1,
@@ -707,12 +714,54 @@ if __name__ == "__main__":
         direction_cmap=cmap
     )
 
-    # longlist
+    out_fn = os.path.join(outdir_s1, "de_dmr_patient_specific_shortlist_dgidb_lookup.csv")
+    membership = collections.OrderedDict([(pid, ps_de_dm[pid].index) for pid in pids])
+    filt_export = dgidb_druggability_report(filt_res, ps_de_dm_list, membership, out_fn=out_fn)
+
+    # long list
+    ss = setops.specific_sets(pids)
+    ps_de_dm_long = collections.OrderedDict([
+        (pid, venn_set[ss[pid]]) for pid in pids
+    ])
+
+    ps_de_dm_long_list = setops.reduce_union(
+        *ps_de_dm_long.values()
+    )
+
+    multipage_pdf_mex_plots(
+        os.path.join(outdir_s1, "de_dmr_patient_specific_longlist_mex_plots.pdf"),
+        sorted(ps_de_dm_long_list),
+        me_data,
+        dmr_res_s1,
+        dmr_comparison_groups,
+        de_res_full_s1,
+        plot_colours=plot_colours,
+        plot_markers=plot_markers,
+        plot_zorder=plot_zorder,
+        plot_alpha=plot_alpha,
+        direction_cmap=cmap
+    )
+
     filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_long_list])
-    ps_de_dm_druggable_long_list = [t for t in ps_de_dm_long_list if t[1] in filt_res['interactions']]
+    ps_de_dm_druggable_longlist = [t for t in ps_de_dm_long_list if len(filt_res['interactions'].get(t[1], []))]
 
+    multipage_pdf_mex_plots(
+        os.path.join(outdir_s1, "de_dmr_patient_specific_longlist_druggable_mex_plots.pdf"),
+        sorted(ps_de_dm_druggable_longlist),
+        me_data,
+        dmr_res_s1,
+        dmr_comparison_groups,
+        de_res_full_s1,
+        plot_colours=plot_colours,
+        plot_markers=plot_markers,
+        plot_zorder=plot_zorder,
+        plot_alpha=plot_alpha,
+        direction_cmap=cmap
+    )
 
-    raise StopIteration
+    out_fn = os.path.join(outdir_s1, "de_dmr_patient_specific_longlist_dgidb_lookup.csv")
+    membership = collections.OrderedDict([(pid, ps_de_dm_long[pid]) for pid in pids])
+    filt_export = dgidb_druggability_report(filt_res, ps_de_dm_long_list, membership, out_fn=out_fn)
 
     # by request (SM): Extend to targets shared between up to 3 patients (use shortlist approach)
     for n in range(2, len(pids) + 1):
@@ -720,7 +769,7 @@ if __name__ == "__main__":
         de_dm_ix = shortlist_de_dm_genes(vs_de, vs_dm, this_sets, dmr_res_s1.clusters)
         this_list = sorted(setops.reduce_union(*de_dm_ix.values()))
         multipage_pdf_mex_plots(
-            os.path.join(outdir, "de_dmr_%d_patients_shortlist_mex_plots.pdf" % n),
+            os.path.join(outdir_s1, "de_dmr_%d_patients_shortlist_mex_plots.pdf" % n),
             this_list,
             me_data,
             dmr_res_s1,
@@ -732,6 +781,41 @@ if __name__ == "__main__":
             plot_alpha=plot_alpha,
             direction_cmap=cmap
         )
+
+        # dgiDB filter
+        if len(this_list) > 0:
+            filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in this_list])
+            this_list_druggable = [t for t in this_list if len(filt_res['interactions'].get(t[1], []))]
+
+            if len(this_list_druggable):
+                multipage_pdf_mex_plots(
+                    os.path.join(outdir_s1, "de_dmr_%d_patients_shortlist_druggable_mex_plots.pdf" % n),
+                    this_list_druggable,
+                    me_data,
+                    dmr_res_s1,
+                    dmr_comparison_groups,
+                    de_res_full_s1,
+                    plot_colours=plot_colours,
+                    plot_markers=plot_markers,
+                    plot_zorder=plot_zorder,
+                    plot_alpha=plot_alpha,
+                    direction_cmap=cmap
+                )
+
+                membership = collections.OrderedDict()
+                for pid in pids:
+                    membership[pid] = []
+
+                for k, v in de_dm_ix.items():
+                    if len(v) > 0:
+                        this_members = setops.key_to_members(k, pids)
+                        for pid in this_members:
+                            membership[pid].extend(v)
+
+                out_fn = os.path.join(outdir_s1, "de_dmr_%d_patients_shortlist_dgidb_lookup.csv" % n)
+                dgidb_druggability_report(filt_res, this_list, membership, out_fn=out_fn)
+
+
 
     ##################
     ### STRATEGY 2 ###
