@@ -1,5 +1,6 @@
 import os
 import gzip
+from glob import glob
 import pickle
 from utils import reference_genomes
 import re
@@ -9,6 +10,7 @@ import collections
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
+from plotting import venn
 from utils import setops, output, log, dictionary
 from settings import DATA_DIR
 from scripts.hgic_final import consts
@@ -98,7 +100,7 @@ if __name__ == '__main__':
     While we are at it, we may generate some overview plots, too.
     """
     pids = consts.PIDS
-    contigs = set(['chr%d' % i for i in range(1, 23)] + ['chrX', 'chrY', 'chrM'])
+    contigs = set(['chr%d' % i for i in range(1, 23)])
 
     groups = {
         'Hypo': ['019', '030', '031', '017'],
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     group_ind = setops.groups_to_ind(pids, groups)
     groups_inv = dictionary.complement_dictionary_of_iterables(groups, squeeze=True)
 
-    # V2: iterate over pre-made short files and store data in memory
+    ####### V2: iterate over pre-made short files and store data in memory
     base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/meth_associated/')
     meta_fn = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/', 'sources.csv')
 
@@ -358,22 +360,132 @@ if __name__ == '__main__':
             elif cl == 'iNSC only' or cl == 'iNSC hom GIC het' or cl == 'same':
                 not_this_pids.append(pid)
 
-        if set(this_pids) == group_hypo:
+        # permit at most one missing member
+        if len(group_hypo.intersection(this_pids)) >= (len(group_hypo) - 1):
+        # if set(this_pids) == group_hypo:
+
             # we also require that no other patients are in the 'not' list
             if len(set(not_this_pids).intersection(group_hyper)) == 0:
                 gs_var['hypo'].append(rec_dict)
                 logger.info("Found %d hypo-related variants in %d records", len(gs_var['hypo']), count)
-        elif set(this_pids) == group_hyper:
+
+        elif len(group_hyper.intersection(this_pids)) >= (len(group_hyper) - 1):
+        # elif set(this_pids) == group_hyper:
             # we also require that no other patients are in the 'not' list
             if len(set(not_this_pids).intersection(group_hypo)) == 0:
                 gs_var['hyper'].append(rec_dict)
                 logger.info("Found %d hyper-related variants in %d records", len(gs_var['hyper']), count)
 
-    with open(os.path.join(outdir, "all_variants_group_specific.pkl"), 'wb') as f:
+    with open(os.path.join(outdir, "all_variants_group_specific_minus_one.pkl"), 'wb') as f:
         pickle.dump(gs_var, f)
 
     # export to Excel
-    export_hypo = []
-    export_hyper = []
+    cols = ['ID', 'type', 'chrom', 'start', 'end'] + pids
+    for_export = {}
 
-    # for res, out_arr in zip([gs_var['hypo'], gs_var['hyper']], [export_hypo, export_hyper]):
+    for k in ['hypo', 'hyper']:
+        this = []
+        for t in gs_var[k]:
+            cls = {}
+            the_rec = None
+            for pid in pids:
+                a = t[(pid, 'GIC')]
+                b = t[(pid, 'iNSC')]
+                cl = classify_comparison(a, b, labels=('GIC', 'iNSC'))
+                cls[pid] = cl
+                if a is not None and the_rec is None and pid in groups[k.capitalize()]:
+                    the_rec = a
+
+            this.append([
+                the_rec.ID or 'Unknown',
+                the_rec.var_type,
+                the_rec.CHROM,
+                the_rec.start,
+                the_rec.end,
+            ] + [cls[pid] for pid in pids])
+            for_export[k] = pd.DataFrame(this, columns=cols)
+            for_export[k].to_csv(os.path.join(outdir, "group_specific_variants_minus_one_%s.csv" % k))
+
+    ##### V4: Iterate over all VCFs separately, downsampling to reduce memory footprint
+    # Only keep GIC-specific variants (incl. hom/het)
+    # Use these to generate an upset plot
+    store_every = 5
+    base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/')
+    flist = glob(os.path.join(base_indir, "X17*/*.vcf.gz"))
+
+    variants_hom_het = {}
+    variants_gic_only = {}
+
+    for pid in pids:
+        variants_gic_only[pid] = []
+        variants_hom_het[pid] = []
+        logger.info("Patient %s", pid)
+        this_meta = meta.loc[meta.patient_id == pid]
+        in_fns = []
+        readers = {}
+        for t in this_meta.index:
+            the_fn = os.path.join(base_indir, t, "%s.vcf.gz" % meta.loc[t, 'sample'])
+            in_fns.append(the_fn)
+            readers[this_meta.loc[t, 'type']] = vcf.Reader(filename=the_fn)
+        logger.info("Found %d conditions to compare: %s", len(readers), ', '.join(readers.keys()))
+
+        it = vcf.utils.walk_together(readers['GIC'], readers['iNSC'])
+
+        for i, (gic_rec, insc_rec) in enumerate(it):
+            if i % 50000 == 0:
+                logger.info(
+                    "Processed %d variants.",
+                    i,
+                )
+            if i % store_every == 0:
+                cl = classify_comparison(gic_rec, insc_rec, labels=('GIC', 'iNSC'))
+                if (cl == 'GIC only'):
+                    variants_gic_only[pid].append(gic_rec)
+                elif (cl == 'GIC hom iNSC het'):
+                    variants_hom_het[pid].append((gic_rec, insc_rec))
+
+    variants_hom_het_gic = dict([(pid, [t[0] for t in variants_hom_het[pid]]) for pid in pids])
+
+    with open(os.path.join(outdir, "variants_gic_only_1_in_%d.pkl" % store_every), 'wb') as f:
+        pickle.dump(variants_gic_only, f)
+
+    with open(os.path.join(outdir, "variants_gic_hom_insc_het_1_in_%d.pkl" % store_every), 'wb') as f:
+        pickle.dump(variants_hom_het_gic, f)
+
+    # before we create UpSet plots, we need to extract hashable features from the records
+    # otherwise I think it just uses the id() and that doesn't return any matches (it's the memory address!!)
+    id_gic_only = dict([
+        (
+            pid,
+            [
+                (rec.CHROM, rec.start, '_'.join([t.sequence for t in rec.ALT])) for rec in variants_gic_only[pid] if rec.CHROM in contigs
+            ]
+        ) for pid in pids
+    ])
+    subgroup_colours = {'Hyper full': '#db170d', 'Hyper partial': '#f58782', 'Hypo full': '#18b500',
+                        'Hypo partial': '#a9ff9c'}
+    upset = venn.upset_plot_with_groups(
+        [id_gic_only[pid] for pid in pids],
+        pids,
+        group_ind,
+        subgroup_colours,
+        n_plot=30
+    )
+    upset['figure'].savefig(os.path.join(outdir, "upset_variants_gic_only_1_in_%d.png" % store_every), dpi=200)
+
+    id_hom_het = dict([
+        (
+            pid,
+            [
+                (rec.CHROM, rec.start, '_'.join([t.sequence for t in rec.ALT])) for rec in variants_hom_het_gic[pid] if rec.CHROM in contigs
+            ]
+        ) for pid in pids
+    ])
+    upset = venn.upset_plot_with_groups(
+        [id_hom_het[pid] for pid in pids],
+        pids,
+        group_ind,
+        subgroup_colours,
+        n_plot=30
+    )
+    upset['figure'].savefig(os.path.join(outdir, "upset_variants_gic_hom_insc_het_1_in_%d.png" % store_every), dpi=200)

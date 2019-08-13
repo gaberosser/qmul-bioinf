@@ -317,6 +317,7 @@ GenomicMethylSetfromGEORaw <- function(
 
 
 # base.dir <- file.path(data.dir.raid, 'methylation', '2016-06-10_brandner')
+base.dir <- file.path(data.dir.raid, 'methylation', '2016-09-21_dutt')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2016-12-19_ucl_genomics')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2017-05-12')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'tcga_gbm')
@@ -330,7 +331,7 @@ GenomicMethylSetfromGEORaw <- function(
 # base.dir <- file.path(data.dir.raid, 'methylation', 'E-MTAB-6194')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-03-26')
 # base.dir <- file.path(data.dir.raid, 'methylation', '2018-06-26')
-base.dir <- file.path(data.dir.raid, 'methylation', '2018-12-14')
+# base.dir <- file.path(data.dir.raid, 'methylation', '2018-12-14')
 # base.dir <- file.path(data.dir.raid, 'methylation', 'GSE94956')
 
 idat.dir <- file.path(base.dir, 'idat')

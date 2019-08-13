@@ -3,7 +3,7 @@ import os
 import pandas as pd
 
 from rnaseq import gsea
-from scripts.wang_gbm_classifier.classify_our_gbm_samples import simplicity_score, load_pvalue_results
+from scripts.hgic_final.classify_our_gbm_samples_wang import simplicity_score, load_pvalue_results
 from settings import HGIC_LOCAL_DIR
 from utils import output, reference_genomes
 

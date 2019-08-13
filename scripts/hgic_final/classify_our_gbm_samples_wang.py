@@ -157,7 +157,7 @@ if __name__ == '__main__':
         for src in ('star', 'salmon', 'star/cufflinks'):
             fn = os.path.join(outdir, "%s_%s.gct" % (SRC_MAP[src], typ))
             gct_files.append(fn)
-            gsea.wang_ssgsea_classification(fn)
+            gsea.wang_ssgsea_classification(fn, n_perm=n_perm)
 
     p_res = {}
     ss_res = {}

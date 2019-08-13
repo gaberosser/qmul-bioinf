@@ -26,6 +26,8 @@ wget -nH -np -r ftp://<username>:<password>@bsg-ftp.well.ox.ac.uk/<run_id>
 
 The entire URL can just be copied from the email. This will create a directory called `run_id`.
 
+The WTCHG facility typically run an alignment step on the raw fastq files (generating a BAM file), however this is not always generated following an appropriate pipeline. For example, the process for RNA-Seq does not used a gapped aligner. In practice, it is therefore often desirable to skip downloading these large and useless BAM files. This is achieved by adding the following flags to the `wget` call: `--reject bam,bai`.
+
 ### Barts Genome Centre
 
 Barts Genome Centre transfer data using [Illumina's BaseSpace](https://basespace.illumina.com/) web service. It is possible to download data directly from the web interface, but this is not practical for large runs and not straightforward to run from Apocrita. Instead, I have used the [BaseSpace BaseMount](https://basemount.basespace.illumina.com/) tool (Linux only), which allows you to browse and copy files from BaseSpace as if they were mounted on your local machine.
