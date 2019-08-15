@@ -1,12 +1,13 @@
 import json
 import os
+import gzip
 import multiprocessing as mp
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from utils import log, output
-from settings import OUTPUT_DIR
+from settings import INTERMEDIATE_DIR
 from StringIO import StringIO
 clogger = log.get_console_logger("rrbs_coverage_analysis")
 
@@ -46,8 +47,9 @@ def parse_one_result(cpg, perms):
 
 
 if __name__ == "__main__":
-    indir = os.path.join(OUTPUT_DIR, 'rrbs_coverage_sampling')
-    flist = ['GC-CV-7163-{n}_S{n}.cpg_coverage.json'.format(n=i) for i in range(1, 7)]
+    outdir = output.unique_output_dir()
+    indir = os.path.join(INTERMEDIATE_DIR, 'rrbs_coverage_sampling', 'GC-CV-7163')
+    flist = ['GC-CV-7163-{n}_S{n}.cpg_coverage.json.gz'.format(n=i) for i in range(1, 7)]
     titles = [
         'eNSC3',
         'eNSC5',
@@ -67,7 +69,7 @@ if __name__ == "__main__":
         fn = os.path.join(indir, fname)
         clogger.info("Loading JSON file %s", fn)
         try:
-            with open(fn, 'rb') as f:
+            with gzip.open(fn, 'rb') as f:
                 res = json.load(f)
             clogger.info("File %s has %d results.", fname, len(res['cpg_islands']))
         except Exception:
@@ -155,7 +157,7 @@ if __name__ == "__main__":
         mean_perm_trace[ttl] = perm_trace / float(perm_ct)
 
     fig.tight_layout()
-    fig.savefig(os.path.join(indir, "mean_coverage_traces.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "mean_coverage_traces.png"), dpi=200)
 
 
     # repeat but with mean relative enrichment
@@ -171,5 +173,6 @@ if __name__ == "__main__":
         ax.set_title(ttl)
 
     fig.tight_layout()
-    fig.savefig(os.path.join(indir, "relative_coverage_enrichment_traces.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "relative_coverage_enrichment_traces.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "relative_coverage_enrichment_traces.png"), dpi=200)
 

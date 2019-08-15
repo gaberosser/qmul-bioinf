@@ -9,6 +9,7 @@ from utils import setops, output, log
 from plotting import common, venn
 from matplotlib import pyplot as plt
 import seaborn as sns
+from settings import INTERMEDIATE_DIR
 logger = log.get_console_logger()
 
 
@@ -19,7 +20,7 @@ if __name__ == '__main__':
     pids = consts.PIDS
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     # We load pre-computed results if a file with the correct filename is found
     # Otherwise this is written after computing the results

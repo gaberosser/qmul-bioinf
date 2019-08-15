@@ -13,6 +13,7 @@ from plotting import venn
 from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
 import consts
+from settings import INTERMEDIATE_DIR
 
 
 logger = log.get_console_logger()
@@ -420,8 +421,8 @@ if __name__ == "__main__":
     cmap = 'RdYlGn_r'
 
     # file location parameters
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     if not os.path.isdir(DE_LOAD_DIR):
         logger.info("Created DE results save path %s.", DE_LOAD_DIR)
@@ -1463,6 +1464,8 @@ if __name__ == "__main__":
     ### c) DE / DMR combined ###
     ############################
 
+    ## FIXME: This belongs in two_strategies_combine_de_dmr. Move it.
+
     joint_de_dmr_s2 = {}
     pair_joint = rnaseq_methylationarray.compute_joint_de_dmr(dmr_res_s1, de_res_s1)
     for pid in pids:
@@ -1483,9 +1486,9 @@ if __name__ == "__main__":
         for pid in pids:
             joint_de_dmr_s2[(pid, de_ref)] = ref_joint[pid]
 
-    # filter - only DMRs with TSS or island class
+    # filter - only DMRs with TSS
     for k in joint_de_dmr_s2:
-        idx = joint_de_dmr_s2[k].dmr_class_island | joint_de_dmr_s2[k].dmr_class_tss
+        idx = joint_de_dmr_s2[k][['dmr_TSS200', 'dmr_TSS1500']].any(axis=1)
         joint_de_dmr_s2[k] = joint_de_dmr_s2[k].loc[idx]
         print "Comparison %s. %d DE & DMR rows, %d are gene only, keeping %d." % (k, idx.size, (~idx).sum(), idx.sum())
 
@@ -1497,106 +1500,109 @@ if __name__ == "__main__":
 
     # get pair only results
     # do this using only the gene symbol
+    ## FIXME: this is broken, so disabled from here to the end
 
-    de_dmr_by_gene = dict([
-        (k, set(v.gene.values)) for k, v in joint_de_dmr_s2.items()
-    ])
+    if False:
 
-    pair_only_de_dmr = pd.DataFrame(index=pids, columns=external_refs_de_labels)
-    for i in pair_only_de_dmr.index:
-        p = de_dmr_by_gene[(i, i)]
-        for j in pair_only_de_dmr.columns:
-            r = de_dmr_by_gene[(i, j)]
-            x, _ = setops.venn_from_arrays(p, r)
-            pair_only_de_dmr.loc[i, j] = x['10']
+        de_dmr_by_gene = dict([
+            (k, set(v.gene.values)) for k, v in joint_de_dmr_s2.items()
+        ])
 
-    # take the intersection of the PO lists, then export to a file
-    po_de_dmr_export = {}
+        pair_only_de_dmr = pd.DataFrame(index=pids, columns=external_refs_de_labels)
+        for i in pair_only_de_dmr.index:
+            p = de_dmr_by_gene[(i, i)]
+            for j in pair_only_de_dmr.columns:
+                r = de_dmr_by_gene[(i, j)]
+                x, _ = setops.venn_from_arrays(p, r)
+                pair_only_de_dmr.loc[i, j] = x['10']
 
-    for pid in pids:
-        this_row = pair_only_de_dmr.loc[pid, [t[0] for t in external_refs_de]]
-        this_genes = setops.reduce_intersection(*this_row)
+        # take the intersection of the PO lists, then export to a file
+        po_de_dmr_export = {}
 
-        # now we need to look up those genes in the relevant joint results table
-        this_joint = joint_de_dmr_s2[(pid, pid)]
-        po_de_dmr_export[pid] = this_joint.loc[this_joint.gene.isin(this_genes)]
+        for pid in pids:
+            this_row = pair_only_de_dmr.loc[pid, [t[0] for t in external_refs_de]]
+            this_genes = setops.reduce_intersection(*this_row)
 
-    excel.pandas_to_excel(po_de_dmr_export, os.path.join(outdir_s2, "pair_only_de_dmr.xlsx"))
+            # now we need to look up those genes in the relevant joint results table
+            this_joint = joint_de_dmr_s2[(pid, pid)]
+            po_de_dmr_export[pid] = this_joint.loc[this_joint.gene.isin(this_genes)]
 
-    # export with a different layout, analogous to strategy 1
-    venn_set, venn_ct = setops.venn_from_arrays(*[po_de_dmr_export[pid].index for pid in pids])
-    po_combination_export = setops.venn_set_to_wide_dataframe(
-        po_de_dmr_export,
-        venn_set,
-        pids,
-        cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
-        consistency_check_col='de_logfc',
-        consistency_check_method="sign"
-    )
+        excel.pandas_to_excel(po_de_dmr_export, os.path.join(outdir_s2, "pair_only_de_dmr.xlsx"))
 
-    po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_dmr_wideform.xlsx'))
+        # export with a different layout, analogous to strategy 1
+        venn_set, venn_ct = setops.venn_from_arrays(*[po_de_dmr_export[pid].index for pid in pids])
+        po_combination_export = setops.venn_set_to_wide_dataframe(
+            po_de_dmr_export,
+            venn_set,
+            pids,
+            cols_to_include=('de_logfc', 'de_padj', 'dmr_median_delta', 'dmr_padj'),
+            consistency_check_col='de_logfc',
+            consistency_check_method="sign"
+        )
 
-    # plot: number of DM-concordant DE genes in each reference comparison
+        po_combination_export.to_excel(os.path.join(outdir_s2, 'pair_only_de_dmr_wideform.xlsx'))
 
-    nrows = len(subgroups)
-    ncols = max([len(t) for t in subgroups.values()])
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
-    ax_set = set(axs.flat)
-    for pid in pids:
-        sg = subgroups_lookup[pid]
-        sg_members = subgroups[sg]
-        i = subgroups.keys().index(sg)
-        j = sg_members.index(pid)
-        the_lists = [
-            de_dmr_by_gene[(pid, r)] for r in external_refs_de_labels
-        ]
-        venn_sets, cts = setops.venn_from_arrays(*the_lists)
-        venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
-        axs[i, j].set_title("GBM%s vs..." % pid)
-        ax_set.remove(axs[i, j])
-    fig.tight_layout()
-    for ax in ax_set:
-        ax.set_visible(False)
-    fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.png'), dpi=200)
-    fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.tiff'), dpi=200)
+        # plot: number of DM-concordant DE genes in each reference comparison
 
-    # plot: how many DM-concordant DE genes are in the pair only comparison when each reference is used?
+        nrows = len(subgroups)
+        ncols = max([len(t) for t in subgroups.values()])
+        fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+        ax_set = set(axs.flat)
+        for pid in pids:
+            sg = subgroups_lookup[pid]
+            sg_members = subgroups[sg]
+            i = subgroups.keys().index(sg)
+            j = sg_members.index(pid)
+            the_lists = [
+                de_dmr_by_gene[(pid, r)] for r in external_refs_de_labels
+            ]
+            venn_sets, cts = setops.venn_from_arrays(*the_lists)
+            venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
+            axs[i, j].set_title("GBM%s vs..." % pid)
+            ax_set.remove(axs[i, j])
+        fig.tight_layout()
+        for ax in ax_set:
+            ax.set_visible(False)
+        fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.png'), dpi=200)
+        fig.savefig(os.path.join(outdir_s2, 'number_de_dmr_multiple_references.tiff'), dpi=200)
 
-    # at the same time, get numbers for a bar chart about % overlap
-    n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
+        # plot: how many DM-concordant DE genes are in the pair only comparison when each reference is used?
 
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
-    ax_set = set(axs.flat)
-    for pid in pids:
-        sg = subgroups_lookup[pid]
-        sg_members = subgroups[sg]
-        i = subgroups.keys().index(sg)
-        j = sg_members.index(pid)
-        the_lists = [
-            set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
-        ]
-        venn_sets, cts = setops.venn_from_arrays(*the_lists)
-        venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
-        axs[i, j].set_title("GBM%s pair only" % pid)
-        ax_set.remove(axs[i, j])
+        # at the same time, get numbers for a bar chart about % overlap
+        n_pair_only_intersect = pd.DataFrame(0, index=pids, columns=external_refs_de_labels)
 
-        for i, r in enumerate(external_refs_de_labels):
-            n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_de_labels))]
+        fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
+        ax_set = set(axs.flat)
+        for pid in pids:
+            sg = subgroups_lookup[pid]
+            sg_members = subgroups[sg]
+            i = subgroups.keys().index(sg)
+            j = sg_members.index(pid)
+            the_lists = [
+                set(pair_only_de_dmr.loc[pid, r]) for r in external_refs_de_labels
+            ]
+            venn_sets, cts = setops.venn_from_arrays(*the_lists)
+            venn.venn2(cts, set_labels=external_refs_de_labels, ax=axs[i, j])
+            axs[i, j].set_title("GBM%s pair only" % pid)
+            ax_set.remove(axs[i, j])
 
-    fig.tight_layout()
-    for ax in ax_set:
-        ax.set_visible(False)
-    fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.png'), dpi=200)
-    fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.tiff'), dpi=200)
+            for i, r in enumerate(external_refs_de_labels):
+                n_pair_only_intersect.loc[pid, r] = cts[''.join(['1'] * len(external_refs_de_labels))]
 
-    # plot: overlap between individual references in terms of PO genes shared
-    po_counts = pair_only_de_dmr.applymap(len)
-    pct_pair_only_intersect = n_pair_only_intersect / po_counts.loc[:, external_refs_de_labels] * 100.
+        fig.tight_layout()
+        for ax in ax_set:
+            ax.set_visible(False)
+        fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.png'), dpi=200)
+        fig.savefig(os.path.join(outdir_s2, 'number_po_de_dmr_multiple_references.tiff'), dpi=200)
 
-    ax = pct_pair_only_intersect.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k', legend=False)
-    ax.set_xlabel('Patient')
-    ax.set_ylabel("% DE genes shared")
-    ax.set_ylim([0, 100])
-    ax.figure.tight_layout()
-    ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.png"), dpi=200)
-    ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.tiff"), dpi=200)
+        # plot: overlap between individual references in terms of PO genes shared
+        po_counts = pair_only_de_dmr.applymap(len)
+        pct_pair_only_intersect = n_pair_only_intersect / po_counts.loc[:, external_refs_de_labels] * 100.
+
+        ax = pct_pair_only_intersect.plot.bar(color=['#ff9999', '#99cc99', '#9999ff'], ec='k', legend=False)
+        ax.set_xlabel('Patient')
+        ax.set_ylabel("% DE genes shared")
+        ax.set_ylim([0, 100])
+        ax.figure.tight_layout()
+        ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.png"), dpi=200)
+        ax.figure.savefig(os.path.join(outdir_s2, "de_dmr_perc_po_gene_correspondence.tiff"), dpi=200)

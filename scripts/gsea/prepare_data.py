@@ -16,6 +16,11 @@ def ens_index_to_gene_symbol(df):
 
 
 if __name__ == '__main__':
+    """
+    This script generates the input files needed to run Broad's GSEA application on our data, including both
+    syngeneic comparisons (S1) AND reference comparisons (S2).
+    The resulting files can then be used to generate the GSEA results themselves.
+    """
     outdir = os.path.join(OUTPUT_DIR, "gsea_data")
 
     # load all data

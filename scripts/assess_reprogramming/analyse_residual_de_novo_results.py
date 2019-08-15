@@ -17,7 +17,7 @@ import csv
 from ast import literal_eval as make_tuple
 from scipy import stats
 import itertools
-from settings import OUTPUT_DIR
+from settings import INTERMEDIATE_DIR
 
 
 logger = log.get_console_logger("analyse_residual_dmrs")
@@ -342,9 +342,9 @@ def scatter_probe_mvals_classified(
 
 
 if __name__ == "__main__":
-    basedir = os.path.join(OUTPUT_DIR, "assess_reprog_alt1_apocrita")
+    basedir = os.path.join(INTERMEDIATE_DIR, "assess_reprog_alt1")
     indir = os.path.join(basedir, "results")
-    outdir = output.unique_output_dir('assess_reprog_alt1_apocrita')
+    outdir = output.unique_output_dir('assess_reprog_alt1')
     names = [t.replace('.csv', '') for t in os.listdir(indir) if '.csv' in t]
 
     fdr = 0.01
@@ -1274,6 +1274,11 @@ if __name__ == "__main__":
 
     # New plots for the Dumas paper
     # TODO: move these to a separate module if straightforward
+    colour_by_direction = {
+    'hypo': '#89CD61',
+    'hyper': '#FF381F',
+    }
+
     # Quantify feature membership of core iPSC-ESC (ours)
     vs_hyper, vc_hyper = setops.venn_from_arrays(*core_hyper[k_our_ipsc].values(), set_labels=core_hyper[k_our_ipsc].keys())
     vs_hypo, vc_hypo = setops.venn_from_arrays(*core_hypo[k_our_ipsc].values(), set_labels=core_hypo[k_our_ipsc].keys())
@@ -1285,7 +1290,7 @@ if __name__ == "__main__":
     bar.grouped_bar_chart(
         [qfm_hyper, qfm_hypo],
         ax=ax,
-        colours=[colour_by_direction['Hypermethylated'], colour_by_direction['Hypomethylated']],
+        colours=[colour_by_direction['hyper'], colour_by_direction['hypo']],
         edgecolor='k',
         linewidth=1.,
         labels=['Hypermethylation', 'Hypomethylation']

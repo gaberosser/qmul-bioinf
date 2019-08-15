@@ -14,7 +14,7 @@ urllib3
 plotly
 openpyxl
 networkx
-vcf
+pyvcf
 seaborn
 pysam
 gffutils

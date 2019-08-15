@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from plotting import common, heatmap
 from rnaseq import loader as rnaseq_loader
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-from settings import HGIC_LOCAL_DIR
+from settings import HGIC_LOCAL_DIR, INTERMEDIATE_DIR
 from utils import output, setops, log, reference_genomes
 
 logger = log.get_console_logger()
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     dm_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/methylation/s0_individual_patients_direct_comparison/ipa/pathways')
     dedm_indir = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq_methylation_combined/s0_individual_patients_direct_comparison/ipa/pathways')
 
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     outdir = output.unique_output_dir()
 

@@ -2,7 +2,7 @@ from scripts.assess_reprogramming import analyse_residual_de_novo_results as ard
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 from utils import output, log
 from rnaseq import loader
-from settings import OUTPUT_DIR
+from settings import INTERMEDIATE_DIR
 
 import os
 import pickle
@@ -15,8 +15,8 @@ logger = log.get_console_logger()
 
 if __name__ == '__main__':
     outdir = output.unique_output_dir()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     rnaseq_obj = loader.load_by_patient(consts.PIDS)
     rnaseq_obj.filter_by_sample_name(consts.S1_RNASEQ_SAMPLES)
@@ -35,7 +35,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError("We require a precomputed DE results file (expected this at %s)" % fn)
 
-    basedir = os.path.join(OUTPUT_DIR, "assess_reprog_alt1_apocrita")
+    basedir = os.path.join(INTERMEDIATE_DIR, "assess_reprog_alt1")
     indir = os.path.join(basedir, "results")
     names = [t.replace('.csv', '') for t in os.listdir(indir) if '.csv' in t]
 

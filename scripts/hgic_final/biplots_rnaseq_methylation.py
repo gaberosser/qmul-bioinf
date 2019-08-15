@@ -16,7 +16,7 @@ from methylation import loader as methylation_loader, process
 from plotting import common, pca, _plotly, scatter, adjuster
 from rnaseq import loader, filter, general
 from scripts.hgic_final import consts
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, INTERMEDIATE_DIR
 from stats import decomposition, transformations
 from utils import output, log, setops, excel, dictionary, genomics, reference_genomes
 
@@ -853,7 +853,7 @@ if __name__ == '__main__':
     # load DMR data
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     anno = methylation_loader.load_illumina_methylationepic_annotation()
 

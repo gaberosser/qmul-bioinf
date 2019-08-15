@@ -5,11 +5,7 @@ import numpy as np
 import pickle
 from utils import output, setops, excel, log
 from methylation import dmr, process, loader as methylation_loader, annotation_gene_to_ensembl
-from rnaseq import loader as rnaseq_loader, differential_expression, general, filter
-from integrator import rnaseq_methylationarray
-from analysis import cross_comparison
-from load_data import loader
-from plotting import venn
+from settings import INTERMEDIATE_DIR
 from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
 import statsmodels.stats.power as smp
@@ -27,7 +23,7 @@ if __name__ == "__main__":
     norm_method_s1 = 'swan'
 
     pids = consts.PIDS
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     me_obj, anno = tsgd.load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
     me_data = me_obj.data

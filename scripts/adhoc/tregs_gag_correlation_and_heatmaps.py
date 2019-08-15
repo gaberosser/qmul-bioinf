@@ -10,14 +10,14 @@ from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 from plotting import common
 from rnaseq import loader
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
-from settings import HGIC_LOCAL_DIR
+from settings import HGIC_LOCAL_DIR, INTERMEDIATE_DIR
 from stats import nht
 from utils import output, setops, reference_genomes
 
 if __name__ == "__main__":
     outdir = output.unique_output_dir()
     pids = consts.PIDS
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     eps = .1  # offset for log transform
 

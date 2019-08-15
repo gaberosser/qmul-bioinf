@@ -1,4 +1,4 @@
-from load_data import nih_gdc
+from rnaseq import tcga
 import pandas as pd
 import os
 from utils.output import unique_output_dir
@@ -7,7 +7,7 @@ from utils.output import unique_output_dir
 if __name__ == "__main__":
     path_to_manifest = '/home/gabriel/Downloads/gdc_manifest.2017-06-30T15-30-57.570863.tsv'
     outdir = unique_output_dir("nih_legacy")
-    nih_gdc.download_from_manifest(path_to_manifest, outdir=outdir, legacy=True)
+    tcga.download_from_manifest(path_to_manifest, outdir=outdir, legacy=True)
 
     flist = os.listdir(outdir)
     fin = os.path.join(outdir, flist[0])

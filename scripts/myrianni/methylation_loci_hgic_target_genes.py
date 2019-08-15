@@ -16,6 +16,7 @@ from plotting import genomics as genomic_plots
 from scripts.hgic_final import consts, two_strategies_grouped_dispersion as tsgd
 from methylation import loader as methylation_loader, dmr, process
 from rnaseq import loader as rnaseq_loader
+from settings import INTERMEDIATE_DIR
 
 
 logger = log.get_console_logger()
@@ -57,8 +58,8 @@ if __name__ == '__main__':
     dmr_params = consts.DMR_PARAMS
     de_params = consts.DE_PARAMS
 
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     anno = methylation_loader.load_illumina_methylationepic_annotation()
 

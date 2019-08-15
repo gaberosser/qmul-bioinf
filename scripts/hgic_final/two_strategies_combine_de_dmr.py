@@ -21,6 +21,7 @@ from matplotlib import pyplot as plt, text, patches, colors
 from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 import consts
+from settings import INTERMEDIATE_DIR
 
 
 logger = log.get_console_logger()
@@ -394,8 +395,8 @@ if __name__ == "__main__":
     cmap = 'RdYlGn_r'
 
     # file location parameters
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     if not os.path.isdir(DE_LOAD_DIR):
         raise AttributeError("To run this script, we require pre-computed DE results residing in %s" % DE_LOAD_DIR)

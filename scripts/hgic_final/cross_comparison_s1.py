@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt, text, patches
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd
 from scripts.hgic_final import consts
+from settings import INTERMEDIATE_DIR
 
 
 if __name__ == '__main__':
@@ -31,8 +32,8 @@ if __name__ == '__main__':
     dmr_params['n_jobs'] = mp.cpu_count()
 
     # file location
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 
     # boilerplate
     outdir = output.unique_output_dir()

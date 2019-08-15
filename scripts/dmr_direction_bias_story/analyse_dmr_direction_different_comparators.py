@@ -20,7 +20,7 @@ from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
 from plotting import common
 
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, INTERMEDIATE_DIR
 logger = log.get_console_logger()
 
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     write_bed_files = False
 
     outdir = output.unique_output_dir()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     # we'll need the same array annotation data for all our results
     anno = loader.load_illumina_methylationepic_annotation()

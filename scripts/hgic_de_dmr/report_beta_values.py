@@ -17,6 +17,7 @@ import collections
 from utils import output, setops
 from methylation import dmr, process
 from scripts.hgic_de_dmr.two_strategies_grouped_dispersion import dmr_results_hash, paired_dmr, load_methylation
+from settings import INTERMEDIATE_DIR
 
 
 if __name__ == "__main__":
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     pids = dat.columns[dat.columns.str.contains(r'^[0-9][0-9][0-9]$')].tolist()
 
     # also load or compute the DMR results and probe data
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
     dmr_params = {
         'd_max': 400,
         'n_min': 6,

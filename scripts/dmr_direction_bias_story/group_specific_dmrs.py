@@ -22,7 +22,7 @@ from scripts.hgic_final import \
     analyse_dmrs_s1_direction_distribution as addd, \
     consts
 from scripts.methylation import dmr_values_to_bigwig
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, INTERMEDIATE_DIR
 from utils import output, setops, genomics, log, ipa, dictionary, reference_genomes
 
 logger = log.get_console_logger()
@@ -407,13 +407,13 @@ if __name__ == '__main__':
     pids = consts.PIDS
     generate_bw = False
 
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
     de_params = consts.DE_PARAMS
 
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     # should we add 'chr' prefix to bigwig output?
     chr_prefix = True

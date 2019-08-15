@@ -13,7 +13,7 @@ import seaborn as sns
 from sklearn.neighbors import KernelDensity
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from settings import INTERMEDIATE_DIR, LOCAL_DATA_DIR
 logger = log.get_console_logger()
 
 
@@ -1107,7 +1107,7 @@ if __name__ == "__main__":
     write_bed_files = False
 
     outdir = output.unique_output_dir()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     me_obj, anno = tsgd.load_methylation(pids, norm_method=norm_method_s1, patient_samples=consts.S1_METHYL_SAMPLES)
     me_data = me_obj.data

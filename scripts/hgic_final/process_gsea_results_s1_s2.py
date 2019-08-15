@@ -58,6 +58,7 @@ if __name__ == "__main__":
         "current",
         "core_pipeline",
         "rnaseq",
+        "s0_individual_patients_direct_comparison",
         "gsea",
         "results",
         "raw"

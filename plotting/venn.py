@@ -102,6 +102,7 @@ def upset_set_size_plot(
     bar_width=0.9,
     point_ms=10,
     default_colour='#4C72B0',
+    venn_set=None,
     **kwargs
 ):
     """
@@ -136,7 +137,12 @@ def upset_set_size_plot(
         raise AttributeError("Number of supplied data sets (%d) doesn't match the length of set_labels (%d)." % (
             len(data), n_set
         ))
-    venn_sets, venn_ct = setops.venn_from_arrays(*data, **kwargs)
+
+    if venn_set is None:
+        venn_set, venn_ct = setops.venn_from_arrays(*data, **kwargs)
+    else:
+        venn_ct = dict([(k, len(v)) for k, v in venn_set.items()])
+
 
     if set_colours is None:
         str_fmt = "{0:0%db}" % n_set
@@ -404,5 +410,6 @@ def upset_plot_with_groups(
         set_labels,
         set_colours=set_colours,
         default_colour=default_colour,
+        venn_set=venn_set,
         **kwargs
     )

@@ -15,7 +15,7 @@ import pandas as pd
 from matplotlib import pyplot as plt, markers
 
 from scripts.hgic_final import consts
-from settings import HGIC_LOCAL_DIR
+from settings import HGIC_LOCAL_DIR, INTERMEDIATE_DIR
 from utils import output, setops, reference_genomes
 
 
@@ -159,7 +159,7 @@ def scatter_plot(
 pids = consts.PIDS
 
 
-DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
 outdir = output.unique_output_dir()
 
 external_ref_labels = ['GIBCO', 'H9']

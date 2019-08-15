@@ -10,6 +10,7 @@ from utils.string_manipulation import make_tuple
 from matplotlib import pyplot as plt
 import seaborn as sns
 from copy import copy
+from settings import INTERMEDIATE_DIR
 
 logger = log.get_console_logger()
 
@@ -591,7 +592,7 @@ if __name__ == '__main__':
     # This will replace the statistics reported by WLS (to some extent)
 
     # to make this work. we need the FULL list of regions, whether DM or not
-    dmr_full_indir = os.path.join(output.OUTPUT_DIR, "assess_reprog_alt1_apocrita", "results")
+    dmr_full_indir = os.path.join(INTERMEDIATE_DIR, "assess_reprog_alt1", "results")
     dmr_in_filenames_h7 = dict([
         (pid, "iPSC%s-ESCH7 hESC.csv" % pid) for pid in de_logfc
     ])

@@ -16,7 +16,7 @@ from scripts.dmr_direction_bias_story import same_process_applied_to_de as same_
 from scripts.hgic_final import analyse_dmrs_s1_direction_distribution as addd
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, two_strategies_combine_de_dmr as tscd, consts
 from scripts.methylation import dmr_values_to_bigwig
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, INTERMEDIATE_DIR
 from stats import basic
 from utils import output, setops, genomics, log, dictionary, reference_genomes
 
@@ -266,13 +266,13 @@ if __name__ == '__main__':
     de_res_fn = os.path.join(HGIC_LOCAL_DIR, 'current/core_pipeline/rnaseq', 'full_de_syngeneic_only.xlsx')
     pids = consts.PIDS
 
-    DE_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'de')
+    DE_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'de')
     de_params = consts.DE_PARAMS
 
     norm_method_s1 = 'swan'
     dmr_params = consts.DMR_PARAMS
     dmr_params['n_jobs'] = mp.cpu_count()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     # should we add 'chr' prefix to bigwig output?
     chr_prefix = True

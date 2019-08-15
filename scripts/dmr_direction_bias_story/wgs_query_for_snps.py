@@ -303,8 +303,11 @@ if __name__ == '__main__':
     export_hypo = pd.DataFrame(export_hypo).sort_values(by=['chrom', 'start'])
     export_hyper = pd.DataFrame(export_hyper).sort_values(by=['chrom', 'start'])
 
-    export_hypo.to_excel(os.path.join(outdir, "hypo_partial_group_specific_variants.xlsx"), index=False)
-    export_hyper.to_excel(os.path.join(outdir, "hyper_partial_group_specific_variants.xlsx"), index=False)
+    export_hypo.to_excel(os.path.join(outdir, "meth_assoc_hypo_partial_group_specific_variants.xlsx"), index=False)
+    export_hyper.to_excel(os.path.join(outdir, "meth_assoc_hyper_partial_group_specific_variants.xlsx"), index=False)
+
+    # export methylation gene list
+    pd.Series(METH_GENES).to_csv(os.path.join(outdir, "meth_assoc_gene_list.csv"))
 
     ##### V3: Iterate over ALL VCFs in one and look for fully group-specific variants
 

@@ -18,7 +18,7 @@ from sklearn.neighbors import KernelDensity
 import seaborn as sns
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 
-from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, GIT_LFS_DATA_DIR
+from settings import HGIC_LOCAL_DIR, LOCAL_DATA_DIR, INTERMEDIATE_DIR
 logger = log.get_console_logger()
 
 """
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     dmr_params['n_jobs'] = mp.cpu_count()
 
     outdir = output.unique_output_dir()
-    DMR_LOAD_DIR = os.path.join(output.OUTPUT_DIR, 'dmr')
+    DMR_LOAD_DIR = os.path.join(INTERMEDIATE_DIR, 'dmr')
 
     # load our data
     our_obj = loader.load_by_patient(pids, norm_method=norm_method, samples=consts.S1_METHYL_SAMPLES)
