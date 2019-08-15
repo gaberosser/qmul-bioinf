@@ -410,12 +410,50 @@ if __name__ == '__main__':
             for_export[k].to_csv(os.path.join(outdir, "group_specific_variants_minus_one_%s.csv" % k))
 
     ##### V4: Iterate over all VCFs separately, downsampling to reduce memory footprint
-    # Only keep GIC-specific variants (incl. hom/het)
+    store_every = 10
+    base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/')
+
+    subgroup_colours = {'Hyper full': '#db170d', 'Hyper partial': '#f58782', 'Hypo full': '#18b500',
+                        'Hypo partial': '#a9ff9c'}
+
+    # a) Only keep GIC variants, regardless of the matching iNSC
+    all_gic_variants = {}
+    for pid in pids:
+        all_gic_variants[pid] = []
+        logger.info("Patient %s", pid)
+        this_meta = meta.loc[(meta.patient_id == pid) & (meta.type == 'GIC')]
+        the_fn = os.path.join(base_indir, this_meta.index[0], "%s.vcf.gz" % this_meta['sample'].iloc[0])
+        rd = vcf.Reader(filename=the_fn)
+        for i, rec in enumerate(rd):
+            if i % 50000 == 0:
+                logger.info(
+                    "Processed %d variants.",
+                    i,
+                )
+            if i % store_every == 0:
+                all_gic_variants[pid].append(rec)
+
+    id_all_gic = dict([
+        (
+            pid,
+            [
+                (rec.CHROM, rec.start, '_'.join([t.sequence for t in rec.ALT])) for rec in all_gic_variants[pid] if rec.CHROM in contigs
+            ]
+        ) for pid in pids
+    ])
+    upset = venn.upset_plot_with_groups(
+        [id_all_gic[pid] for pid in pids],
+        pids,
+        group_ind,
+        subgroup_colours,
+        n_plot=30
+    )
+    upset['figure'].savefig(os.path.join(outdir, "upset_variants_all_gic_1_in_%d.png" % store_every), dpi=200)
+
+
+    # b) Only keep GIC-specific variants (incl. hom/het)
     # Use these to generate an upset plot
     store_every = 5
-    base_indir = os.path.join(DATA_DIR, 'wgs', 'x17067/2017-12-12/')
-    flist = glob(os.path.join(base_indir, "X17*/*.vcf.gz"))
-
     variants_hom_het = {}
     variants_gic_only = {}
 
@@ -465,8 +503,7 @@ if __name__ == '__main__':
             ]
         ) for pid in pids
     ])
-    subgroup_colours = {'Hyper full': '#db170d', 'Hyper partial': '#f58782', 'Hypo full': '#18b500',
-                        'Hypo partial': '#a9ff9c'}
+
     upset = venn.upset_plot_with_groups(
         [id_gic_only[pid] for pid in pids],
         pids,
