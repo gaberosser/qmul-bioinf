@@ -227,8 +227,7 @@ def save_to_disk(dat, filestem, compress=True):
 
 
 if __name__ == "__main__":
-    script_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-    outdir = unique_output_dir(script_name)
+    outdir = unique_output_dir()
 
     # RNA-Seq primary tumour
     indir = os.path.join(DATA_DIR, 'rnaseq', 'tcga_gbm', 'primary_tumour', 'raw')

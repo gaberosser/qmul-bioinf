@@ -1,0 +1,80 @@
+import(limma)
+import(DNAcopy)
+import(preprocessCore)
+import(marray)
+import(sva)
+import(IlluminaHumanMethylation450kmanifest)
+import(minfi)
+import(ChAMPdata)
+import(Illumina450ProbeVariants.db)
+import(wateRmelon)
+import(plyr)
+import(GenomicRanges)
+import(isva)
+import(qvalue)
+import(bumphunter)
+import(doParallel)
+import(quadprog)
+import(shiny)
+import(shinythemes)
+import(plotly)
+import(RColorBrewer)
+import(DMRcate)
+import(dendextend)
+import(sva)
+import(IlluminaHumanMethylationEPICmanifest)
+import(FEM)
+import(impute)
+import(goseq)
+import(combinat)
+import(illuminaio)
+import(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+import(rmarkdown)
+import(missMethyl)
+import(Hmisc)
+import(globaltest)
+import(kpmt,"kpmt")
+
+importFrom("utils", "read.csv")
+importFrom(RPMM, blc)
+
+importFrom("grDevices", "dev.off", "jpeg", "pdf", "rainbow")
+importFrom("graphics", "axis", "legend", "mtext", "par", "plot",
+            "segments", "title")
+importFrom("stats", "C", "cor", "density", "dist", "dnorm", "hclust",
+            "kruskal.test", "lm", "model.matrix", "na.omit", "p.adjust",
+            "pbeta", "pnorm", "pt", "qbeta", "qnorm", "qqline",
+            "qqnorm", "qqplot", "quantile", "rbeta", "rgamma",
+                                                          "rmultinom", "sd", "var")
+importFrom("utils", "capture.output", "data", "head", "read.delim",
+            "read.table", "write.table")
+
+importFrom("grDevices", "colorRampPalette")
+importFrom("stats", "aggregate", "as.dendrogram", "as.formula","bartlett.test",
+           "cmdscale", "fisher.test", "fitted","loess", "order.dendrogram", "t.test")
+
+
+export(
+	champ.process, 
+    champ.load,
+    champ.import,
+    champ.filter,
+	champ.impute, 
+    champ.QC,
+    champ.norm,
+    champ.SVD,
+    champ.runCombat,
+	champ.DMP, 
+	champ.DMR, 
+	champ.Block, 
+	champ.GSEA, 
+    champ.ebGSEA,
+	champ.EpiMod,
+    champ.CNA,
+    champ.refbase,
+    DMP.GUI,
+    DMR.GUI,
+    QC.GUI,
+    CpG.GUI,
+    Block.GUI
+	) 

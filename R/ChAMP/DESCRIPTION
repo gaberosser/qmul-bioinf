@@ -1,0 +1,42 @@
+Package: ChAMP
+Type: Package
+Title: Chip Analysis Methylation Pipeline for Illumina
+        HumanMethylation450 and EPIC
+Version: 2.12.4
+Date: 2019-1-27
+Description: The package includes quality control metrics, a selection of normalization methods and novel methods to identify differentially methylated regions and to highlight copy number alterations.
+Authors@R: c(person("Tian","Yuan", role = c("cre", "aut"),
+                    email = "champ450k@gmail.com"),
+		person("Tiffany","Morris",role = "ctb"),
+             person("Lee", "Stirling", role = "ctb"),
+             person("Andrew", "Feber", role = "ctb"),
+	     person("Andrew", "Teschendorff", role = "ctb"),
+	     person("Ankur", "Chakravarthy", role = "ctb"))
+License: GPL-3
+VignetteBuilder: knitr
+Depends: R (>= 3.3), minfi, ChAMPdata (>= 2.6.0), FEM (>= 3.1),DMRcate,
+        Illumina450ProbeVariants.db,IlluminaHumanMethylationEPICmanifest
+Imports:
+        prettydoc,Hmisc,globaltest,sva,illuminaio,rmarkdown,IlluminaHumanMethylation450kmanifest,IlluminaHumanMethylationEPICanno.ilm10b2.hg19,
+        limma,RPMM, DNAcopy, preprocessCore,impute, marray, wateRmelon,
+        plyr,goseq,missMethyl,kpmt,
+        GenomicRanges,qvalue,isva,doParallel,bumphunter,quadprog,shiny,shinythemes,plotly
+        (>= 4.5.6),RColorBrewer,dendextend, matrixStats,combinat
+biocViews: Microarray, MethylationArray, Normalization, TwoChannel,
+        CopyNumber, DNAMethylation
+Suggests: knitr,rmarkdown
+Author: Yuan Tian [cre,aut],
+  Tiffany Morris [ctb],
+  Lee Stirling [ctb],
+  Andrew Feber [ctb],
+  Andrew Teschendorff [ctb],
+  Ankur Chakravarthy [ctb]
+Maintainer: Yuan Tian  <champ450k@gmail.com>
+NeedsCompilation: no
+LazyData: true
+Packaged: 2019-02-07 00:40:37 UTC; biocbuild
+git_url: https://git.bioconductor.org/packages/ChAMP
+git_branch: RELEASE_3_8
+git_last_commit: 45372e6
+git_last_commit_date: 2019-02-05
+Date/Publication: 2019-02-06
