@@ -217,7 +217,7 @@ def multipage_pdf_mex_plots(
     plot_alpha=None,
     direction_cmap=None
 ):
-    gene_list = sorted([u[1] for u in de_dm_list])
+    gene_list = sorted(set([u[1] for u in de_dm_list]))
 
     plt_obj = plt_genomics.MexLocusPlotter()
     plt_obj.set_plot_parameters(
@@ -252,7 +252,7 @@ def multipage_pdf_mex_plots(
                     [u[0] for u in de_dm_list if u[1] == g]
                 )
                 for cid in the_clusters:
-                    pc = dmr_res_s1.clusters[cid]
+                    pc = dmr_res.clusters[cid]
                     the_obj.update_xlims(pc.coord_range[0] - 200, pc.coord_range[1] + 200)
                     the_obj.set_title("%s (DMR %d)" % (g, cid))
                     pdf.savefig(the_obj.fig)
