@@ -19,12 +19,19 @@ from settings import INTERMEDIATE_DIR
 logger = log.get_console_logger()
 
 
-def load_methylation(pids, ref_names=None, norm_method='swan', ref_name_filter=None, patient_samples=None):
+def load_methylation(
+    pids,
+    ref_names=None,
+    norm_method='swan',
+    ref_name_filter=None,
+    patient_samples=None,
+    type='cell_culture'
+):
     """
     Load and prepare the Illumina methylation data
     """
     # patient data
-    obj = methylation_loader.load_by_patient(pids, norm_method=norm_method, samples=patient_samples)
+    obj = methylation_loader.load_by_patient(pids, norm_method=norm_method, samples=patient_samples, type=type)
     anno = methylation_loader.load_illumina_methylationepic_annotation()
 
     # reference data
