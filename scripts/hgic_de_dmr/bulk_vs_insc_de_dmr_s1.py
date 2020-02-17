@@ -7,7 +7,7 @@ from rnaseq import loader as rnaseq_loader, general
 from methylation import loader as meth_loader, process, dmr
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd
 from scripts.hgic_final import two_strategies_combine_de_dmr as tscdd
-import consts
+from scripts.hgic_final import consts
 from hgic_consts import NH_ID_TO_PATIENT_ID_MAP
 from utils import setops, output, log
 from settings import INTERMEDIATE_DIR
@@ -30,6 +30,8 @@ dmr_params['n_jobs'] = mp.cpu_count()
 norm_method_s1 = 'swan'
 min_cpm = 1.
 
+min_counts = 10000000
+
 pids = consts.PIDS
 
 # load RNA-Seq data
@@ -39,6 +41,27 @@ rna_ff_obj = rnaseq_loader.load_by_patient(
     source='star',
     include_control=False
 )
+
+# filter FFPE to include only the best samples (NB not actually good!)
+rna_ff_obj.filter_samples(rna_ff_obj.meta.index.isin(consts.FFPE_RNASEQ_SAMPLES))
+rna_ff_obj.batch_id = rna_ff_obj.meta.batch
+
+# add FFPE PID
+nh_id = rna_ff_obj.meta.index.str.replace(r'(_?)(DEF|SP).*', '')
+p_id = [NH_ID_TO_PATIENT_ID_MAP[t.replace('_', '-')] for t in nh_id]
+rna_ff_obj.meta.insert(0, 'nh_id', nh_id)
+rna_ff_obj.meta.insert(0, 'patient_id', p_id)
+rna_ff_obj.batch_id = rna_ff_obj.meta.batch
+
+# reject samples with low counts
+if min_counts is not None:
+    ix = rna_ff_obj.data.sum() > min_counts
+    logger.info("Removing %d samples with fewer than %d counts.", (~ix).sum(), min_counts)
+    rna_ff_obj.filter_samples(ix)
+    remaining_pids = rna_ff_obj.meta.patient_id
+    logger.info("Remaining PIDs: %s", ', '.join([str(t) for t in remaining_pids]))
+    pids = remaining_pids.values.tolist()
+
 rna_cc_obj = rnaseq_loader.load_by_patient(
     pids,
     type='cell_culture',
@@ -46,8 +69,7 @@ rna_cc_obj = rnaseq_loader.load_by_patient(
     include_control=False
 )
 
-# filter FFPE to include only the best samples (NB not actually good!)
-rna_ff_obj.filter_samples(rna_ff_obj.meta.index.isin(consts.FFPE_RNASEQ_SAMPLES))
+
 # filter CC to include only iNSC
 rna_cc_obj.filter_samples(rna_cc_obj.meta.index.isin(consts.S1_RNASEQ_SAMPLES_INSC))
 # FIXME: this is a bug in the loader?
@@ -56,12 +78,6 @@ rna_cc_obj.batch_id = rna_cc_obj.meta.batch
 
 # store the sample list now for hash dict
 rna_sample_names = rna_ff_obj.meta.index.tolist() + rna_cc_obj.meta.index.tolist()
-
-# add FFPE PID
-nh_id = rna_ff_obj.meta.index.str.replace(r'(_?)(DEF|SP).*', '')
-p_id = [NH_ID_TO_PATIENT_ID_MAP[t.replace('_', '-')] for t in nh_id]
-rna_ff_obj.meta.insert(0, 'nh_id', nh_id)
-rna_ff_obj.meta.insert(0, 'patient_id', p_id)
 
 # combine
 rna_obj = rnaseq_loader.loader.MultipleBatchLoader([rna_cc_obj, rna_ff_obj])
