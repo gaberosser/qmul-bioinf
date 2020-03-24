@@ -74,7 +74,7 @@ if __name__ == '__main__':
         anno = loader.load_illumina_methylationepic_annotation(split_genes=True)
 
     # We load pre-computed results if a file with the correct filename is found
-    # Otherwise this is written after computing the results
+    # Otherwise raise an error: this should be computed elsewhere
 
     # use a hash on the PIDs and parameters to ensure we're looking for the right results
     dmr_hash_dict = dict(dmr_params)
