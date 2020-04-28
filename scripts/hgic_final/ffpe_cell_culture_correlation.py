@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     cols = []
     for t in rna_cc_dat.columns:
-        p, q = t.split('_')
+        p, q = t.replace('GBM', 'GIC').split('_')
         q = q.replace('n', ' & P')
         cols.append("%s (%s)" % (p, q))
     rna_cc_dat.columns = cols
@@ -101,9 +101,9 @@ if __name__ == "__main__":
         rna_cc_dat = transformations.quantile_normalisation(rna_cc_dat)
 
     # correlation plot
-    pdist = pd.DataFrame(index=rna_ff_dat.columns, columns=rna_cc_dat.columns, dtype=float)
-    for ff in rna_ff_dat.columns:
-        for cc in rna_cc_dat.columns:
+    pdist = pd.DataFrame(index=rna_ff_dat.columns.sort_values(), columns=rna_cc_dat.columns.sort_values(), dtype=float)
+    for ff in pdist.index:
+        for cc in pdist.columns:
             if dist_metric == 'pearson':
                 pdist.loc[ff, cc] = stats.pearsonr(rna_ff_dat[ff], rna_cc_dat[cc])[0]
             elif dist_metric == 'spearman':
@@ -151,3 +151,4 @@ if __name__ == "__main__":
 
     ax.figure.savefig(os.path.join(outdir, "ffpe_cc_correlation_heatmap.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "ffpe_cc_correlation_heatmap.tiff"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir, "ffpe_cc_correlation_heatmap.pdf"))

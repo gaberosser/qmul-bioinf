@@ -10,7 +10,7 @@ import json
 import csv
 
 from scipy import stats
-from utils import output, setops, excel, log
+from utils import output, setops, excel, log, druggable_genome
 from methylation import dmr, process, loader as methylation_loader, annotation_gene_to_ensembl
 from rnaseq import loader as rnaseq_loader, differential_expression, general, filter
 from integrator import rnaseq_methylationarray
@@ -185,23 +185,6 @@ def shortlist_de_dm_genes(vs_de, vs_dm, sets, clusters, concordant_only=False):
                 this_clusters.extend([(c, g) for g in this_genes.intersection(this)])
         res[s] = this_clusters
     return res
-
-
-def dgidb_lookup_drug_gene_interactions(genes):
-    url = 'http://dgidb.org/api/v2/interactions.json'
-    resp = requests.get(url, {'genes': ','.join(genes)})
-    dat = json.loads(resp.content)
-    interactions = dict(
-        [(t['searchTerm'], t['interactions']) for t in dat['matchedTerms']]
-    )
-    ambiguous = collections.defaultdict(list)
-    for t in dat['ambiguousTerms']:
-        ambiguous[t['searchTerm']].append(t)
-    return {
-        'interactions': interactions,
-        'unmatched': dat['unmatchedTerms'][0].split(', ') if len(dat['unmatchedTerms']) > 0 else [],
-        'ambiguous': ambiguous,
-    }
 
 
 def multipage_pdf_mex_plots(
@@ -697,7 +680,7 @@ if __name__ == "__main__":
     # It would be nicer to include a link directly in the PDF, but this is difficult.
 
     # shortlist
-    filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
+    filt_res = druggable_genome.dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_list])
 
     ps_de_dm_druggable_list = [t for t in ps_de_dm_list if len(filt_res['interactions'].get(t[1], []))]
 
@@ -743,7 +726,7 @@ if __name__ == "__main__":
         direction_cmap=cmap
     )
 
-    filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_long_list])
+    filt_res = druggable_genome.dgidb_lookup_drug_gene_interactions([t[1] for t in ps_de_dm_long_list])
     ps_de_dm_druggable_longlist = [t for t in ps_de_dm_long_list if len(filt_res['interactions'].get(t[1], []))]
 
     multipage_pdf_mex_plots(
@@ -785,7 +768,7 @@ if __name__ == "__main__":
 
         # dgiDB filter
         if len(this_list) > 0:
-            filt_res = dgidb_lookup_drug_gene_interactions([t[1] for t in this_list])
+            filt_res = druggable_genome.dgidb_lookup_drug_gene_interactions([t[1] for t in this_list])
             this_list_druggable = [t for t in this_list if len(filt_res['interactions'].get(t[1], []))]
 
             if len(this_list_druggable):
