@@ -3,14 +3,15 @@ import os
 import pickle
 import collections
 import numpy as np
+from scipy import stats
 
 from scripts.hgic_final import two_strategies_combine_de_dmr as tscdd, consts
 from utils import setops, output, log, druggable_genome, excel, reference_genomes
 from settings import INTERMEDIATE_DIR
-from rnaseq import differential_expression, loader as rnaseq_loader
+from rnaseq import loader as rnaseq_loader
 from methylation import dmr, annotation_gene_to_ensembl
 from integrator import rnaseq_methylationarray
-from plotting import common
+from plotting import common, venn
 logger = log.get_console_logger()
 
 
@@ -41,6 +42,16 @@ if __name__ == '__main__':
     subgroup_ind = dict([
         (k, pd.Index(pids).isin(v)) for k, v in subgroups.items()
     ])
+    subgroup_set_colours = {
+        'RTK I full': '#0d680f',
+        'RTK II full': '#820505',
+        'MES full': '#7900ad',
+        'RTK I partial': '#6ecc70',
+        'RTK II partial': '#d67373',
+        'MES partial': '#cc88ea',
+        'Expanded core': '#4C72B0',
+        'Specific': '#f4e842',
+    }
 
     # plotting parameters
     cmap = 'RdYlGn_r'
@@ -470,6 +481,156 @@ if __name__ == '__main__':
 
     writer.save()
 
+    # compound-centric UpSet plot
+    # for each compound, determine which patients it is predicted to affect based on combined DE/DMR
+    joint_genes_all = {pid: joint_de_dmr_s1[pid].gene.unique() for pid in pids}
+    joint_genes_conc = {pid: joint_de_dmr_s1[pid][
+        np.sign(joint_de_dmr_s1[pid][['de_logFC', 'dmr_median_delta']]).sum(axis=1) == 0
+    ].gene.unique() for pid in pids}
+
+    cmpd_members_all = {
+        pid: dgi_db_df[dgi_db_df.gene_symbol.isin(joint_genes_all[pid])].chembl_id.unique() for pid in pids
+    }
+    cmpd_members_conc = {
+        pid: dgi_db_df[dgi_db_df.gene_symbol.isin(joint_genes_conc[pid])].chembl_id.unique() for pid in pids
+    }
 
 
+    upset_all = venn.upset_plot_with_groups(
+        [cmpd_members_all[pid] for pid in pids],
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
+        min_size=5,
+        n_plot=30,
+        default_colour='gray'
+    )
+    upset_all['axes']['main'].set_ylabel('Number of compounds predicted by DE/DMR')
+    upset_all['axes']['set_size'].set_xlabel('Number of compounds in single comparison')
+    upset_all['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_all.png"), dpi=200)
+    upset_all['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_all.pdf"))
+    upset_all['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_all.tiff"), dpi=200)
 
+    upset_conc = venn.upset_plot_with_groups(
+        [cmpd_members_conc[pid] for pid in pids],
+        pids,
+        subgroup_ind,
+        subgroup_set_colours,
+        min_size=5,
+        n_plot=30,
+        default_colour='gray'
+    )
+    upset_conc['axes']['main'].set_ylabel('Number of compounds predicted by DE/DMR')
+    upset_conc['axes']['set_size'].set_xlabel('Number of compounds in single comparison')
+    upset_conc['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_concordant.png"), dpi=200)
+    upset_conc['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_concordant.pdf"))
+    upset_conc['figure'].savefig(os.path.join(outdir, "upset_compounds_de_dmr_concordant.tiff"), dpi=200)
+
+    # generate some headline numbers, useful to include in publications
+
+    # filter by concordance and recompute venn sets
+    joint_de_dmr_concordant_s1 = {}
+    for pid in pids:
+        a = joint_de_dmr_s1[pid].de_direction
+        b = joint_de_dmr_s1[pid].dmr_direction
+        idx = ((a == 'U') & (b == 'Hypo')) | ((a == 'D') & (b == 'Hyper'))
+        joint_de_dmr_concordant_s1[pid] = joint_de_dmr_s1[pid].loc[idx]
+        print "Patient %s has %d combined DE / DMR results, of which %d are concordant (%.2f %%)" % (
+            pid, idx.size, idx.sum(), 100. * idx.sum() / float(idx.size)
+        )
+    de_dmr_by_member_concordant = [joint_de_dmr_concordant_s1[pid].index for pid in pids]
+
+    n_tot = single_de_dm_df[['ensembl_gene_id', 'dmr_cluster']].apply(tuple, axis=1).unique().size
+    print("Combining RNA-Seq and methylation array data yields %d unique (gene, methylation cluster) pairs." % n_tot)
+
+    n_de_dmr_in_gte_1 = len(setops.reduce_union(
+        *[t.index for t in joint_de_dmr_s1.values()]
+    ))
+    n_de_dmr_conc_in_gte_1 = len(setops.reduce_union(
+        *[t.index for t in joint_de_dmr_concordant_s1.values()]
+    ))
+    print("Of these, %d pairs are DE/DMR in at least one patient." % n_de_dmr_in_gte_1)
+    print(
+        "And %d (%.1f%%) of those are concordant." % (
+        n_de_dmr_conc_in_gte_1,
+        n_de_dmr_conc_in_gte_1/float(n_de_dmr_in_gte_1) * 100.
+    )
+    )
+
+    all_de_dm_conc_genes = setops.reduce_union(*[t.gene for t in joint_de_dmr_concordant_s1.values()])
+    n_de_dm_conc_genes = len(all_de_dm_conc_genes)
+    print("The %d concordant DE/DMR pairs correspond to %d unique genes." % (
+        n_de_dmr_conc_in_gte_1, n_de_dm_conc_genes
+    ))
+
+    venn_set, venn_ct = setops.venn_from_arrays(*de_dmr_by_member_concordant)
+    ps_de_dmr_conc = sorted(
+        {pid: venn_ct[v] for pid, v in setops.specific_sets(pids).items()}.items(),
+        key=lambda x: x[1]
+    )
+    n_pat_spec_conc = sum(dict(ps_de_dmr_conc).values())
+    pat_spec_conc_genes = setops.reduce_union(*[[t[1] for t in venn_set[v]] for pid, v in setops.specific_sets(pids).items()])
+    n_pat_spec_conc_genes = len(pat_spec_conc_genes)
+
+    print("Of the concordant DE/DMRs, %d (%.1f%%) are specific to just one patient (longlisted). "
+          "This corresponds to %d unique genes. "
+          "The numbers for patients range from %d (%s) to %d (%s)." % (
+        n_pat_spec_conc,
+        n_pat_spec_conc/float(n_de_dmr_conc_in_gte_1) * 100.,
+        n_pat_spec_conc_genes,
+        ps_de_dmr_conc[0][1],
+        ps_de_dmr_conc[0][0],
+        ps_de_dmr_conc[-1][1],
+        ps_de_dmr_conc[-1][0],
+    ))
+    n_common_conc = venn_ct[''.join(['1'] * len(pids))]
+    print("Of the concordant DE/DMRs, %d (%.1f%%) are common to ALL patients." % (
+        n_common_conc,
+        n_common_conc / float(n_de_dmr_conc_in_gte_1) * 100.
+    ))
+
+    # patient-specific, concordant, druggable (druggable longlist)
+    n_ps_de_dm_conc_gene_drug = len(pat_spec_conc_genes.intersection(dgi_db_df.gene_symbol.unique()))
+    print("Of the %d patient specific DE/DM genes, %d (%.1f%%) are druggable (druggable longlist)." % (
+        n_pat_spec_conc_genes,
+        n_ps_de_dm_conc_gene_drug,
+        n_ps_de_dm_conc_gene_drug / float(n_pat_spec_conc_genes) * 100.
+    ))
+
+    # same for shortlist
+    n_ps_de_dm_conc_gene_drug_shortlist = len(ps_de_dm_short_list.intersection(dgi_db_df.gene_symbol.unique()))
+
+
+    # DGIdb vs these concordant DE/DMRs
+    dgi_for_de_dm_conc = dgi_db_df[dgi_db_df.gene_symbol.isin(all_de_dm_conc_genes)]
+    n_dgi_conc_compounds = dgi_for_de_dm_conc.chembl_id.unique().size
+    n_dgi_conc_genes = dgi_for_de_dm_conc.gene_symbol.unique().size
+    print("Querying DGIdb against the %d DE/DMR concordant genes "
+          "returns %d compounds interacting with %d (%.1f%%) of those genes" % (
+        n_de_dm_conc_genes,
+        n_dgi_conc_compounds,
+        n_dgi_conc_genes,
+        n_dgi_conc_genes / float(n_de_dm_conc_genes) * 100.
+    ))
+
+    vs, vc = setops.venn_from_arrays(*[cmpd_members_conc[pid] for pid in pids])
+    dgi_ps_conc = sorted({pid: vc[v] for pid, v in setops.specific_sets(pids).items()}.items(), key=lambda x: x[1])
+    n_dgi_ps_conc = sum(t[1] for t in dgi_ps_conc)
+    print("Of the %d distinct compounds, %d (%.1f%%) are only predicted in one patient."
+          "The numbers of patient-specific compounds range from %d (%s) to %s (%s)" % (
+        n_dgi_conc_compounds,
+        n_dgi_ps_conc,
+        n_dgi_ps_conc / float(n_dgi_conc_compounds) * 100.,
+        dgi_ps_conc[0][1],
+        dgi_ps_conc[0][0],
+        dgi_ps_conc[-1][1],
+        dgi_ps_conc[-1][0],
+    ))
+
+    # fishers test: are we enriching for druggable genes?
+    n_tot_gene = single_de_dm_df.gene_symbol.unique().size
+    n_tot_druggable_gene = dgi_db_df.gene_symbol.unique().size
+    ft_de_dm_conc = stats.fisher_exact([
+        [n_dgi_conc_genes, n_de_dm_conc_genes - n_dgi_conc_genes],
+        [n_tot_druggable_gene, n_tot_gene - n_tot_druggable_gene]
+    ])
