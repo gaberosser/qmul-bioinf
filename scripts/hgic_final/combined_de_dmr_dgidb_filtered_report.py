@@ -598,7 +598,14 @@ if __name__ == '__main__':
     ))
 
     # same for shortlist
-    n_ps_de_dm_conc_gene_drug_shortlist = len(ps_de_dm_short_list.intersection(dgi_db_df.gene_symbol.unique()))
+    gene_shortlist = set(t[1] for t in ps_de_dm_short_list)
+    n_shortlist_genes = len(gene_shortlist)
+    n_ps_de_dm_conc_gene_drug_shortlist = len(gene_shortlist.intersection(dgi_db_df.gene_symbol.unique()))
+    print("Of the %d shortlisted DE/DM genes, %d (%.1f%%) are druggable (druggable shortlist)." % (
+        n_shortlist_genes,
+        n_ps_de_dm_conc_gene_drug_shortlist,
+        n_ps_de_dm_conc_gene_drug_shortlist / float(n_shortlist_genes) * 100.
+    ))
 
 
     # DGIdb vs these concordant DE/DMRs
