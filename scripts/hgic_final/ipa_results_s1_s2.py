@@ -425,6 +425,7 @@ def load_and_prepare_data(indir, file_patt, comparisons, pids=consts.PIDS, alpha
 
 
 def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
+    figsize = (5.5, 4.2)
     out = {}
     n_ref = len(ref_names)
     # Test relative enrichment of pathway detection by syngeneic and references
@@ -438,8 +439,11 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
         out['combined_ref_number'] = compute_enrichment_combined_references(nn)
 
         ax = plot_delta_histogram(nn.syn, nn.ref, nbin=10)
+        ax.figure.set_size_inches(figsize)
         if outdir is not None:
             ax.figure.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.png"), dpi=200)
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.tiff"), dpi=200)
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_number_comparisons_references_together.pdf"))
         out['combined_ref_number_hist_ax'] = ax
 
         # 1b) Combined references, sum of plogp
@@ -451,8 +455,11 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
         out['combined_ref_sum_logp'] = compute_enrichment_combined_references(pp)
 
         ax = plot_delta_histogram(pp.syn, pp.ref, nbin=20)
+        ax.figure.set_size_inches(figsize)
         if outdir is not None:
             ax.figure.savefig(os.path.join(outdir, "histogram_delta_sum_plogp_comparisons_references_together.png"), dpi=200)
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_sum_plogp_comparisons_references_together.tiff"), dpi=200)
+            ax.figure.savefig(os.path.join(outdir, "histogram_delta_sum_plogp_comparisons_references_together.pdf"))
         out['combined_ref_sum_logp_hist_ax'] = ax
 
     # 2a) Consider references separately, number of detections
@@ -466,7 +473,7 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     print "SEPARATE references. Number showing enrichment in a given pathway"
     out['separate_ref_number'] = compute_enrichment_separate_references(nn, ['syngeneic'] + ref_names)
 
-    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True)
+    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True, figsize=figsize)
     if n_ref == 1:
         axs = [axs]
     i = 0
@@ -478,11 +485,13 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     fig.tight_layout()
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.png"), dpi=200)
+        fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.tiff"), dpi=200)
+        fig.savefig(os.path.join(outdir, "histogram_delta_number_comparisons.pdf"))
     out['separate_ref_number_hist_axs'] = axs
 
     # plot ECDF (ish)
     p_order = all_in.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
+    fig = plt.figure(figsize=figsize)
     ax = fig.add_subplot(111)
     for c in comparisons:
         ax.plot(nn[c].loc[p_order].values.cumsum(), label=c.title())
@@ -492,6 +501,8 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     fig.tight_layout()
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.png"), dpi=200)
+        fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.tiff"), dpi=200)
+        fig.savefig(os.path.join(outdir, "number_comparisons_ranked_cumul_sum.pdf"))
     out['separate_ref_number_ecdf_ax'] = ax
 
     # 2b) Consider references separately, sum of -logp
@@ -503,7 +514,7 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     print "SEPARATE references. Sum of -logp for each given pathway"
     out['separate_ref_sum_logp'] = compute_enrichment_separate_references(pp, ['syngeneic'] + ref_names)
 
-    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True)
+    fig, axs = plt.subplots(ncols=n_ref, sharex=True, sharey=True, figsize=figsize)
     if n_ref == 1:
         axs = [axs]
     i = 0
@@ -516,11 +527,13 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     fig.tight_layout()
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.png"), dpi=200)
+        fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.tiff"), dpi=200)
+        fig.savefig(os.path.join(outdir, "histogram_delta_sum_pvalues.pdf"))
     out['separate_ref_sum_logp_hist_axs'] = axs
 
     # plot ECDF (ish)
     p_order = p.sum(axis=1).sort_values(ascending=False).index
-    fig = plt.figure()
+    fig = plt.figure(figsize=figsize)
     ax = fig.add_subplot(111)
     for c in comparisons:
         ax.plot(pp[c].loc[p_order].values.cumsum(), label=c.title())
@@ -530,6 +543,8 @@ def test_relative_enrichment(n_set, p, comparisons, ref_names, outdir=None):
     fig.tight_layout()
     if outdir is not None:
         fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.png"), dpi=200)
+        fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.tiff"), dpi=200)
+        fig.savefig(os.path.join(outdir, "sum_pvalues_comparisons_ranked_cumul_sum.pdf"))
     out['separate_ref_sum_logp_ecdf_ax'] = ax
 
     return out

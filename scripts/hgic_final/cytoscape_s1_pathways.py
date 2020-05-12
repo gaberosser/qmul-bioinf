@@ -234,10 +234,6 @@ if __name__ == '__main__':
     alpha = 0.01
     plogalpha = -np.log10(alpha)
 
-    # more lenient pval threshold for considering pathways as relevant
-    alpha_relevant = 0.05
-    plogalpha_relevant = -np.log10(alpha_relevant)
-
     min_edge_count = 8
 
     de_pathways_manually_labelled = [
