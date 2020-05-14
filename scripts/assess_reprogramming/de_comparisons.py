@@ -400,6 +400,37 @@ if __name__ == '__main__':
         [(k, v.classification.value_counts()) for k, v in ipsc_esc_fb.items()]
     ))
 
+    # numbers of core DMRs (unclassified) bar chart
+    set_colours_hypo = ['#b2df8a', '#33a02c']
+    set_colours_hyper = ['#fb9a99', '#e31a1c']
+    plot_colours = {'down': set_colours_hypo[::-1], 'up': set_colours_hyper[::-1]}
+    num_core_de_by_direction = {}
+    for k, v in ipsc_vs_esc_core.items():
+        # both ESC comparisons must agree on effect direction
+        n_up = (v.loc[:, v.columns.str.contains('Direction')] == 'up').all(axis=1).sum()
+        n_down = (v.loc[:, v.columns.str.contains('Direction')] == 'down').all(axis=1).sum()
+        the_key = k.replace('_ours', ' (this study)').replace('_kogut', ' (Kogut et al.)').replace('_', '')
+        num_core_de_by_direction[the_key] = {'up': n_up, 'down': n_down}
+
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(4.5, 5.))
+    for i, typ in enumerate(['up', 'down']):
+        ax = axs[i]
+        ax.bar(
+            # num_core_de_by_direction.keys(),
+            range(len(num_core_de_by_direction)),
+            [num_core_de_by_direction[k][typ] for k in sorted(num_core_de_by_direction)],
+            color=plot_colours[typ][1],
+            edgecolor='k',
+            linewidth=1.0
+        )
+        ax.set_ylabel('# core %sregulated\nDE genes' % typ)
+        ax.xaxis.set_ticks(range(len(num_core_de_by_direction)))
+        ax.xaxis.set_ticklabels(sorted(num_core_de_by_direction), rotation=90)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "n_core_de_genes_by_direction.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "n_core_de_genes_by_direction.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "n_core_de_genes_by_direction.pdf"))
+
     # residual / de novo bar chart
     # combine these results to generate bar charts
     set_colours_hypo = ['#b2df8a', '#33a02c']
