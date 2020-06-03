@@ -461,8 +461,8 @@ def load_illumina_methylation450_annotation():
 class IlluminaHumanMethylationLoader(loader.SingleFileLoader):
     row_indexed = True
 
-    def __init__(self, *args, **kwargs):
-        super(IlluminaHumanMethylationLoader, self).__init__(*args, **kwargs)
+    # def __init__(self, *args, **kwargs):
+    #     super(IlluminaHumanMethylationLoader, self).__init__(*args, **kwargs)
 
     def load_one_file(self, fn):
         return pd.read_csv(fn, header=0, index_col=0)
@@ -684,8 +684,9 @@ def e_mtab_6194(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'E-MTAB-6194')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="E-MTAB-6194",
         norm_method=norm_method,
@@ -698,8 +699,9 @@ def gse92462_epic(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE92462_EPIC')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE92462_EPIC",
         norm_method=norm_method,
@@ -711,8 +713,9 @@ def gse92462_450k(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE92462_450K')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE92462_450K",
         norm_method=norm_method,
@@ -724,8 +727,9 @@ def gse110544(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE110544')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE110544",
         norm_method=norm_method,
@@ -737,8 +741,9 @@ def gse60274(norm_method='raw', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE60274')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE60274",
         norm_method=norm_method,
@@ -764,8 +769,9 @@ def gse38216(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE38216')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE38216",
         norm_method=norm_method,
@@ -777,8 +783,9 @@ def gse67283(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE67283')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE67283",
         norm_method=norm_method,
@@ -790,8 +797,9 @@ def gse65214(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'GSE65214')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="GSE65214",
         norm_method=norm_method,
@@ -803,8 +811,9 @@ def encode_epic(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'ENCODE_EPIC')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="Encode EPIC",
         norm_method=norm_method,
@@ -816,8 +825,9 @@ def encode_450k(norm_method='bmiq', samples=None):
     base_dir = os.path.join(DATA_DIR, 'methylation', 'ENCODE_450k')
     beta_dir = os.path.join(base_dir, 'beta')
     meta_fn = os.path.join(base_dir, 'sources.csv')
+    data_fn = os.path.join(beta_dir, 'beta_%s.csv.gz' % norm_method)
     return IlluminaHumanMethylationLoader(
-        base_dir=beta_dir,
+        data_fn=data_fn,
         meta_fn=meta_fn,
         batch_id="Encode 450k",
         norm_method=norm_method,

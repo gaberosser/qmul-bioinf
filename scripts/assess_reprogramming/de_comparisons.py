@@ -413,6 +413,7 @@ if __name__ == '__main__':
         num_core_de_by_direction[the_key] = {'up': n_up, 'down': n_down}
 
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(4.5, 5.))
+    fontsize = 13
     for i, typ in enumerate(['up', 'down']):
         ax = axs[i]
         ax.bar(
@@ -423,9 +424,13 @@ if __name__ == '__main__':
             edgecolor='k',
             linewidth=1.0
         )
-        ax.set_ylabel('# core %sregulated\nDE genes' % typ)
+        ax.set_ylabel('# core %sreg.\nDE genes' % typ, fontsize=fontsize)
         ax.xaxis.set_ticks(range(len(num_core_de_by_direction)))
-        ax.xaxis.set_ticklabels(sorted(num_core_de_by_direction), rotation=90)
+        ax.xaxis.set_ticklabels(sorted(num_core_de_by_direction), rotation=90, fontsize=fontsize)
+        plt.setp(ax.get_yticklabels(), fontsize=fontsize)
+    plt.setp(axs[1].get_xticklabels(), fontsize=fontsize)
+    plt.setp(axs[1].get_xlabel(), fontsize=fontsize)
+
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "n_core_de_genes_by_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "n_core_de_genes_by_direction.tiff"), dpi=200)

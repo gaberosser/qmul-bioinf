@@ -231,9 +231,9 @@ def plot_clustermap(
 
     # ref line colours
     for k, v in cell_line_colours.items():
-        cc.loc[the_obj.meta.type == k, 'Cell type'] = v
+        cc.loc[obj.meta.type == k, 'Cell type'] = v
     # our line colours
-    cc.loc[the_obj.meta.batch.str.contains('wtchg') & (the_obj.meta.type == 'iPSC'), 'Cell type'] = \
+    cc.loc[obj.meta.batch.str.contains('wtchg') & (obj.meta.type == 'iPSC'), 'Cell type'] = \
     cell_line_colours['iPSC (this study)']
 
     # get appropriate clims
@@ -260,7 +260,7 @@ def plot_clustermap(
     leg_dict2['Cell type'] = collections.OrderedDict()
 
     for k in sorted(cell_line_colours):
-        if k.replace(' (this study)', '') in the_obj.meta.type.unique():
+        if k.replace(' (this study)', '') in obj.meta.type.unique():
             leg_dict2['Cell type'][k] = dict(leg_entry)
             leg_dict2['Cell type'][k].update({'facecolor': cell_line_colours[k]})
 
@@ -387,7 +387,7 @@ if __name__ == '__main__':
     ix = obj1.meta.type.isin(['iPSC', 'FB'])
     obj1.filter_samples(ix)
 
-    the_obj = loader.MultipleBatchLoader([obj1, ref_obj])
+    the_obj = loader.loader.MultipleBatchLoader([obj1, ref_obj])
     # manually rename our samples for nicer plotting
     the_obj.meta.index = the_obj.meta.index.str.replace(r'DURA(?P<n>[0-9]{3})_(?P<typ>[^_]*).*', r'\g<typ>\g<n>')
     the_obj.data.columns = the_obj.meta.index
@@ -401,6 +401,9 @@ if __name__ == '__main__':
         fmin=0.02,
         fmax=0.98
     )
+
+    plt.setp(gc.ax_heatmap.get_xticklabels(), fontsize=13)
+    gc.gs.update(bottom=0.33)
 
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb.png"), dpi=200)
     gc.savefig(os.path.join(outdir, "clustermap_ipsc_esc_fb.tiff"), dpi=200)

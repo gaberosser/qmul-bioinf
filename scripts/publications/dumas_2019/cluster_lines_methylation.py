@@ -168,7 +168,7 @@ if __name__ == "__main__":
     # Banovich et al (GSE110544)
     banov_ldr = loader.load_reference('GSE110544', norm_method=norm_method)
     banov_ldr.meta.insert(1, 'array_type', 'EPIC')
-    banov_ldr.meta.insert(1, 'type', banov_ldr.meta['cell type'])
+    # banov_ldr.meta.insert(1, 'type', banov_ldr.meta['cell type'])
     # limit to 6 samples
     limit_samples_of_type(banov_ldr, n_keep=n_ref_ipsc)
 
@@ -280,10 +280,19 @@ if __name__ == "__main__":
         marker_map=mmap,
         ax=ax
     )
-    # increase legend font size
+    # increase font size
+    fontsize = 12
+    leg = ax.get_legend()
+    plt.setp(leg.get_texts(), fontsize=fontsize)
+    plt.setp(ax.xaxis.get_label(), fontsize=fontsize)
+    plt.setp(ax.xaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(ax.yaxis.get_label(), fontsize=fontsize)
+    plt.setp(ax.yaxis.get_ticklabels(), fontsize=fontsize)
+
     ax.figure.subplots_adjust(left=0.12, right=0.74, top=0.98)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.png"), dpi=200)
     ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.tiff"), dpi=200)
+    ax.figure.savefig(os.path.join(outdir, "pca_ipsc_esc_fb.pdf"))
 
     # plot dendrograms
 

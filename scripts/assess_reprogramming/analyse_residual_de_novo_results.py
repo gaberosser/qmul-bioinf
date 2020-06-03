@@ -847,8 +847,11 @@ if __name__ == "__main__":
 
     gs = plt.GridSpec(nrows=2, ncols=2, width_ratios=[3, 1])
     fig = plt.figure(figsize=(6, 6))
+    axs = np.empty((2, 2), dtype=object)
+    fontsize = 12
 
     ax = fig.add_subplot(gs[1, 0])
+    axs[1, 0] = ax
     sns.swarmplot(
         x='typ',
         y='val',
@@ -867,13 +870,16 @@ if __name__ == "__main__":
         color='#b2df8a'
     )
 
-    # plt.setp(ax.xaxis.get_ticklabels(), visible=False)
     plt.setp(ax.xaxis.get_label(), visible=False)
-    ax.set_ylabel('Hypomethylated DMRs')
+    ax.set_ylabel('Hypomethylated DMRs', fontsize=fontsize)
     ylim = ax.get_ylim()
     ax.set_ylim([0, ylim[1]])
+    xticklabels = [t.get_text().replace(' (', '\n(') for t in ax.get_xticklabels()]
+    ax.set_xticklabels(xticklabels, fontsize=fontsize)
+    plt.setp(ax.get_yticklabels(), fontsize=fontsize)
 
     ax = fig.add_subplot(gs[1, 1])
+    axs[1, 1] = ax
     sns.swarmplot(
         x='typ',
         y='val',
@@ -895,8 +901,12 @@ if __name__ == "__main__":
     plt.setp(ax.yaxis.get_label(), visible=False)
     ylim = ax.get_ylim()
     ax.set_ylim([0, ylim[1]])
+    xticklabels = [t.get_text().replace(' (', '\n(') for t in ax.get_xticklabels()]
+    ax.set_xticklabels(xticklabels, fontsize=fontsize)
+    plt.setp(ax.get_yticklabels(), fontsize=fontsize)
 
     ax = fig.add_subplot(gs[0, 0])
+    axs[0, 0] = ax
     sns.swarmplot(
         x='typ',
         y='val',
@@ -916,9 +926,11 @@ if __name__ == "__main__":
     )
     plt.setp(ax.xaxis.get_label(), visible=False)
     plt.setp(ax.xaxis.get_ticklabels(), visible=False)
-    ax.set_ylabel('Hypermethylated DMRs')
+    ax.set_ylabel('Hypermethylated DMRs', fontsize=fontsize)
+    plt.setp(ax.get_yticklabels(), fontsize=fontsize)
 
     ax = fig.add_subplot(gs[0, 1])
+    axs[0, 1] = ax
     sns.swarmplot(
         x='typ',
         y='val',
@@ -939,6 +951,7 @@ if __name__ == "__main__":
     plt.setp(ax.xaxis.get_label(), visible=False)
     plt.setp(ax.yaxis.get_label(), visible=False)
     plt.setp(ax.xaxis.get_ticklabels(), visible=False)
+    plt.setp(ax.get_yticklabels(), fontsize=fontsize)
 
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "n_common_dmrs_ipsc_vs_esc.png"), dpi=200)
@@ -1274,9 +1287,10 @@ if __name__ == "__main__":
 
     # New plots for the Dumas paper
     # TODO: move these to a separate module if straightforward
+    # these colours are different to those used elsewhere as seaborn 'mutes' the palette, so these are matched
     colour_by_direction = {
-    'hypo': '#89CD61',
-    'hyper': '#FF381F',
+        'hypo': '#A5C389',
+        'hyper': '#EFA6A5',
     }
 
     # Quantify feature membership of core iPSC-ESC (ours)
@@ -1287,6 +1301,7 @@ if __name__ == "__main__":
 
     fig = plt.figure(figsize=(5, 3.5))
     ax = fig.add_subplot(111)
+    fontsize = 12
     bar.grouped_bar_chart(
         [qfm_hyper, qfm_hypo],
         ax=ax,
@@ -1295,12 +1310,15 @@ if __name__ == "__main__":
         linewidth=1.,
         labels=['Hypermethylation', 'Hypomethylation']
     )
-    plt.setp(ax.xaxis.get_ticklabels(), rotation=0)
-    ax.set_xlabel('Number of patients sharing DMR')
-    ax.set_ylabel('Frequency')
-    ax.legend(frameon=False)
+    plt.setp(ax.xaxis.get_ticklabels(), rotation=0, fontsize=fontsize)
+    plt.setp(ax.yaxis.get_ticklabels(), fontsize=fontsize)
+    ax.set_xlabel('Number of patients sharing DMR', fontsize=fontsize)
+    ax.set_ylabel('Frequency', fontsize=fontsize)
+    ax.legend(frameon=False, fontsize=fontsize)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.tiff"), dpi=200)
+    fig.savefig(os.path.join(outdir, "our_dmr_sharing_frequency.pdf"))
 
     # Combine with gene expression / DE to determine if there is any effect
 

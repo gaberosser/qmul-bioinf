@@ -151,7 +151,6 @@ if __name__ == "__main__":
 
     # Weltner et al. (E-MTAB-6194)
     e6194_ldr = loader.load_reference('E-MTAB-6194', norm_method=norm_method)
-    # ix = e6194_ldr.meta.type.isin(['ESC', 'iPSC', 'FB'])
     ix = ~e6194_ldr.meta.cell_line.isin([
         'NA07057',
         'HCT116',
