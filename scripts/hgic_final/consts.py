@@ -20,8 +20,10 @@ SUBGROUP_SET_COLOURS = {
     }
 
 METHYLATION_DIRECTION_COLOURS = {
-    'hypo': '#89CD61',
-    'hyper': '#FF381F',
+    # 'hypo': '#89CD61',
+    'hypo': '#c70039',
+    # 'hyper': '#FF381F',
+    'hyper': '#3d3d6b',
 }
 
 PATIENT_COLOURS = {

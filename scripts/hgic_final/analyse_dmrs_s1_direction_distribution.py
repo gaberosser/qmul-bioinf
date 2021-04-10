@@ -298,7 +298,7 @@ def dm_probe_direction_panel_plot(
         pids=consts.PIDS,
         stacked_bar=False,
         log_residual=True,
-        ref_name=None
+        ref_name=None,
 ):
     colours = {
         'dmr': '#689bed',
@@ -353,6 +353,8 @@ def dm_probe_direction_panel_plot(
     ax.set_ylabel("Number DMRs")
     ax.set_xticklabels([])
 
+    ax_kde_arr = []
+
     for i, pid in enumerate(pids):
         ax_diff_hist = fig.add_subplot(gs[0, i])
         ax_diff_pie = fig.add_subplot(gs[1, i])
@@ -379,6 +381,8 @@ def dm_probe_direction_panel_plot(
         ax_diff_hist.set_title(pid)
 
         ax_kde = fig.add_subplot(gs[2, i])
+        ax_kde_arr.append(ax_kde)
+
         sns.kdeplot(
             probe_values[pid],
             ax=ax_kde,
@@ -422,6 +426,130 @@ def dm_probe_direction_panel_plot(
         'fig': fig,
         'gs': gs,
         'ax_main': ax,
+        'ax_kde_arr': ax_kde_arr,
+    }
+
+
+def dm_probe_direction_panel_plot_simple(
+        dmr_res,
+        dmp_res,
+        pids=consts.PIDS,
+        stacked_bar=False
+):
+    """
+    Same as dm_probe_direction_panel_plot but without the dual probe beta layer
+    :param dmr_res:
+    :param dmp_res:
+    :param pids:
+    :param stacked_bar:
+
+    :return:
+    """
+    colours = {
+        'dmr': '#689bed',
+        'hypo': consts.METHYLATION_DIRECTION_COLOURS['hypo'],
+        'hyper': consts.METHYLATION_DIRECTION_COLOURS['hyper'],
+    }
+
+    dmr_pct = {}
+    for pid in pids:
+        n_hypo = 0
+        n_hyper = 0
+        for r in dmr_res[pid].values():
+            if r['median_change'] > 0:
+                n_hyper += 1
+            else:
+                n_hypo += 1
+        n_tot = float(n_hyper + n_hypo)
+        dmr_pct[pid] = {
+            'hypo': n_hypo / n_tot * 100.,
+            'hyper': n_hyper / n_tot * 100.,
+        }
+    dmr_pct = pd.DataFrame(dmr_pct)[pids]
+
+    probe_values = dict([
+        (pid, np.array([v['median_change'] for v in dmp_res[pid].values()])) for pid in pids
+    ])
+    probe_pct = {}
+    for pid, arr in probe_values.items():
+        n_hypo = (arr < 0.).sum()
+        n_hyper = (arr > 0.).sum()
+        n_tot = float(n_hypo + n_hyper)
+        probe_pct[pid] = {
+            'hypo': n_hypo / n_tot * 100.,
+            'hyper': n_hyper / n_tot * 100.,
+        }
+    probe_pct = pd.DataFrame(probe_pct)[pids]
+
+    gs = plt.GridSpec(
+        nrows=4,
+        ncols=len(pids),
+        # height_ratios=[1, 1, 1, 2, 1]
+    )
+
+    fig = plt.figure(figsize=(8, 5))
+    fig, ax = direction_of_dm_bar_plot(
+        dmr_res,
+        as_pct=False,
+        ax=fig.add_subplot(gs[2, :]),
+        legend=False,
+        stacked=stacked_bar
+    )
+    ax.set_ylabel("Number DMRs")
+    ax.set_xticklabels([])
+
+    ax_kde_arr = []
+
+    for i, pid in enumerate(pids):
+
+        ax_kde = fig.add_subplot(gs[0, i])
+        ax_kde.set_title(pid)
+        ax_kde_arr.append(ax_kde)
+
+        sns.kdeplot(
+            probe_values[pid],
+            ax=ax_kde,
+            color='k',
+        )
+        # replot with two different shadings
+        xx, yy = ax_kde.get_lines()[0].get_data()
+        ax_kde.fill_between(xx[xx < 0], yy[xx < 0], facecolor=colours['hypo'], edgecolor='none', alpha=0.6)
+        ax_kde.fill_between(xx[xx > 0], yy[xx > 0], facecolor=colours['hyper'], edgecolor='none', alpha=0.6)
+        ax_kde.axvline(0., color='k', linestyle=':')
+        ax_kde.yaxis.set_ticks([])
+        if i == 0:
+            ax_kde.set_ylabel('Probe density')
+        ax_kde.xaxis.set_visible(False)
+        ax_kde.set_xlim([-8, 12])
+
+        ax_pie = fig.add_subplot(gs[1, i])
+        ax_pie.pie(
+            probe_pct[pid].values,
+            colors=[colours[t] for t in probe_pct.index],
+            radius=1.,
+            wedgeprops={'edgecolor': 'w', 'width': 0.5},
+            startangle=90,
+        )
+        ax_pie.set_aspect('equal')
+
+        ax_pie_dmr = fig.add_subplot(gs[3, i])
+        ax_pie_dmr.pie(
+            dmr_pct[pid].values,
+            colors=[colours[t] for t in dmr_pct.index],
+            radius=1.,
+            wedgeprops={'edgecolor': 'w', 'width': 0.5},
+            startangle=90,
+        )
+        ax_pie_dmr.set_aspect('equal')
+
+    fig.tight_layout()
+    gs.update(wspace=0.02, hspace=0.05)
+
+    return {
+        'fig': fig,
+        'gs': gs,
+        'ax_main': ax,
+        'ax_kde_arr': ax_kde_arr,
     }
 
 
@@ -1247,8 +1375,8 @@ if __name__ == "__main__":
     # a) clusters: absolute and relative values
     plt_dict = dm_direction_bar_plot(dmr_res_all, keys=pids)
     fig = plt_dict['fig']
-    fig.set_size_inches((3, 4))
-    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=12)
+    fig.set_size_inches((5.5, 5.5))
+    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=14)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "all_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "all_dmr_direction.tiff"), dpi=200)
@@ -1269,18 +1397,31 @@ if __name__ == "__main__":
         me_data,
         me_meta.type,
         me_meta.patient_id,
-        log_residual=True
+        log_residual=True,
+        stacked_bar=True
     )
-
     plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel.tiff"), dpi=200)
+
+    # d) again but without the dual probe beta quantification
+    plot_dict = dm_probe_direction_panel_plot_simple(
+        dmr_res_all,
+        dmp_res_all,
+        stacked_bar=True
+    )
+    # add axis label and change font size
+    plt.setp(common.get_children_recursive(plot_dict['fig'], plt.Text), fontsize=14)
+    plot_dict['gs'].update(left=0.12)
+    plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel_simple.png"), dpi=200)
+    plot_dict['fig'].savefig(os.path.join(outdir, "all_dmp_direction_panel_simple.tiff"), dpi=200)
+
 
     # 2) direction of methylation change for patient-specific DMRs
     # a) clusters: absolute and relative values
     plt_dict = dm_direction_bar_plot(dmr_res_specific, keys=pids)
     fig = plt_dict['fig']
-    fig.set_size_inches((3, 4))
-    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=12)
+    fig.set_size_inches((5.5, 5.5))
+    plt.setp(common.get_children_recursive(fig, plt.Text), fontsize=14)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.png"), dpi=200)
     fig.savefig(os.path.join(outdir, "patient_specific_dmr_direction.tiff"), dpi=200)
@@ -1300,11 +1441,24 @@ if __name__ == "__main__":
         dmp_res_specific,
         me_data,
         me_meta.type,
-        me_meta.patient_id
+        me_meta.patient_id,
+        stacked_bar=True
     )
 
     plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel.png"), dpi=200)
     plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel.tiff"), dpi=200)
+
+    # d) again but without the dual probe beta quantification
+    plot_dict = dm_probe_direction_panel_plot_simple(
+        dmr_res_specific,
+        dmp_res_specific,
+        stacked_bar=True
+    )
+    # add axis label and change font size
+    plt.setp(common.get_children_recursive(plot_dict['fig'], plt.Text), fontsize=14)
+    plot_dict['gs'].update(left=0.12)
+    plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel_simple.png"), dpi=200)
+    plot_dict['fig'].savefig(os.path.join(outdir, "specific_dmp_direction_panel_simple.tiff"), dpi=200)
 
     # investigate (genomic) distribution of DMRs
 
@@ -1503,7 +1657,8 @@ if __name__ == "__main__":
         print "Chrom %s started at angle %.2f and ended at %.2f" % (chrom, curr_theta, th[-1] + gap_radians)
         curr_theta = th[-1] + gap_radians
         
-    import ipdb; ipdb.set_trace()
+    # stopping here for now
+    raise StopIteration("Don't worry - every little thing is gonna be alright.")
 
     # the old code (for reference)
     if False:

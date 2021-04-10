@@ -649,9 +649,15 @@ if __name__ == '__main__':
     upset['figure'].savefig(os.path.join(outdir, "upset_de_dmr_by_direction_group_tss.png"), dpi=200)
 
 
+    # set_colours_dict = {
+    #     'Hypo': 'g',
+    #     'Hyper': 'r',
+    #     'Discordant': 'b'
+    # }
+
     set_colours_dict = {
-        'Hypo': 'g',
-        'Hyper': 'r',
+        'Hypo': '#c70039',
+        'Hyper': '#3d3d6b',
         'Discordant': 'b'
     }
 
@@ -729,11 +735,19 @@ if __name__ == '__main__':
         plt_dict['fig'].savefig(os.path.join(outdir, "dmr_direction_by_group_%s_tss.png" % grp.lower()), dpi=200)
 
         # bar chart showing DE direction
+        fontsize = 14
         for_plot = {}
         for pid in groups[grp]:
             for_plot[pid] = de_dmr_de_logfc_all[grp][[pid]].dropna()
             for_plot[pid].columns = ['logFC']
         plt_dict = same_de.bar_plot(for_plot, keys=groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
+        plt.setp(plt_dict["axs"][0].yaxis.get_ticklabels(), fontsize=fontsize)
+        plt.setp(plt_dict["axs"][0].yaxis.get_label(), fontsize=fontsize)
+        plt.setp(plt_dict["axs"][1].yaxis.get_ticklabels(), fontsize=fontsize)
+        plt.setp(plt_dict["axs"][1].yaxis.get_label(), fontsize=fontsize)
+        plt.setp(plt_dict["axs"][1].xaxis.get_ticklabels(), fontsize=fontsize)
+        plt.setp(plt_dict["axs"][1].xaxis.get_label(), fontsize=fontsize)
+        plt_dict['fig'].tight_layout()
         plt_dict['fig'].savefig(os.path.join(outdir, "de_direction_by_group_%s_all.png" % grp.lower()), dpi=200)
 
         for_plot = {}

@@ -131,6 +131,9 @@ if __name__ == '__main__':
 
     de_res_wide = pd.read_excel(de_res_fn)
 
+    # increase matplotlib default font size
+    fontsize = 14
+
     # create dictionary from wideform df
     de_res = {}
     for pid in pids:
@@ -142,6 +145,12 @@ if __name__ == '__main__':
     de_by_direction = count_de_by_direction(de_res)
 
     plt_dict = bar_plot(de_res, pids)
+    plt.setp(plt_dict["axs"][0].yaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][0].yaxis.get_label(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].yaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].yaxis.get_label(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].xaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].xaxis.get_label(), fontsize=fontsize)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_full_list_directions.png"), dpi=200)
 
@@ -151,6 +160,12 @@ if __name__ == '__main__':
         (pid, de_res[pid].loc[s]) for pid, s in zip(pids, spec_ix)
     ])
     plt_dict = bar_plot(for_plot, pids)
+    plt.setp(plt_dict["axs"][0].yaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][0].yaxis.get_label(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].yaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].yaxis.get_label(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].xaxis.get_ticklabels(), fontsize=fontsize)
+    plt.setp(plt_dict["axs"][1].xaxis.get_label(), fontsize=fontsize)
     plt_dict['fig'].tight_layout()
     plt_dict['fig'].savefig(os.path.join(outdir, "syngeneic_specific_list_directions.png"), dpi=200)
 
