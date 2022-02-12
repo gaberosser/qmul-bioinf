@@ -14,6 +14,7 @@ from sklearn.neighbors import KernelDensity
 from scripts.hgic_final import two_strategies_grouped_dispersion as tsgd, consts
 
 from settings import INTERMEDIATE_DIR, LOCAL_DATA_DIR
+from utils import excel
 logger = log.get_console_logger()
 
 
@@ -1290,7 +1291,22 @@ if __name__ == "__main__":
     # (full) subgroup specific DMRs
     dmr_res_subgroup_specific_full = dict([(k, venn_set[v]) for k, v in ss_sets.items()])
 
+    # generate output files for publication
+    dmr_all_for_export = {}
+    for pid, x in dmr_res_all.items():
+        this_ = pd.DataFrame(x).transpose().reset_index().rename({"index": "dmr_id"}, axis=1)
+        this_.drop("rej_h0", axis=1, inplace=True)  # all True so not needed
+        dmr_all_for_export[pid] = this_
+    fn = os.path.join(outdir, "dmr_res_all.xlsx")
+    excel.pandas_to_excel(dmr_all_for_export, fn, write_index=False)
 
+    dmr_spec_for_export = {}
+    for pid, x in dmr_res_specific.items():
+        this_ = pd.DataFrame(x).transpose().reset_index().rename({"index": "dmr_id"}, axis=1)
+        this_.drop("rej_h0", axis=1, inplace=True)  # all True so not needed
+        dmr_spec_for_export[pid] = this_
+    fn = os.path.join(outdir, "dmr_res_specific.xlsx")
+    excel.pandas_to_excel(dmr_spec_for_export, fn, write_index=False)
 
     # full DMPs
     dd = dmr_to_dmp(
@@ -1311,6 +1327,14 @@ if __name__ == "__main__":
 
     dmp_ids_specific = dd['dmp_ids']
     dmp_res_specific = dd['dmp_res']
+
+    dmp_all_for_export = {pid: pd.DataFrame(x).transpose().reset_index().rename({"index": "probe_id"}, axis=1) for pid, x in dmp_res_all.items()}
+    fn = os.path.join(outdir, "dmp_res_all.xlsx")
+    excel.pandas_to_excel(dmp_all_for_export, fn, write_index=False)
+
+    dmp_spec_for_export = {pid: pd.DataFrame(x).transpose().reset_index().rename({"index": "probe_id"}, axis=1) for pid, x in dmp_res_specific.items()}
+    fn = os.path.join(outdir, "dmp_res_specific.xlsx")
+    excel.pandas_to_excel(dmp_spec_for_export, fn, write_index=False)
 
     # Example plots, useful for presentation slides
     cell_type_colours = {

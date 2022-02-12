@@ -24,7 +24,7 @@ from scripts.hgic_final import \
     consts
 from settings import HGIC_LOCAL_DIR, INTERMEDIATE_DIR
 from stats import basic
-from utils import output, setops, log, dictionary, reference_genomes
+from utils import output, setops, log, dictionary, reference_genomes, excel
 
 logger = log.get_console_logger()
 
@@ -757,6 +757,15 @@ if __name__ == '__main__':
         plt_dict = same_de.bar_plot(for_plot, keys=groups[grp], figsize=(len(groups[grp]) - .5, 4.5))
         plt_dict['fig'].savefig(os.path.join(outdir, "de_direction_by_group_%s_tss.png" % grp.lower()), dpi=200)
 
+    # export for publication
+    de_dmr_dmr_all_for_export = {}
+    for grp, x in de_dmr_dmr_median_delta_all.items():
+        this_ = x.dropna(axis=1, how="all").reset_index().rename({"index": "dmr_id"}, axis=1).copy()
+        this_["consistent"] = this_["consistent"].astype(int)
+        de_dmr_dmr_all_for_export[grp] = this_
+    fn = os.path.join(outdir, "dmr_from_group_spec_de_dmrs_all.xlsx")
+    excel.pandas_to_excel(de_dmr_dmr_all_for_export, fn, write_index=False)
+
     # Venn diagrams of DE
     fig = plt.figure(figsize=(5., 3.3))
     ax = fig.add_subplot(111)
@@ -767,6 +776,15 @@ if __name__ == '__main__':
     ax = fig.add_subplot(111)
     plot_venn_de_directions(de_dmr_de_logfc_tss, set_colours_dict, ax=ax)
     fig.savefig(os.path.join(outdir, "de_from_group_spec_de_dmrs_tss.png"), dpi=200)
+
+    # export for publication
+    de_dmr_de_all_for_export = {}
+    for grp, x in de_dmr_de_logfc_all.items():
+        this_ = x.dropna(axis=1, how="all").reset_index().rename({"index": "gene_symbol"}, axis=1).copy()
+        this_["consistent"] = this_["consistent"].astype(int)
+        de_dmr_de_all_for_export[grp] = this_
+    fn = os.path.join(outdir, "de_from_group_spec_de_dmrs_all.xlsx")
+    excel.pandas_to_excel(de_dmr_de_all_for_export, fn, write_index=False)
 
     # assess concordance between DM and DE direction
     # start with scatterplot
